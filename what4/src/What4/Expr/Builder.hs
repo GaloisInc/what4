@@ -590,12 +590,12 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
         -> !(e (BaseBVType w))   -- rotate amount
         -> App e (BaseBVType w)
 
-  BVZext :: (1 <= w, w <= r, 1 <= r)
+  BVZext :: (1 <= w, w+1 <= r, 1 <= r)
          => !(NatRepr r)
          -> !(e (BaseBVType w))
          -> App e (BaseBVType r)
 
-  BVSext :: (1 <= w, w <= r, 1 <= r)
+  BVSext :: (1 <= w, w+1 <= r, 1 <= r)
          => !(NatRepr r)
          -> !(e (BaseBVType w))
          -> App e (BaseBVType r)
@@ -3223,8 +3223,10 @@ reduceApp sym a0 = do
     BVAshr _ x y -> bvAshr sym x y
     BVRol  _ x y -> bvRol sym x y
     BVRor  _ x y -> bvRor sym x y
-    BVZext  w x  -> bvZext sym w x
-    BVSext  w x  -> bvSext sym w x
+    BVZext  w x  -> do Just LeqProof <- return $ testLeq (bvWidth x) w
+                       bvZext sym w x
+    BVSext  w x  -> do Just LeqProof <- return $ testLeq (bvWidth x) w
+                       bvSext sym w x
     BVPopcount _ x -> bvPopcount sym x
     BVFill w p -> bvFill sym w p
     BVCountLeadingZeros _ x -> bvCountLeadingZeros sym x
@@ -4750,6 +4752,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (BVZext w  x') <- asApp x
     , Just (BVZext w' y') <- asApp y
     , Just Refl <- testEquality (bvWidth x') (bvWidth y')
+    -- BVZext asserts width+1 <= w, but GHC needs help to infer width <= w
+    , Just LeqProof <- testLeq (bvWidth x') w
+    , Just LeqProof <- testLeq (bvWidth y') w'
     , Just Refl <- testEquality w w' =
       do z <- bvIte sym c x' y'
          bvZext sym w z
@@ -4757,6 +4762,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (BVSext w  x') <- asApp x
     , Just (BVSext w' y') <- asApp y
     , Just Refl <- testEquality (bvWidth x') (bvWidth y')
+    -- BVSext asserts width+1 <= w, but GHC needs help to infer width <= w
+    , Just LeqProof <- testLeq (bvWidth x') w
+    , Just LeqProof <- testLeq (bvWidth y') w'
     , Just Refl <- testEquality w w' =
       do z <- bvIte sym c x' y'
          bvSext sym w z
@@ -4961,7 +4969,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Concatenate unsign extension.
     | Just (BVZext _ y) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
-      Just LeqProof <- return $ testLeq (bvWidth y) w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth y)) w
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym $ BVZext w y
 
@@ -4969,10 +4977,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (BVUnaryTerm u) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth x)) w
       bvUnary sym $ UnaryBV.uext u w
 
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth x)) w
       sbMakeExpr sym $ BVZext w x
 
   bvSext sym w x
@@ -4986,7 +4996,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Concatenate sign extension.
     | Just (BVSext _ y) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
-      Just LeqProof <- return $ testLeq (bvWidth y) w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth y)) w
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym (BVSext w y)
 
@@ -4994,10 +5004,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (BVUnaryTerm u) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth x)) w
       bvUnary sym $ UnaryBV.sext u w
 
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
+      Just LeqProof <- return $ testLeq (incNat (bvWidth x)) w
       sbMakeExpr sym (BVSext w x)
 
   bvXorBits sym x y

@@ -315,12 +315,12 @@ select ::
   BVDomain w -> BVDomain n
 select i n a = shrink i (trunc (addNat i n) a)
 
-zext :: (1 <= w, w <= u) => BVDomain w -> NatRepr u -> BVDomain u
+zext :: (1 <= w, w+1 <= u) => BVDomain w -> NatRepr u -> BVDomain u
 zext a u = range u al ah
   where (al, ah) = ubounds a
 
 sext ::
-  forall w u. (1 <= w, w <= u) =>
+  forall w u. (1 <= w, w + 1 <= u) =>
   NatRepr w ->
   BVDomain w ->
   NatRepr u ->
@@ -333,10 +333,10 @@ sext w a u =
   where
     wProof :: LeqProof 1 w
     wProof = LeqProof
-    uProof :: LeqProof w u
+    uProof :: LeqProof (w+1) u
     uProof = LeqProof
     fProof :: LeqProof 1 u
-    fProof = leqTrans wProof uProof
+    fProof = leqTrans (leqAdd wProof (knownNat :: NatRepr 1)) uProof
 
 --------------------------------------------------------------------------------
 -- Shifts
