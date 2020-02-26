@@ -823,15 +823,13 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
   bvSext :: (1 <= u, u <= r) => sym -> NatRepr r -> SymBV sym u -> IO (SymBV sym r)
 
   -- | Truncate a bitvector.
-  bvTrunc :: (1 <= r, r+1 <= w) -- Assert result is less than input.
+  bvTrunc :: (1 <= r, r <= w)
           => sym
           -> NatRepr r
           -> SymBV sym w
           -> IO (SymBV sym r)
   bvTrunc sym w x
-    | LeqProof <- leqTrans
-        (addIsLeq w (knownNat @1))
-        (leqProof (incNat w) (bvWidth x))
+    | LeqProof <- leqProof w (bvWidth x)
     = bvSelect sym (knownNat @0) w x
 
   -- | Bitwise logical and.
@@ -1039,7 +1037,6 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        -- Haskell typechecker limitation.
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
        Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
@@ -1063,7 +1060,6 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        -- Haskell typechecker limitation.
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
        Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
@@ -1091,7 +1087,6 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        -- Haskell typechecker limitation.
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
        Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
@@ -1115,7 +1110,6 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        -- Haskell typechecker limitation.
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
        Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
@@ -1425,7 +1419,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
       -- Truncate when the width of e is larger than w.
       NatLT _ -> do
         -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat w) e_width)
+        Just LeqProof <- return (testLeq w e_width)
         -- Check if e underflows
         does_underflow <- bvSlt sym e =<< bvLit sym e_width (minSigned w)
         iteM bvIte sym does_underflow (bvLit sym w (minSigned w)) $ do
@@ -1448,7 +1442,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
     case w `compareNat` e_width of
       NatLT _ -> do
         -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat w) e_width)
+        Just LeqProof <- return (testLeq w e_width)
           -- Check if e overflows target unsigned representation.
         does_overflow <- bvUgt sym e =<< bvLit sym e_width (maxUnsigned w)
         iteM bvIte sym does_overflow (bvLit sym w (maxUnsigned w)) $ do
@@ -1478,7 +1472,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
         max_val <- bvLit sym n ((2^(widthVal w-1))-1)
         -- Check if expression is less than maximum.
         p <- bvUle sym e max_val
-        Just LeqProof <- return (testLeq (incNat w) n)
+        Just LeqProof <- return (testLeq w n)
         -- Select appropriate number then truncate.
         bvTrunc sym w =<< bvIte sym p e max_val
       NatEQ -> do

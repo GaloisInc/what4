@@ -948,13 +948,12 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
            (\sym -> do x' <- expr x sym
                        bvSelect sym (knownRepr :: NatRepr 0) knownRepr x'))
 
-  -- TODO: bvTrunc doesn't allow the no-op/same-size operation
-  -- , subBVTerms1
-  --   (\x -> teSubCon
-  --          (pfx "bvTrunc " <> pdesc x)
-  --          (mask (testval x))
-  --          (\sym -> do x' <- expr x sym
-  --                      bvTrunc sym knownRepr x'))
+  , subBVTerms1
+    (\x -> teSubCon
+           (pfx "bvTrunc " <> pdesc x)
+           (mask (testval x))
+           (\sym -> do x' <- expr x sym
+                       bvTrunc sym knownRepr x'))
 
   , subBVTerms1
     (\x -> teSubCon

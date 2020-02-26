@@ -5477,14 +5477,16 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         NatLT _ -> do Just LeqProof <- return $ testLeq (bvWidth r) w
                       bvZext sym w r
         NatEQ   -> return r
-        NatGT _ -> bvTrunc sym w r
+        NatGT _ -> do Just LeqProof <- return $ testLeq w (bvWidth r)
+                      bvTrunc sym w r
 
     | Just (SBVToInteger r) <- asApp xr =
       case compareNat (bvWidth r) w of
         NatLT _ -> do Just LeqProof <- return $ testLeq (bvWidth r) w
                       bvSext sym w r
         NatEQ   -> return r
-        NatGT _ -> bvTrunc sym w r
+        NatGT _ -> do Just LeqProof <- return $ testLeq w (bvWidth r)
+                      bvTrunc sym w r
 
     | otherwise =
       sbMakeExpr sym (IntegerToBV xr w)
