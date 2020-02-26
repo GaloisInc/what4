@@ -1,0 +1,12 @@
+[submodule "dependencies/aig"]
+	path = dependencies/aig
+	url = git@github.com:GaloisInc/aig
+[submodule "dependencies/abcBridge"]
+	path = dependencies/abcBridge
+	url = git@github.com:GaloisInc/abcBridge
+[submodule "dependencies/blt"]
+	path = dependencies/blt
+	url = git@github.com:GaloisInc/blt
+[submodule "dependencies/parameterized-utils"]
+	path = dependencies/parameterized-utils
+	url = git@github.com:GaloisInc/parameterized-utils
