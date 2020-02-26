@@ -11,9 +11,11 @@
 -- the results back.
 ------------------------------------------------------------------------
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 module What4.Solver.Boolector
-  ( Boolector
+  ( Boolector(..)
   , boolectorPath
   , boolectorOptions
   , boolectorAdapter
@@ -28,6 +30,7 @@ import           Control.Concurrent
 import           Control.Lens(folded)
 import           Control.Monad
 import           Control.Monad.Identity
+import           Data.Bits ( (.|.) )
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -48,9 +51,10 @@ import           What4.SatResult
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import           What4.Solver.Adapter
+import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
 import           What4.Protocol.SMTWriter
-  (smtExprGroundEvalFn, SMTEvalFunctions(..), nullAcknowledgementAction)
+  (smtExprGroundEvalFn, SMTEvalFunctions(..), nullAcknowledgementAction, supportedFeatures)
 import           What4.Utils.Process
 import           What4.Utils.Streams
 import           What4.Utils.HandleReader
@@ -202,3 +206,31 @@ parseBoolectorOutput c out_lines =
       Sat <$> smtExprGroundEvalFn c evalFns
     [] -> fail "Boolector returned no output."
     h:_ -> fail $ "Could not parse boolector output: " ++ h
+
+boolectorFeatures :: ProblemFeatures
+boolectorFeatures = useSymbolicArrays
+                .|. useBitvectors
+
+instance SMT2.SMTLib2GenericSolver Boolector where
+  defaultSolverPath _ = findSolverPath boolectorPath . getConfiguration
+  defaultSolverArgs _ _ = return ["--smt2", "--smt2-model", "--incremental", "--output-format=smt2"]
+  defaultFeatures _ = boolectorFeatures
+  setDefaultLogicAndOptions writer = do
+    SMT2.setLogic writer SMT2.allSupported
+    SMT2.setProduceModels writer True
+
+setInteractiveLogicAndOptions ::
+  SMT2.SMTLib2Tweaks a =>
+  SMT2.WriterConn t (SMT2.Writer a) ->
+  IO ()
+setInteractiveLogicAndOptions writer = do
+    SMT2.setOption writer "print-success"  "true"
+    SMT2.setOption writer "produce-models" "true"
+    SMT2.setOption writer "global-declarations" "true"
+    when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
+      SMT2.setOption writer "produce-unsat-cores" "true"
+    SMT2.setLogic writer SMT2.allSupported
+
+instance OnlineSolver t (SMT2.Writer Boolector) where
+  startSolverProcess = SMT2.startSolver Boolector SMT2.smtAckResult setInteractiveLogicAndOptions
+  shutdownSolverProcess = SMT2.shutdownSolver Boolector
