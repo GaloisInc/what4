@@ -817,10 +817,10 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
     IO (SymBV sym w)
 
   -- | Zero-extend a bitvector.
-  bvZext :: (1 <= u, u+1 <= r) => sym -> NatRepr r -> SymBV sym u -> IO (SymBV sym r)
+  bvZext :: (1 <= u, u <= r) => sym -> NatRepr r -> SymBV sym u -> IO (SymBV sym r)
 
   -- | Sign-extend a bitvector.
-  bvSext :: (1 <= u, u+1 <= r) => sym -> NatRepr r -> SymBV sym u -> IO (SymBV sym r)
+  bvSext :: (1 <= u, u <= r) => sym -> NatRepr r -> SymBV sym u -> IO (SymBV sym r)
 
   -- | Truncate a bitvector.
   bvTrunc :: (1 <= r, r+1 <= w) -- Assert result is less than input.
@@ -1011,7 +1011,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
     do let w = bvWidth x
        let w2 = addNat w w
        Just LeqProof <- return (testLeq (knownNat @1) w2)
-       Just LeqProof <- return (testLeq (addNat w (knownNat @1)) w2)
+       Just LeqProof <- return (testLeq w w2)
        z  <- bvLit sym w2 0
        x' <- bvZext sym w2 x
        xs <- sequence [ do p <- testBitBV sym i y
@@ -1040,6 +1040,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
        Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1063,6 +1064,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
        Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1090,6 +1092,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
        Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1113,6 +1116,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
        Just LeqProof <- return (isPosNat dbl_w)
        -- Add dynamic check to assert w+1 <= 2*w.
        Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       Just LeqProof <- return (testLeq w dbl_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1433,7 +1437,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
       NatEQ -> return e
       NatGT _ -> do
         -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat e_width) w)
+        Just LeqProof <- return (testLeq e_width w)
         bvSext sym w e
 
   -- | Convert an unsigned bitvector to the nearest unsigned bitvector with
@@ -1453,7 +1457,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
       NatEQ -> return e
       NatGT _ -> do
         -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat e_width) w)
+        Just LeqProof <- return (testLeq e_width w)
         bvZext sym w e
 
   -- | Convert an signed bitvector to the nearest unsigned bitvector with
@@ -1483,7 +1487,7 @@ class (IsExpr (SymExpr sym), HashableF (SymExpr sym)) => IsExprBuilder sym where
         bvIte sym p e max_val
       NatGT _ -> do
         -- Add dynamic check to ensure GHC typechecks.
-        Just LeqProof <- return (testLeq (incNat n) w)
+        Just LeqProof <- return (testLeq n w)
         bvZext sym w e
 
   ----------------------------------------------------------------------

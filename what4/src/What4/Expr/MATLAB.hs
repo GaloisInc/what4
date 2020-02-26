@@ -61,9 +61,9 @@ clampedIntAdd :: (IsExprBuilder sym, 1 <= w)
               -> IO (SymBV sym w)
 clampedIntAdd sym x y = do
   let w = bvWidth x
-  withAddPrefixLeq w (knownNat :: NatRepr 1) $ do
   -- Compute result with 1 additional bit to catch clamping
-  let w' = incNat w
+  withAddLeq w (knownNat :: NatRepr 1) $ \w' -> do
+  Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w'
   x'  <- bvSext sym w' x
   y'  <- bvSext sym w' y
   -- Compute result.

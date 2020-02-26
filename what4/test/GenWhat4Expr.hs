@@ -956,21 +956,19 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
   --          (\sym -> do x' <- expr x sym
   --                      bvTrunc sym knownRepr x'))
 
-  -- TODO: bvZext doesn't allow the no-op/same-size operation
-  -- , subBVTerms1
-  --   (\x -> teSubCon
-  --          (pfx "bvZext " <> pdesc x)
-  --          (mask (testval x))
-  --          (\sym -> do x' <- expr x sym
-  --                      bvZext sym knownRepr x'))
+  , subBVTerms1
+    (\x -> teSubCon
+           (pfx "bvZext " <> pdesc x)
+           (mask (testval x))
+           (\sym -> do x' <- expr x sym
+                       bvZext sym knownRepr x'))
 
-  -- TODO: bvSext doesn't allow the no-op/same-size operation
-  -- , subBVTerms1
-  --   (\x -> teSubCon
-  --          (pfx "bvSext " <> pdesc x)
-  --          (mask (testval x))
-  --          (\sym -> do x' <- expr x sym
-  --                      bvSext sym knownRepr x'))
+  , subBVTerms1
+    (\x -> teSubCon
+           (pfx "bvSext " <> pdesc x)
+           (mask (testval x))
+           (\sym -> do x' <- expr x sym
+                       bvSext sym knownRepr x'))
 
   ] ++
   if width <= 16
@@ -1043,6 +1041,7 @@ bvTGMixedExprs termGens tgtWidth =
 
 bvTGMixedExprs_Half :: ( Monad m
                        , 1 <= w
+                       , w <= w + w
                        , w + 1 <= w + w
                        , KnownNat (w + w)
                        , HaskellTy bvtestexpr ~ Integer
@@ -1100,6 +1099,7 @@ bvTGMixedExprs_QuarterHalf :: ( Monad m
                               , 1 <= w + w + w + w
                               , (w + (w + w)) ~ ((w + w) + w)
                               , 1 <= ((w + w) + w)
+                              , w <= w + w + w + w
                               , (w + 1) <= w + w + w + w
                               , KnownNat (w + w + w + w)
                               , HaskellTy bvtestexpr ~ Integer

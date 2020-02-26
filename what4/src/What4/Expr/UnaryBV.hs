@@ -537,12 +537,18 @@ neg sym x
         go _ _ [] = error "Illegal value return in UnaryBV.neg"
 
 -- | Perform a unsigned extension
-uext :: (1 <= u, u+1 <= r) => UnaryBV p u -> NatRepr r -> UnaryBV p r
-uext x w' = UnaryBV w' (unaryBVMap x)
+uext :: (1 <= u, u <= r) => UnaryBV p u -> NatRepr r -> UnaryBV p r
+uext x w' =
+  case testEquality (width x) w' of
+    Just Refl -> x
+    Nothing -> UnaryBV w' (unaryBVMap x)
 
 -- | Perform a signed extension
-sext :: (1 <= u, u+1 <= r) => UnaryBV p u -> NatRepr r -> UnaryBV p r
-sext x w' = UnaryBV w' (Map.union neg_entries l)
+sext :: (1 <= u, u <= r) => UnaryBV p u -> NatRepr r -> UnaryBV p r
+sext x w' =
+  case testEquality (width x) w' of
+    Just Refl -> x
+    Nothing -> UnaryBV w' (Map.union neg_entries l)
   where w = width x
         mid = maxSigned w
         (l,h) = splitLeq mid (unaryBVMap x)

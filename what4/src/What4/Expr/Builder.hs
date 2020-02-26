@@ -590,12 +590,12 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
         -> !(e (BaseBVType w))   -- rotate amount
         -> App e (BaseBVType w)
 
-  BVZext :: (1 <= w, w+1 <= r, 1 <= r)
+  BVZext :: (1 <= w, w <= r, 1 <= r)
          => !(NatRepr r)
          -> !(e (BaseBVType w))
          -> App e (BaseBVType r)
 
-  BVSext :: (1 <= w, w+1 <= r, 1 <= r)
+  BVSext :: (1 <= w, w <= r, 1 <= r)
          => !(NatRepr r)
          -> !(e (BaseBVType w))
          -> App e (BaseBVType r)
@@ -4240,13 +4240,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           -- Sign extend to largest bitvector and compare.
        in case compareNat wx wy of
             NatLT _ -> do
-              Just LeqProof <- return (testLeq (incNat wx) wy)
+              Just LeqProof <- return (testLeq wx wy)
               x' <- bvSext sym wy xbv
               bvEq sym x' ybv
             NatEQ ->
               bvEq sym xbv ybv
             NatGT _ -> do
-              Just LeqProof <- return (testLeq (incNat wy) wx)
+              Just LeqProof <- return (testLeq wy wx)
               y' <- bvSext sym wx ybv
               bvEq sym xbv y'
 
@@ -4258,13 +4258,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           -- Zero extend to largest bitvector and compare.
        in case compareNat wx wy of
             NatLT _ -> do
-              Just LeqProof <- return (testLeq (incNat wx) wy)
+              Just LeqProof <- return (testLeq wx wy)
               x' <- bvZext sym wy xbv
               bvEq sym x' ybv
             NatEQ ->
               bvEq sym xbv ybv
             NatGT _ -> do
-              Just LeqProof <- return (testLeq (incNat wy) wx)
+              Just LeqProof <- return (testLeq wy wx)
               y' <- bvZext sym wx ybv
               bvEq sym xbv y'
 
@@ -4311,12 +4311,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
          -- Sign extend to largest bitvector and compare.
          case compareNat wx wy of
            NatLT _ -> do
-             Just LeqProof <- return (testLeq (incNat wx) wy)
+             Just LeqProof <- return (testLeq wx wy)
              x' <- bvSext sym wy xbv
              bvSle sym x' ybv
            NatEQ -> bvSle sym xbv ybv
            NatGT _ -> do
-             Just LeqProof <- return (testLeq (incNat wy) wx)
+             Just LeqProof <- return (testLeq wy wx)
              y' <- bvSext sym wx ybv
              bvSle sym xbv y'
 
@@ -4328,12 +4328,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
          -- Zero extend to largest bitvector and compare.
          case compareNat wx wy of
            NatLT _ -> do
-             Just LeqProof <- return (testLeq (incNat wx) wy)
+             Just LeqProof <- return (testLeq wx wy)
              x' <- bvZext sym wy xbv
              bvUle sym x' ybv
            NatEQ -> bvUle sym xbv ybv
            NatGT _ -> do
-             Just LeqProof <- return (testLeq (incNat wy) wx)
+             Just LeqProof <- return (testLeq wy wx)
              y' <- bvZext sym wx ybv
              bvUle sym xbv y'
 
@@ -4951,6 +4951,8 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      sbMakeExpr sym $ BVRor w x y
 
   bvZext sym w x
+    | Just Refl <- testEquality w (bvWidth x) = return x
+
     | Just i <- asUnsignedBV x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
@@ -4959,7 +4961,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Concatenate unsign extension.
     | Just (BVZext _ y) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
-      Just LeqProof <- return $ testLeq (incNat (bvWidth y)) w
+      Just LeqProof <- return $ testLeq (bvWidth y) w
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym $ BVZext w y
 
@@ -4974,6 +4976,8 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym $ BVZext w x
 
   bvSext sym w x
+    | Just Refl <- testEquality w (bvWidth x) = return x
+
     | Just i <- asSignedBV x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
@@ -4982,7 +4986,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Concatenate sign extension.
     | Just (BVSext _ y) <- asApp x = do
       -- Add dynamic check for GHC typechecker.
-      Just LeqProof <- return $ testLeq (incNat (bvWidth y)) w
+      Just LeqProof <- return $ testLeq (bvWidth y) w
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym (BVSext w y)
 
@@ -5470,13 +5474,15 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
     | Just (BVToInteger r) <- asApp xr =
       case compareNat (bvWidth r) w of
-        NatLT _ -> bvZext sym w r
+        NatLT _ -> do Just LeqProof <- return $ testLeq (bvWidth r) w
+                      bvZext sym w r
         NatEQ   -> return r
         NatGT _ -> bvTrunc sym w r
 
     | Just (SBVToInteger r) <- asApp xr =
       case compareNat (bvWidth r) w of
-        NatLT _ -> bvSext sym w r
+        NatLT _ -> do Just LeqProof <- return $ testLeq (bvWidth r) w
+                      bvSext sym w r
         NatEQ   -> return r
         NatGT _ -> bvTrunc sym w r
 
