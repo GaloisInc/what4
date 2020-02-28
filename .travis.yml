@@ -1,0 +1,64 @@
+script:
+- if [[ $DO_LINT != True ]]; then cabal new-update ; fi
+- if [[ $DO_LINT == True ]]; then curl -sSL https://raw.github.com/ndmitchell/neil/master/misc/travis.sh
+  | sh -s -- hlint what4 what4-abc what4-blt
+  ; fi
+- if [[ $DO_LINT != True ]]; then cabal new-build what4 what4-abc what4-blt -j --disable-optimization $BUILD_ARG
+  ; fi
+before_cache:
+- rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
+- rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
+matrix:
+  fast_finish: true
+  include:
+  - env: CABALVER=3.0 GHCVER=8.8.3 BUILD_ARG= DO_LINT=False
+    addons:
+      apt:
+        sources:
+        - hvr-ghc
+        packages:
+        - cabal-install-3.0
+        - ghc-8.8.3
+        - libglpk-dev
+        - libntl-dev
+        - libboost-all-dev
+  - env: CABALVER=2.4 GHCVER=8.6.3 BUILD_ARG= DO_LINT=False
+    addons:
+      apt:
+        sources:
+        - hvr-ghc
+        packages:
+        - cabal-install-2.4
+        - ghc-8.6.3
+        - libglpk-dev
+        - libntl-dev
+        - libboost-all-dev
+  - env: CABALVER=2.4 GHCVER=8.4.3 BUILD_ARG= DO_LINT=False
+    addons:
+      apt:
+        sources:
+        - hvr-ghc
+        packages:
+        - cabal-install-2.4
+        - ghc-8.4.3
+        - libglpk-dev
+        - libntl-dev
+        - libboost-all-dev
+  allow_failures:
+  - env: CABALVER=2.4 GHCVER=8.6.3 BUILD_ARG= DO_LINT=True
+
+cache:
+  directories:
+  - $HOME/.cabsnap
+  - $HOME/.cabal/packages
+  - $HOME/.cabal/store
+  - $HOME/.ghc
+  - $TRAVIS_BUILD_DIR/dist-newstyle
+before_install:
+- unset CC
+- export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+- git submodule update --init --recursive
+dist: xenial
+git:
+  submodules: false
+language: c
