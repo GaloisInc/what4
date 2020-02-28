@@ -140,6 +140,7 @@ module What4.Interface
     -- * Reexports
   , module Data.Parameterized.NatRepr
   , module What4.BaseTypes
+  , HasAbsValue
   , What4.Symbol.SolverSymbol
   , What4.Symbol.emptySymbol
   , What4.Symbol.userSymbol
@@ -260,7 +261,7 @@ itePredM sym c mx my =
 -- | This class provides operations for recognizing when symbolic expressions
 --   represent concrete values, extracting the type from an expression,
 --   and for providing pretty-printed representations of an expression.
-class IsExpr e where
+class HasAbsValue e => IsExpr e where
   -- | Evaluate if predicate is constant.
   asConstantPred :: e BaseBoolType -> Maybe Bool
   asConstantPred _ = Nothing
