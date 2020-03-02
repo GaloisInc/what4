@@ -12,7 +12,7 @@ panic = Panic.panic What4
 
 instance PanicComponent What4 where
   panicComponentName _ = "What4"
-  panicComponentIssues _ = "https://github.com/GaloisInc/crucible/issues"
+  panicComponentIssues _ = "https://github.com/GaloisInc/what4/issues"
 
   {-# Noinline panicComponentRevision #-}
   panicComponentRevision = $useGitRevision
