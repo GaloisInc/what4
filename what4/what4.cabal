@@ -75,6 +75,7 @@ library
     What4.SatResult
     What4.SemiRing
     What4.Symbol
+    What4.SWord
     What4.WordMap
 
     What4.Expr
