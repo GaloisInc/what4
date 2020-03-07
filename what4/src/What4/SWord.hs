@@ -45,13 +45,17 @@ module What4.SWord
   , sbvToInteger
   , bvWidth
   , bvLit
+  , bvFill
   , bvAt
+  , bvSet
   , bvJoin
   , bvSlice
   , bvIte
   , bvPack
   , bvUnpack
   , bvForall
+  , unsignedBVBounds
+  , signedBVBounds
 
     -- * Logic operations
   , bvNot
@@ -79,6 +83,7 @@ module What4.SWord
   , bvsgt
   , bvuge
   , bvugt
+  , bvIsNonzero
 
     -- * bit-counting operations
   , bvPopcount
@@ -87,24 +92,11 @@ module What4.SWord
   , bvLg2
 
     -- * Shift and rotates
-  , bvRolInt
-  , bvRorInt
+  , bvShl
+  , bvLshr
+  , bvAshr
   , bvRol
   , bvRor
-
-  , bvShlInt
-  , bvShrInt
-  , bvSShrInt
-
-  , bvShl
-  , bvShr
-  , bvSShr
-
-  , bvShiftL
-  , bvShiftR
-
-  , bvShl'
-  , bvShr'
 
     -- * Move this?
   , showVec
@@ -159,6 +151,16 @@ bvAsUnsignedInteger ZBV = Just 0
 bvAsUnsignedInteger (DBV (bv :: SymBV sym w)) =
   W.asUnsignedBV bv
 
+
+unsignedBVBounds :: forall sym. IsExprBuilder sym => SWord sym -> Maybe (Integer, Integer)
+unsignedBVBounds ZBV = Just (0, 0)
+unsignedBVBounds (DBV bv) = W.unsignedBVBounds bv
+
+signedBVBounds :: forall sym. IsExprBuilder sym => SWord sym -> Maybe (Integer, Integer)
+signedBVBounds ZBV = Just (0, 0)
+signedBVBounds (DBV bv) = W.signedBVBounds bv
+
+
 -- | Convert an integer to an unsigned bitvector.
 --   Result is undefined if integer is outside of range.
 integerToBV :: forall sym width. (Integral width, IsExprBuilder sym) =>
@@ -186,13 +188,13 @@ sbvToInteger sym (DBV bv) = W.sbvToInteger sym bv
 
 
 -- | Get the width of a bitvector
-bvWidth :: forall sym. SWord sym -> Int
+bvWidth :: forall sym. SWord sym -> Integer
 bvWidth (DBV x) = fromInteger (intValue (W.bvWidth x))
 bvWidth ZBV = 0
 
 -- | Create a bitvector with the given width and value
 bvLit :: forall sym. IsExprBuilder sym =>
-  sym -> Int -> Integer -> IO (SWord sym)
+  sym -> Integer -> Integer -> IO (SWord sym)
 bvLit _ w _
   | w == 0
   = return ZBV
@@ -203,17 +205,53 @@ bvLit sym w dat
   | otherwise
   = fail "bvLit: size of bitvector is < 0 or >= maxInt"
 
+bvFill :: forall sym. IsExprBuilder sym =>
+  sym -> Integer -> Pred sym -> IO (SWord sym)
+bvFill sym w p
+  | w == 0
+  = return ZBV
+
+  | Just (Some rw) <- someNat w
+  , Just LeqProof <- isPosNat rw
+  = DBV <$> W.bvFill sym rw p
+
+  | otherwise
+  = fail "bvFill size of bitvector is < 0 or >= maxInt"
+
+
 -- | Returns true if the corresponding bit in the bitvector is set.
-bvAt :: forall sym. IsExprBuilder sym => sym
-  -> SWord sym
-  -> Int  -- ^ Index of bit (0 is the most significant bit)
-  -> IO (Pred sym)
+--   NOTE bits are numbered in big-endian ordering, meaning the
+--   most-significant bit is bit 0
+bvAt :: forall sym.
+  IsExprBuilder sym =>
+  sym ->
+  SWord sym ->
+  Integer {- ^ Index of bit (0 is the most significant bit) -} ->
+  IO (Pred sym)
 bvAt sym (DBV bv) i = do
   let w   = natValue (W.bvWidth bv)
-  let idx = w - 1 - fromIntegral i
+  let idx = w - 1 - fromInteger i
   W.testBitBV sym idx bv
 bvAt _ ZBV _ = fail "cannot index into empty bitvector"
   -- TODO: or could return 0?
+
+
+-- | Set the numbered bit in the given bitvector to the given
+--   bit value.
+--   NOTE bits are numbered in big-endian ordering, meaning the
+--   most-significant bit is bit 0
+bvSet :: forall sym.
+  IsExprBuilder sym =>
+  sym ->
+  SWord sym ->
+  Integer {- ^ Index of bit (0 is the most significant bit) -} ->
+  Pred sym ->
+  IO (SWord sym)
+bvSet _ ZBV _ _ = return ZBV
+bvSet sym (DBV bv) i b =
+  do let w = natValue (W.bvWidth bv)
+     let idx = w - 1 - fromInteger i
+     DBV <$> W.bvSet sym bv idx b
 
 -- | Concatenate two bitvectors.
 bvJoin  :: forall sym. IsExprBuilder sym => sym
@@ -232,9 +270,9 @@ bvJoin sym (DBV bv1) (DBV bv2)
 -- idx = w - (m + n)
 -- This fails if idx + n is >= w
 bvSlice :: forall sym. IsExprBuilder sym => sym
-  -> Int
+  -> Integer
   -- ^ Starting index, from 0 as most significant bit
-  -> Int
+  -> Integer
   -- ^ Number of bits to take (must be > 0)
   -> SWord sym -> IO (SWord sym)
 bvSlice sym m n (DBV bv)
@@ -509,218 +547,86 @@ bvuge = bvBinPred W.bvUge
 bvugt  :: PredBin
 bvugt = bvBinPred W.bvUgt
 
+bvIsNonzero :: IsExprBuilder sym => sym -> SWord sym -> IO (Pred sym)
+bvIsNonzero sym ZBV = return (W.falsePred sym)
+bvIsNonzero sym (DBV x) = W.bvIsNonzero sym x
+
+
 ----------------------------------------
--- Bitvector rotations
+-- Bitvector shifts and rotates
 ----------------------------------------
 
--- | Rotate left by a concrete integer value
-bvRolInt :: forall sym. IsExprBuilder sym => sym ->
-              SWord sym -> Integer -> IO (SWord sym)
-bvRolInt sym (DBV bv) i = do
-  i' <- W.intLit sym i
-  DBV <$> bvRotateL' sym bv i'
-bvRolInt _sym ZBV _i = return ZBV
-
--- | Rotate right by a concrete integer value
-bvRorInt :: forall sym. IsExprBuilder sym => sym ->
-              SWord sym -> Integer -> IO (SWord sym)
-bvRorInt sym (DBV bv) i = do
-  i' <- W.intLit sym i
-  DBV <$> bvRotateR' sym bv i'
-bvRorInt _sym ZBV _i = return ZBV
-
--- | Rotate left by a symbolic bitvector
---
--- The two bitvectors do not need to be the same length
-bvRol    :: forall sym. IsExprBuilder sym => sym ->
-              SWord sym -> SWord sym -> IO (SWord sym)
-bvRol sym (DBV (bv :: SymBV sym w1)) (DBV (i :: SymBV sym w2)) = do
-  i' <- W.bvToInteger sym i
-  DBV <$> bvRotateL' sym bv i'
-bvRol _sym ZBV _i = return ZBV
-bvRol _sym (DBV bv) ZBV = return $ DBV bv
-
--- | Rotate right by a symbolic bitvector
---
--- The two bitvectors do not need to be the same length
-bvRor    :: forall sym. IsExprBuilder sym => sym ->
-              SWord sym -> SWord sym -> IO (SWord sym)
-bvRor sym (DBV (bv :: SymBV sym w1)) (DBV (i :: SymBV sym w2)) = do
-  i' <- W.bvToInteger sym i
-  DBV <$> bvRotateR' sym bv i'
-bvRor _sym ZBV _i = return ZBV
-bvRor _sym (DBV bv) ZBV = return $ DBV bv
-
--- | Worker function for left rotations
---
--- Defined from the concrete implementation
---
--- bvRotateL (BV w x) i = Prim.bv w ((x `shiftL` j) .|. (x `shiftR` (w - j)))
---    where j = fromInteger (i `mod` toInteger w)
-bvRotateL' :: forall sym w1.
-  (IsExprBuilder sym, 1 <= w1) =>
+bvMax ::
+  (IsExprBuilder sym, 1 <= w) =>
   sym ->
-  SymBV sym w1 -> SymInteger sym -> IO (SymBV sym w1)
-bvRotateL' sym x i' = do
-    let w1 = W.bvWidth x
-        w = intValue w1
-    
-    w' <- W.intLit sym w
+  W.SymBV sym w ->
+  W.SymBV sym w ->
+  IO (W.SymBV sym w)
+bvMax sym x y =
+  do p <- W.bvUge sym x y
+     W.bvIte sym p x y
 
-    j <- W.intMod sym i' w'
+reduceShift ::
+  IsExprBuilder sym =>
+  (forall w. (1 <= w) => sym -> W.SymBV sym w -> W.SymBV sym w -> IO (W.SymBV sym w)) ->
+  sym -> SWord sym -> SWord sym -> IO (SWord sym)
+reduceShift _wop _sym ZBV _ = return ZBV
+reduceShift _wop _sym x ZBV = return x
+reduceShift wop sym (DBV x) (DBV y) =
+  case compareNat (W.bvWidth x) (W.bvWidth y) of
 
-    jj <- W.integerToBV sym j w1
+    -- already the same size, apply the operation
+    NatEQ -> DBV <$> wop sym x y
 
-    x1 <- bvShiftL sym pfalse x jj
+    -- y is shorter, zero extend
+    NatGT _diff ->
+      do y' <- W.bvZext sym (W.bvWidth x) y
+         DBV <$> wop sym x y'
 
-    wmj <- W.intSub sym w' j
-    wmjj <- W.integerToBV sym wmj w1
+    -- y is longer, clamp to the width of x then truncate.
+    -- Truncation is OK because the value will always fit after
+    -- clamping.
+    NatLT _diff ->
+      do wx <- W.bvLit sym (W.bvWidth y) (intValue (W.bvWidth x))
+         y' <- W.bvTrunc sym (W.bvWidth x) =<< bvMax sym y wx
+         DBV <$> wop sym x y'
 
-    x2 <- bvShiftR sym (W.bvLshr sym) pfalse x wmjj
-    W.bvOrBits sym x1 x2
-  where
-    pfalse :: Pred sym
-    pfalse = W.falsePred sym
+reduceRotate ::
+  IsExprBuilder sym =>
+  (forall w. (1 <= w) => sym -> W.SymBV sym w -> W.SymBV sym w -> IO (W.SymBV sym w)) ->
+  sym -> SWord sym -> SWord sym -> IO (SWord sym)
+reduceRotate _wop _sym ZBV _ = return ZBV
+reduceRotate _wop _sym x ZBV = return x
+reduceRotate wop sym (DBV x) (DBV y) =
+  case compareNat (W.bvWidth x) (W.bvWidth y) of
 
--- | Worker function for right rotations
---
--- Defined from the concrete implementation
-bvRotateR' :: forall sym w1.
-  (IsExprBuilder sym, 1 <= w1) =>
-  sym ->
-  SymBV sym w1 -> SymInteger sym -> IO (SymBV sym w1)
-bvRotateR' sym x i = do
-  ii <- W.intNeg sym i
-  bvRotateL' sym x ii
+    -- already the same size, apply the operation
+    NatEQ -> DBV <$> wop sym x y
 
-----------------------------------------
--- Bitvector shifts (prims)
-----------------------------------------
+    -- y is shorter, zero extend
+    NatGT _diff ->
+      do y' <- W.bvZext sym (W.bvWidth x) y
+         DBV <$> wop sym x y'
 
--- | logical shift left, amount specified by concrete integer
-bvShlInt :: forall sym. IsExprBuilder sym => sym ->
-              Pred sym -> SWord sym -> Integer -> IO (SWord sym)
-bvShlInt sym p (DBV (bv :: SymBV sym w)) x
-  = DBV <$> bvShl' sym (W.bvWidth bv) p bv x
-bvShlInt _ _ ZBV _
-  = return ZBV
+    -- y is longer, reduce modulo the width of x, then truncate
+    -- Truncation is OK because the value will always
+    -- fit after modulo reduction
+    NatLT _diff ->
+      do wx <- W.bvLit sym (W.bvWidth y) (intValue (W.bvWidth x))
+         y' <- W.bvTrunc sym (W.bvWidth x) =<< W.bvUrem sym y wx
+         DBV <$> wop sym x y'
 
--- | logical (unsigned) shift right, specified by concrete integer
-bvShrInt :: forall sym. IsExprBuilder sym => sym ->
-              Pred sym -> SWord sym -> Integer -> IO (SWord sym)
-bvShrInt sym p (DBV bv) x
-  = DBV <$> bvShr' sym (W.bvLshr sym) (W.bvWidth bv) p bv x
-bvShrInt _ _ ZBV _
-  = return ZBV
+bvShl  :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
+bvShl = reduceShift W.bvShl
 
--- | arithmetic (signed) shift right
-bvSShrInt :: forall sym. IsExprBuilder sym => sym ->
-              Pred sym -> SWord sym -> Integer -> IO (SWord sym)
-bvSShrInt sym p (DBV bv) x
-  = DBV <$> bvShr' sym (W.bvAshr sym) (W.bvWidth bv) p bv x
-bvSShrInt _ _ ZBV _
-  = return ZBV
+bvLshr  :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
+bvLshr = reduceShift W.bvLshr
 
+bvAshr :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
+bvAshr = reduceShift W.bvAshr
 
--- | logical shift left, amount specified by (symbolic) bitvector
-bvShl    :: forall sym. IsExprBuilder sym => sym
-              -> Pred sym
-              -> SWord sym
-              -- ^ shift this
-              -> SWord sym
-              -- ^ amount to shift by
-              -> IO (SWord sym)
-bvShl sym p (DBV bv1) (DBV bv2)
-  | Just Refl <- testEquality (W.bvWidth bv1) (W.bvWidth bv2)
-  = DBV <$> bvShiftL sym p bv1 bv2
-  -- amount to shift by is smaller
-  | Just LeqProof <- testLeq (addNat (W.bvWidth bv2) (knownNat @1)) (W.bvWidth bv1)
-  = do bv2' <- W.bvZext sym (W.bvWidth bv1) bv2
-       DBV <$> bvShiftL sym p bv1 bv2'
-  | otherwise
-  = fail $ "bvShl: bit vectors must have same length "
-            ++ show (W.bvWidth bv1) ++ " " ++ show (W.bvWidth bv2)
-bvShl _ _ ZBV ZBV
-  = return ZBV
-bvShl _ _ _ _
-  = fail $ "bvShl: bitvectors do not have the same length"
+bvRol  :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
+bvRol = reduceRotate W.bvRol
 
-
--- | logical shift right
-bvShr    :: forall sym. IsExprBuilder sym => sym ->
-              Pred sym -> SWord sym -> SWord sym -> IO (SWord sym)
-bvShr sym p (DBV bv1) (DBV bv2)
-  | Just Refl <- testEquality (W.bvWidth bv1) (W.bvWidth bv2)
-  = DBV <$> bvShiftR sym (W.bvLshr sym) p bv1 bv2
-  | Just LeqProof <- testLeq (addNat (W.bvWidth bv2) (knownNat @1)) (W.bvWidth bv1)
-  = do bv2' <- W.bvZext sym (W.bvWidth bv1) bv2
-       DBV <$> bvShiftR sym (W.bvLshr sym) p bv1 bv2'
-  | otherwise
-  = fail $ "bvShr: bitvectors do not have the same length "
-         ++ show (W.bvWidth bv1) ++ " " ++ show (W.bvWidth bv2)
-bvShr _ _ ZBV ZBV
-  = return ZBV
-bvShr _ _ _ _
-  = fail $ "bvShr: bitvectors do not have the same length"
-
-
--- | arithmetic shift right
-bvSShr    :: forall sym. IsExprBuilder sym => sym ->
-              Pred sym -> SWord sym -> SWord sym -> IO (SWord sym)
-bvSShr  sym p (DBV bv1) (DBV bv2)
-  | Just Refl <- testEquality (W.bvWidth bv1) (W.bvWidth bv2)
-  = DBV <$> bvShiftR sym (W.bvAshr sym) p bv1 bv2
-  | Just LeqProof <- testLeq (addNat (W.bvWidth bv2) (knownNat @1)) (W.bvWidth bv1)
-  = do bv2' <- W.bvSext sym (W.bvWidth bv1) bv2
-       DBV <$> bvShiftR sym (W.bvAshr sym) p bv1 bv2'
-  | otherwise
-  = fail $ "bvSShr: bitvectors do not have the same length: "
-         ++ show (W.bvWidth bv1) ++ " " ++ show (W.bvWidth bv2)
-bvSShr _ _ ZBV ZBV
-  = return ZBV
-bvSShr _ _ _ _
-  = fail $ "bvSShr: bitvectors do not have the same length: "
-
-
-----------------------------------------
--- Shift operations
-----------------------------------------
-
--- If the predicate is true, invert the bitvector, shift then
--- invert again. (Following SBV definition). This means that
--- the predicate controls whether the newly added bit is a one
--- or a zero.
-
-bvShiftL :: forall sym w. (IsExprBuilder sym, 1 <= w) => sym ->
-  Pred sym -> SymBV sym w -> SymBV sym w -> IO (SymBV sym w)
-bvShiftL sym b x j = do
-  nx   <- W.bvNotBits sym x
-  snx  <- W.bvShl sym nx j
-  nsnx <- W.bvNotBits sym snx
-  W.bvIte sym b nsnx =<< W.bvShl sym x j
-
-bvShl' :: (IsExprBuilder sym, 1 <= w) => sym ->
-  NatRepr w -> Pred sym -> SymBV sym w -> Integer -> IO (SymBV sym w)
-bvShl' sym rep b x i = do
-  j   <- W.bvLit sym rep i   -- what if i is too big for rep bits?
-  bvShiftL sym b x j
-
-
--- The shr argument should be W.bvAshr or W.bvLshr, depending
--- on whether to use arithmetic or logical shift right
-
-bvShiftR :: forall sym w. (IsExprBuilder sym, 1 <= w) => sym ->
-  (SymBV sym w -> SymBV sym w -> IO (SymBV sym w)) ->
-  Pred sym -> SymBV sym w -> SymBV sym w -> IO (SymBV sym w)
-bvShiftR sym shr b x j = do
-  nx   <- W.bvNotBits sym x
-  snx  <- shr nx j
-  nsnx <- W.bvNotBits sym snx
-  W.bvIte sym b nsnx =<< shr x j
-
-bvShr' :: (IsExprBuilder sym, 1 <= w) => sym ->
-  (SymBV sym w -> SymBV sym w -> IO (SymBV sym w)) ->
-  NatRepr w -> Pred sym -> SymBV sym w -> Integer -> IO (SymBV sym w)
-bvShr' sym shr rep b x i = do
-  j   <- W.bvLit sym rep i
-  bvShiftR sym shr b x j
+bvRor  :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
+bvRor = reduceRotate W.bvRor
