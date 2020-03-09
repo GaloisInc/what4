@@ -46,7 +46,7 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State
 import           Data.Bits
-import qualified Data.HashTable.ST.Cuckoo as H
+import qualified Data.HashTable.ST.Linear as H
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Map.Strict as Map
 import           Data.Parameterized.Nonce

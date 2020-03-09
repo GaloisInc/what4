@@ -178,7 +178,7 @@ import qualified Data.Binary.IEEE754 as IEEE754
 import qualified Data.Bits as Bits
 import           Data.Foldable
 import qualified Data.HashTable.Class as H (toList)
-import qualified Data.HashTable.ST.Cuckoo as H
+import qualified Data.HashTable.ST.Linear as H
 import           Data.Hashable
 import           Data.IORef
 import           Data.Kind
