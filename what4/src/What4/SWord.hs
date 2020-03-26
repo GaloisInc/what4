@@ -43,6 +43,7 @@ module What4.SWord
   , integerToBV
   , bvToInteger
   , sbvToInteger
+  , freshBV
   , bvWidth
   , bvLit
   , bvFill
@@ -118,7 +119,7 @@ import           GHC.TypeNats
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some(Some(..))
 
-import           What4.Interface(SymBV,Pred,SymInteger,IsExpr,SymExpr,IsExprBuilder)
+import           What4.Interface(SymBV,Pred,SymInteger,IsExpr,SymExpr,IsExprBuilder,IsSymExprBuilder)
 import qualified What4.Interface as W
 
 -------------------------------------------------------------
@@ -204,6 +205,21 @@ bvLit sym w dat
   = DBV <$> W.bvLit sym rw dat
   | otherwise
   = fail "bvLit: size of bitvector is < 0 or >= maxInt"
+
+
+freshBV :: forall sym. IsSymExprBuilder sym =>
+  sym -> W.SolverSymbol -> Integer -> IO (SWord sym)
+freshBV sym nm w
+  | w == 0
+  = return ZBV
+
+  | Just (Some rw) <- someNat w
+  , Just LeqProof <- isPosNat rw
+  = DBV <$> W.freshConstant sym nm (W.BaseBVRepr rw)
+
+  | otherwise
+  = fail "freshBV: size of bitvector is < 0 or >= maxInt"
+
 
 bvFill :: forall sym. IsExprBuilder sym =>
   sym -> Integer -> Pred sym -> IO (SWord sym)
@@ -398,16 +414,17 @@ bvBin _ _ _ _
 
 -- | convert binary operations that return booleans (Pred)
 bvBinPred  :: forall sym. IsExprBuilder sym =>
+  Bool {- ^ answer to give on 0-width bitvectors -} ->
   (forall w. 1 <= w => sym -> SymBV sym w -> SymBV sym w -> IO (Pred sym)) ->
   sym -> SWord sym -> SWord sym -> IO (Pred sym)
-bvBinPred f sym (DBV bv1) (DBV bv2)
+bvBinPred _ f sym (DBV bv1) (DBV bv2)
   | Just Refl <- testEquality (W.exprType bv1) (W.exprType bv2)
   = f sym bv1 bv2
   | otherwise
   = fail $ "bit vectors must have same length" ++ show (W.bvWidth bv1) ++ " " ++ show (W.bvWidth bv2)
-bvBinPred _ _ ZBV ZBV
-  = fail "no zero-length bit vectors here"
-bvBinPred _ _ _ _
+bvBinPred b _ sym ZBV ZBV
+  = pure (W.backendPred sym b)
+bvBinPred _ _ _ _ _
   = fail $ "bit vectors must have same length"
 
 
@@ -513,39 +530,39 @@ bvLg2 = bvUn w_bvLg2
 
 -- | Return true if bitvectors are equal.
 bvEq   :: PredBin
-bvEq = bvBinPred W.bvEq
+bvEq = bvBinPred True W.bvEq
 
 -- | Signed less-than-or-equal.
 bvsle  :: PredBin
-bvsle = bvBinPred W.bvSle
+bvsle = bvBinPred True W.bvSle
 
 -- | Signed less-than.
 bvslt  :: PredBin
-bvslt = bvBinPred W.bvSlt
+bvslt = bvBinPred False W.bvSlt
 
 -- | Unsigned less-than-or-equal.
 bvule  :: PredBin
-bvule = bvBinPred W.bvUle
+bvule = bvBinPred True W.bvUle
 
 -- | Unsigned less-than.
 bvult  :: PredBin
-bvult = bvBinPred W.bvUlt
+bvult = bvBinPred False W.bvUlt
 
 -- | Signed greater-than-or-equal.
 bvsge  :: PredBin
-bvsge = bvBinPred W.bvSge
+bvsge = bvBinPred True W.bvSge
 
 -- | Signed greater-than.
 bvsgt  :: PredBin
-bvsgt = bvBinPred W.bvSgt
+bvsgt = bvBinPred False W.bvSgt
 
 -- | Unsigned greater-than-or-equal.
 bvuge  :: PredBin
-bvuge = bvBinPred W.bvUge
+bvuge = bvBinPred True W.bvUge
 
 -- | Unsigned greater-than.
 bvugt  :: PredBin
-bvugt = bvBinPred W.bvUgt
+bvugt = bvBinPred False W.bvUgt
 
 bvIsNonzero :: IsExprBuilder sym => sym -> SWord sym -> IO (Pred sym)
 bvIsNonzero sym ZBV = return (W.falsePred sym)
