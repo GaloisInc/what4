@@ -317,7 +317,7 @@ instance HashableF (ExprBoundVar t) where
 -- go. Uses of the 'NonceApp' type will tie the knot through this
 -- parameter. Parameter @tp@ indicates the type of the expression.
 data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
-  Annotation::
+  Annotation ::
     !(BaseTypeRepr tp) ->
     !(Nonce t tp) ->
     !(e tp) ->
