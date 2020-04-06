@@ -1,9 +1,9 @@
 ------------------------------------------------------------------------
 -- |
 -- Module      : What4.SWord
--- Copyright   : Galois, Inc. 2018
+-- Copyright   : Galois, Inc. 2018-2020
 -- License     : BSD3
--- Maintainer  : sweirich@galois.com
+-- Maintainer  : rdockins@galois.com
 -- Stability   : experimental
 -- Portability : non-portable (language extensions)
 --
@@ -31,11 +31,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 
--- To allow implicitly provided nats
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
-
--- TODO: module exports?
 module What4.SWord
   ( SWord(..)
   , bvAsSignedInteger
@@ -47,13 +42,18 @@ module What4.SWord
   , bvWidth
   , bvLit
   , bvFill
-  , bvAt
-  , bvSet
+  , bvAtBE
+  , bvAtLE
+  , bvSetBE
+  , bvSetLE
+  , bvSliceBE
+  , bvSliceLE
   , bvJoin
-  , bvSlice
   , bvIte
-  , bvPack
-  , bvUnpack
+  , bvPackBE
+  , bvPackLE
+  , bvUnpackBE
+  , bvUnpackLE
   , bvForall
   , unsignedBVBounds
   , signedBVBounds
@@ -98,16 +98,8 @@ module What4.SWord
   , bvAshr
   , bvRol
   , bvRor
-
-    -- * Move this?
-  , showVec
   ) where
 
-
--- TODO: improve treatment of partiality. Currently, dynamic
--- failures (e.g. due to failing width checks) use 'fail' from
--- the IO monad. Perhaps this is what we want, as the saw-core
--- code should come in type checked.
 
 import           Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -121,6 +113,7 @@ import           Data.Parameterized.Some(Some(..))
 
 import           What4.Interface(SymBV,Pred,SymInteger,IsExpr,SymExpr,IsExprBuilder,IsSymExprBuilder)
 import qualified What4.Interface as W
+import           What4.Panic (panic)
 
 -------------------------------------------------------------
 --
@@ -163,8 +156,8 @@ signedBVBounds (DBV bv) = W.signedBVBounds bv
 
 
 -- | Convert an integer to an unsigned bitvector.
---   Result is undefined if integer is outside of range.
-integerToBV :: forall sym width. (Integral width, IsExprBuilder sym) =>
+--   The input value is reduced modulo 2^w.
+integerToBV :: forall sym width. (Show width, Integral width, IsExprBuilder sym) =>
   sym ->  SymInteger sym -> width -> IO (SWord sym)
 integerToBV sym i w
   | Just (Some wr) <- someNat w
@@ -173,7 +166,7 @@ integerToBV sym i w
   | 0 == toInteger w
   = return ZBV
   | otherwise
-  = fail "integerToBV: invalid arg"
+  = panic "integerToBV" ["invalid bit-width", show w]
 
 -- | Interpret the bit-vector as an unsigned integer
 bvToInteger :: forall sym. (IsExprBuilder sym) =>
@@ -204,7 +197,7 @@ bvLit sym w dat
   , Just LeqProof <- isPosNat rw
   = DBV <$> W.bvLit sym rw dat
   | otherwise
-  = fail "bvLit: size of bitvector is < 0 or >= maxInt"
+  = panic "bvLit" ["size of bitvector is < 0 or >= maxInt", show w]
 
 
 freshBV :: forall sym. IsSymExprBuilder sym =>
@@ -218,7 +211,7 @@ freshBV sym nm w
   = DBV <$> W.freshConstant sym nm (W.BaseBVRepr rw)
 
   | otherwise
-  = fail "freshBV: size of bitvector is < 0 or >= maxInt"
+  = panic "freshBV" ["size of bitvector is < 0 or >= maxInt", show w]
 
 
 bvFill :: forall sym. IsExprBuilder sym =>
@@ -232,42 +225,69 @@ bvFill sym w p
   = DBV <$> W.bvFill sym rw p
 
   | otherwise
-  = fail "bvFill size of bitvector is < 0 or >= maxInt"
+  = panic "bvFill" ["size of bitvector is < 0 or >= maxInt", show w]
 
 
 -- | Returns true if the corresponding bit in the bitvector is set.
 --   NOTE bits are numbered in big-endian ordering, meaning the
 --   most-significant bit is bit 0
-bvAt :: forall sym.
+bvAtBE :: forall sym.
   IsExprBuilder sym =>
   sym ->
   SWord sym ->
   Integer {- ^ Index of bit (0 is the most significant bit) -} ->
   IO (Pred sym)
-bvAt sym (DBV bv) i = do
+bvAtBE sym (DBV bv) i = do
   let w   = natValue (W.bvWidth bv)
   let idx = w - 1 - fromInteger i
   W.testBitBV sym idx bv
-bvAt _ ZBV _ = fail "cannot index into empty bitvector"
-  -- TODO: or could return 0?
+bvAtBE _ ZBV _ = panic "bvAtBE" ["cannot index into empty bitvector"]
 
+-- | Returns true if the corresponding bit in the bitvector is set.
+--   NOTE bits are numbered in little-endian ordering, meaning the
+--   least-significant bit is bit 0
+bvAtLE :: forall sym.
+  IsExprBuilder sym =>
+  sym ->
+  SWord sym ->
+  Integer {- ^ Index of bit (0 is the most significant bit) -} ->
+  IO (Pred sym)
+bvAtLE sym (DBV bv) i =
+  W.testBitBV sym (fromInteger i) bv
+bvAtLE _ ZBV _ = panic "bvAtLE" ["cannot index into empty bitvector"]
 
 -- | Set the numbered bit in the given bitvector to the given
 --   bit value.
 --   NOTE bits are numbered in big-endian ordering, meaning the
 --   most-significant bit is bit 0
-bvSet :: forall sym.
+bvSetBE :: forall sym.
   IsExprBuilder sym =>
   sym ->
   SWord sym ->
   Integer {- ^ Index of bit (0 is the most significant bit) -} ->
   Pred sym ->
   IO (SWord sym)
-bvSet _ ZBV _ _ = return ZBV
-bvSet sym (DBV bv) i b =
+bvSetBE _ ZBV _ _ = return ZBV
+bvSetBE sym (DBV bv) i b =
   do let w = natValue (W.bvWidth bv)
      let idx = w - 1 - fromInteger i
      DBV <$> W.bvSet sym bv idx b
+
+-- | Set the numbered bit in the given bitvector to the given
+--   bit value.
+--   NOTE bits are numbered in big-endian ordering, meaning the
+--   most-significant bit is bit 0
+bvSetLE :: forall sym.
+  IsExprBuilder sym =>
+  sym ->
+  SWord sym ->
+  Integer {- ^ Index of bit (0 is the most significant bit) -} ->
+  Pred sym ->
+  IO (SWord sym)
+bvSetLE _ ZBV _ _ = return ZBV
+bvSetLE sym (DBV bv) i b =
+  DBV <$> W.bvSet sym bv (fromInteger i) b
+
 
 -- | Concatenate two bitvectors.
 bvJoin  :: forall sym. IsExprBuilder sym => sym
@@ -282,16 +302,16 @@ bvJoin sym (DBV bv1) (DBV bv2)
   | LeqProof <- leqAddPos (W.bvWidth bv1) (W.bvWidth bv2)
   = DBV <$> W.bvConcat sym bv1 bv2
 
--- | Select a subsequence from a bitvector.
--- idx = w - (m + n)
--- This fails if idx + n is >= w
-bvSlice :: forall sym. IsExprBuilder sym => sym
+-- | Select a subsequence from a bitvector, with bits
+--   numbered in Big Endian order (most significant bit is 0).
+--   This fails if idx + n is >= w
+bvSliceBE :: forall sym. IsExprBuilder sym => sym
   -> Integer
   -- ^ Starting index, from 0 as most significant bit
   -> Integer
   -- ^ Number of bits to take (must be > 0)
   -> SWord sym -> IO (SWord sym)
-bvSlice sym m n (DBV bv)
+bvSliceBE sym m n (DBV bv)
   | Just (Some nr) <- someNat n,
     Just LeqProof  <- isPosNat nr,
     Just (Some mr) <- someNat m,
@@ -301,10 +321,37 @@ bvSlice sym m n (DBV bv)
     Just LeqProof <- testLeq (addNat idx nr) wr
   = DBV <$> W.bvSelect sym idx nr bv
   | otherwise
-  = fail $
-      "invalid arguments to slice: " ++ show m ++ " " ++ show n
-        ++ " from vector of length " ++ show (W.bvWidth bv)
-bvSlice _ _ _ ZBV = return ZBV
+  = panic "bvSliceBE"
+      ["invalid arguments to slice: " ++ show m ++ " " ++ show n
+        ++ " from vector of length " ++ show (W.bvWidth bv)]
+bvSliceBE _ _ _ ZBV = return ZBV
+
+-- | Select a subsequence from a bitvector, with bits
+--   numbered in Little Endian order (least significant bit is 0).
+--   This fails if idx + n is >= w
+bvSliceLE :: forall sym. IsExprBuilder sym => sym
+  -> Integer
+  -- ^ Starting index, from 0 as most significant bit
+  -> Integer
+  -- ^ Number of bits to take (must be > 0)
+  -> SWord sym -> IO (SWord sym)
+bvSliceLE sym m n (DBV bv)
+  | Just (Some nr) <- someNat n,
+    Just LeqProof  <- isPosNat nr,
+    Just (Some mr) <- someNat m,
+    let wr = W.bvWidth bv,
+    Just LeqProof <- testLeq (addNat mr nr) wr
+  = DBV <$> W.bvSelect sym mr nr bv
+
+  | otherwise
+  = panic "bvSliceLE"
+      ["invalid arguments to slice: " ++ show m ++ " " ++ show n
+        ++ " from vector of length " ++ show (W.bvWidth bv)]
+bvSliceLE _ _ _ ZBV = return ZBV
+
+
+
+
 
 -- | Ceiling (log_2 x)
 -- adapted from saw-core-sbv/src/Verifier/SAW/Simulator/SBV.hs
@@ -334,38 +381,63 @@ bvIte _ _ ZBV ZBV
 bvIte sym p (DBV bv1) (DBV bv2)
   | Just Refl <- testEquality (W.exprType bv1) (W.exprType bv2)
   = DBV <$> W.bvIte sym p bv1 bv2
-bvIte _ _ _ _
-  = fail "bit-vectors don't have same length"
+bvIte _ _ x y
+  = panic "bvIte" ["bit-vectors don't have same length", show (bvWidth x), show (bvWidth y)]
 
 
 ----------------------------------------------------------------------
 -- Convert to/from Vectors
 ----------------------------------------------------------------------
 
--- | for debugging
-showVec :: forall sym. (W.IsExpr (W.SymExpr sym)) => Vector (Pred sym) -> String
-showVec vec =
-  show (PP.list (V.toList (V.map W.printSymExpr vec)))
-
--- | explode a bitvector into a vector of booleans
-bvUnpack :: forall sym. IsExprBuilder sym =>
+-- | Explode a bitvector into a vector of booleans in Big Endian
+--   order (most significant bit first)
+bvUnpackBE :: forall sym. IsExprBuilder sym =>
   sym -> SWord sym -> IO (Vector (Pred sym))
-bvUnpack _   ZBV = return V.empty
-bvUnpack sym (DBV bv) = do
+bvUnpackBE _   ZBV = return V.empty
+bvUnpackBE sym (DBV bv) = do
   let w :: Natural
       w = natValue (W.bvWidth bv)
   V.generateM (fromIntegral w)
               (\i -> W.testBitBV sym (w - 1 - fromIntegral i) bv)
 
--- | convert a vector of booleans to a bitvector
-bvPack :: forall sym. (W.IsExpr (W.SymExpr sym), IsExprBuilder sym) =>
+
+-- | Explode a bitvector into a vector of booleans in Little Endian
+--   order (least significant bit first)
+bvUnpackLE :: forall sym. IsExprBuilder sym =>
+  sym -> SWord sym -> IO (Vector (Pred sym))
+bvUnpackLE _   ZBV = return V.empty
+bvUnpackLE sym (DBV bv) = do
+  let w :: Natural
+      w = natValue (W.bvWidth bv)
+  V.generateM (fromIntegral w)
+              (\i -> W.testBitBV sym (fromIntegral i) bv)
+
+
+-- | convert a vector of booleans to a bitvector.  The input
+--   are used in Big Endian order (most significant bit first)
+bvPackBE :: forall sym. (W.IsExpr (W.SymExpr sym), IsExprBuilder sym) =>
   sym -> Vector (Pred sym) -> IO (SWord sym)
-bvPack sym vec = do
+bvPackBE sym vec = do
   vec' <- V.mapM (\p -> do
                      v1 <- bvLit sym 1 1
                      v2 <- bvLit sym 1 0
                      bvIte sym p v1 v2) vec
   V.foldM (\x y -> bvJoin sym x y) ZBV vec'
+
+
+-- | convert a vector of booleans to a bitvector.  The inputs
+--   are used in Little Endian order (least significant bit first)
+bvPackLE :: forall sym. (W.IsExpr (W.SymExpr sym), IsExprBuilder sym) =>
+  sym -> Vector (Pred sym) -> IO (SWord sym)
+bvPackLE sym vec = do
+  vec' <- V.mapM (\p -> do
+                     v1 <- bvLit sym 1 1
+                     v2 <- bvLit sym 1 0
+                     bvIte sym p v1 v2) vec
+  V.foldM (\x y -> bvJoin sym y x) ZBV vec'
+
+
+
 
 ----------------------------------------------------------------------
 -- Generic wrapper for unary operators
@@ -408,8 +480,8 @@ bvBin f sym (DBV bv1) (DBV bv2)
   = DBV <$> f sym bv1 bv2
 bvBin _ _ ZBV ZBV
   = return ZBV
-bvBin _ _ _ _
-  = fail "bit vectors must have same length"
+bvBin _ _ x y
+  = panic "bvBin" ["bit-vectors don't have same length", show (bvWidth x), show (bvWidth y)]
 
 
 -- | convert binary operations that return booleans (Pred)
@@ -417,17 +489,15 @@ bvBinPred  :: forall sym. IsExprBuilder sym =>
   Bool {- ^ answer to give on 0-width bitvectors -} ->
   (forall w. 1 <= w => sym -> SymBV sym w -> SymBV sym w -> IO (Pred sym)) ->
   sym -> SWord sym -> SWord sym -> IO (Pred sym)
-bvBinPred _ f sym (DBV bv1) (DBV bv2)
+bvBinPred _ f sym x@(DBV bv1) y@(DBV bv2)
   | Just Refl <- testEquality (W.exprType bv1) (W.exprType bv2)
   = f sym bv1 bv2
   | otherwise
-  = fail $ "bit vectors must have same length" ++ show (W.bvWidth bv1) ++ " " ++ show (W.bvWidth bv2)
+  = panic "bvBinPred" ["bit-vectors don't have same length", show (bvWidth x), show (bvWidth y)]
 bvBinPred b _ sym ZBV ZBV
   = pure (W.backendPred sym b)
-bvBinPred _ _ _ _ _
-  = fail $ "bit vectors must have same length"
-
-
+bvBinPred _ _ _ x y
+  = panic "bvBinPred" ["bit-vectors don't have same length", show (bvWidth x), show (bvWidth y)]
 
  -- Bitvector logical
 
@@ -479,7 +549,7 @@ bvForall :: W.IsSymExprBuilder sym =>
   sym -> Natural -> (SWord sym -> IO (Pred sym)) -> IO (Pred sym)
 bvForall sym n f =
   case W.userSymbol "i" of
-    Left err -> fail $ show err
+    Left err -> panic "bvForall" [show err]
     Right indexSymbol ->
       case mkNatRepr n of
         Some w
