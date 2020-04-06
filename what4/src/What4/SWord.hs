@@ -104,7 +104,6 @@ module What4.SWord
 import           Data.Vector (Vector)
 import qualified Data.Vector as V
 import           Numeric.Natural
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           GHC.TypeNats
 
