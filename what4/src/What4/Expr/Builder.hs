@@ -2788,6 +2788,7 @@ lookupIdxValue c (NonceAppExpr e) = lookupIdx c (nonceExprId e)
 lookupIdxValue c (AppExpr e)  = lookupIdx c (appExprId e)
 lookupIdxValue c (BoundVarExpr i) = lookupIdx c (bvarId i)
 
+{-# INLINE lookupIdx #-}
 lookupIdx :: (MonadIO m) => IdxCache t f -> Nonce t tp -> m (Maybe (f tp))
 lookupIdx c n = liftIO $ stToIO $ PH.lookup (cMap c) n
 
@@ -2818,6 +2819,7 @@ exprMaybeId (BoundVarExpr e) = Just $! bvarId e
 -- this function returns the value of the element if bound, and otherwise
 -- calls the evaluation function, stores the result in the cache, and
 -- returns the value.
+{-# INLINE idxCacheEval #-}
 idxCacheEval :: (MonadIO m)
              => IdxCache t f
              -> Expr t tp
@@ -2832,13 +2834,14 @@ idxCacheEval c e m = do
 -- this function returns the value of the element if bound, and otherwise
 -- calls the evaluation function, stores the result in the cache, and
 -- returns the value.
+{-# INLINE idxCacheEval' #-}
 idxCacheEval' :: (MonadIO m)
               => IdxCache t f
               -> Nonce t tp
               -> m (f tp)
               -> m (f tp)
 idxCacheEval' c n m = do
-  mr <- liftIO $ lookupIdx c n
+  mr <- lookupIdx c n
   case mr of
     Just r -> return r
     Nothing -> do
