@@ -1741,10 +1741,13 @@ predSMTExpr e0 = do
     Annotation _tpr _n e -> mkExpr e
     Forall var e -> do
       checkQuantifierSupport "universal quantifier" i
+
+      smtType <- getBaseSMT_Type var
+      liftIO $ declareTypes h smtType
+
       cr <- liftIO $ withConnEntryStack conn $ do
         runInSandbox conn $ do
           checkVarTypeSupport var
-          smtType <- getBaseSMT_Type var
 
           Just (FreshVarFn f) <- asks freshConstantFn
           t <- liftIO $ f smtType
@@ -1755,10 +1758,13 @@ predSMTExpr e0 = do
       freshBoundTerm BoolTypeMap $ forallResult cr
     Exists var e -> do
       checkQuantifierSupport "existential quantifiers" i
+
+      smtType <- getBaseSMT_Type var
+      liftIO $ declareTypes h smtType
+
       cr <- liftIO $ withConnEntryStack conn $ do
         runInSandbox conn $ do
           checkVarTypeSupport var
-          smtType <- getBaseSMT_Type var
 
           Just (FreshVarFn f) <- asks freshConstantFn
           t <- liftIO $ f smtType

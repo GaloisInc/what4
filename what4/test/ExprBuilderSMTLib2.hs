@@ -774,6 +774,32 @@ forallTest sym solver =
 
          _ -> fail "expected satisfible model"
 
+binderTupleTest1 ::
+  OnlineSolver t solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+binderTupleTest1 sym solver =
+ do var <- freshBoundVar sym (safeSymbol "v")
+               (BaseStructRepr (Ctx.Empty Ctx.:> BaseBoolRepr))
+    p0 <- existsPred sym var (truePred sym)
+    res <- checkSatisfiable solver "test" p0
+    isSat res  @? "sat"
+
+binderTupleTest2 ::
+  OnlineSolver t solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+binderTupleTest2 sym solver =
+  do x <- freshBoundVar sym (userSymbol' "x")
+              (BaseStructRepr (Ctx.Empty Ctx.:> BaseIntegerRepr Ctx.:> BaseBoolRepr))
+     p <- forallPred sym x =<< structEq sym (varExpr sym x) (varExpr sym x)
+     np <- notPred sym p
+     checkSatisfiableWithModel solver "test" np $ \case
+       Unsat _ -> return ()
+       _ -> fail "expected UNSAT"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -853,4 +879,10 @@ main = defaultMain $ testGroup "Tests"
   , testCase "CVC4 string3" $ withCVC4 stringTest3
   , testCase "CVC4 string4" $ withCVC4 stringTest4
   , testCase "CVC4 string5" $ withCVC4 stringTest5
+
+  , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
+  , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
+
+  , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
+  , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
   ]
