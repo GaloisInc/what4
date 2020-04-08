@@ -4890,28 +4890,53 @@ instance IsExprBuilder (ExprBuilder t st fs) where
            -> sbMakeExpr sym $ BVUlt x y
 
   bvShl sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftL i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVShl (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns 0
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvLit sym (bvWidth x) 0
+
+   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) (Bits.shiftL i (fromIntegral n))
+
+   | otherwise
+   = sbMakeExpr sym $ BVShl (bvWidth x) x y
 
   bvLshr sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVLshr (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns 0
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvLit sym (bvWidth x) 0
+
+   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
+
+   | otherwise
+   = sbMakeExpr sym $ BVLshr (bvWidth x) x y
 
   bvAshr sym x y
-   | Just i <- asSignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVAshr (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns either 0 (if x is nonnegative)
+   -- or 1 (if x is negative)
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvFill sym (bvWidth x) =<< bvIsNeg sym x
+
+   | Just i <- asSignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) (Bits.shiftR i (fromIntegral n))
+
+   | otherwise
+   = sbMakeExpr sym $ BVAshr (bvWidth x) x y
 
   bvRol sym x y
    | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
