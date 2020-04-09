@@ -1,0 +1,268 @@
+/*
+
+This file contains a Cryptol implementation of the bitwise
+bitvector abstract domain operations from What4.Utils.BVDomain
+
+In addition to the algorithms themselves, this file also contains
+specifications of correctness for each of the operations. All of the
+correctness properties can be formally proven (each at some specific
+bit width) by loading this file in cryptol and entering ":prove".
+
+*/
+module bitsdomain where
+
+// This type represents _bitwise_ bounds as opposed to the
+// arithmetic bounds described by BVDom.  Note that
+// this representation allows the empty set if
+// lomask is not bitwise below himask.  However, all
+// the operations (other than intersection) preserve the property
+// of being nonempty (implied by their various soundness properties).
+type Dom n = { lomask : [n] , himask : [n] }
+
+/** Membership predicate that defines the set of concrete values
+represented by a bitwise abstract domain element. */
+mem : {n} (fin n) => Dom n -> [n] -> Bit
+mem a x = bitle a.lomask x /\ bitle x a.himask
+
+bitle : {n} (fin n) => [n] -> [n] -> Bit
+bitle x y = x || y == y
+
+nonempty : {n} (fin n) => Dom n -> Bit
+nonempty b = bitle b.lomask b.himask
+
+singleton : {n} (fin n) => [n] -> Dom n
+singleton x = { lomask = x, himask = x }
+
+isSingleton : {n} (fin n) => Dom n -> Bit
+isSingleton a = a.lomask == a.himask
+
+top : {n} (fin n) => Dom n
+top = { lomask = 0, himask = ~0 }
+
+overlap : {n} (fin n) => Dom n -> Dom n -> Bit
+overlap a b = nonempty (intersection a b)
+
+intersection : {n} (fin n) => Dom n -> Dom n -> Dom n
+intersection a b = { lomask = a.lomask || b.lomask, himask = a.himask && b.himask }
+
+union : {n} (fin n) => Dom n -> Dom n -> Dom n
+union a b = { lomask = a.lomask && b.lomask, himask = a.himask || b.himask }
+
+zero_ext : {m, n} (fin m, m >= n) => Dom n -> Dom m
+zero_ext a = { lomask = zext a.lomask, himask = zext a.himask }
+
+sign_ext : {m, n} (fin m, m >= n, n >= 1) => Dom n -> Dom m
+sign_ext a = { lomask = sext a.lomask, himask = sext a.himask }
+
+concat : {m, n} (fin m, fin n) => Dom m -> Dom n -> Dom (m + n)
+concat a b = { lomask = a.lomask # b.lomask, himask = a.himask # b.himask }
+
+shrink : {m, n} (fin m, fin n) => Dom (m + n) -> Dom m
+shrink a = { lomask = take`{m} a.lomask, himask = take`{m} a.himask }
+
+trunc : {m, n} (fin m, fin n) => Dom (m + n) -> Dom n
+trunc a = { lomask = drop`{m} a.lomask, himask = drop`{m} a.himask }
+
+bnot : {n} (fin n) => Dom n -> Dom n
+bnot b = { lomask = ~b.himask, himask = ~b.lomask }
+
+band : {n} (fin n) => Dom n -> Dom n -> Dom n
+band a b = { lomask = a.lomask && b.lomask, himask = a.himask && b.himask }
+
+bor : {n} (fin n) => Dom n -> Dom n -> Dom n
+bor a b = { lomask = a.lomask || b.lomask, himask = a.himask || b.himask }
+
+// Note, this requires quite a few more operations than AND and OR.
+// See "xordomain.cry" for a domain optimized for XOR and AND operations.
+bxor : {n} (fin n) => Dom n -> Dom n -> Dom n
+bxor a b = { lomask = lo, himask = hi }
+  where
+  ua = a.lomask ^ a.himask
+  ub = b.lomask ^ b.himask
+  c  = a.lomask ^ b.lomask
+  u  = ua || ub
+  hi = c || u
+  lo = hi ^ u
+
+// Note: shift operations in this domain only apply when the
+// shift amount is known
+shl : {n} (fin n) => Dom n -> [n] -> Dom n
+shl a x = { lomask = a.lomask << x', himask = a.himask << x' }
+  where x' = if x < `n then x else `n
+
+lshr : {n} (fin n) => Dom n -> [n] -> Dom n
+lshr a x = { lomask = a.lomask >> x', himask = a.himask >> x' }
+  where x' = if x < `n then x else `n
+
+ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> Dom n
+ashr a x = { lomask = a.lomask >>$ x', himask = a.himask >>$ x' }
+  where x' = if x < `n then x else `n
+
+////////////////////////////////////////////////////////////
+// Soundness properties
+
+correct_top : {n} (fin n) => [n] -> Bit
+correct_top x = mem top x
+
+correct_singleton : {n} (fin n) => [n] -> [n] -> Bit
+correct_singleton x y = mem (singleton x) y == (x == y)
+
+correct_overlap : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_overlap a b x =
+  mem a x ==> mem b x ==> overlap a b
+
+correct_overlap_inv : {n} (fin n) => Dom n -> Dom n -> Bit
+correct_overlap_inv a b =
+  overlap a b ==> (mem a (a.lomask || b.lomask) /\ mem b (a.lomask || b.lomask))
+
+correct_union : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_union a b x =
+  (mem a x \/ mem b x) ==> mem (union a b) x
+
+correct_intersection : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_intersection a b x =
+  (mem a x /\ mem b x) == mem (intersection a b) x
+
+correct_zero_ext : {m, n} (fin m, m >= n) => Dom n -> [n] -> Bit
+correct_zero_ext a x =
+  mem a x ==> mem (zero_ext`{m} a) (zext`{m} x)
+
+correct_sign_ext : {m, n} (fin m, m >= n, n >= 1) => Dom n -> [n] -> Bit
+correct_sign_ext a x =
+  mem a x ==> mem (sign_ext`{m} a) (sext`{m} x)
+
+correct_concat : {m, n} (fin m, fin n) => Dom m -> Dom n -> [m] -> [n] -> Bit
+correct_concat a b x y =
+  mem a x ==> mem b y ==> mem (concat a b) (x # y)
+
+correct_shrink : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Bit
+correct_shrink a x =
+  mem a x ==> mem (shrink`{m} a) (take`{m} x)
+
+correct_trunc : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Bit
+correct_trunc a x =
+  mem a x ==> mem (trunc`{m} a) (drop`{m} x)
+
+correct_isSingleton : {n} (fin n) => Dom n -> Bit
+correct_isSingleton a =
+  isSingleton a ==> a == singleton a.lomask
+
+correct_bnot : {n} (fin n) => Dom n -> [n] -> Bit
+correct_bnot a x =
+  mem a x == mem (bnot a) (~ x)
+
+correct_band : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_band a b x y =
+  mem a x ==> mem b y ==> mem (band a b) (x && y)
+
+correct_bor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_bor a b x y =
+  mem a x ==> mem b y ==> mem (bor a b) (x || y)
+
+correct_bxor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_bxor a b x y =
+  mem a x ==> mem b y ==> mem (bxor a b) (x ^ y)
+
+correct_shl : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_shl a x y =
+  mem a x ==> mem (shl a y) (x << y)
+
+correct_lshr : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_lshr a x y =
+  mem a x ==> mem (lshr a y) (x >> y)
+
+correct_ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> [n] -> Bit
+correct_ashr a x y =
+  mem a x ==> mem (ashr a y) (x >>$ y)
+
+property b1 = correct_top`{16}
+property b2 = correct_singleton`{16}
+property b3 = correct_overlap`{16}
+property b4 = correct_overlap_inv`{16}
+property b5 = correct_union`{8}
+property b6 = correct_intersection`{8}
+property b7 = correct_zero_ext`{32, 16}
+property b8 = correct_sign_ext`{32, 16}
+property b9 = correct_concat`{16, 16}
+property b10 = correct_shrink`{8, 8}
+property b11 = correct_trunc`{8, 8}
+property b12 = correct_isSingleton`{16}
+
+property l1 = correct_bnot`{16}
+property l2 = correct_band`{16}
+property l3 = correct_bor`{16}
+property l4 = correct_bxor`{16}
+
+property s1 = correct_shl`{8}
+property s2 = correct_lshr`{8}
+property s3 = correct_ashr`{8}
+
+
+////////////////////////////////////////////////////////////
+// Operations preserve singletons
+
+singleton_overlap : {n} (fin n) => [n] -> [n] -> Bit
+singleton_overlap x y =
+  overlap (singleton x) (singleton y) == (x == y)
+
+singleton_zero_ext : {m, n} (fin m, m >= n) => [n] -> Bit
+singleton_zero_ext x =
+  zero_ext`{m} (singleton x) == singleton (zext`{m} x)
+
+singleton_sign_ext : {m, n} (fin m, m >= n, n >= 1) => [n] -> Bit
+singleton_sign_ext x =
+  sign_ext`{m} (singleton x) == singleton (sext`{m} x)
+
+singleton_concat : {m, n} (fin m, fin n) => [m] -> [n] -> Bit
+singleton_concat x y =
+  concat (singleton x) (singleton y) == singleton (x # y)
+
+singleton_shrink : {m, n} (fin m, fin n) => [m + n] -> Bit
+singleton_shrink x =
+  shrink`{m} (singleton x) == singleton (take`{m} x)
+
+singleton_trunc : {m, n} (fin m, fin n) => [m + n] -> Bit
+singleton_trunc x =
+  trunc`{m} (singleton x) == singleton (drop`{m} x)
+
+singleton_bnot : {n} (fin n) => [n] -> Bit
+singleton_bnot x =
+  bnot (singleton x) == singleton (~ x)
+
+singleton_band : {n} (fin n) => [n] -> [n] -> Bit
+singleton_band x y =
+  band (singleton x) (singleton y) == singleton (x && y)
+
+singleton_bor : {n} (fin n) => [n] -> [n] -> Bit
+singleton_bor x y =
+  bor (singleton x) (singleton y) == singleton (x || y)
+
+singleton_bxor : {n} (fin n) => [n] -> [n] -> Bit
+singleton_bxor x y =
+  bxor (singleton x) (singleton y) == singleton (x ^ y)
+
+singleton_shl : {n} (fin n) => [n] -> [n] -> Bit
+singleton_shl x y =
+  shl (singleton x) y == singleton (x << y)
+
+singleton_lshr : {n} (fin n) => [n] -> [n] -> Bit
+singleton_lshr x y =
+  lshr (singleton x) y == singleton (x >> y)
+
+singleton_ashr : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+singleton_ashr x y =
+  ashr (singleton x) y == singleton (x >>$ y)
+
+property i01 = singleton_overlap`{16}
+property i02 = singleton_zero_ext`{32, 16}
+property i03 = singleton_sign_ext`{32, 16}
+property i04 = singleton_concat`{16, 16}
+property i05 = singleton_shrink`{8, 8}
+property i06 = singleton_trunc`{8, 8}
+property i07 = singleton_band`{16}
+property i08 = singleton_bor`{16}
+property i09 = singleton_bxor`{16}
+property i10 = singleton_bnot`{16}
+property i11 = singleton_shl`{8}
+property i12 = singleton_lshr`{8}
+property i13 = singleton_ashr`{8}
