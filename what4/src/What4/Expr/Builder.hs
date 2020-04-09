@@ -2775,8 +2775,8 @@ newtype IdxCache t (f :: BaseType -> Type)
       = IdxCache { cMap :: PH.HashTable RealWorld (Nonce t) f }
 
 -- | Create a new IdxCache
-newIdxCache :: IO (IdxCache t f)
-newIdxCache = stToIO $ IdxCache <$> PH.new
+newIdxCache :: MonadIO m => m (IdxCache t f)
+newIdxCache = liftIO $ stToIO $ IdxCache <$> PH.new
 
 {-# INLINE lookupIdxValue #-}
 -- | Return the value associated to the expr in the index.
@@ -2784,12 +2784,13 @@ lookupIdxValue :: MonadIO m => IdxCache t f -> Expr t tp -> m (Maybe (f tp))
 lookupIdxValue _ SemiRingLiteral{} = return Nothing
 lookupIdxValue _ StringExpr{} = return Nothing
 lookupIdxValue _ BoolExpr{} = return Nothing
-lookupIdxValue c (NonceAppExpr e) = liftIO $ lookupIdx c (nonceExprId e)
-lookupIdxValue c (AppExpr e)  = liftIO $ lookupIdx c (appExprId e)
-lookupIdxValue c (BoundVarExpr i) = liftIO $ lookupIdx c (bvarId i)
+lookupIdxValue c (NonceAppExpr e) = lookupIdx c (nonceExprId e)
+lookupIdxValue c (AppExpr e)  = lookupIdx c (appExprId e)
+lookupIdxValue c (BoundVarExpr i) = lookupIdx c (bvarId i)
 
-lookupIdx :: IdxCache t f -> Nonce t tp -> IO (Maybe (f tp))
-lookupIdx c n = stToIO $ PH.lookup (cMap c) n
+{-# INLINE lookupIdx #-}
+lookupIdx :: (MonadIO m) => IdxCache t f -> Nonce t tp -> m (Maybe (f tp))
+lookupIdx c n = liftIO $ stToIO $ PH.lookup (cMap c) n
 
 {-# INLINE insertIdxValue #-}
 -- | Bind the value to the given expr in the index.
@@ -2803,8 +2804,8 @@ deleteIdxValue c e = liftIO $ stToIO $ do
   PH.delete (cMap c) e
 
 -- | Remove all values from the IdxCache
-clearIdxCache :: IdxCache t f -> IO ()
-clearIdxCache c = stToIO $ PH.clear (cMap c)
+clearIdxCache :: MonadIO m => IdxCache t f -> m ()
+clearIdxCache c = liftIO $ stToIO $ PH.clear (cMap c)
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
@@ -2818,10 +2819,12 @@ exprMaybeId (BoundVarExpr e) = Just $! bvarId e
 -- this function returns the value of the element if bound, and otherwise
 -- calls the evaluation function, stores the result in the cache, and
 -- returns the value.
-idxCacheEval :: IdxCache t f
+{-# INLINE idxCacheEval #-}
+idxCacheEval :: (MonadIO m)
+             => IdxCache t f
              -> Expr t tp
-             -> IO (f tp)
-             -> IO (f tp)
+             -> m (f tp)
+             -> m (f tp)
 idxCacheEval c e m = do
   case exprMaybeId e of
     Nothing -> m
@@ -2831,12 +2834,14 @@ idxCacheEval c e m = do
 -- this function returns the value of the element if bound, and otherwise
 -- calls the evaluation function, stores the result in the cache, and
 -- returns the value.
-idxCacheEval' :: IdxCache t f
-             -> Nonce t tp
-             -> IO (f tp)
-             -> IO (f tp)
+{-# INLINE idxCacheEval' #-}
+idxCacheEval' :: (MonadIO m)
+              => IdxCache t f
+              -> Nonce t tp
+              -> m (f tp)
+              -> m (f tp)
 idxCacheEval' c n m = do
-  mr <- liftIO $ lookupIdx c n
+  mr <- lookupIdx c n
   case mr of
     Just r -> return r
     Nothing -> do
