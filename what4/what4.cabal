@@ -39,6 +39,7 @@ library
     mtl,
     panic >= 0.3,
     parameterized-utils >= 1.0.8 && < 2.1,
+    prettyprinter,
     process,
     scientific,
     temporary >= 1.2,
@@ -107,6 +108,10 @@ library
     What4.Protocol.ReadDecimal
     What4.Protocol.SExp
     What4.Protocol.PolyRoot
+    What4.Protocol.VerilogWriter
+    What4.Protocol.VerilogWriter.AST
+    What4.Protocol.VerilogWriter.ABCVerilog
+    What4.Protocol.VerilogWriter.Backend
 
     What4.Utils.AbstractDomains
     What4.Utils.AnnotatedMap
