@@ -469,29 +469,33 @@ urem a b
     (ql, rl) = al `divMod` max 1 bh -- assume that division by 0 does not happen
     (qh, rh) = ah `divMod` max 1 bl -- assume that division by 0 does not happen
 
--- | Least and greatest nonzero values in a domain, according to the
--- unsigned ordering.
-rbounds :: BVDomain w -> (Integer, Integer)
-rbounds a =
+-- | Pairs of nonzero integers @(lo, hi)@ such that @1\/lo <= 1\/hi@.
+-- This pair represents the set of all nonzero integers @x@ such that
+-- @1\/lo <= 1\/x <= 1\/hi@.
+data ReciprocalRange = ReciprocalRange Integer Integer
+
+-- | Nonzero signed values in a domain with the least and greatest
+-- reciprocals.
+rbounds :: (1 <= w) => NatRepr w -> BVDomain w -> ReciprocalRange
+rbounds w a =
   case a of
-    BVDAny mask -> (1, mask)
+    BVDAny _ -> ReciprocalRange (-1) 1
     BVDInterval mask al aw
-      | ah > mask + 1 -> (1, mask)
-      | otherwise     -> (max 1 al, min mask aw)
-      where ah = al + aw
+      | ah > mask + 1 -> ReciprocalRange (-1) 1
+      | otherwise     -> ReciprocalRange (signed (min mask ah)) (signed (max 1 al))
+      where
+        ah = al + aw
+        signed x = if x < halfRange w then x else x - (mask + 1)
 
 -- | Interval arithmetic for integer division (rounding towards 0).
--- The argument ranges @(al, ah)@ and @(bl, bh)@ should satisfy @al <=
--- ah@ and @1\/bl >= 1\/bh@. That is, if @bl@ and @bh@ have the same
--- sign, then we require @bl <= bh@, but if they have opposite signs
--- then we require @bl > bh@. Given @a@ and @b@ with @al <= a <= ah@
--- and @1\/bl >= 1\/b >= 1/bh@, @sdivRange (al, ah) (bl, bh)@ returns
--- @(ql, qh)@ such that @ql <= a `quot` b <= qh@.
-sdivRange :: (Integer, Integer) -> (Integer, Integer) -> (Integer, Integer)
-sdivRange (al, ah) (bl, bh) = (ql, qh)
+-- Given @a@ and @b@ with @al <= a <= ah@ and @1\/bl <= 1\/b <= 1/bh@,
+-- @sdivRange (al, ah) (ReciprocalRange bl bh)@ returns @(ql, qh)@
+-- such that @ql <= a `quot` b <= qh@.
+sdivRange :: (Integer, Integer) -> ReciprocalRange -> (Integer, Integer)
+sdivRange (al, ah) (ReciprocalRange bl bh) = (ql, qh)
   where
-    (ql1, qh1) = scaleDownRange (al, ah) bl
-    (ql2, qh2) = scaleDownRange (al, ah) bh
+    (ql1, qh1) = scaleDownRange (al, ah) bh
+    (ql2, qh2) = scaleDownRange (al, ah) bl
     ql = min ql1 ql2
     qh = max qh1 qh2
 
@@ -507,7 +511,7 @@ sdiv :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 sdiv w a b = interval mask ql (qh - ql)
   where
     mask = bvdMask a
-    (ql, qh) = sdivRange (sbounds w a) (sbounds w b)
+    (ql, qh) = sdivRange (sbounds w a) (rbounds w b)
 
 srem :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 srem w a b =
@@ -524,7 +528,7 @@ srem w a b =
     mask = bvdMask a
     (al, ah) = sbounds w a
     (bl, bh) = sbounds w b
-    (ql, qh) = sdivRange (al, ah) (rbounds b)
+    (ql, qh) = sdivRange (al, ah) (rbounds w b)
     rl = if al < 0 then min (bl+1) (-bh+1) else 0
     rh = if ah > 0 then max (-bl-1) (bh-1) else 0
     aw = ah - al
