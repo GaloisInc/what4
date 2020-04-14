@@ -78,14 +78,15 @@ sbounds a = (lo - delta, hi - delta)
     delta = reverse 1
     (lo, hi) = ubounds (interval (a.lo + delta) a.sz)
 
-/** Least and greatest nonzero values in a domain, according to the
-unsigned ordering. */
+/** Nonzero signed values in a domain with the least and greatest
+reciprocals. Note that this coincides with the greatest and least
+nonzero values using the unsigned ordering. */
 rbounds : {n} (fin n, n >= 1) => Dom n -> ([n], [n])
 rbounds a =
-  if a.lo == 0 then (1, a_hi) else
-  if a_hi == 0 then (a.lo, ~0) else
-  if a_hi < a.lo then (1, ~0) else
-  (a.lo, a_hi)
+  if a.lo == 0 then (a_hi, 1) else
+  if a_hi == 0 then (-1, a.lo) else
+  if a_hi < a.lo then (-1, 1) else
+  (a_hi, a.lo)
   where a_hi = a.lo + a.sz
 
 overlap : {n} (fin n) => Dom n -> Dom n -> Bit
@@ -213,14 +214,15 @@ urem a b =
     (ql, rl) = (al / bh', al % bh')
     (qh, rh) = (ah / bl', ah % bl')
 
-// The first argument is a signed interval, but the second argument is
-// an unsigned interval: The arguments should satisfy 'al <=$ ah'
-// (signed) and 'bl <= bh' (unsigned).
+// The first argument is an ordinary signed interval, but the second
+// argument is a reciaprocal interval: The arguments should satisfy 'al
+// <=$ ah' (signed) and '1/bl <= 1/bh' (signed), or equivalently, 'bh
+// <= bl' (unsigned).
 sdivRange : {n} (fin n, n >= 1) => ([n], [n]) -> ([n], [n]) -> ([1+n], [1+n])
 sdivRange (al, ah) (bl, bh) = (ql, qh)
   where
-    (ql1, qh1) = shrinkRange (al, ah) bl
-    (ql2, qh2) = shrinkRange (al, ah) bh
+    (ql1, qh1) = shrinkRange (al, ah) bh
+    (ql2, qh2) = shrinkRange (al, ah) bl
     ql = smin ql1 ql2
     qh = smax qh1 qh2
 
@@ -409,7 +411,7 @@ correct_urem a b x y =
 
 correct_sdivRange : {n} (fin n, n >= 1) => ([n], [n]) -> ([n], [n]) -> [n] -> [n] -> Bit
 correct_sdivRange a b x y =
-  smem a x ==> umem b y ==> y != 0 ==> smem (sdivRange a b) (sext x /$ sext y)
+  smem a x ==> umem b y ==> y != 0 ==> smem (sdivRange a (b.1, b.0)) (sext x /$ sext y)
 
 correct_shrinkRange : {n} (fin n, n >= 1) => ([n], [n]) -> [n] -> [n] -> Bit
 correct_shrinkRange a x y =
@@ -485,6 +487,7 @@ property a5 = correct_urem`{6}
 property a6 = correct_sdiv`{6}
 property a7 = correct_srem`{6}
 property a8 = correct_bnot`{16}
+property a9 = correct_sdivRange`{6}
 
 property s1 = correct_shl`{8}
 property s2 = correct_lshr`{8}
