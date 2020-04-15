@@ -17,6 +17,7 @@ domains.
 
 module What4.Utils.BVDomain.Arith
   ( Domain
+  , bvdMask
   , member
   , interval
   -- * Projection functions
@@ -30,7 +31,6 @@ module What4.Utils.BVDomain.Arith
   , arithDomainData
   , bitbounds
   , unknowns
-  , bitle
     -- * Operations
   , any
   , singleton
@@ -72,6 +72,7 @@ module What4.Utils.BVDomain.Arith
   , correct_concat
   , correct_shrink
   , correct_trunc
+  , correct_select
   , correct_add
   , correct_neg
   , correct_mul
@@ -675,6 +676,12 @@ correct_trunc :: (n <= w) => NatRepr n -> (Domain w, Integer) -> Property
 correct_trunc n (a,x) = member a x' ==> member (trunc n a) (toUnsigned n x')
   where
   x' = x .&. bvdMask a
+
+correct_select :: (1 <= n, i + n <= w) =>
+  NatRepr i -> NatRepr n -> (Domain w, Integer) -> Property
+correct_select i n (a, x) = member a x ==> member (select i n a) y
+  where
+  y = toUnsigned n ((x .&. bvdMask a) `shiftR` (widthVal i))
 
 correct_add :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_add (a,x) (b,y) = member a x ==> member b y ==> member (add a b) (x + y)
