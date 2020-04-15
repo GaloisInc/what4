@@ -16,11 +16,18 @@ domains.
 {-# LANGUAGE ViewPatterns #-}
 
 module What4.Utils.BVDomain
-  ( BVDomain(..)
+  ( -- * Bitvector abstract domains
+    BVDomain(..)
+  , member
+    -- ** Domain transfer functions
   , asArithDomain
   , asBitwiseDomain
-  , member
-    -- * Projection functions
+  , asXorDomain
+  , fromXorDomain
+  , arithToXorDomain
+  , bitwiseToXorDomain
+  , xorToBitwiseDomain
+    -- ** Projection functions
   , asSingleton
   , eq
   , slt
@@ -67,6 +74,12 @@ module What4.Utils.BVDomain
 
   , correct_arithToBitwise
   , correct_bitwiseToArith
+  , correct_bitwiseToXorDomain
+  , correct_arithToXorDomain
+  , correct_xorToBitwiseDomain
+  , correct_asXorDomain
+  , correct_fromXorDomain
+
   , correct_any
   , correct_ubounds
   , correct_sbounds
@@ -109,6 +122,7 @@ import           Prelude hiding (any, concat, negate, and, or, not)
 
 import qualified What4.Utils.BVDomain.Arith as A
 import qualified What4.Utils.BVDomain.Bitwise as B
+import qualified What4.Utils.BVDomain.XOR as X
 
 import           Test.QuickCheck (Property, property, (==>), Gen, counterexample, arbitrary)
 
@@ -129,6 +143,43 @@ bitwiseToArithDomain b = A.interval mask lo ((hi - lo) .&. mask)
   where
   mask = B.bvdMask b
   (lo,hi) = B.bitbounds b
+
+bitwiseToXorDomain :: B.Domain w -> X.Domain w
+bitwiseToXorDomain b = X.interval mask lo hi
+  where
+  mask = B.bvdMask b
+  (lo,hi) = B.bitbounds b
+
+arithToXorDomain :: A.Domain w -> X.Domain w
+arithToXorDomain a =
+  let mask = A.bvdMask a in
+  case A.arithDomainData a of
+    Nothing -> X.BVDXor mask mask mask
+    Just (alo,_) -> X.BVDXor mask hi u
+      where
+        u = A.unknowns a
+        hi = alo .|. u
+
+xorToBitwiseDomain :: X.Domain w -> B.Domain w
+xorToBitwiseDomain x = B.interval mask lo hi
+  where
+  mask = X.bvdMask x
+  (lo, hi) = X.bitbounds x
+
+asXorDomain :: BVDomain w -> X.Domain w
+asXorDomain (BVDArith a) = arithToXorDomain a
+asXorDomain (BVDBitwise b) = bitwiseToXorDomain b
+
+fromXorDomain :: X.Domain w -> BVDomain w
+fromXorDomain x = BVDBitwise (xorToBitwiseDomain x)
+
+asArithDomain :: BVDomain w -> A.Domain w
+asArithDomain (BVDArith a)   = a
+asArithDomain (BVDBitwise b) = bitwiseToArithDomain b
+
+asBitwiseDomain :: BVDomain w -> B.Domain w
+asBitwiseDomain (BVDArith a)   = arithToBitwiseDomain a
+asBitwiseDomain (BVDBitwise b) = b
 
 --------------------------------------------------------------------------------
 -- BVDomain definition
@@ -151,14 +202,6 @@ bvdMask x =
 member :: BVDomain w -> Integer -> Bool
 member (BVDArith a) x = A.member a x
 member (BVDBitwise a) x = B.member a x
-
-asArithDomain :: BVDomain w -> A.Domain w
-asArithDomain (BVDArith a)   = a
-asArithDomain (BVDBitwise b) = bitwiseToArithDomain b
-
-asBitwiseDomain :: BVDomain w -> B.Domain w
-asBitwiseDomain (BVDArith a)   = arithToBitwiseDomain a
-asBitwiseDomain (BVDBitwise b) = b
 
 genDomain :: NatRepr w -> Gen (BVDomain w)
 genDomain w =
@@ -365,6 +408,21 @@ correct_arithToBitwise (a,x) = A.member a x ==> B.member (arithToBitwiseDomain a
 
 correct_bitwiseToArith :: (B.Domain n, Integer) -> Property
 correct_bitwiseToArith (b,x) = B.member b x ==> A.member (bitwiseToArithDomain b) x
+
+correct_bitwiseToXorDomain :: (B.Domain w, Integer) -> Property
+correct_bitwiseToXorDomain (b,x) = B.member b x ==> X.member (bitwiseToXorDomain b) x
+
+correct_arithToXorDomain :: (A.Domain w, Integer) -> Property
+correct_arithToXorDomain (a,x) = A.member a x ==> X.member (arithToXorDomain a) x
+
+correct_xorToBitwiseDomain :: (X.Domain w, Integer) -> Property
+correct_xorToBitwiseDomain (a,x) = X.member a x ==> B.member (xorToBitwiseDomain a) x
+
+correct_asXorDomain :: (BVDomain w, Integer) -> Property
+correct_asXorDomain (a, x) = member a x ==> X.member (asXorDomain a) x
+
+correct_fromXorDomain :: (X.Domain w, Integer) -> Property
+correct_fromXorDomain (a, x) = X.member a x ==> member (fromXorDomain a) x
 
 correct_any :: (1 <= n) => NatRepr n -> Integer -> Property
 correct_any w x = property (member (any w) x)

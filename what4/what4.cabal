@@ -116,6 +116,7 @@ library
     What4.Utils.BVDomain
     What4.Utils.BVDomain.Arith
     What4.Utils.BVDomain.Bitwise
+    What4.Utils.BVDomain.XOR
     What4.Utils.Complex
     What4.Utils.Endian
     What4.Utils.Environment
