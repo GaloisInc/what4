@@ -232,6 +232,7 @@ import qualified What4.Expr.UnaryBV as UnaryBV
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
 import qualified What4.Utils.BVDomain as BVD
+import qualified What4.Utils.BVDomain.Bitwise as B
 import           What4.Utils.Complex
 import           What4.Utils.StringLiteral
 import           What4.Utils.IncrHash
@@ -356,10 +357,10 @@ data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
 -------------------------------------------------------------------------------
 -- BVOrSet
 
-data BVOrNote w = BVOrNote !IncrHash !(BVD.BVDomain w)
+data BVOrNote w = BVOrNote !IncrHash !(B.Domain w)
 
 instance Semigroup (BVOrNote w) where
-  BVOrNote xh xa <> BVOrNote yh ya = BVOrNote (xh <> yh) (BVD.or xa ya)
+  BVOrNote xh xa <> BVOrNote yh ya = BVOrNote (xh <> yh) (B.or xa ya)
 
 newtype BVOrSet e w = BVOrSet (AM.AnnotatedMap (Wrap e (BaseBVType w)) (BVOrNote w) ())
 
@@ -370,7 +371,9 @@ traverseBVOrSet f (BVOrSet m) =
   foldr bvOrInsert (BVOrSet AM.empty) <$> traverse (f . unWrap . fst) (AM.toList m)
 
 bvOrInsert :: (OrdF e, HashableF e, HasAbsValue e) => e (BaseBVType w) -> BVOrSet e w -> BVOrSet e w
-bvOrInsert e (BVOrSet m) = BVOrSet $ AM.insert (Wrap e) (BVOrNote (mkIncrHash (hashF e)) (getAbsValue e)) () m
+bvOrInsert e (BVOrSet m) =
+  let nt = BVOrNote (mkIncrHash (hashF e)) (BVD.asBitwiseDomain (getAbsValue e)) in
+  BVOrSet $ AM.insert (Wrap e) nt () m
 
 bvOrSingleton :: (OrdF e, HashableF e, HasAbsValue e) => e (BaseBVType w) -> BVOrSet e w
 bvOrSingleton e = bvOrInsert e (BVOrSet AM.empty)
@@ -387,7 +390,7 @@ bvOrToList (BVOrSet m) = unWrap . fst <$> AM.toList m
 bvOrAbs :: (OrdF e, 1 <= w) => NatRepr w -> BVOrSet e w -> BVD.BVDomain w
 bvOrAbs w (BVOrSet m) =
   case AM.annotation m of
-    Just (BVOrNote _ a) -> a
+    Just (BVOrNote _ a) -> BVD.BVDBitwise a
     Nothing -> BVD.singleton w 0
 
 instance (OrdF e, TestEquality e) => Eq (BVOrSet e w) where
