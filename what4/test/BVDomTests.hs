@@ -32,6 +32,8 @@ import           Data.Parameterized.Some
 import qualified What4.Utils.BVDomain as O
 import qualified What4.Utils.BVDomain.Arith as A
 import qualified What4.Utils.BVDomain.Bitwise as B
+import qualified What4.Utils.BVDomain.XOR as X
+
 
 main :: IO ()
 main = defaultMain $
@@ -40,7 +42,9 @@ main = defaultMain $
     testGroup "Bitvector Domain"
     [ arithDomainTests
     , bitwiseDomainTests
+    , xorDomainTests
     , overallDomainTests
+    , transferTests
     ]
 
 data SomeWidth where
@@ -183,6 +187,26 @@ arithDomainTests = testGroup "Arith Domain"
          A.correct_bitbounds n <$> A.genPair n
   ]
 
+xorDomainTests :: TestTree
+xorDomainTests =
+  testGroup "XOR Domain"
+  [ genTest "correct_singleton" $
+      do SW n <- genWidth
+         X.correct_singleton n <$> genBV n <*> genBV n
+  , genTest "correct_xor" $
+      do SW n <- genWidth
+         X.correct_xor <$> X.genPair n <*> X.genPair n
+  , genTest "correct_and" $
+      do SW n <- genWidth
+         X.correct_and <$> X.genPair n <*> X.genPair n
+  , genTest "correct_and_scalar" $
+      do SW n <- genWidth
+         X.correct_and_scalar <$> genBV n <*> X.genPair n
+  , genTest "correct_bitbounds" $
+      do SW n <- genWidth
+         X.correct_bitbounds <$> X.genDomain n <*> genBV n
+  ]
+
 bitwiseDomainTests :: TestTree
 bitwiseDomainTests =
   testGroup "Bitwise Domain"
@@ -283,13 +307,7 @@ bitwiseDomainTests =
 
 overallDomainTests :: TestTree
 overallDomainTests = testGroup "Overall Domain"
-  [ genTest "correct_arithToBitwise" $
-     do SW n <- genWidth
-        O.correct_arithToBitwise <$> A.genPair n
-  , genTest "correct_bitwiseToArith" $
-     do SW n <- genWidth
-        O.correct_bitwiseToArith <$> B.genPair n
-  , genTest "correct_any" $
+  [ genTest "correct_any" $
       do SW n <- genWidth
          O.correct_any n <$> genBV n
   , genTest "correct_ubounds" $
@@ -394,4 +412,30 @@ overallDomainTests = testGroup "Overall Domain"
       do SW n <- genWidth
          i <- fromInteger <$> chooseInteger (0, intValue n - 1)
          O.correct_testBit n <$> O.genPair n <*> pure i
+  ]
+
+
+transferTests :: TestTree
+transferTests = testGroup "Transfer"
+  [ genTest "correct_arithToBitwise" $
+     do SW n <- genWidth
+        O.correct_arithToBitwise <$> A.genPair n
+  , genTest "correct_bitwiseToArith" $
+     do SW n <- genWidth
+        O.correct_bitwiseToArith <$> B.genPair n
+  , genTest "correct_bitwiseToXorDomain" $
+     do SW n <- genWidth
+        O.correct_bitwiseToXorDomain <$> B.genPair n
+  , genTest "correct_arithToXorDomain" $
+     do SW n <- genWidth
+        O.correct_arithToXorDomain <$> A.genPair n
+  , genTest "correct_xorToBitwiseDomain" $
+     do SW n <- genWidth
+        O.correct_xorToBitwiseDomain <$> X.genPair n
+  , genTest "correct_asXorDomain" $
+     do SW n <- genWidth
+        O.correct_asXorDomain <$> O.genPair n
+  , genTest "correct_fromXorDomain" $
+     do SW n <- genWidth
+        O.correct_fromXorDomain <$> X.genPair n
   ]
