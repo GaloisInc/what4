@@ -29,15 +29,18 @@ import           Test.Tasty.QuickCheck
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 
+import qualified What4.Utils.BVDomain as O
 import qualified What4.Utils.BVDomain.Arith as A
 import qualified What4.Utils.BVDomain.Bitwise as B
 
 main :: IO ()
 main = defaultMain $
   localOption (QuickCheckTests 5000) $
+  localOption (QuickCheckMaxRatio 1000) $
     testGroup "Bitvector Domain"
     [ arithDomainTests
     , bitwiseDomainTests
+    , overallDomainTests
     ]
 
 data SomeWidth where
@@ -112,6 +115,14 @@ arithDomainTests = testGroup "Arith Domain"
          let w = addNat n m
          LeqProof <- pure $ addIsLeq n m
          A.correct_trunc n <$> A.genPair w
+  , genTest "correct_select" $
+      do SW n <- genWidth
+         SW i <- genWidth
+         SW z <- genWidth
+         let i_n = addNat i n
+         let w = addNat i_n z
+         LeqProof <- pure $ addIsLeq i_n z
+         A.correct_select i n <$> A.genPair w
   , genTest "correct_add" $
       do SW n <- genWidth
          A.correct_add <$> A.genPair n <*> A.genPair n
@@ -173,7 +184,7 @@ arithDomainTests = testGroup "Arith Domain"
   ]
 
 bitwiseDomainTests :: TestTree
-bitwiseDomainTests = localOption (QuickCheckMaxRatio 1000) $
+bitwiseDomainTests =
   testGroup "Bitwise Domain"
   [ genTest "correct_any" $
       do SW n <- genWidth
@@ -231,6 +242,14 @@ bitwiseDomainTests = localOption (QuickCheckMaxRatio 1000) $
          let w = addNat n m
          LeqProof <- pure $ addIsLeq n m
          B.correct_trunc n <$> B.genPair w
+  , genTest "correct_select" $
+      do SW n <- genWidth
+         SW i <- genWidth
+         SW z <- genWidth
+         let i_n = addNat i n
+         let w = addNat i_n z
+         LeqProof <- pure $ addIsLeq i_n z
+         B.correct_select i n <$> B.genPair w
   , genTest "correct_shl"$
       do SW n <- genWidth
          B.correct_shl n <$> B.genPair n <*> chooseInteger (0, intValue n)
@@ -259,4 +278,120 @@ bitwiseDomainTests = localOption (QuickCheckMaxRatio 1000) $
       do SW n <- genWidth
          i <- fromInteger <$> chooseInteger (0, intValue n - 1)
          B.correct_testBit n <$> B.genPair n <*> pure i
+  ]
+
+
+overallDomainTests :: TestTree
+overallDomainTests = testGroup "Overall Domain"
+  [ genTest "correct_arithToBitwise" $
+     do SW n <- genWidth
+        O.correct_arithToBitwise <$> A.genPair n
+  , genTest "correct_bitwiseToArith" $
+     do SW n <- genWidth
+        O.correct_bitwiseToArith <$> B.genPair n
+  , genTest "correct_any" $
+      do SW n <- genWidth
+         O.correct_any n <$> genBV n
+  , genTest "correct_ubounds" $
+      do SW n <- genWidth
+         O.correct_ubounds n <$> O.genPair n
+  , genTest "correct_sbounds" $
+      do SW n <- genWidth
+         O.correct_sbounds n <$> O.genPair n
+  , genTest "correct_singleton" $
+      do SW n <- genWidth
+         O.correct_singleton n <$> genBV n <*> genBV n
+  , genTest "correct_overlap" $
+      do SW n <- genWidth
+         O.correct_overlap <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "correct_union" $
+      do SW n <- genWidth
+         O.correct_union <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "correct_zero_ext" $
+      do SW w <- genWidth
+         SW n <- genWidth
+         let u = addNat w n
+         case testLeq (addNat w (knownNat @1)) u of
+           Nothing -> error "impossible!"
+           Just LeqProof ->
+             do a <- O.genDomain w
+                x <- O.genElement a
+                pure $ O.correct_zero_ext w a u x
+  , genTest "correct_sign_ext" $
+      do SW w <- genWidth
+         SW n <- genWidth
+         let u = addNat w n
+         case testLeq (addNat w (knownNat @1)) u of
+           Nothing -> error "impossible!"
+           Just LeqProof ->
+             do a <- O.genDomain w
+                x <- O.genElement a
+                pure $ O.correct_sign_ext w a u x
+  , genTest "correct_concat" $
+      do SW m <- genWidth
+         SW n <- genWidth
+         O.correct_concat m <$> O.genPair m <*> pure n <*> O.genPair n
+  , genTest "correct_select" $
+      do SW n <- genWidth
+         SW i <- genWidth
+         SW z <- genWidth
+         let i_n = addNat i n
+         let w = addNat i_n z
+         LeqProof <- pure $ addIsLeq i_n z
+         O.correct_select i n <$> O.genPair w
+  , genTest "correct_add" $
+      do SW n <- genWidth
+         O.correct_add <$> O.genPair n <*> O.genPair n
+  , genTest "correct_neg" $
+      do SW n <- genWidth
+         O.correct_neg <$> O.genPair n
+  , genTest "correct_mul" $
+      do SW n <- genWidth
+         O.correct_mul <$> O.genPair n <*> O.genPair n
+  , genTest "correct_udiv" $
+      do SW n <- genWidth
+         O.correct_udiv n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_urem" $
+      do SW n <- genWidth
+         O.correct_urem n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_sdiv" $
+      do SW n <- genWidth
+         O.correct_sdiv n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_srem" $
+      do SW n <- genWidth
+         O.correct_srem n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_shl"$
+      do SW n <- genWidth
+         O.correct_shl n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_lshr"$
+      do SW n <- genWidth
+         O.correct_lshr n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_ashr"$
+      do SW n <- genWidth
+         O.correct_ashr n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_eq" $
+      do SW n <- genWidth
+         O.correct_eq n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_ult" $
+      do SW n <- genWidth
+         O.correct_ult n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_slt" $
+      do SW n <- genWidth
+         O.correct_slt n <$> O.genPair n <*> O.genPair n
+  , genTest "correct_not" $
+      do SW n <- genWidth
+         O.correct_not <$> O.genPair n
+  , genTest "correct_and" $
+      do SW n <- genWidth
+         O.correct_and <$> O.genPair n <*> O.genPair n
+  , genTest "correct_or" $
+      do SW n <- genWidth
+         O.correct_or <$> O.genPair n <*> O.genPair n
+  , genTest "correct_xor" $
+      do SW n <- genWidth
+         O.correct_xor <$> O.genPair n <*> O.genPair n
+  , genTest "correct_testBit" $
+      do SW n <- genWidth
+         i <- fromInteger <$> chooseInteger (0, intValue n - 1)
+         O.correct_testBit n <$> O.genPair n <*> pure i
   ]

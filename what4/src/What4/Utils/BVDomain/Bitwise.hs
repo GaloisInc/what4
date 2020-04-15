@@ -21,7 +21,7 @@ module What4.Utils.BVDomain.Bitwise
   , nonempty
   , eq
   , domainsOverlap
-  , bitrange
+  , bitbounds
   -- * Operations
   , any
   , singleton
@@ -58,6 +58,7 @@ module What4.Utils.BVDomain.Bitwise
   , correct_concat
   , correct_shrink
   , correct_trunc
+  , correct_select
   , correct_shl
   , correct_lshr
   , correct_ashr
@@ -110,11 +111,37 @@ genDomain w =
      hi <- chooseInteger (0, mask)
      pure $! interval mask lo (lo .|. hi)
 
+-- This generator goes to some pains to try
+-- to generate a good statistical distribution
+-- of the values in the domain.  It only choses
+-- random bits for the "unknown" values of
+-- the domain, then stripes them out among
+-- the unknown bit positions.
+genElement :: Domain w -> Gen Integer
+genElement (BVBitInterval _mask lo hi) =
+  do x <- chooseInteger (0, bit bs - 1)
+     pure $ stripe lo x 0
+
+ where
+ u = Bits.xor lo hi
+ bs = Bits.popCount u
+ stripe val x i
+   | x == 0 = val
+   | Bits.testBit u i =
+       let val' = if Bits.testBit x 0 then setBit val i else val in
+       stripe val' (x `shiftR` 1) (i+1)
+   | otherwise = stripe val x (i+1)
+
+{- A faster generator, but I worry that it
+   doesn't have very good statistical properties...
+
 genElement :: Domain w -> Gen Integer
 genElement (BVBitInterval mask lo hi) =
   do let u = Bits.xor lo hi
      x <- chooseInteger (0, mask)
      pure ((x .&. u) .|. lo)
+-}
+
 
 genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
@@ -133,8 +160,8 @@ range w lo hi = BVBitInterval (maxUnsigned w) lo' hi'
   hi'  = hi .&. mask
   mask = maxUnsigned w
 
-bitrange :: Domain w -> (Integer, Integer)
-bitrange (BVBitInterval _ lo hi) = (lo, hi)
+bitbounds :: Domain w -> (Integer, Integer)
+bitbounds (BVBitInterval _ lo hi) = (lo, hi)
 
 -- | Test if this domain contains a single value, and return it if so
 asSingleton :: Domain w -> Maybe Integer
@@ -319,6 +346,12 @@ correct_trunc :: (n <= w) => NatRepr n -> (Domain w, Integer) -> Property
 correct_trunc n (a,x) = member a x' ==> member (trunc n a) (toUnsigned n x')
   where
   x' = x .&. bvdMask a
+
+correct_select :: (1 <= n, i + n <= w) =>
+  NatRepr i -> NatRepr n -> (Domain w, Integer) -> Property
+correct_select i n (a, x) = member a x ==> member (select i n a) y
+  where
+  y = toUnsigned n ((x .&. bvdMask a) `shiftR` (widthVal i))
 
 correct_eq :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_eq n (a,x) (b,y) =
