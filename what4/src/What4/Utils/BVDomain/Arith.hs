@@ -595,7 +595,7 @@ not a =
   case a of
     BVDAny _ -> a
     BVDInterval mask al aw ->
-      BVDInterval mask (ah `Bits.xor` mask) aw
+      BVDInterval mask (complement ah .&. mask) aw
       where ah = al + aw
 
 -- | Return bitwise bounds for domain (i.e. logical AND of all
@@ -617,7 +617,7 @@ bitbounds a =
 -- @lo..hi@.
 unknowns :: Domain w -> Integer
 unknowns (BVDAny mask) = mask
-unknowns (BVDInterval _mask al aw) = fillright 1 (al `Bits.xor` (al+aw))
+unknowns (BVDInterval mask al aw) = mask .&. (fillright 1 (al `Bits.xor` (al+aw)))
   where
     -- @fillright 1 x@ rounds up @x@ to the nearest 2^n-1.
     fillright :: Int -> Integer -> Integer
