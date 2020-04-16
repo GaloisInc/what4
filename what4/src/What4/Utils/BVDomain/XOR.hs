@@ -18,8 +18,10 @@ optimized for performing XOR operations.
 module What4.Utils.BVDomain.XOR
   ( -- * XOR Domains
     Domain(..)
+  , proper
   , bvdMask
   , member
+  , pmember
   , range
   , interval
   , bitbounds
@@ -62,6 +64,14 @@ data Domain (w :: Nat) =
     --   the bits whose values are not known.  The value @mask@
     --   caches the value @2^w-1@.
   deriving (Show)
+
+-- | Test if the domain satisfies its invariants
+proper :: NatRepr w -> Domain w -> Bool
+proper w (BVDXor mask val u) =
+  mask == maxUnsigned w &&
+  bitle val mask &&
+  bitle u mask &&
+  bitle u val
 
 member :: Domain w -> Integer -> Bool
 member (BVDXor mask hi unknown) x = hi == (x .&. mask) .|. unknown
@@ -139,20 +149,25 @@ and_scalar x (BVDXor mask va ua) = BVDXor mask (va .&. x) (ua .&. x)
 -----------------------------------------------------------------------
 -- Correctness properties
 
+-- | Check that a domain is proper, and that
+--   the given value is a member
+pmember :: NatRepr n -> Domain n -> Integer -> Bool
+pmember n a x = proper n a && member a x
+
 correct_singleton :: (1 <= n) => NatRepr n -> Integer -> Integer -> Property
-correct_singleton n x y = property (member (singleton n x') y' == (x' == y'))
+correct_singleton n x y = property (pmember n (singleton n x') y' == (x' == y'))
   where
   x' = toUnsigned n x
   y' = toUnsigned n y
 
-correct_xor :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
-correct_xor (a,x) (b,y) = member a x ==> member b y ==> member (xor a b) (x `Bits.xor` y)
+correct_xor :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_xor n (a,x) (b,y) = member a x ==> member b y ==> pmember n (xor a b) (x `Bits.xor` y)
 
-correct_and :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
-correct_and (a,x) (b,y) = member a x ==> member b y ==> member (and a b) (x .&. y)
+correct_and :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_and n (a,x) (b,y) = member a x ==> member b y ==> pmember n (and a b) (x .&. y)
 
-correct_and_scalar :: (1 <= n) => Integer -> (Domain n, Integer) -> Property
-correct_and_scalar y (a,x) = member a x ==> member (and_scalar y a) (y .&. x)
+correct_and_scalar :: (1 <= n) => NatRepr n -> Integer -> (Domain n, Integer) -> Property
+correct_and_scalar n y (a,x) = member a x ==> pmember n (and_scalar y a) (y .&. x)
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
