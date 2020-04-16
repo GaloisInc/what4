@@ -18,6 +18,7 @@ domains.
 module What4.Utils.BVDomain
   ( -- * Bitvector abstract domains
     BVDomain(..)
+  , proper
   , member
     -- ** Domain transfer functions
   , asArithDomain
@@ -213,6 +214,11 @@ bvdMask x =
     BVDArith a   -> A.bvdMask a
     BVDBitwise b -> B.bvdMask b
 
+-- | Test if the domain satisfies its invariants
+proper :: NatRepr w -> BVDomain w -> Bool
+proper w (BVDArith a) = A.proper w a
+proper w (BVDBitwise b) = B.proper w b
+
 member :: BVDomain w -> Integer -> Bool
 member (BVDArith a) x = A.member a x
 member (BVDBitwise a) x = B.member a x
@@ -309,8 +315,8 @@ union (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.union a b)
 -- concatenated with an element in @y@.  The most-significant bits
 -- are @a@, and the least significant bits are @y@.
 concat :: NatRepr u -> BVDomain u -> NatRepr v -> BVDomain v -> BVDomain (u + v)
-concat u (BVDBitwise a) v (BVDBitwise b) = BVDBitwise (B.concat u a v b)
-concat u (asArithDomain -> a) v (asArithDomain -> b) = BVDArith (A.concat u a v b)
+concat u (BVDArith a) v (BVDArith b) = BVDArith (A.concat u a v b)
+concat u (asBitwiseDomain -> a) v (asBitwiseDomain -> b) = BVDBitwise (B.concat u a v b)
 
 -- | @select i n a@ selects @n@ bits starting from index @i@ from @a@.
 select ::
@@ -500,29 +506,34 @@ ctz w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
 ------------------------------------------------------------------
 -- Correctness properties
 
-correct_arithToBitwise :: (A.Domain n, Integer) -> Property
-correct_arithToBitwise (a,x) = A.member a x ==> B.member (arithToBitwiseDomain a) x
+-- | Check that a domain is proper, and that
+--   the given value is a member
+pmember :: NatRepr n -> BVDomain n -> Integer -> Bool
+pmember n a x = proper n a && member a x
 
-correct_bitwiseToArith :: (B.Domain n, Integer) -> Property
-correct_bitwiseToArith (b,x) = B.member b x ==> A.member (bitwiseToArithDomain b) x
+correct_arithToBitwise :: NatRepr n -> (A.Domain n, Integer) -> Property
+correct_arithToBitwise n (a,x) = A.member a x ==> B.pmember n (arithToBitwiseDomain a) x
 
-correct_bitwiseToXorDomain :: (B.Domain w, Integer) -> Property
-correct_bitwiseToXorDomain (b,x) = B.member b x ==> X.member (bitwiseToXorDomain b) x
+correct_bitwiseToArith :: NatRepr n -> (B.Domain n, Integer) -> Property
+correct_bitwiseToArith n (b,x) = B.member b x ==> A.pmember n (bitwiseToArithDomain b) x
 
-correct_arithToXorDomain :: (A.Domain w, Integer) -> Property
-correct_arithToXorDomain (a,x) = A.member a x ==> X.member (arithToXorDomain a) x
+correct_bitwiseToXorDomain :: NatRepr n -> (B.Domain n, Integer) -> Property
+correct_bitwiseToXorDomain n (b,x) = B.member b x ==> X.pmember n (bitwiseToXorDomain b) x
 
-correct_xorToBitwiseDomain :: (X.Domain w, Integer) -> Property
-correct_xorToBitwiseDomain (a,x) = X.member a x ==> B.member (xorToBitwiseDomain a) x
+correct_arithToXorDomain :: NatRepr n -> (A.Domain n, Integer) -> Property
+correct_arithToXorDomain n (a,x) = A.member a x ==> X.pmember n (arithToXorDomain a) x
 
-correct_asXorDomain :: (BVDomain w, Integer) -> Property
-correct_asXorDomain (a, x) = member a x ==> X.member (asXorDomain a) x
+correct_xorToBitwiseDomain :: NatRepr n -> (X.Domain n, Integer) -> Property
+correct_xorToBitwiseDomain n (a,x) = X.member a x ==> B.pmember n (xorToBitwiseDomain a) x
 
-correct_fromXorDomain :: (X.Domain w, Integer) -> Property
-correct_fromXorDomain (a, x) = X.member a x ==> member (fromXorDomain a) x
+correct_asXorDomain :: NatRepr n -> (BVDomain n, Integer) -> Property
+correct_asXorDomain n (a, x) = member a x ==> X.pmember n (asXorDomain a) x
+
+correct_fromXorDomain :: NatRepr n -> (X.Domain n, Integer) -> Property
+correct_fromXorDomain n (a, x) = X.member a x ==> pmember n (fromXorDomain a) x
 
 correct_any :: (1 <= n) => NatRepr n -> Integer -> Property
-correct_any w x = property (member (any w) x)
+correct_any n x = property (pmember n (any n) x)
 
 correct_ubounds :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
 correct_ubounds n (a,x) = member a x' ==> lo <= x' && x' <= hi
@@ -546,88 +557,87 @@ correct_overlap :: BVDomain n -> BVDomain n -> Integer -> Property
 correct_overlap a b x =
   member a x && member b x ==> domainsOverlap a b
 
-correct_union :: (1 <= n) => BVDomain n -> BVDomain n -> Integer -> Property
-correct_union a b x =
-  (member a x || member b x) ==> member (union a b) x
+correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
+correct_union n a b x =
+  (member a x || member b x) ==> pmember n (union a b) x
 
 correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
-correct_zero_ext w a u x = member a x' ==> member (zext a u) x'
+correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
   where
   x' = toUnsigned w x
 
 correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
-correct_sign_ext w a u x = member a x' ==> member (sext w a u) x'
+correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
   where
   x' = toSigned w x
 
 correct_concat :: NatRepr m -> (BVDomain m,Integer) -> NatRepr n -> (BVDomain n,Integer) -> Property
-correct_concat m (a,x) n (b,y) = member a x' ==> member b y' ==> member (concat m a n b) z
+correct_concat m (a,x) n (b,y) =
+    member a x ==> member b y ==> pmember (addNat m n) (concat m a n b) z
   where
-  x' = toUnsigned m x
-  y' = toUnsigned n y
-  z  = x' `shiftL` (widthVal n) .|. y'
+  z = (x `shiftL` (widthVal n)) .|. y
 
 correct_select :: (1 <= n, i + n <= w) =>
   NatRepr i -> NatRepr n -> (BVDomain w, Integer) -> Property
-correct_select i n (a, x) = member a x ==> member (select i n a) y
+correct_select i n (a, x) = member a x ==> pmember n (select i n a) y
   where
   y = toUnsigned n ((x .&. bvdMask a) `shiftR` (widthVal i))
 
-correct_add :: (1 <= n) => (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_add (a,x) (b,y) = member a x ==> member b y ==> member (add a b) (x + y)
+correct_add :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_add n (a,x) (b,y) = member a x ==> member b y ==> pmember n (add a b) (x + y)
 
-correct_neg :: (1 <= n) => (BVDomain n, Integer) -> Property
-correct_neg (a,x) = member a x ==> member (negate a) (Prelude.negate x)
+correct_neg :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_neg n (a,x) = member a x ==> pmember n (negate a) (Prelude.negate x)
 
-correct_mul :: (1 <= n) => (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_mul (a,x) (b,y) = member a x ==> member b y ==> member (mul a b) (x * y)
+correct_mul :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
 
 correct_udiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> member (udiv a b) (x' `quot` y')
+correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')
   where
   x' = toUnsigned n x
   y' = toUnsigned n y
 
 correct_urem :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_urem n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> member (urem a b) (x' `rem` y')
+correct_urem n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (urem a b) (x' `rem` y')
   where
   x' = toUnsigned n x
   y' = toUnsigned n y
 
 correct_sdiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_sdiv n (a,x) (b,y) =
-    member a x' ==> member b y' ==> y' /= 0 ==> member (sdiv n a b) (x' `quot` y')
+    member a x' ==> member b y' ==> y' /= 0 ==> pmember n (sdiv n a b) (x' `quot` y')
   where
   x' = toSigned n x
   y' = toSigned n y
 
 correct_srem :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_srem n (a,x) (b,y) =
-    member a x' ==> member b y' ==> y' /= 0 ==> member (srem n a b) (x' `rem` y')
+    member a x' ==> member b y' ==> y' /= 0 ==> pmember n (srem n a b) (x' `rem` y')
   where
   x' = toSigned n x
   y' = toSigned n y
 
 correct_shl :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_shl n (a,x) (b,y) = member a x ==> member b y ==> member (shl n a b) z
+correct_shl n (a,x) (b,y) = member a x ==> member b y ==> pmember n (shl n a b) z
   where
   z = (toUnsigned n x) `shiftL` fromInteger (min (intValue n) y)
 
 correct_lshr :: (1 <= n) => NatRepr n ->  (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_lshr n (a,x) (b,y) = member a x ==> member b y ==> member (lshr n a b) z
+correct_lshr n (a,x) (b,y) = member a x ==> member b y ==> pmember n (lshr n a b) z
   where
   z = (toUnsigned n x) `shiftR` fromInteger (min (intValue n) y)
 
 correct_ashr :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_ashr n (a,x) (b,y) = member a x ==> member b y ==> member (ashr n a b) z
+correct_ashr n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ashr n a b) z
   where
   z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
 
 correct_rol :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_rol n (a,x) (b,y) = member a x ==> member b y ==> member (rol n a b) (Arith.rotateLeft n x y)
+correct_rol n (a,x) (b,y) = member a x ==> member b y ==> pmember n (rol n a b) (Arith.rotateLeft n x y)
 
 correct_ror :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_ror n (a,x) (b,y) = member a x ==> member b y ==> member (ror n a b) (Arith.rotateRight n x y)
+correct_ror n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ror n a b) (Arith.rotateRight n x y)
 
 correct_eq :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_eq n (a,x) (b,y) =
@@ -653,17 +663,17 @@ correct_slt n (a,x) (b,y) =
       Just False -> toSigned n x >= toSigned n y
       Nothing    -> True
 
-correct_not :: (1 <= n) => (BVDomain n, Integer) -> Property
-correct_not (a,x) = member a x ==> member (not a) (complement x)
+correct_not :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
 
-correct_and :: (1 <= n) => (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_and (a,x) (b,y) = member a x ==> member b y ==> member (and a b) (x .&. y)
+correct_and :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_and n (a,x) (b,y) = member a x ==> member b y ==> pmember n (and a b) (x .&. y)
 
-correct_or :: (1 <= n) => (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_or (a,x) (b,y) = member a x ==> member b y ==> member (or a b) (x .|. y)
+correct_or :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_or n (a,x) (b,y) = member a x ==> member b y ==> pmember n (or a b) (x .|. y)
 
-correct_xor :: (1 <= n) => (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_xor (a,x) (b,y) = member a x ==> member b y ==> member (xor a b) (x `Bits.xor` y)
+correct_xor :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_xor n (a,x) (b,y) = member a x ==> member b y ==> pmember n (xor a b) (x `Bits.xor` y)
 
 correct_testBit :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Natural -> Property
 correct_testBit n (a,x) i =
@@ -674,10 +684,11 @@ correct_testBit n (a,x) i =
       Nothing    -> True
 
 correct_popcnt :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
-correct_popcnt n (a,x) = member a x ==> member (popcnt n a) (toInteger (Bits.popCount x))
+correct_popcnt n (a,x) = member a x ==> pmember n (popcnt n a) (toInteger (Bits.popCount x))
 
 correct_ctz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
-correct_ctz n (a,x) = member a x ==> member (ctz n a) (Arith.ctz n x)
+correct_ctz n (a,x) = member a x ==> pmember n (ctz n a) (Arith.ctz n x)
 
 correct_clz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
-correct_clz n (a,x) = member a x ==> member (clz n a) (Arith.clz n x)
+correct_clz n (a,x) = member a x ==> pmember n (clz n a) (Arith.clz n x)
+

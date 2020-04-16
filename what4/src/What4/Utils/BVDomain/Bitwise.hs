@@ -14,9 +14,11 @@ Provides a bitwise implementation of bitvector abstract domains.
 {-# LANGUAGE TypeOperators #-}
 
 module What4.Utils.BVDomain.Bitwise
-  ( Domain
+  ( Domain(..)
+  , proper
   , bvdMask
   , member
+  , pmember
   , asSingleton
   , nonempty
   , eq
@@ -97,6 +99,14 @@ data Domain (w :: Nat) =
   -- ^ @BVDBitInterval mask lo hi@.
   --  @mask@ caches the value of @2^w - 1@
  deriving (Show)
+
+-- | Test if the domain satisfies its invariants
+proper :: NatRepr w -> Domain w -> Bool
+proper w (BVBitInterval mask lo hi) =
+  mask == maxUnsigned w &&
+  bitle lo mask &&
+  bitle hi mask &&
+  bitle lo hi
 
 member :: Domain w -> Integer -> Bool
 member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
@@ -218,7 +228,7 @@ concat :: NatRepr u -> Domain u -> NatRepr v -> Domain v -> Domain (u + v)
 concat u (BVBitInterval _ alo ahi) v (BVBitInterval _ blo bhi) =
     BVBitInterval mask (cat alo blo) (cat ahi bhi)
   where
-    cat i j = i `shiftL` widthVal v + j
+    cat i j = (i `shiftL` widthVal v) + j
     mask = maxUnsigned (addNat u v)
 
 -- | @shrink i a@ drops the @i@ least significant bits from @a@.
@@ -313,11 +323,16 @@ xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask 
 ---------------------------------------------------------------------------------------
 -- Correctness properties
 
+-- | Check that a domain is proper, and that
+--   the given value is a member
+pmember :: NatRepr n -> Domain n -> Integer -> Bool
+pmember n a x = proper n a && member a x
+
 correct_any :: (1 <= n) => NatRepr n -> Integer -> Property
-correct_any w x = property (member (any w) x)
+correct_any n x = property (pmember n (any n) x)
 
 correct_singleton :: (1 <= n) => NatRepr n -> Integer -> Integer -> Property
-correct_singleton n x y = property (member (singleton n x') y' == (x' == y'))
+correct_singleton n x y = property (pmember n (singleton n x') y' == (x' == y'))
   where
   x' = toUnsigned n x
   y' = toUnsigned n y
@@ -326,44 +341,44 @@ correct_overlap :: Domain n -> Domain n -> Integer -> Property
 correct_overlap a b x =
   member a x && member b x ==> domainsOverlap a b
 
-correct_union :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
-correct_union a b x =
-  member a x || member b x ==> member (union a b) x
+correct_union :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
+correct_union n a b x =
+  member a x || member b x ==> pmember n (union a b) x
 
 correct_intersection :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
-correct_intersection a b x =
+correct_intersection a b x = -- NB, intersection might not be proper
   member a x && member b x ==> member (intersection a b) x
 
 correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
-correct_zero_ext w a u x = member a x' ==> member (zext a u) x'
+correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
   where
   x' = toUnsigned w x
 
 correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
-correct_sign_ext w a u x = member a x' ==> member (sext w a u) x'
+correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
   where
   x' = toSigned w x
 
 correct_concat :: NatRepr m -> (Domain m,Integer) -> NatRepr n -> (Domain n,Integer) -> Property
-correct_concat m (a,x) n (b,y) = member a x' ==> member b y' ==> member (concat m a n b) z
+correct_concat m (a,x) n (b,y) = member a x' ==> member b y' ==> pmember (addNat m n) (concat m a n b) z
   where
   x' = toUnsigned m x
   y' = toUnsigned n y
   z  = x' `shiftL` (widthVal n) .|. y'
 
-correct_shrink :: NatRepr i -> (Domain (i + n), Integer) -> Property
-correct_shrink i (a,x) = member a x' ==> member (shrink i a) (x' `shiftR` widthVal i)
+correct_shrink :: NatRepr i -> NatRepr n -> (Domain (i + n), Integer) -> Property
+correct_shrink i n (a,x) = member a x' ==> pmember n (shrink i a) (x' `shiftR` widthVal i)
   where
   x' = x .&. bvdMask a
 
 correct_trunc :: (n <= w) => NatRepr n -> (Domain w, Integer) -> Property
-correct_trunc n (a,x) = member a x' ==> member (trunc n a) (toUnsigned n x')
+correct_trunc n (a,x) = member a x' ==> pmember n (trunc n a) (toUnsigned n x')
   where
   x' = x .&. bvdMask a
 
 correct_select :: (1 <= n, i + n <= w) =>
   NatRepr i -> NatRepr n -> (Domain w, Integer) -> Property
-correct_select i n (a, x) = member a x ==> member (select i n a) y
+correct_select i n (a, x) = member a x ==> pmember n (select i n a) y
   where
   y = toUnsigned n ((x .&. bvdMask a) `shiftR` (widthVal i))
 
@@ -376,37 +391,37 @@ correct_eq n (a,x) (b,y) =
       Nothing    -> True
 
 correct_shl :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
-correct_shl n (a,x) y = member a x ==> member (shl n a y) z
+correct_shl n (a,x) y = member a x ==> pmember n (shl n a y) z
   where
   z = (toUnsigned n x) `shiftL` fromInteger (min (intValue n) y)
 
 correct_lshr :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Integer -> Property
-correct_lshr n (a,x) y = member a x ==> member (lshr n a y) z
+correct_lshr n (a,x) y = member a x ==> pmember n (lshr n a y) z
   where
   z = (toUnsigned n x) `shiftR` fromInteger (min (intValue n) y)
 
 correct_ashr :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Integer -> Property
-correct_ashr n (a,x) y = member a x ==> member (ashr n a y) z
+correct_ashr n (a,x) y = member a x ==> pmember n (ashr n a y) z
   where
   z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
 
 correct_rol :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
-correct_rol n (a,x) y = member a x ==> member (rol n a y) (Arith.rotateLeft n x y)
+correct_rol n (a,x) y = member a x ==> pmember n (rol n a y) (Arith.rotateLeft n x y)
 
 correct_ror :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
-correct_ror n (a,x) y = member a x ==> member (ror n a y) (Arith.rotateRight n x y)
+correct_ror n (a,x) y = member a x ==> pmember n (ror n a y) (Arith.rotateRight n x y)
 
-correct_not :: (1 <= n) => (Domain n, Integer) -> Property
-correct_not (a,x) = member a x ==> member (not a) (complement x)
+correct_not :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
+correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
 
-correct_and :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
-correct_and (a,x) (b,y) = member a x ==> member b y ==> member (and a b) (x .&. y)
+correct_and :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_and n (a,x) (b,y) = member a x ==> member b y ==> pmember n (and a b) (x .&. y)
 
-correct_or :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
-correct_or (a,x) (b,y) = member a x ==> member b y ==> member (or a b) (x .|. y)
+correct_or :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_or n (a,x) (b,y) = member a x ==> member b y ==> pmember n (or a b) (x .|. y)
 
-correct_xor :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
-correct_xor (a,x) (b,y) = member a x ==> member b y ==> member (xor a b) (x `Bits.xor` y)
+correct_xor :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_xor n (a,x) (b,y) = member a x ==> member b y ==> pmember n (xor a b) (x `Bits.xor` y)
 
 correct_testBit :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Natural -> Property
 correct_testBit n (a,x) i =
