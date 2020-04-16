@@ -1592,16 +1592,15 @@ abstractEval f a0 = do
     BVShl  w x y -> BVD.shl w (f x) (f y)
     BVLshr w x y -> BVD.lshr w (f x) (f y)
     BVAshr w x y -> BVD.ashr w (f x) (f y)
-    BVRol  w _ _ -> BVD.any w -- TODO?
-    BVRor  w _ _ -> BVD.any w -- TODO?
+    BVRol  w x y -> BVD.rol w (f x) (f y)
+    BVRor  w x y -> BVD.ror w (f x) (f y)
     BVZext w x   -> BVD.zext (f x) w
     BVSext w x   -> BVD.sext (bvWidth x) (f x) w
     BVFill w _   -> BVD.range w (-1) 0
 
-    -- TODO: pretty sure we can do better for popcount, ctz and clz
-    BVPopcount w _ -> BVD.range w 0 (intValue w)
-    BVCountLeadingZeros w _ -> BVD.range w 0 (intValue w)
-    BVCountTrailingZeros w _ -> BVD.range w 0 (intValue w)
+    BVPopcount w x -> BVD.popcnt w (f x)
+    BVCountLeadingZeros w x -> BVD.clz w (f x)
+    BVCountTrailingZeros w x -> BVD.ctz w (f x)
 
     FloatPZero{} -> ()
     FloatNZero{} -> ()

@@ -84,8 +84,8 @@ bxor a b = { lomask = lo, himask = hi }
   hi = c || u
   lo = hi ^ u
 
-// Note: shift operations in this domain only apply when the
-// shift amount is known
+// Note: shift and rotate operations in this domain only apply
+// when the shift amount is known
 shl : {n} (fin n) => Dom n -> [n] -> Dom n
 shl a x = { lomask = a.lomask << x', himask = a.himask << x' }
   where x' = if x < `n then x else `n
@@ -97,6 +97,12 @@ lshr a x = { lomask = a.lomask >> x', himask = a.himask >> x' }
 ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> Dom n
 ashr a x = { lomask = a.lomask >>$ x', himask = a.himask >>$ x' }
   where x' = if x < `n then x else `n
+
+rol : {n} (fin n) => Dom n -> [n] -> Dom n
+rol a x = { lomask = a.lomask <<< x, himask = a.himask <<< x }
+
+ror : {n} (fin n) => Dom n -> [n] -> Dom n
+ror a x = { lomask = a.lomask >>> x, himask = a.himask >>> x }
 
 ////////////////////////////////////////////////////////////
 // Soundness properties
@@ -175,6 +181,14 @@ correct_ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> [n] -> Bit
 correct_ashr a x y =
   mem a x ==> mem (ashr a y) (x >>$ y)
 
+correct_rol : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_rol a x y =
+  mem a x ==> mem (rol a y) (x <<< y)
+
+correct_ror : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_ror a x y =
+  mem a x ==> mem (ror a y) (x >>> y)
+
 property b1 = correct_top`{16}
 property b2 = correct_singleton`{16}
 property b3 = correct_overlap`{16}
@@ -193,9 +207,11 @@ property l2 = correct_band`{16}
 property l3 = correct_bor`{16}
 property l4 = correct_bxor`{16}
 
-property s1 = correct_shl`{8}
-property s2 = correct_lshr`{8}
-property s3 = correct_ashr`{8}
+property s1 = correct_shl`{16}
+property s2 = correct_lshr`{16}
+property s3 = correct_ashr`{16}
+property s4 = correct_rol`{16}
+property s5 = correct_ror`{16}
 
 
 ////////////////////////////////////////////////////////////
