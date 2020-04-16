@@ -48,10 +48,12 @@ module What4.Utils.BVDomain
   , select
   , zext
   , sext
-    -- ** Shifts
+    -- ** Shifts and rotates
   , shl
   , lshr
   , ashr
+  , rol
+  , ror
     -- ** Arithmetic
   , add
   , negate
@@ -66,6 +68,11 @@ module What4.Utils.BVDomain
   , and
   , or
   , xor
+
+    -- ** Misc
+  , popcnt
+  , clz
+  , ctz
 
     -- * Correctness properties
   , genDomain
@@ -100,6 +107,8 @@ module What4.Utils.BVDomain
   , correct_shl
   , correct_lshr
   , correct_ashr
+  , correct_rol
+  , correct_ror
   , correct_eq
   , correct_ult
   , correct_slt
@@ -108,6 +117,9 @@ module What4.Utils.BVDomain
   , correct_not
   , correct_xor
   , correct_testBit
+  , correct_popcnt
+  , correct_clz
+  , correct_ctz
   ) where
 
 import qualified Data.Bits as Bits
@@ -120,11 +132,13 @@ import           GHC.Stack
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
+import qualified What4.Utils.Arithmetic as Arith
+
 import qualified What4.Utils.BVDomain.Arith as A
 import qualified What4.Utils.BVDomain.Bitwise as B
 import qualified What4.Utils.BVDomain.XOR as X
 
-import           Test.QuickCheck (Property, property, (==>), Gen, counterexample, arbitrary)
+import           Test.QuickCheck (Property, property, (==>), Gen, arbitrary)
 
 
 arithToBitwiseDomain :: A.Domain w -> B.Domain w
@@ -323,17 +337,77 @@ sext w (BVDBitwise b) u = BVDBitwise (B.sext w b u)
 --------------------------------------------------------------------------------
 -- Shifts
 
+-- An arbitrary value; if we have to union together more than this many
+-- bitwise shifts or rotates we'll fall back on some default instead
+shiftBound :: Integer
+shiftBound = 16
+
 shl :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-shl w (BVDBitwise a) (asSingleton -> Just x)    = BVDBitwise (B.shl w a x)
+shl w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.shl w a y | y <- [lo .. hi'] ]
+  where
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
+
 shl w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.shl w a b)
 
+
 lshr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-lshr w (BVDBitwise a) (asSingleton -> Just x) = BVDBitwise (B.lshr w a x)
+lshr w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.lshr w a y | y <- [lo .. hi'] ]
+  where
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
+
 lshr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.lshr w a b)
 
+
+
 ashr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-ashr w (BVDBitwise a) (asSingleton -> Just x) = BVDBitwise (B.ashr w a x)
+ashr w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.ashr w a y | y <- [lo .. hi'] ]
+  where
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
+
 ashr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.ashr w a b)
+
+
+rol :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+
+-- Special cases, rotating all 0 or all 1 bits makes no difference
+rol _w a@(asSingleton -> Just x) _
+  | x == 0 = a
+  | x == bvdMask a = a
+
+rol w (asBitwiseDomain -> a) (asArithDomain -> b) =
+    if (lo <= hi && hi - lo <= shiftBound) then
+      BVDBitwise $ foldl1 B.union [ B.rol w a y | y <- [lo .. hi] ]
+    else
+      any w
+
+  where
+  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
+
+
+ror :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+
+-- Special cases, rotating all 0 or all 1 bits makes no difference
+ror _w a@(asSingleton -> Just x) _
+  | x == 0 = a
+  | x == bvdMask a = a
+
+ror w (asBitwiseDomain -> a) (asArithDomain -> b) =
+    if (lo <= hi && hi - lo <= shiftBound) then
+      BVDBitwise $ foldl1 B.union [ B.ror w a y | y <- [lo .. hi] ]
+    else
+      any w
+
+  where
+  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
 
 --------------------------------------------------------------------------------
 -- Arithmetic
@@ -398,6 +472,29 @@ xor a b
   | Just 0 <- asSingleton b = a
   | otherwise = BVDBitwise (B.xor (asBitwiseDomain a) (asBitwiseDomain b))
 
+-------------------------------------------------------------------------------
+-- Misc operations
+
+popcnt :: NatRepr w -> BVDomain w -> BVDomain w
+popcnt w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
+  where
+  (bitlo, bithi) = B.bitbounds b
+  lo = toInteger (Bits.popCount bitlo)
+  hi = toInteger (Bits.popCount bithi)
+
+clz :: NatRepr w -> BVDomain w -> BVDomain w
+clz w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
+  where
+  (bitlo, bithi) = B.bitbounds b
+  lo = Arith.clz w bithi
+  hi = Arith.clz w bitlo
+
+ctz :: NatRepr w -> BVDomain w -> BVDomain w
+ctz w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
+  where
+  (bitlo, bithi) = B.bitbounds b
+  lo = Arith.ctz w bithi
+  hi = Arith.ctz w bitlo
 
 
 ------------------------------------------------------------------
@@ -498,14 +595,14 @@ correct_urem n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> member 
   y' = toUnsigned n y
 
 correct_sdiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_sdiv n (a,x) (b,y) = counterexample (show (n,a,b,x,x',y,y',sdiv n a b,x' `quot` y')) $
+correct_sdiv n (a,x) (b,y) =
     member a x' ==> member b y' ==> y' /= 0 ==> member (sdiv n a b) (x' `quot` y')
   where
   x' = toSigned n x
   y' = toSigned n y
 
 correct_srem :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
-correct_srem n (a,x) (b,y) = counterexample (show (n,a,b,x',y',srem n a b, x' `rem` y')) $
+correct_srem n (a,x) (b,y) =
     member a x' ==> member b y' ==> y' /= 0 ==> member (srem n a b) (x' `rem` y')
   where
   x' = toSigned n x
@@ -525,6 +622,12 @@ correct_ashr :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, I
 correct_ashr n (a,x) (b,y) = member a x ==> member b y ==> member (ashr n a b) z
   where
   z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
+
+correct_rol :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_rol n (a,x) (b,y) = member a x ==> member b y ==> member (rol n a b) (Arith.rotateLeft n x y)
+
+correct_ror :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_ror n (a,x) (b,y) = member a x ==> member b y ==> member (ror n a b) (Arith.rotateRight n x y)
 
 correct_eq :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_eq n (a,x) (b,y) =
@@ -569,3 +672,12 @@ correct_testBit n (a,x) i =
       Just True  -> Bits.testBit x (fromIntegral i)
       Just False -> Prelude.not (Bits.testBit x (fromIntegral i))
       Nothing    -> True
+
+correct_popcnt :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_popcnt n (a,x) = member a x ==> member (popcnt n a) (toInteger (Bits.popCount x))
+
+correct_ctz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_ctz n (a,x) = member a x ==> member (ctz n a) (Arith.ctz n x)
+
+correct_clz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_clz n (a,x) = member a x ==> member (clz n a) (Arith.clz n x)

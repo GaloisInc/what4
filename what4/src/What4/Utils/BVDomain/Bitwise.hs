@@ -34,10 +34,12 @@ module What4.Utils.BVDomain.Bitwise
   , zext
   , sext
   , testBit
-  -- ** shifts
+  -- ** shifts and rotates
   , shl
   , lshr
   , ashr
+  , rol
+  , ror
   -- ** bitwise logical
   , and
   , or
@@ -62,6 +64,8 @@ module What4.Utils.BVDomain.Bitwise
   , correct_shl
   , correct_lshr
   , correct_ashr
+  , correct_rol
+  , correct_ror
   , correct_eq
   , correct_and
   , correct_or
@@ -75,10 +79,12 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger, counterexample)
+import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
 
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
+
+import qualified What4.Utils.Arithmetic as Arith
 
 -- | A bitwise interval domain, defined via a
 --   bitwise upper and lower bound.  The ordering
@@ -261,6 +267,14 @@ shl w (BVBitInterval mask lo hi) y = BVBitInterval mask (shleft lo) (shleft hi)
   y' = fromInteger (min y (intValue w))
   shleft x = (x `shiftL` y') .&. mask
 
+rol :: NatRepr w -> Domain w -> Integer -> Domain w
+rol w (BVBitInterval mask lo hi) y =
+  BVBitInterval mask (Arith.rotateLeft w lo y) (Arith.rotateLeft w hi y)
+
+ror :: NatRepr w -> Domain w -> Integer -> Domain w
+ror w (BVBitInterval mask lo hi) y =
+  BVBitInterval mask (Arith.rotateRight w lo y) (Arith.rotateRight w hi y)
+
 lshr :: NatRepr w -> Domain w -> Integer -> Domain w
 lshr w (BVBitInterval mask lo hi) y = BVBitInterval mask (shr lo) (shr hi)
   where
@@ -376,9 +390,14 @@ correct_ashr n (a,x) y = member a x ==> member (ashr n a y) z
   where
   z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
 
+correct_rol :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
+correct_rol n (a,x) y = member a x ==> member (rol n a y) (Arith.rotateLeft n x y)
+
+correct_ror :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
+correct_ror n (a,x) y = member a x ==> member (ror n a y) (Arith.rotateRight n x y)
+
 correct_not :: (1 <= n) => (Domain n, Integer) -> Property
-correct_not (a,x) = counterexample (show (a,x,not a,complement x)) $
-  member a x ==> member (not a) (complement x)
+correct_not (a,x) = member a x ==> member (not a) (complement x)
 
 correct_and :: (1 <= n) => (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_and (a,x) (b,y) = member a x ==> member b y ==> member (and a b) (x .&. y)
