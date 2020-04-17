@@ -190,6 +190,7 @@ import           Data.Monoid (Any(..))
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
 import qualified Data.Parameterized.HashTable as PH
+import qualified Data.Parameterized.Map as PM
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
@@ -2772,11 +2773,11 @@ instance HashableF (App (Expr t)) where
 -- an 'IO' hash table. Parameter @t@ is a phantom type brand used to
 -- track nonces.
 newtype IdxCache t (f :: BaseType -> Type)
-      = IdxCache { cMap :: PH.HashTable RealWorld (Nonce t) f }
+      = IdxCache { cMap :: IORef (PM.MapF (Nonce t) f) }
 
 -- | Create a new IdxCache
 newIdxCache :: MonadIO m => m (IdxCache t f)
-newIdxCache = liftIO $ stToIO $ IdxCache <$> PH.new
+newIdxCache = liftIO $ IdxCache <$> newIORef PM.empty
 
 {-# INLINE lookupIdxValue #-}
 -- | Return the value associated to the expr in the index.
@@ -2790,22 +2791,21 @@ lookupIdxValue c (BoundVarExpr i) = lookupIdx c (bvarId i)
 
 {-# INLINE lookupIdx #-}
 lookupIdx :: (MonadIO m) => IdxCache t f -> Nonce t tp -> m (Maybe (f tp))
-lookupIdx c n = liftIO $ stToIO $ PH.lookup (cMap c) n
+lookupIdx c n = liftIO $ PM.lookup n <$> readIORef (cMap c)
 
 {-# INLINE insertIdxValue #-}
 -- | Bind the value to the given expr in the index.
 insertIdxValue :: MonadIO m => IdxCache t f -> Nonce t tp -> f tp -> m ()
-insertIdxValue c e v = seq v $ liftIO $ stToIO $ PH.insert (cMap c) e v
+insertIdxValue c e v = seq v $ liftIO $ modifyIORef (cMap c) $ PM.insert e v
 
 {-# INLINE deleteIdxValue #-}
 -- | Remove a value from the IdxCache
 deleteIdxValue :: MonadIO m => IdxCache t f -> Nonce t (tp :: BaseType) -> m ()
-deleteIdxValue c e = liftIO $ stToIO $ do
-  PH.delete (cMap c) e
+deleteIdxValue c e = liftIO $ modifyIORef (cMap c) $ PM.delete e
 
 -- | Remove all values from the IdxCache
 clearIdxCache :: MonadIO m => IdxCache t f -> m ()
-clearIdxCache c = liftIO $ stToIO $ PH.clear (cMap c)
+clearIdxCache c = liftIO $ writeIORef (cMap c) PM.empty
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
