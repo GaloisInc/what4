@@ -488,7 +488,7 @@ data ModelResponse
 parseSortedVar :: Parser (Symbol, Sort)
 parseSortedVar = openParen *> ((,) <$> parse <*> parse) <* closeParen
 
--- | Parses ⟨symbol⟩ ( ⟨sorted_var⟩∗ ) ⟨sort⟩ ⟨term⟩
+-- | Parses ⟨symbol⟩ ( ⟨sorted_var⟩* ) ⟨sort⟩ ⟨term⟩
 parseDefineFun :: Parser DefineFun
 parseDefineFun = do
   sym <- parse
