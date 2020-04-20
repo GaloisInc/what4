@@ -47,13 +47,6 @@ matrix:
   allow_failures:
   - env: CABALVER=2.4 GHCVER=8.6.3 BUILD_ARG= DO_LINT=True
 
-cache:
-  directories:
-  - $HOME/.cabsnap
-  - $HOME/.cabal/packages
-  - $HOME/.cabal/store
-  - $HOME/.ghc
-  - $TRAVIS_BUILD_DIR/dist-newstyle
 before_install:
 - unset CC
 - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
