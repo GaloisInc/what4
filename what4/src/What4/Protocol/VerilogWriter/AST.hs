@@ -100,7 +100,6 @@ showBinop Ne       = "!="
 showBinop Lt       = "<"
 showBinop Le       = "<="
 
-
 data IExp (tp :: WT.BaseType) where
   Ident   :: WT.BaseTypeRepr tp -> Identifier -> IExp tp
 
@@ -120,6 +119,8 @@ data Exp (tp :: WT.BaseType) where
   IExp :: IExp tp -> Exp tp
   Binop :: Binop inTp outTp -> IExp inTp -> IExp inTp -> Exp outTp
   Unop :: Unop tp -> IExp tp -> Exp tp
+  BVRotateL :: WT.NatRepr w -> IExp tp -> Integer -> Exp tp
+  BVRotateR :: WT.NatRepr w -> IExp tp -> Integer -> Exp tp
   Mux :: IExp WT.BaseBoolType -> IExp tp -> IExp tp -> Exp tp
   Bit :: IExp (WT.BaseBVType w)
       -> Integer
@@ -140,6 +141,8 @@ data Exp (tp :: WT.BaseType) where
 expType :: Exp tp -> WT.BaseTypeRepr tp
 expType (IExp e) = iexpType e
 expType (Binop op e1 _) = binopType op (iexpType e1)
+expType (BVRotateL _ e _) = iexpType e
+expType (BVRotateR _ e _) = iexpType e
 expType (Unop _ e) = iexpType e
 expType (Mux _ e1 _) = iexpType e1
 expType (Bit _ _) = WT.BaseBoolRepr

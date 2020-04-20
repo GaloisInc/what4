@@ -75,6 +75,16 @@ expDoc :: Exp tp -> Doc ()
 expDoc (IExp e) = iexpDoc e
 expDoc (Binop op l r) = iexpDoc l <+> binopDoc op <+> iexpDoc r
 expDoc (Unop op e) = unopDoc op <+> iexpDoc e
+-- NB: special pretty-printer because ABC has a hack to detect this specific syntax
+expDoc (BVRotateL (intValue -> w) e n) =
+  parens (v <+> "<<" <+> pretty n) <+> "|" <+>
+  parens (v <+> ">>" <+> parens (pretty w <+> "-" <+> pretty n))
+    where v = iexpDoc e
+-- NB: special pretty-printer because ABC has a hack to detect this specific syntax
+expDoc (BVRotateR (intValue -> w) e n) =
+  parens (v <+> ">>" <+> pretty n) <+> "|" <+>
+  parens (v <+> "<<" <+> parens (pretty w <+> "-" <+> pretty n))
+    where v = iexpDoc e
 expDoc (Mux c t e) = iexpDoc c <+> "?" <+> iexpDoc t <+> colon <+> iexpDoc e
 expDoc (Bit e i) =
   iexpDoc e <> lbracket <> pretty i <> rbracket
