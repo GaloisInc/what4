@@ -306,7 +306,7 @@ freshIdentifier basename = do
   st <- get
   let x = vsFreshIdent st
   put $ st { vsFreshIdent = x+1 }
-  return $ basename ++ show x
+  return $ basename ++ "_" ++ show x
 
 addFreshWire :: WT.BaseTypeRepr tp -> String -> Exp tp -> VerilogM n Identifier
 addFreshWire repr basename e = do
