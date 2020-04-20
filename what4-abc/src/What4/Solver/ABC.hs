@@ -92,6 +92,8 @@ import           What4.Solver.Adapter
 import           What4.SatResult
 import           What4.Utils.AbstractDomains
 import qualified What4.Utils.BVDomain as BVD
+import qualified What4.Utils.BVDomain.Arith as A
+import qualified What4.Utils.BVDomain.Bitwise as B
 import           What4.Utils.Complex
 import qualified What4.Utils.Environment as Env
 import           What4.Utils.MonadST
@@ -848,18 +850,13 @@ freshBinding ntk n l tp mbnds = do
             Nothing -> return GIA.true
             Just bnds ->
               do let wint = fromIntegral (natValue w)
-                 let rangeCond (lo,hi) =
-                       do lop <- if lo > 0 then
-                                   AIG.ule g (AIG.bvFromInteger g wint lo) bv
-                                 else
-                                   return GIA.true
-                          hip <- if hi < maxUnsigned w then
-                                   AIG.ule g bv (AIG.bvFromInteger g wint hi)
-                                 else
-                                   return GIA.true
-                          AIG.lAnd' g lop hip
-                 conds <- mapM rangeCond (BVD.ranges w bnds)
-                 foldM (AIG.lAnd' g) GIA.true conds
+                 let arithBounds Nothing = return GIA.true
+                     arithBounds (Just (lo,sz)) =
+                       do diff <- AIG.sub g bv (AIG.bvFromInteger g wint lo)
+                          AIG.ule g diff (AIG.bvFromInteger g wint sz)
+                 case bnds of
+                   BVD.BVDArith a -> arithBounds (A.arithDomainData a)
+                   BVD.BVDBitwise b -> between g (B.bitbounds b) bv
         return (BVBinding n bv cond)
 
     BaseNatRepr     -> failAt l "Natural number variables are not supported by ABC."
@@ -870,6 +867,18 @@ freshBinding ntk n l tp mbnds = do
     BaseArrayRepr _ _ -> failAt l "Array variables are not supported by ABC."
     BaseStructRepr{}  -> failAt l "Struct variables are not supported by ABC."
     BaseFloatRepr{}   -> failAt l "Floating-point variables are not supported by ABC."
+
+between :: GIA.GIA s -> (Integer, Integer) -> AIG.BV (GIA.Lit s) -> IO (GIA.Lit s)
+between g (lo, hi) bv = foldM (AIG.lAnd' g) GIA.true =<< mapM bitBetween [0 .. l-1]
+  where
+  l = length bv
+  bitBetween i = AIG.lAnd' g lop hip
+    where
+    lop = if lobit then bvbit else GIA.true
+    hip = if hibit then GIA.true else AIG.not bvbit
+    bvbit = AIG.at bv i
+    lobit = testBit lo (l - i - 1)
+    hibit = testBit hi (l - i - 1)
 
 -- | Add a bound variable.
 addBoundVar :: Network t s -> Some (QuantifierInfo t) -> IO (VarBinding t s)
