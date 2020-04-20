@@ -53,11 +53,11 @@ exprToVerilogExpr e = do
       AppExpr app -> appVerilogExpr app
       NonceAppExpr n -> appExprVerilogExpr n
       BoundVarExpr x ->
-        do addInput tp name
+        do name <- addFreshInput tp base
            return $ Ident tp name
         where
           tp = bvarType x
-          name = bvarIdentifier x
+          base = bvarIdentifier x
 
 eqToVerilogExpr :: Expr n tp -> Expr n tp -> VerilogM n (IExp WT.BaseBoolType)
 eqToVerilogExpr x y = do
@@ -77,11 +77,11 @@ appExprVerilogExpr nae =
     MapOverArrays _ _ _ -> doNotSupportError "arrays"
     ArrayTrueOnEntries _ _ -> doNotSupportError "arrays"
     FnApp f Empty -> do
-      addInput tp name
+      name <- addFreshInput tp base
       return $ Ident tp name
         where
           tp = symFnReturnType f
-          name = show (symFnName f)
+          base = show (symFnName f)
     -- TODO: inline defined functions?
     -- TODO: implement uninterpreted functions as uninterpreted functions
     -- FnApp f es | show f == "Prelude.Eq" -> throwError "nyi: Eq"

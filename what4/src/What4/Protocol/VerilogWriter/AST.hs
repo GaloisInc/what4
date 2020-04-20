@@ -274,13 +274,12 @@ execVerilogM op =
      (_a,m) <- runVerilogM op s
      return m
 
--- TODO: make it generate fresh names if needed?
-addInput :: WT.BaseTypeRepr tp -> Identifier -> VerilogM n ()
-addInput tp name = do
+addFreshInput :: WT.BaseTypeRepr tp -> Identifier -> VerilogM n Identifier
+addFreshInput tp base = do
   st <- get
-  let b = any ((==)name) (snd <$> vsInputs st)
-  if b then return () -- if name is already an input
-       else put $ st { vsInputs = (Some tp, name) : vsInputs st }
+  name <- freshIdentifier base
+  put $ st { vsInputs = (Some tp, name) : vsInputs st }
+  return name
 
 addOutput :: WT.BaseTypeRepr tp -> Identifier -> Exp tp -> VerilogM n ()
 addOutput tp name e = do
