@@ -70,6 +70,7 @@ module What4.Expr.WeightedSum
 
 import           Control.Lens
 import           Control.Monad.State
+import           Data.BitVector.Sized
 import           Data.Hashable
 import           Data.Kind
 import           Data.List (foldl')
@@ -118,8 +119,8 @@ abstractTerm sr c e =
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.ravScalarMul c (AD.getAbsValue e))
     SR.SemiRingBVRepr fv w ->
       case fv of
-        SR.BVArithRepr -> SRAbsBVAdd (BVD.scale c (AD.getAbsValue e))
-        SR.BVBitsRepr  -> SRAbsBVXor (BVD.and (BVD.singleton w c) (AD.getAbsValue e))
+        SR.BVArithRepr -> SRAbsBVAdd (BVD.scale (bvIntegerUnsigned c) (AD.getAbsValue e))
+        SR.BVBitsRepr  -> SRAbsBVXor (BVD.and (BVD.singleton w (bvIntegerUnsigned c)) (AD.getAbsValue e))
 
 abstractVal :: AD.HasAbsValue f => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRAbsValue sr
 abstractVal sr e =
@@ -141,8 +142,8 @@ abstractScalar sr c =
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.ravSingle c)
     SR.SemiRingBVRepr fv w ->
       case fv of
-        SR.BVArithRepr -> SRAbsBVAdd (BVD.singleton w c)
-        SR.BVBitsRepr  -> SRAbsBVXor (BVD.singleton w c)
+        SR.BVArithRepr -> SRAbsBVAdd (BVD.singleton w (bvIntegerUnsigned c))
+        SR.BVBitsRepr  -> SRAbsBVXor (BVD.singleton w (bvIntegerUnsigned c))
 
 fromSRAbsValue ::
   SRAbsValue sr -> AD.AbstractValue (SR.SemiRingBase sr)
