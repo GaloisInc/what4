@@ -4,6 +4,7 @@
 
 module What4.IndexLit where
 
+import Data.BitVector.Sized
 import Data.Parameterized.Classes
 import Numeric.Natural
 
@@ -16,7 +17,7 @@ import What4.BaseTypes
 -- arrays.
 data IndexLit idx where
   NatIndexLit :: !Natural -> IndexLit BaseNatType
-  BVIndexLit :: (1 <= w) => !(NatRepr w) -> !Integer ->  IndexLit (BaseBVType w)
+  BVIndexLit :: (1 <= w) => !(NatRepr w) -> !(BV w) ->  IndexLit (BaseBVType w)
 
 instance Eq (IndexLit tp) where
   x == y = isJust (testEquality x y)
