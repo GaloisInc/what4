@@ -161,7 +161,6 @@ import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.BitVector.Sized as BV
-import qualified Data.BitVector.Sized.Signed as BV
 import           Data.Coerce (coerce)
 import           Data.Foldable
 import           Data.Hashable
@@ -297,21 +296,24 @@ class HasAbsValue e => IsExpr e where
   asComplex :: e BaseComplexType -> Maybe (Complex Rational)
   asComplex _ = Nothing
 
-  -- BGS: The following four functions seem like they might need to be
-  -- changed since there is no distinction anymore.
-  -- | Return the unsigned value if this is a constant bitvector.
-  asUnsignedBV :: e (BaseBVType w) -> Maybe (BV.BV w)
+  asBV :: e (BaseBVType w) -> Maybe (BV.BV w)
+  asBV _ = Nothing
+
+  -- | Return the unsigned integer value if this is a constant bitvector.
+  asUnsignedBV :: e (BaseBVType w) -> Maybe Integer
   asUnsignedBV _ = Nothing
 
-  -- | Return the signed value if this is a constant bitvector.
-  asSignedBV   :: (1 <= w) => e (BaseBVType w) -> Maybe (BV.SignedBV w)
+  -- | Return the signed integer value if this is a constant bitvector.
+  asSignedBV   :: (1 <= w) => e (BaseBVType w) -> Maybe Integer
   asSignedBV _ = Nothing
 
-  -- | If we have bounds information about the term, return unsigned upper and lower bounds
-  unsignedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (BV.BV w, BV.BV w)
+  -- | If we have bounds information about the term, return unsigned
+  -- upper and lower bounds as integers
+  unsignedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (Integer, Integer)
 
-  -- | If we have bounds information about the term, return signed upper and lower bounds
-  signedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (BV.SignedBV w, BV.SignedBV w)
+  -- | If we have bounds information about the term, return signed
+  -- upper and lower bounds as integers
+  signedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (Integer, Integer)
 
   asAffineVar :: e tp -> Maybe (ConcreteVal tp, e tp, ConcreteVal tp)
 
@@ -2704,9 +2706,7 @@ asConcrete x =
     BaseRealRepr    -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
-    -- BGS: This line here is why I left asUnsignedBV as a BV rather
-    -- than UnsignedBV.
-    BaseBVRepr w    -> ConcreteBV w <$> asUnsignedBV x
+    BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
     BaseStructRepr _ -> Nothing -- FIXME?
     BaseArrayRepr _ _ -> Nothing -- FIXME?
