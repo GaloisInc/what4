@@ -37,6 +37,7 @@ module What4.Expr.MATLAB
   ) where
 
 import           Control.Monad (join)
+import qualified Data.BitVector.Sized as BV
 import           Data.Kind (Type)
 import           Data.Hashable
 import           Data.Parameterized.Classes
@@ -70,12 +71,12 @@ clampedIntAdd sym x y = do
   r'  <- bvAdd sym x' y'
 
   -- Check is result is greater than or equal to max value.
-  too_high <- bvSgt sym r' =<< bvLit sym w' (maxSigned w)
-  max_int <- bvLit sym w (maxSigned w)
+  too_high <- bvSgt sym r' =<< bvLit sym w' (BV.bvMaxSigned w')
+  max_int <- bvLit sym w (BV.bvMaxSigned w)
 
   -- Check is result is less than min value.
-  too_low <- bvSlt sym r' =<< bvLit sym w' (minSigned w)
-  min_int <- bvLit sym w (minSigned w)
+  too_low <- bvSlt sym r' =<< bvLit sym w' (BV.bvMinSigned w')
+  min_int <- bvLit sym w (BV.bvMinSigned w)
 
   -- Clamp integer range.
   r <- bvTrunc sym w r'
@@ -104,7 +105,7 @@ clampedIntMul :: (IsExprBuilder sym, 1 <= w)
 clampedIntMul sym x y = do
   let w = bvWidth x
   (hi,lo) <- signedWideMultiplyBV sym x y
-  zro    <- bvLit sym w 0
+  zro    <- bvLit sym w BV.bv0
   ones   <- maxUnsignedBV sym w
   ok_pos <- join $ andPred sym <$> (notPred sym =<< bvIsNeg sym lo)
                               <*> bvEq sym hi zro
@@ -176,7 +177,7 @@ clampedUIntSub sym x y = do
        sym
        no_underflow
        (bvSub sym x y) -- Perform subtraction if y >= x
-       (bvLit sym w 0) -- Otherwise return min int
+       (bvLit sym w BV.bv0) -- Otherwise return min int
 
 clampedUIntMul :: (IsExprBuilder sym, 1 <= w)
                => sym
