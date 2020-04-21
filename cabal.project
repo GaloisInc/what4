@@ -13,5 +13,6 @@ optional-packages:
   dependencies/abcBridge/
   dependencies/aig/
   dependencies/blt/
+  dependencies/bv-sized/
   dependencies/parameterized-utils/
   
