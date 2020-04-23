@@ -137,13 +137,13 @@ instance Show (SWord sym) where
 bvAsSignedInteger :: forall sym. IsExprBuilder sym => SWord sym -> Maybe Integer
 bvAsSignedInteger ZBV = Just 0
 bvAsSignedInteger (DBV (bv :: SymBV sym w)) =
-  W.asSignedBV bv
+  BV.asSigned (W.bvWidth bv) <$> W.asBV bv
 
 -- | Return the unsigned value if this is a constant bitvector
 bvAsUnsignedInteger :: forall sym. IsExprBuilder sym => SWord sym -> Maybe Integer
 bvAsUnsignedInteger ZBV = Just 0
 bvAsUnsignedInteger (DBV (bv :: SymBV sym w)) =
-  W.asUnsignedBV bv
+  BV.asUnsigned <$> W.asBV bv
 
 
 unsignedBVBounds :: forall sym. IsExprBuilder sym => SWord sym -> Maybe (Integer, Integer)
