@@ -1508,7 +1508,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
         max_val <- maxSignedBV sym n
         p <- bvUle sym e max_val
         bvIte sym p e max_val
-      NatCaseGT _ -> do
+      NatCaseGT LeqProof -> do
         bvZext sym n e
 
   ----------------------------------------------------------------------
