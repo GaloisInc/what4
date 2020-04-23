@@ -62,7 +62,7 @@ genWidth =
      case someNat x of
        Just (Some n)
          | Just LeqProof <- isPosNat n -> pure (SW n)
-       _ -> fail "test panic! genWidth"
+       _ -> error "test panic! genWidth"
 
 genBV :: NatRepr w -> Gen Integer
 genBV w = chooseInteger (minUnsigned w, maxUnsigned w)
