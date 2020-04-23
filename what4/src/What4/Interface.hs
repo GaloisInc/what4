@@ -1061,12 +1061,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   unsignedWideMultiplyBV sym x y = do
        let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert w' is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
-       LeqProof <- return (addIsLeq w w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1085,12 +1087,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   mulUnsignedOF sym x y =
     do let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert w' is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
-       LeqProof <- return (addIsLeq w w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1113,12 +1117,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   signedWideMultiplyBV sym x y = do
        let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert dbl_w is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
-       LeqProof <- return (addIsLeq w w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1137,12 +1143,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   mulSignedOF sym x y =
     do let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert dbl_w is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
-       LeqProof <- return (addIsLeq w w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
@@ -1453,8 +1461,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     case n `testNatCases` m of
       -- Truncate when the width of e is larger than w.
       NatCaseLT LeqProof -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        -- Just LeqProof <- return (testLeq (incNat n) m)
         -- Check if e underflows
         does_underflow <- bvSlt sym e =<< bvLit sym m (BV.zext m (BV.minSigned n))
         iteM bvIte sym does_underflow (bvLit sym n (BV.minSigned n)) $ do
@@ -1464,30 +1470,19 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
             -- Just do truncation.
             bvTrunc sym n e
       NatCaseEQ -> return e
-      NatCaseGT LeqProof -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat m) n)
-        bvSext sym n e
+      NatCaseGT LeqProof -> bvSext sym n e
 
   -- | Convert an unsigned bitvector to the nearest unsigned bitvector with
   -- the given width (clamp on overflow).
   uintSetWidth :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
-  uintSetWidth sym e w = do
-    let e_width = bvWidth e
-    case w `compareNat` e_width of
-      NatLT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat w) e_width)
-          -- Check if e overflows target unsigned representation.
-        does_overflow <- bvUgt sym e =<< bvLit sym e_width (BV.mkBV e_width (maxUnsigned w))
-        iteM bvIte sym does_overflow (bvLit sym w (BV.maxUnsigned w)) $ do
-          -- Just do truncation.
-          bvTrunc sym w e
-      NatEQ -> return e
-      NatGT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat e_width) w)
-        bvZext sym w e
+  uintSetWidth sym e n = do
+    let m = bvWidth e
+    case n `testNatCases` m of
+      NatCaseLT LeqProof -> do
+        does_overflow <- bvUgt sym e =<< bvLit sym m (BV.mkBV m (maxUnsigned n))
+        iteM bvIte sym does_overflow (bvLit sym n (BV.maxUnsigned n)) $ bvTrunc sym n e
+      NatCaseEQ -> return e
+      NatCaseGT LeqProof -> bvZext sym n e
 
   -- | Convert an signed bitvector to the nearest unsigned bitvector with
   -- the given width (clamp on overflow).
@@ -1501,22 +1496,19 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   uintToInt :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
   uintToInt sym e n = do
     let m = bvWidth e
-    case n `compareNat` m of
-      NatLT _ -> do
+    case n `testNatCases` m of
+      NatCaseLT LeqProof -> do
         -- Get maximum signed n-bit number.
         max_val <- bvLit sym m (BV.mkBV m ((2^(widthVal n-1))-1))
         -- Check if expression is less than maximum.
         p <- bvUle sym e max_val
-        Just LeqProof <- return (testLeq (incNat n) m)
         -- Select appropriate number then truncate.
         bvTrunc sym n =<< bvIte sym p e max_val
-      NatEQ -> do
+      NatCaseEQ -> do
         max_val <- maxSignedBV sym n
         p <- bvUle sym e max_val
         bvIte sym p e max_val
-      NatGT _ -> do
-        -- Add dynamic check to ensure GHC typechecks.
-        Just LeqProof <- return (testLeq (incNat m) n)
+      NatCaseGT _ -> do
         bvZext sym n e
 
   ----------------------------------------------------------------------
