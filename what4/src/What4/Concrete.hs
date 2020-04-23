@@ -43,8 +43,7 @@ module What4.Concrete
   , fromConcreteInteger
   , fromConcreteReal
   , fromConcreteString
-  , fromConcreteUnsignedBV
-  , fromConcreteSignedBV
+  , fromConcreteBV
   , fromConcreteComplex
   ) where
 
@@ -55,7 +54,7 @@ import qualified Numeric as N
 import           Numeric.Natural
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-import           Data.BitVector.Sized
+import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Ctx
 import qualified Data.Parameterized.Context as Ctx
@@ -77,7 +76,7 @@ data ConcreteVal tp where
   ConcreteBV      ::
     (1 <= w) =>
     NatRepr w {- Width of the bitvector -} ->
-    BV w      {- Unsigned value of the bitvector -} ->
+    BV.BV w   {- Unsigned value of the bitvector -} ->
     ConcreteVal (BaseBVType w)
   ConcreteStruct  :: Ctx.Assignment ConcreteVal ctx -> ConcreteVal (BaseStructType ctx)
   ConcreteArray   ::
@@ -107,13 +106,8 @@ fromConcreteComplex (ConcreteComplex x) = x
 fromConcreteString :: ConcreteVal (BaseStringType si) -> StringLiteral si
 fromConcreteString (ConcreteString x) = x
 
--- BGS: THe following two functions don't really have a reasonable
--- distinction anymore.
-fromConcreteUnsignedBV :: ConcreteVal (BaseBVType w) -> BV w
-fromConcreteUnsignedBV (ConcreteBV _w x) = x
-
-fromConcreteSignedBV :: ConcreteVal (BaseBVType w) -> BV w
-fromConcreteSignedBV (ConcreteBV _w x) = x -- toSigned w x
+fromConcreteBV :: ConcreteVal (BaseBVType w) -> BV.BV w
+fromConcreteBV (ConcreteBV _w x) = x
 
 -- | Compute the type representative for a concrete value.
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
@@ -162,7 +156,7 @@ ppConcrete = \case
   ConcreteInteger x -> PP.text (show x)
   ConcreteReal x -> PP.text (show x)
   ConcreteString x -> PP.text (show x)
-  ConcreteBV w x -> PP.text ("0x" ++ (N.showHex (bvIntegerUnsigned x) (":[" ++ show w ++ "]")))
+  ConcreteBV w x -> PP.text ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
   ConcreteComplex (r :+ i) -> PP.text "complex(" PP.<> PP.text (show r) PP.<> PP.text ", " PP.<> PP.text (show i) PP.<> PP.text ")"
   ConcreteStruct xs -> PP.text "struct(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.text ")"
   ConcreteArray _ def xs0 -> go (Map.toAscList xs0) (PP.text "constArray(" PP.<> ppConcrete def PP.<> PP.text ")")
