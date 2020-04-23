@@ -1010,10 +1010,12 @@ instance IsExpr (Expr t) where
   exprType (AppExpr e) = appType (appExprApp e)
   exprType (BoundVarExpr i) = bvarType i
 
-  asUnsignedBV (SemiRingLiteral (SR.SemiRingBVRepr _ _) i _) = Just i
+  asBV (SemiRingLiteral (SR.SemiRingBVRepr _ _) i _) = Just i
+
+  asUnsignedBV (SemiRingLiteral (SR.SemiRingBVRepr _ _) i _) = Just (BV.bvIntegerUnsigned i)
   asUnsignedBV _ = Nothing
 
-  asSignedBV x = toSigned (bvWidth x) <$> asUnsignedBV x
+  asSignedBV x = BV.bvIntegerSigned (bvWidth x) <$> asBV x
 
   unsignedBVBounds x = Just $ BVD.ubounds $ exprAbsValue x
   signedBVBounds x = Just $ BVD.sbounds (bvWidth x) $ exprAbsValue x
@@ -1697,7 +1699,7 @@ exprAbsValue (SemiRingLiteral sr x _) =
     SR.SemiRingNatRepr  -> natSingleRange x
     SR.SemiRingIntegerRepr  -> singleRange x
     SR.SemiRingRealRepr -> ravSingle x
-    SR.SemiRingBVRepr _ w -> BVD.singleton w x
+    SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.bvIntegerUnsigned x)
 
 exprAbsValue (StringExpr l _) = stringAbsSingle l
 exprAbsValue (BoolExpr b _)   = Just b
@@ -1865,9 +1867,9 @@ ppApp' a0 = do
           where ppConstant 0 = []
                 ppConstant c = [ stringPrettyArg (ppBV c) ]
                 ppEntry sm e
-                  | sm == maxUnsigned w = [ exprPrettyArg e ]
+                  | sm == BV.bvMaxUnsigned w = [ exprPrettyArg e ]
                   | otherwise = [ PrettyFunc "bvAnd" [ stringPrettyArg (ppBV sm), exprPrettyArg e ] ]
-                ppBV x       = "0x" ++ (N.showHex x []) ++ ":[" ++ show w ++ "]"
+                ppBV x       = "0x" ++ (N.showHex (BV.bvIntegerUnsigned x) []) ++ ":[" ++ show w ++ "]"
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -2886,7 +2888,7 @@ sbMakeExpr sym a = do
     BaseNatRepr  | Just c <- asSingleNatRange v -> natLit sym c
     BaseIntegerRepr | Just c <- asSingleRange v -> intLit sym c
     BaseRealRepr | Just c <- asSingleRange (ravRange v) -> realLit sym c
-    BaseBVRepr w | Just x <- BVD.asSingleton v -> bvLit sym w x
+    BaseBVRepr w | Just x <- BVD.asSingleton v -> bvLit sym w (BV.mkBV w x)
     _ -> appExpr s pc a v
 
 -- | Update the binding to point to the current variable.
@@ -3088,6 +3090,7 @@ startCaching sb = do
   s <- newCachedStorage (exprCounter sb) (fromInteger sz)
   writeIORef (curAllocator sb) s
 
+-- BGS: Should f be changed to BV w -> BV w -> BV w?
 bvBinDivOp :: (1 <= w)
             => (Integer -> Integer -> Integer)
             -> (NatRepr w -> BVExpr t w -> BVExpr t w -> App (Expr t) (BaseBVType w))
@@ -3101,6 +3104,7 @@ bvBinDivOp f c sb x y = do
     (Just i, Just j) | j /= 0 -> bvLit sb w $ f i j
     _ -> sbMakeExpr sb $ c w x y
 
+-- BGS: Should f be changed to BV w -> BV w -> BV w?
 bvSignedBinDivOp :: (1 <= w)
                  => (Integer -> Integer -> Integer)
                  -> (NatRepr w -> BVExpr t w
