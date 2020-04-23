@@ -12,6 +12,149 @@ import bitsdomain as B
 import xordomain as X
 
 
+// Precondition `x <= mask`.  Find the (arithmetically) smallest
+//  `z` above `x` which is bitwise above `mask`.  In other words
+// find the smallest `z` such that `x <= z` and `mask || z == z`.
+
+bitwise_round_above : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+bitwise_round_above x mask = (x && ~q) ^ (mask && q)
+  where
+  q = A::fillright_alt ((x || mask) ^ x)
+
+bra_correct1 : {n} (fin n, n>=1) => [n] -> [n] -> Bit
+bra_correct1 x mask = mask <= x ==> (x <= q /\ B::bitle mask q)
+  where
+  q = bitwise_round_above x mask
+
+bra_correct2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Bit
+bra_correct2 x mask q' = (x <= q' /\ B::bitle mask q') ==> q <= q'
+  where
+  q = bitwise_round_above x mask
+
+property bra1 = bra_correct1`{64}
+property bra2 = bra_correct2`{64}
+
+
+// Precondition `lomask <= x <= himask` and `lomask || himask == himask`.
+// Find the (arithmetically) smallest `z` above `x` which is bitwise between
+// `lomask` and `himask`.  In otherwords, find the smallest `z` such that
+//  `x <= z` and `lomask || z = z` and `z || himask == himask`.
+bitwise_round_between : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> [n]
+bitwise_round_between x lomask himask = if r == 0 then loup else final
+  // Read these steps from the bottom up...
+  where
+
+  // Finally mask out the low bits and only set those requried by the lomask
+  final = (upper && ~lowbits) || lomask
+
+  // add the correcting bit and mask out any extraneous bits set in
+  // the previous step
+  upper = (z + highbit) && himask
+
+  // set ourselves up so that when we add the high bit to correct,
+  // the carry will ripple until it finds a bit position that we
+  // are allowed to set.
+  z = loup || ~himask
+
+  // isolate just the highest incorrect bit
+  highbit = rmask ^ lowbits
+
+  // A mask for all the bits lower than the high bit of r
+  lowbits = rmask >> 1
+
+  // set all the bits to the right of the highest incorrect bit
+  rmask = A::fillright_alt r
+
+  // now compute all the bits that are set that are not allowed
+  // to be set according to the himask
+  r = loup && ~himask
+
+  // first, round up to the lomask
+  loup = bitwise_round_above x lomask
+
+
+brb_correct1 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Bit
+brb_correct1 x lomask himask =
+    (B::bitle lomask himask /\ lomask <= x /\ x <= himask) ==>
+    (x <= q /\ B::bitle lomask q /\ B::bitle q himask)
+
+  where
+  q = bitwise_round_between x lomask himask
+
+brb_correct2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> [n] -> Bit
+brb_correct2 x lomask himask q' = (x <= q' /\ B::bitle lomask q' /\ B::bitle q' himask) ==> q <= q'
+  where
+  q = bitwise_round_between x lomask himask
+
+property brb1 = brb_correct1`{64}
+property brb2 = brb_correct2`{64}
+
+// Interesting fact about arithmetic domains: the low values of the two domains
+// represent overlap candidates.  If neither low value is contained in the other domain,
+// then they do not overlap.
+arith_overlap_candidates : {n} (fin n, n >= 1) => A::Dom n -> A::Dom n -> [n] -> Bit
+arith_overlap_candidates a b x =
+  A::mem a x ==>
+  A::mem b x ==>
+  ((A::mem a b.lo /\ A::mem b b.lo) \/
+   (A::mem a a.lo /\ A::mem b a.lo))
+
+// Bitwise domains, if they overlap, must overlap in some specific points.  The bitwise
+// union of the low bounds is one.
+bitwise_overlap_candidates : {n} (fin n, n >= 1) => B::Dom n -> B::Dom n -> [n] -> Bit
+bitwise_overlap_candidates a b x =
+  B::mem a x ==>
+  B::mem b x ==>
+  (B::mem a witness /\ B::mem b witness)
+
+ where
+ witness = a.lomask || b.lomask
+
+// If mixed domains have some common value, then they must definintely overlap at one
+// of the following three listed candidate points.
+mixed_overlap_candidates : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> [n] -> Bit
+mixed_overlap_candidates a b x =
+  A::mem a x ==>
+  B::mem b x ==>
+  (A::mem a b.lomask /\ B::mem b b.lomask) \/
+  (A::mem a b.himask /\ B::mem b b.himask) \/
+  (A::mem a next     /\ B::mem b next)
+
+ where
+ next = bitwise_round_between a.lo b.lomask b.himask
+
+
+// A mixed domain overlap test.  It relies on testing special candidate overlap values.
+//
+// If none of the overlap candidates are found in both domains, then the domains do not overlap.
+// On the other hand, if any canadiate is in both domains, it is a constructive witness of
+// overlap.
+mixed_domain_overlap : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> Bit
+mixed_domain_overlap a b =
+  A::mem a b.lomask \/ A::mem a b.himask \/ A::mem a (bitwise_round_between a.lo b.lomask b.himask)
+
+// If mixed domains have a common element, the overlap test will be true.
+correct_mixed_domain_overlap : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> [n] -> Bit
+correct_mixed_domain_overlap a b x =
+  A::mem a x ==>
+  B::mem b x ==>
+  mixed_domain_overlap a b
+
+// If the overlap test is true, then we can find some element they share in common,
+// provided the bitwise domain is nonempty.
+correct_mixed_domain_overlap_inv : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> Bit
+correct_mixed_domain_overlap_inv a b =
+  B::nonempty b ==> mixed_domain_overlap a b ==> (A::mem a witness /\ B::mem b witness)
+
+ where
+ witness = if A::mem a b.lomask then b.lomask else
+           if A::mem a b.himask then b.himask else
+           bitwise_round_between a.lo b.lomask b.himask
+
+property mx = correct_mixed_domain_overlap`{64}
+property mx_inv = correct_mixed_domain_overlap_inv`{64}
+
+
 // Operations that transfer between the domains
 
 arithToBitDom : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n

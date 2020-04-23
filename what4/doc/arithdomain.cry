@@ -361,6 +361,13 @@ correct_overlap : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
 correct_overlap a b x =
   mem a x ==> mem b x ==> overlap a b
 
+correct_overlap_inv : {n} (fin n) => Dom n -> Dom n -> Bit
+correct_overlap_inv a b =
+  overlap a b ==> (mem a witness /\ mem b witness)
+
+ where
+ witness = if mem a b.lo then b.lo else a.lo
+
 correct_union : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
 correct_union a b x =
   (mem a x \/ mem b x) ==> mem (union a b) x
@@ -470,6 +477,7 @@ property p2 = correct_ubounds`{16}
 property p3 = correct_sbounds`{16}
 property p4 = correct_singleton`{16}
 property p5 = correct_overlap`{16}
+property p5_inv = correct_overlap_inv`{16}
 property p6 = correct_union`{8}
 property p7 = correct_zero_ext`{32, 16}
 property p8 = correct_sign_ext`{32, 16}
