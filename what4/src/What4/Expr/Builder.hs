@@ -5148,17 +5148,17 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   bvSrem = bvBinDivOp BV.srem BVSrem
 
   bvPopcount sym x
-    | Just xv <- asBV x = bvLit sym w (BV.popCountBV xv)
+    | Just xv <- asBV x = bvLit sym w (BV.popCount xv)
     | otherwise = sbMakeExpr sym $ BVPopcount w x
    where w = bvWidth x
 
   bvCountTrailingZeros sym x
-    | Just xv <- asBV x = bvLit sym w (BV.ctzBV w xv)
+    | Just xv <- asBV x = bvLit sym w (BV.ctz w xv)
     | otherwise = sbMakeExpr sym $ BVCountTrailingZeros w x
    where w = bvWidth x
 
   bvCountLeadingZeros sym x
-    | Just xv <- asBV x = bvLit sym w (BV.clzBV w xv)
+    | Just xv <- asBV x = bvLit sym w (BV.clz w xv)
     | otherwise = sbMakeExpr sym $ BVCountLeadingZeros w x
    where w = bvWidth x
 
