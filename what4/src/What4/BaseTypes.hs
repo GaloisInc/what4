@@ -52,6 +52,7 @@ module What4.BaseTypes
   , Unicode
     -- * FloatPrecision data kind
   , type FloatPrecision
+  , type FloatPrecisionBits
     -- ** Constructors for kind FloatPrecision
   , FloatingPointPrecision
     -- ** FloatingPointPrecision aliases
@@ -159,6 +160,10 @@ data FloatPrecision where
                          -> TypeNats.Nat   -- number of bits for the significand field
                          -> FloatPrecision
 type FloatingPointPrecision = 'FloatingPointPrecision -- ^ @:: 'GHC.TypeNats.Nat' -> 'GHC.TypeNats.Nat' -> 'FloatPrecision'@.
+
+-- | This computes the number of bits occupied by a floating-point format.
+type family FloatPrecisionBits (fpp :: FloatPrecision) :: Nat where
+  FloatPrecisionBits (FloatingPointPrecision sb eb) = sb + eb
 
 -- | Floating-point precision aliases
 type Prec16  = FloatingPointPrecision  5  11
