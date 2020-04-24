@@ -115,7 +115,6 @@ import           Data.Parameterized.Nonce (Nonce)
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import           Data.Semigroup( (<>) )
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Text.Lazy.Builder (Builder)
@@ -130,7 +129,7 @@ import           System.IO.Streams (OutputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (ArrayResultWrapper(..), IndexLit(..), RoundingMode(..), StringLiteral(..), stringInfo)
+import           What4.Interface (RoundingMode(..), stringInfo)
 import           What4.ProblemFeatures
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
@@ -2444,9 +2443,9 @@ appSMTExpr ae = do
       addSideCondition "float_binary" $
         floatFromBinary fpp val .== xe
       -- qnan: 0b0 0b1..1 0b10..0
-      let qnan = bvTerm (addNat eb sb) $ BV.shl (addNat eb sb)
-                  (2 ^ (natValue eb + 1) - 1)
-                  (fromIntegral (natValue sb - 2))
+      LeqProof <- return $ leqTrans (leqProof (knownNat @1) (knownNat @2)) (leqProof (knownNat @2) eb)
+      LeqProof <- return $ leqTrans (leqProof (knownNat @1) (knownNat @2)) (leqProof (knownNat @2) sb)
+      let qnan = bvTerm (addNat eb sb) $ BV.concat sb (BV.maxSigned eb) (BV.minSigned sb)
       -- return (ite (fp.isNaN xe) qnan val)
       freshBoundTerm (BVTypeMap $ addNat eb sb) $ ite (floatIsNaN xe) qnan val
     FloatFromBinary fpp x -> do
