@@ -102,8 +102,8 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
+import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
-import           Data.Bits (shiftL)
 import           Data.IORef
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -332,7 +332,7 @@ class Num v => SupportTermOps v where
   intDivisible :: v -> Natural -> v
 
   -- | Create expression from bitvector.
-  bvTerm :: NatRepr w -> Integer -> v
+  bvTerm :: NatRepr w -> BV.BV w -> v
   bvNeg :: v -> v
   bvAdd :: v -> v -> v
   bvSub :: v -> v -> v
@@ -370,12 +370,12 @@ class Num v => SupportTermOps v where
   -- | @bvTestBit w i x@ returns predicate that holds if bit @i@
   -- in @x@ is set to true.  @w@ should be the number of bits in @x@.
   bvTestBit :: NatRepr w -> Natural -> v -> v
-  bvTestBit w i x = (bvExtract w i 1 x .== bvTerm w1 1)
+  bvTestBit w i x = (bvExtract w i 1 x .== bvTerm w1 BV.one)
     where w1 :: NatRepr 1
           w1 = knownNat
 
   bvSumExpr :: NatRepr w -> [v] -> v
-  bvSumExpr w [] = bvTerm w 0
+  bvSumExpr w [] = bvTerm w BV.zero
   bvSumExpr _ (h:r) = foldl bvAdd h r
 
   floatPZero :: FloatPrecisionRepr fpp -> v
@@ -1212,13 +1212,15 @@ addPartialSideCond _ t RealTypeMap (Just rng) =
        Unbounded -> return ()
        Inclusive hi -> addSideCondition "real_range" $ t .<= rationalTerm hi
 
+-- BGS: Unnecessary masks will go away when BVDomain uses BV instead
+-- of Integer
 addPartialSideCond _ t (BVTypeMap w) (Just rng) = mapM_ assertRange (BVD.ranges w rng)
  where
  assertRange (lo,hi) =
    do when (lo > 0)
-           (addSideCondition "bv_range" $ bvULe (bvTerm w lo) t)
+           (addSideCondition "bv_range" $ bvULe (bvTerm w (BV.mkBV w lo)) t)
       when (hi < maxUnsigned w)
-           (addSideCondition "bv_range" $ bvULe t (bvTerm w hi))
+           (addSideCondition "bv_range" $ bvULe t (bvTerm w (BV.mkBV w hi)))
 
 addPartialSideCond _ t (Char8TypeMap) (Just (StringAbs len)) =
   do case natRangeLow len of
@@ -1894,7 +1896,7 @@ appSMTExpr ae = do
     BVTestBit n xe -> do
       x <- mkBaseExpr xe
       let this_bit = bvExtract (bvWidth xe) n 1 x
-          one = bvTerm (knownNat :: NatRepr 1) 1
+          one = bvTerm (knownNat :: NatRepr 1) BV.one
       freshBoundTerm BoolTypeMap $ this_bit .== one
     BVSlt xe ye -> do
       x <- mkBaseExpr xe
@@ -1977,13 +1979,13 @@ appSMTExpr ae = do
       case WSum.prodRepr pd of
         SR.SemiRingBVRepr SR.BVArithRepr w ->
           do pd' <- WSum.prodEvalM (\a b -> pure (bvMul a b)) mkBaseExpr pd
-             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w 1)
+             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w BV.one)
                    (freshBoundTerm (BVTypeMap w))
                    pd'
 
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           do pd' <- WSum.prodEvalM (\a b -> pure (bvAnd a b)) mkBaseExpr pd
-             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w (maxUnsigned w))
+             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w (BV.maxUnsigned w))
                    (freshBoundTerm (BVTypeMap w))
                    pd'
         sr ->
@@ -2032,10 +2034,10 @@ appSMTExpr ae = do
 
         SR.SemiRingBVRepr SR.BVArithRepr w ->
           let smul c e
-                | c ==  1   = (:[]) <$> mkBaseExpr e
-                | c == -1   = (:[]) . bvNeg <$> mkBaseExpr e
+                | c == BV.one = (:[]) <$> mkBaseExpr e
+                | c == BV.maxUnsigned w = (:[]) . bvNeg <$> mkBaseExpr e
                 | otherwise = (:[]) <$> (bvMul (bvTerm w c)) <$> mkBaseExpr e
-              cnst 0 = []
+              cnst (BV.BV 0) = []
               cnst x = [bvTerm w x]
               add x y = pure (y ++ x) -- reversed for efficiency when grouped to the left
            in
@@ -2044,12 +2046,12 @@ appSMTExpr ae = do
 
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           let smul c e
-                | c == maxUnsigned w = (:[]) <$> mkBaseExpr e
-                | otherwise          = (:[]) <$> (bvAnd (bvTerm w c)) <$> mkBaseExpr e
-              cnst 0 = []
+                | c == BV.maxUnsigned w = (:[]) <$> mkBaseExpr e
+                | otherwise             = (:[]) <$> (bvAnd (bvTerm w c)) <$> mkBaseExpr e
+              cnst (BV.BV 0) = []
               cnst x = [bvTerm w x]
               add x y = pure (y ++ x) -- reversed for efficiency when grouped to the left
-              xorsum [] = bvTerm w 0
+              xorsum [] = bvTerm w BV.zero
               xorsum xs = foldr1 bvXor xs
            in
            freshBoundTerm (BVTypeMap w) . xorsum
@@ -2112,6 +2114,8 @@ appSMTExpr ae = do
     ------------------------------------------
     -- Bitvector operations
 
+    -- BGS: If UnaryBV is ported to BV, a lot of the unnecessary masks
+    -- here will go away
     BVUnaryTerm t -> do
       let w = UnaryBV.width t
       let entries = UnaryBV.unsignedRanges t
@@ -2123,12 +2127,12 @@ appSMTExpr ae = do
         -- q is equivalent to v being less than or equal to the result
         -- of this term (denoted by nm)
         q <- mkBaseExpr pr
-        addSideCondition "unary term" $ q .== nm_s `bvULe` (bvTerm w l)
-        addSideCondition "unary term" $ q .== nm_s `bvULe` (bvTerm w u)
+        addSideCondition "unary term" $ q .== nm_s `bvULe` bvTerm w (BV.mkBV w l)
+        addSideCondition "unary term" $ q .== nm_s `bvULe` bvTerm w (BV.mkBV w u)
 
       case entries of
         (_, l, _):_ | l > 0 -> do
-          addSideCondition "unary term" $ bvTerm w l `bvULe` nm_s
+          addSideCondition "unary term" $ bvTerm w (BV.mkBV w l) `bvULe` nm_s
         _ ->
           return ()
       return nm
@@ -2137,7 +2141,7 @@ appSMTExpr ae = do
        do bs' <- traverse mkBaseExpr (bvOrToList bs)
           freshBoundTerm (BVTypeMap w) $!
             case bs' of
-              [] -> bvTerm w 0
+              [] -> bvTerm w BV.zero
               x:xs -> foldl bvOr x xs
 
     BVConcat w xe ye -> do
@@ -2188,7 +2192,7 @@ appSMTExpr ae = do
       x  <- mkBaseExpr xe
       y  <- mkBaseExpr ye
 
-      let w' = bvTerm w (intValue w)
+      let w' = bvTerm w (BV.width w)
       y' <- asBase <$> (freshBoundTerm (BVTypeMap w) $ bvURem y w')
 
       let lo = bvLshr x (bvSub w' y')
@@ -2200,7 +2204,7 @@ appSMTExpr ae = do
       x  <- mkBaseExpr xe
       y  <- mkBaseExpr ye
 
-      let w' = bvTerm w (intValue w)
+      let w' = bvTerm w (BV.width w)
       y' <- asBase <$> (freshBoundTerm (BVTypeMap w) $ bvURem y w')
 
       let lo = bvLshr x y'
@@ -2214,7 +2218,7 @@ appSMTExpr ae = do
       let n = intValue w' - intValue w
       case someNat n of
         Just (Some w2) | Just LeqProof <- isPosNat w' -> do
-          let zeros = bvTerm w2 0
+          let zeros = bvTerm w2 BV.zero
           freshBoundTerm (BVTypeMap w') $ bvConcat zeros x
         _ -> fail "invalid zero extension"
 
@@ -2224,40 +2228,44 @@ appSMTExpr ae = do
       let n = intValue w' - intValue w
       case someNat n of
         Just (Some w2) | Just LeqProof <- isPosNat w' -> do
-          let zeros = bvTerm w2 0
-          let ones  = bvTerm w2 (maxUnsigned w2)
+          let zeros = bvTerm w2 BV.zero
+          let ones  = bvTerm w2 (BV.maxUnsigned w2)
           let sgn = bvTestBit w (natValue w - 1) x
           freshBoundTerm (BVTypeMap w') $ bvConcat (ite sgn ones zeros) x
         _ -> fail "invalid sign extension"
 
     BVFill w xe ->
       do x <- mkBaseExpr xe
-         let zeros = bvTerm w 0
-         let ones  = bvTerm w (maxUnsigned w)
+         let zeros = bvTerm w BV.zero
+         let ones  = bvTerm w (BV.maxUnsigned w)
          freshBoundTerm (BVTypeMap w) $ ite x ones zeros
 
     BVPopcount w xe ->
       do x <- mkBaseExpr xe
-         let zs = [ ite (bvTestBit w idx x) (bvTerm w 1) (bvTerm w 0)
+         let zs = [ ite (bvTestBit w idx x) (bvTerm w BV.one) (bvTerm w BV.zero)
                   | idx <- [ 0 .. natValue w - 1 ]
                   ]
          freshBoundTerm (BVTypeMap w) $! bvSumExpr w zs
 
+    -- BGS: The mkBV call here shouldn't be necessary, but it is
+    -- unless we use a NatRepr as the index
     BVCountLeadingZeros w xe ->
       do x <- mkBaseExpr xe
          freshBoundTerm (BVTypeMap w) $! go 0 x
      where
      go !idx x
-       | idx < natValue w = ite (bvTestBit w (natValue w - idx - 1) x) (bvTerm w (toInteger idx)) (go (idx+1) x)
-       | otherwise = bvTerm w (intValue w)
+       | idx < natValue w = ite (bvTestBit w (natValue w - idx - 1) x) (bvTerm w (BV.mkBV w (toInteger idx))) (go (idx+1) x)
+       | otherwise = bvTerm w (BV.width w)
 
+    -- BGS: The mkBV call here shouldn't be necessary, but it is
+    -- unless we use a NatRepr as the index
     BVCountTrailingZeros w xe ->
       do x <- mkBaseExpr xe
          freshBoundTerm (BVTypeMap w) $! go 0 x
      where
      go !idx x
-       | idx < natValue w = ite (bvTestBit w idx x) (bvTerm w (toInteger idx)) (go (idx+1) x)
-       | otherwise = bvTerm w (intValue w)
+       | idx < natValue w = ite (bvTestBit w idx x) (bvTerm w (BV.mkBV w (toInteger idx))) (go (idx+1) x)
+       | otherwise = bvTerm w (BV.width w)
 
     ------------------------------------------
     -- String operations
@@ -2436,7 +2444,7 @@ appSMTExpr ae = do
       addSideCondition "float_binary" $
         floatFromBinary fpp val .== xe
       -- qnan: 0b0 0b1..1 0b10..0
-      let qnan = bvTerm (addNat eb sb) $ shiftL
+      let qnan = bvTerm (addNat eb sb) $ BV.shl (addNat eb sb)
                   (2 ^ (natValue eb + 1) - 1)
                   (fromIntegral (natValue sb - 2))
       -- return (ite (fp.isNaN xe) qnan val)
@@ -2849,14 +2857,14 @@ data SMTEvalFunctions h
    = SMTEvalFunctions { smtEvalBool :: Term h -> IO Bool
                         -- ^ Given a SMT term for a Boolean value, this should
                         -- whether the term is assigned true or false.
-                      , smtEvalBV   :: Int -> Term h -> IO Integer
+                      , smtEvalBV   :: forall w . NatRepr w -> Term h -> IO (BV.BV w)
                         -- ^ Given a bitwidth, and a SMT term for a bitvector
                         -- with that bitwidth, this should return an unsigned
                         -- integer with the value of that bitvector.
                       , smtEvalReal :: Term h -> IO Rational
                         -- ^ Given a SMT term for real value, this should
                         -- return a rational value for that term.
-                      , smtEvalFloat :: Term h -> IO Integer
+                      , smtEvalFloat :: forall fpp . FloatPrecisionRepr fpp -> Term h -> IO (BV.BV (FloatPrecisionBits fpp))
                         -- ^ Given a SMT term for a floating-point value,
                         -- this returns an unsigned integer with the bits
                         -- of the IEEE-754 representation.
@@ -2913,9 +2921,9 @@ getSolverVal :: forall h t tp
              -> Term h
              -> IO (GroundValue tp)
 getSolverVal _ smtFns BoolTypeMap   tm = smtEvalBool smtFns tm
-getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns (widthVal w) tm
+getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns w tm
 getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
-getSolverVal _ smtFns (FloatTypeMap _) tm = smtEvalFloat smtFns tm
+getSolverVal _ smtFns (FloatTypeMap fpp) tm = smtEvalFloat smtFns fpp tm
 getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
 getSolverVal _ smtFns NatTypeMap    tm = do
   r <- smtEvalReal smtFns tm
