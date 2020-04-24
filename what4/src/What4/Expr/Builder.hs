@@ -12,6 +12,7 @@ an instance of the classes 'IsExprBuilder' and 'IsSymExprBuilder'.
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -2103,12 +2104,12 @@ instance Eq (Dummy tp) where
 instance EqF Dummy where
   eqF _ _ = True
 instance TestEquality Dummy where
-  testEquality !_x !_y = error "you made a magic Dummy value!"
+  testEquality x _y = case x of {}
 
 instance Ord (Dummy tp) where
   compare _ _ = EQ
 instance OrdF Dummy where
-  compareF !_x !_y = error "you made a magic Dummy value!"
+  compareF x _y = case x of {}
 
 instance HashableF Dummy where
   hashWithSaltF _ _ = 0
