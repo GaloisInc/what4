@@ -115,7 +115,6 @@ import           Data.Parameterized.Nonce (Nonce)
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import           Data.Semigroup( (<>) )
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Text.Lazy.Builder (Builder)
@@ -130,7 +129,7 @@ import           System.IO.Streams (OutputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (ArrayResultWrapper(..), IndexLit(..), RoundingMode(..), StringLiteral(..), stringInfo)
+import           What4.Interface (RoundingMode(..), stringInfo)
 import           What4.ProblemFeatures
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
