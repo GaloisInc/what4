@@ -4256,15 +4256,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = let wx = bvWidth xbv
           wy = bvWidth ybv
           -- Sign extend to largest bitvector and compare.
-       in case compareNat wx wy of
-            NatLT _ -> do
-              Just LeqProof <- return (testLeq (incNat wx) wy)
+       in case testNatCases wx wy of
+            NatCaseLT LeqProof -> do
               x' <- bvSext sym wy xbv
               bvEq sym x' ybv
-            NatEQ ->
+            NatCaseEQ ->
               bvEq sym xbv ybv
-            NatGT _ -> do
-              Just LeqProof <- return (testLeq (incNat wy) wx)
+            NatCaseGT LeqProof -> do
               y' <- bvSext sym wx ybv
               bvEq sym xbv y'
 
@@ -4274,15 +4272,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = let wx = bvWidth xbv
           wy = bvWidth ybv
           -- Zero extend to largest bitvector and compare.
-       in case compareNat wx wy of
-            NatLT _ -> do
-              Just LeqProof <- return (testLeq (incNat wx) wy)
+       in case testNatCases wx wy of
+            NatCaseLT LeqProof -> do
               x' <- bvZext sym wy xbv
               bvEq sym x' ybv
-            NatEQ ->
+            NatCaseEQ ->
               bvEq sym xbv ybv
-            NatGT _ -> do
-              Just LeqProof <- return (testLeq (incNat wy) wx)
+            NatCaseGT LeqProof -> do
               y' <- bvZext sym wx ybv
               bvEq sym xbv y'
 
@@ -4327,14 +4323,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = do let wx = bvWidth xbv
          let wy = bvWidth ybv
          -- Sign extend to largest bitvector and compare.
-         case compareNat wx wy of
-           NatLT _ -> do
-             Just LeqProof <- return (testLeq (incNat wx) wy)
+         case testNatCases wx wy of
+           NatCaseLT LeqProof -> do
              x' <- bvSext sym wy xbv
              bvSle sym x' ybv
-           NatEQ -> bvSle sym xbv ybv
-           NatGT _ -> do
-             Just LeqProof <- return (testLeq (incNat wy) wx)
+           NatCaseEQ -> bvSle sym xbv ybv
+           NatCaseGT LeqProof -> do
              y' <- bvSext sym wx ybv
              bvSle sym xbv y'
 
@@ -4344,14 +4338,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = do let wx = bvWidth xbv
          let wy = bvWidth ybv
          -- Zero extend to largest bitvector and compare.
-         case compareNat wx wy of
-           NatLT _ -> do
-             Just LeqProof <- return (testLeq (incNat wx) wy)
+         case testNatCases wx wy of
+           NatCaseLT LeqProof -> do
              x' <- bvZext sym wy xbv
              bvUle sym x' ybv
-           NatEQ -> bvUle sym xbv ybv
-           NatGT _ -> do
-             Just LeqProof <- return (testLeq (incNat wy) wx)
+           NatCaseEQ -> bvUle sym xbv ybv
+           NatCaseGT LeqProof -> do
              y' <- bvZext sym wx ybv
              bvUle sym xbv y'
 
@@ -5499,26 +5491,26 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just b <- asConstantPred p =
         if b then bvLit sym w BV.one else bvLit sym w BV.zero
     | otherwise =
-       case compareNat w (knownNat @1) of
-         NatEQ   -> sbMakeExpr sym (BVFill (knownNat @1) p)
-         NatGT _ -> bvZext sym w =<< sbMakeExpr sym (BVFill (knownNat @1) p)
-         NatLT _ -> fail "impossible case in predToBV"
+       case testNatCases w (knownNat @1) of
+         NatCaseEQ   -> sbMakeExpr sym (BVFill (knownNat @1) p)
+         NatCaseGT LeqProof -> bvZext sym w =<< sbMakeExpr sym (BVFill (knownNat @1) p)
+         NatCaseLT LeqProof -> fail "impossible case in predToBV"
 
   integerToBV sym xr w
     | SemiRingLiteral SR.SemiRingIntegerRepr i _ <- xr =
       bvLit sym w (BV.mkBV w i)
 
     | Just (BVToInteger r) <- asApp xr =
-      case compareNat (bvWidth r) w of
-        NatLT _ -> bvZext sym w r
-        NatEQ   -> return r
-        NatGT _ -> bvTrunc sym w r
+      case testNatCases (bvWidth r) w of
+        NatCaseLT LeqProof -> bvZext sym w r
+        NatCaseEQ   -> return r
+        NatCaseGT LeqProof -> bvTrunc sym w r
 
     | Just (SBVToInteger r) <- asApp xr =
-      case compareNat (bvWidth r) w of
-        NatLT _ -> bvSext sym w r
-        NatEQ   -> return r
-        NatGT _ -> bvTrunc sym w r
+      case testNatCases (bvWidth r) w of
+        NatCaseLT LeqProof -> bvSext sym w r
+        NatCaseEQ   -> return r
+        NatCaseGT LeqProof -> bvTrunc sym w r
 
     | otherwise =
       sbMakeExpr sym (IntegerToBV xr w)
