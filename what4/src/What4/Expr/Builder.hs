@@ -4871,9 +4871,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvShl sym x y
    -- shift by 0 is the identity function
-   -- BGS: Replace this with a unidirectional pattern match on BV 0?
-   | Just bv <- asBV y
-   , bv == BV.zero
+   | Just (BV.BV 0) <- asBV y
    = pure x
 
    -- shift by more than word width returns 0
@@ -4889,8 +4887,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvLshr sym x y
    -- shift by 0 is the identity function
-   | Just bv <- asBV y
-   , bv == BV.zero
+   | Just (BV.BV 0) <- asBV y
    = pure x
 
    -- shift by more than word width returns 0
@@ -4906,8 +4903,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvAshr sym x y
    -- shift by 0 is the identity function
-   | Just bv <- asBV y
-   , bv == BV.zero
+   | Just (BV.BV 0) <- asBV y
    = pure x
 
    -- shift by more than word width returns either 0 (if x is nonnegative)
