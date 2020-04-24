@@ -176,7 +176,6 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.Binary.IEEE754 as IEEE754
-import qualified Data.Bits as Bits
 import           Data.Foldable
 import qualified Data.HashTable.Class as H (toList)
 import qualified Data.HashTable.ST.Basic as H
@@ -207,7 +206,6 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import qualified Numeric as N
 import           Numeric.Natural
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
@@ -1011,6 +1009,7 @@ instance IsExpr (Expr t) where
   exprType (BoundVarExpr i) = bvarType i
 
   asBV (SemiRingLiteral (SR.SemiRingBVRepr _ _) i _) = Just i
+  asBV _ = Nothing
 
   unsignedBVBounds x = Just $ BVD.ubounds $ exprAbsValue x
   signedBVBounds x = Just $ BVD.sbounds (bvWidth x) $ exprAbsValue x
@@ -1852,14 +1851,14 @@ ppApp' a0 = do
                 ppEntry sm e = [ PrettyFunc "natMul" [stringPrettyArg (show sm), exprPrettyArg e ] ]
 
         SR.SemiRingBVRepr SR.BVArithRepr w -> prettyApp "bvSum" (WSum.eval (++) ppEntry ppConstant s)
-          where ppConstant 0 = []
+          where ppConstant (BV.BV 0) = []
                 ppConstant c = [ stringPrettyArg (ppBV c) ]
-                ppEntry 1 e  = [ exprPrettyArg e ]
+                ppEntry (BV.BV 1) e  = [ exprPrettyArg e ]
                 ppEntry sm e = [ PrettyFunc "bvMul" [ stringPrettyArg (ppBV sm), exprPrettyArg e ] ]
-                ppBV x       = "0x" ++ (N.showHex x []) ++ ":[" ++ show w ++ "]"
+                ppBV = BV.ppHex w
 
         SR.SemiRingBVRepr SR.BVBitsRepr w -> prettyApp "bvXor" (WSum.eval (++) ppEntry ppConstant s)
-          where ppConstant 0 = []
+          where ppConstant (BV.BV 0) = []
                 ppConstant c = [ stringPrettyArg (ppBV c) ]
                 ppEntry sm e
                   | sm == BV.maxUnsigned w = [ exprPrettyArg e ]
@@ -2610,7 +2609,7 @@ ppExpr' e0 o = do
                        | use_decimal = prettyApp (fromString (show (fromRational x :: Double))) []
                        | otherwise   = prettyApp "divReal"  [ showPrettyArg n, showPrettyArg d ]
           SR.SemiRingBVRepr _ w ->
-            return $ stringPPExpr $ "0x" ++ (N.showHex x []) ++ ":[" ++ show w ++ "]"
+            return $ stringPPExpr $ BV.ppHex w x
 
       getBindings (StringExpr x _) =
         return $ stringPPExpr $ (show x)
@@ -3086,7 +3085,7 @@ startCaching sb = do
   writeIORef (curAllocator sb) s
 
 bvBinDivOp :: (1 <= w)
-            => (BV.BV w -> BV.BV w -> BV.BV w)
+            => (NatRepr w -> BV.BV w -> BV.BV w -> BV.BV w)
             -> (NatRepr w -> BVExpr t w -> BVExpr t w -> App (Expr t) (BaseBVType w))
             -> ExprBuilder t st fs
             -> BVExpr t w
@@ -3095,25 +3094,8 @@ bvBinDivOp :: (1 <= w)
 bvBinDivOp f c sb x y = do
   let w = bvWidth x
   case (asBV x, asBV y) of
-    (Just i, Just j) | j /= 0 -> bvLit sb w $ f i j
+    (Just i, Just j) | j /= BV.zero -> bvLit sb w $ f w i j
     _ -> sbMakeExpr sb $ c w x y
-
--- BGS: Should f be changed to BV w -> BV w -> BV w?
-bvSignedBinDivOp :: (1 <= w)
-                 => (BV.BV w -> BV.BV w -> BV.BV w)
-                 -> (NatRepr w -> BVExpr t w
-                               -> BVExpr t w
-                               -> App (Expr t) (BaseBVType w))
-                 -> ExprBuilder t st fs
-                 -> BVExpr t w
-                 -> BVExpr t w
-                 -> IO (BVExpr t w)
-bvSignedBinDivOp f c sym x y = do
-  let w = bvWidth x
-  case (asBV x, asBV y) of
-    (Just i, Just j) | j /= 0 -> bvLit sym w $ f i j
-    _ -> sbMakeExpr sym $ c w x y
-
 
 asConcreteIndices :: IsExpr e
                   => Ctx.Assignment e ctx
@@ -3192,7 +3174,7 @@ reduceApp sym a0 = do
         SR.SemiRingRealRepr ->
           maybe (realLit sym 1) return =<< WSum.prodEvalM (realMul sym) return pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
-          maybe (bvLit sym w 1) return =<< WSum.prodEvalM (bvMul sym) return pd
+          maybe (bvLit sym w BV.one) return =<< WSum.prodEvalM (bvMul sym) return pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           maybe (bvLit sym w (BV.maxUnsigned w)) return =<< WSum.prodEvalM (bvAndBits sym) return pd
 
@@ -3224,7 +3206,7 @@ reduceApp sym a0 = do
 
     BVOrBits w bs ->
       case bvOrToList bs of
-        [] -> bvLit sym w 0
+        [] -> bvLit sym w BV.zero
         (x:xs) -> foldM (bvOrBits sym) x xs
 
     BVTestBit i e -> testBitBV sym i e
@@ -4493,8 +4475,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     case (asBV x, asBV y) of
       -- both values are constants, just compute the concatenation
       (Just xv, Just yv) -> do
-          let shft :: Int
-              shft = fromIntegral (natValue (bvWidth y))
           let w' = addNat (bvWidth x) (bvWidth y)
           LeqProof <- return (leqAddPos (bvWidth x) (bvWidth y))
           bvLit sym w' (BV.concat (bvWidth y) xv yv)
@@ -4560,7 +4540,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just diff <- asBV b
     , Some diffRepr <- mkNatRepr (BV.asNatural diff)
     , Just LeqProof <- testLeq (addNat idx n) diffRepr =
-      bvLit sb n 0
+      bvLit sb n BV.zero
 
     | Just (BVAshr w a b) <- asApp x
     , Just diff <- asBV b
@@ -4578,7 +4558,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just diff <- asBV b
     , Some diffRepr <- mkNatRepr (BV.asNatural diff)
     , Just LeqProof <- testLeq w (addNat idx diffRepr) =
-      bvLit sb n 0
+      bvLit sb n BV.zero
 
       -- select from a sign extension
     | Just (BVSext w b) <- asApp x = do
@@ -4604,7 +4584,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       let ext = subNat w (bvWidth b)
       Just LeqProof <- return $ isPosNat w
       Just LeqProof <- return $ isPosNat ext
-      hi    <- bvLit sb ext 0
+      hi    <- bvLit sb ext BV.zero
       x'    <- bvConcat sb hi b
       -- Add dynamic check
       Just LeqProof <- return $ testLeq (addNat idx n) (addNat ext (bvWidth b))
@@ -4674,7 +4654,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
                Left LeqProof -> BV.zext w (BV.maxUnsigned n)
                Right Refl -> BV.maxUnsigned n
          let reduce i
-               | i `BV.and` mask == BV.zero = writer (0, Any True)
+               | i `BV.and` mask == BV.zero = writer (BV.zero, Any True)
                | otherwise                  = writer (i, Any False)
          let (s', Any changed) = runWriter $ WSum.traverseCoeffs reduce s
          x' <- if changed then sbMakeExpr sb (SemiRingSum s') else return x
@@ -4773,7 +4753,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvFill sym w p
     | Just True  <- asConstantPred p = bvLit sym w (BV.maxUnsigned w)
-    | Just False <- asConstantPred p = bvLit sym w 0
+    | Just False <- asConstantPred p = bvLit sym w BV.zero
     | otherwise = sbMakeExpr sym $ BVFill w p
 
   bvIte sym c x y
@@ -4899,7 +4879,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) 0
+   = bvLit sym (bvWidth x) BV.zero
 
    | Just xv <- asBV x, Just n <- asBV y
    = bvLit sym (bvWidth x) (BV.shl (bvWidth x) xv (BV.asNatural n))
@@ -4916,17 +4896,18 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) 0
+   = bvLit sym (bvWidth x) BV.zero
 
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
-   = bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
+   | Just xv <- asBV x, Just n <- asBV y
+   = bvLit sym (bvWidth x) $ BV.lshr xv (BV.asNatural n)
 
    | otherwise
    = sbMakeExpr sym $ BVLshr (bvWidth x) x y
 
   bvAshr sym x y
    -- shift by 0 is the identity function
-   | Just 0 <- asUnsignedBV y
+   | Just bv <- asBV y
+   , bv == BV.zero
    = pure x
 
    -- shift by more than word width returns either 0 (if x is nonnegative)
@@ -4935,18 +4916,18 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    , lo >= intValue (bvWidth x)
    = bvFill sym (bvWidth x) =<< bvIsNeg sym x
 
-   | Just i <- asSignedBV x, Just n <- asUnsignedBV y
-   = bvLit sym (bvWidth x) (Bits.shiftR i (fromIntegral n))
+   | Just xv <- asBV x, Just n <- asBV y
+   = bvLit sym (bvWidth x) $ BV.ashr (bvWidth x) xv (BV.asNatural n)
 
    | otherwise
    = sbMakeExpr sym $ BVAshr (bvWidth x) x y
 
   bvRol sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
-   = bvLit sym (bvWidth x) $ rotateLeft (bvWidth x) i n
+   | Just xv <- asBV x, Just n <- asBV y
+   = bvLit sym (bvWidth x) $ BV.rotateL (bvWidth x) xv (BV.asNatural n)
 
-   | Just n <- asUnsignedBV y
-   , n `rem` intValue (bvWidth x) == 0
+   | Just n <- asBV y
+   , n `BV.urem` BV.width (bvWidth y) == BV.zero
    = return x
 
    | Just (BVRol w x' n) <- asApp x
@@ -4955,7 +4936,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         bvRol sym x' z
 
    | Just (BVRol w x' n) <- asApp x
-   = do wbv <- bvLit sym w (intValue w)
+   = do wbv <- bvLit sym w (BV.width w)
         n' <- bvUrem sym n wbv
         y' <- bvUrem sym y wbv
         z <- bvAdd sym n' y'
@@ -4967,7 +4948,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         bvRor sym x' z
 
    | Just (BVRor w x' n) <- asApp x
-   = do wbv <- bvLit sym w (intValue w)
+   = do wbv <- bvLit sym w (BV.width w)
         y' <- bvUrem sym y wbv
         n' <- bvUrem sym n wbv
         z <- bvAdd sym n' =<< bvSub sym wbv y'
@@ -4978,11 +4959,11 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      sbMakeExpr sym $ BVRol w x y
 
   bvRor sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
-   = bvLit sym (bvWidth x) $ rotateRight (bvWidth x) i n
+   | Just xv <- asBV x, Just n <- asBV y
+   = bvLit sym (bvWidth x) $ BV.rotateR (bvWidth x) xv (BV.asNatural n)
 
-   | Just n <- asUnsignedBV y
-   , n `rem` intValue (bvWidth x) == 0
+   | Just n <- asBV y
+   , n `BV.urem` BV.width (bvWidth y) == BV.zero
    = return x
 
    | Just (BVRor w x' n) <- asApp x
@@ -4991,7 +4972,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         bvRor sym x' z
 
    | Just (BVRor w x' n) <- asApp x
-   = do wbv <- bvLit sym w (intValue w)
+   = do wbv <- bvLit sym w (BV.width w)
         n' <- bvUrem sym n wbv
         y' <- bvUrem sym y wbv
         z <- bvAdd sym n' y'
@@ -5003,7 +4984,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         bvRol sym x' z
 
    | Just (BVRol w x' n) <- asApp x
-   = do wbv <- bvLit sym w (intValue w)
+   = do wbv <- bvLit sym w (BV.width w)
         n' <- bvUrem sym n wbv
         y' <- bvUrem sym y wbv
         z <- bvAdd sym n' =<< bvSub sym wbv y'
@@ -5014,10 +4995,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      sbMakeExpr sym $ BVRor w x y
 
   bvZext sym w x
-    | Just i <- asUnsignedBV x = do
+    | Just xv <- asBV x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
-      bvLit sym w i
+      bvLit sym w (BV.zext w xv)
 
       -- Concatenate unsign extension.
     | Just (BVZext _ y) <- asApp x = do
@@ -5037,10 +5018,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym $ BVZext w x
 
   bvSext sym w x
-    | Just i <- asSignedBV x = do
+    | Just xv <- asBV x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
-      bvLit sym w i
+      bvLit sym w (BV.zext w xv)
 
       -- Concatenate sign extension.
     | Just (BVSext _ y) <- asApp x = do
@@ -5060,7 +5041,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (BVSext w x)
 
   bvXorBits sym x y
-    | x == y = bvLit sym (bvWidth x) 0  -- special case: x `xor` x = 0
+    | x == y = bvLit sym (bvWidth x) BV.zero  -- special case: x `xor` x = 0
     | otherwise
     = let sr = SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x)
        in semiRingAdd sym sr x y
@@ -5083,22 +5064,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   -- XOR by the all-1 constant of the bitwise semiring.
   -- This is equivalant to negation
   bvNotBits sym x
-    | Just i <- asUnsignedBV x
-    = bvLit sym (bvWidth x) $ i `Bits.xor` (maxUnsigned (bvWidth x))
+    | Just xv <- asBV x
+    = bvLit sym (bvWidth x) $ xv `BV.xor` (BV.maxUnsigned (bvWidth x))
 
     | otherwise
     = let sr = (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x))
-       in semiRingSum sym $ WSum.addConstant sr (asWeightedSum sr x) (maxUnsigned (bvWidth x))
+       in semiRingSum sym $ WSum.addConstant sr (asWeightedSum sr x) (BV.maxUnsigned (bvWidth x))
 
   bvOrBits sym x y =
-    case (asUnsignedBV x, asUnsignedBV y) of
-      (Just xi, Just yi) -> bvLit sym (bvWidth x) (xi Bits..|. yi)
-      (Just xi , _)
-        | xi == 0 -> return y
-        | xi == maxUnsigned (bvWidth x) -> return x
-      (_, Just yi)
-        | yi == 0 -> return x
-        | yi == maxUnsigned (bvWidth x) -> return y
+    case (asBV x, asBV y) of
+      (Just xv, Just yv) -> bvLit sym (bvWidth x) (xv `BV.xor` yv)
+      (Just xv , _)
+        | xv == BV.zero -> return y
+        | xv == BV.maxUnsigned (bvWidth x) -> return x
+      (_, Just yv)
+        | yv == BV.zero -> return x
+        | yv == BV.maxUnsigned (bvWidth x) -> return y
 
       _
         | x == y
@@ -5134,7 +5115,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      where sr = SR.SemiRingBVRepr SR.BVArithRepr (bvWidth x)
 
   bvNeg sym x
-    | Just i <- asSignedBV x = bvLit sym (bvWidth x) (-i)
+    | Just xv <- asBV x = bvLit sym (bvWidth x) (BV.negate (bvWidth x) xv)
     | otherwise =
         do ut <- CFG.getOpt (sbUnaryThreshold sym)
            let ?unaryThreshold = fromInteger ut
@@ -5142,16 +5123,16 @@ instance IsExprBuilder (ExprBuilder t st fs) where
              (do ux <- asUnaryBV sym x
                  Just (UnaryBV.neg sym ux))
              (do let sr = SR.SemiRingBVRepr SR.BVArithRepr (bvWidth x)
-                 scalarMul sym sr (toUnsigned (bvWidth x) (-1)) x)
+                 scalarMul sym sr (BV.mkBV (bvWidth x) (-1)) x)
 
   bvIsNonzero sym x
     | Just (BaseIte _ _ p t f) <- asApp x
-    , isJust (asUnsignedBV t) || isJust (asUnsignedBV f) -- NB, avoid losing possible sharing
+    , isJust (asBV t) || isJust (asBV f) -- NB, avoid losing possible sharing
     = do  t' <- bvIsNonzero sym t
           f' <- bvIsNonzero sym f
           itePred sym p t' f'
     | Just (BVConcat _ a b) <- asApp x
-    , isJust (asUnsignedBV a) || isJust (asUnsignedBV b) -- NB, avoid losing possible sharing
+    , isJust (asBV a) || isJust (asBV b) -- NB, avoid losing possible sharing
     =  do pa <- bvIsNonzero sym a
           pb <- bvIsNonzero sym b
           orPred sym pa pb
@@ -5168,28 +5149,28 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             ubv
     | otherwise = do
           let w = bvWidth x
-          zro <- bvLit sym w 0
+          zro <- bvLit sym w BV.zero
           notPred sym =<< bvEq sym x zro
 
-  bvUdiv = bvBinDivOp quot BVUdiv
+  bvUdiv = bvBinDivOp (const BV.uquot) BVUdiv
   bvUrem sym x y
     | Just True <- BVD.ult (exprAbsValue x) (exprAbsValue y) = return x
-    | otherwise = bvBinDivOp rem BVUrem sym x y
-  bvSdiv = bvSignedBinDivOp quot BVSdiv
-  bvSrem = bvSignedBinDivOp rem BVSrem
+    | otherwise = bvBinDivOp (const BV.urem) BVUrem sym x y
+  bvSdiv = bvBinDivOp BV.squot BVSdiv
+  bvSrem = bvBinDivOp BV.srem BVSrem
 
   bvPopcount sym x
-    | Just i <- asUnsignedBV x = bvLit sym w (toInteger (Bits.popCount i))
+    | Just xv <- asBV x = bvLit sym w (BV.popCountBV xv)
     | otherwise = sbMakeExpr sym $ BVPopcount w x
    where w = bvWidth x
 
   bvCountTrailingZeros sym x
-    | Just i <- asUnsignedBV x = bvLit sym w (ctz w i)
+    | Just xv <- asBV x = bvLit sym w (BV.ctzBV w xv)
     | otherwise = sbMakeExpr sym $ BVCountTrailingZeros w x
    where w = bvWidth x
 
   bvCountLeadingZeros sym x
-    | Just i <- asUnsignedBV x = bvLit sym w (clz w i)
+    | Just xv <- asBV x = bvLit sym w (BV.clzBV w xv)
     | otherwise = sbMakeExpr sym $ BVCountLeadingZeros w x
    where w = bvWidth x
 
@@ -5492,13 +5473,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (RealToInteger x)
 
   bvToNat sym x
-    | Just i <- asUnsignedBV x =
-      natLit sym (fromInteger i)
+    | Just xv <- asBV x =
+      natLit sym (BV.asNatural xv)
     | otherwise = sbMakeExpr sym (BVToNat x)
 
   bvToInteger sym x
-    | Just i <- asUnsignedBV x =
-      intLit sym i
+    | Just xv <- asBV x =
+      intLit sym (BV.asUnsigned xv)
       -- bvToInteger (integerToBv x w) == mod x (2^w)
     | Just (IntegerToBV xi w) <- asApp x =
       intMod sym xi =<< intLit sym (2^natValue w)
@@ -5506,8 +5487,8 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (BVToInteger x)
 
   sbvToInteger sym x
-    | Just i <- asSignedBV x =
-      intLit sym i
+    | Just xv <- asBV x =
+      intLit sym (BV.asSigned (bvWidth x) xv)
       -- sbvToInteger (integerToBv x w) == mod (x + 2^(w-1)) (2^w) - 2^(w-1)
     | Just (IntegerToBV xi w) <- asApp x =
       do halfmod <- intLit sym (2 ^ (natValue w - 1))
@@ -5520,7 +5501,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   predToBV sym p w
     | Just b <- asConstantPred p =
-        if b then bvLit sym w 1 else bvLit sym w 0
+        if b then bvLit sym w BV.one else bvLit sym w BV.zero
     | otherwise =
        case compareNat w (knownNat @1) of
          NatEQ   -> sbMakeExpr sym (BVFill (knownNat @1) p)
@@ -5529,7 +5510,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   integerToBV sym xr w
     | SemiRingLiteral SR.SemiRingIntegerRepr i _ <- xr =
-      bvLit sym w i
+      bvLit sym w (BV.mkBV w i)
 
     | Just (BVToInteger r) <- asApp xr =
       case compareNat (bvWidth r) w of
@@ -6003,13 +5984,13 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
   iFloatLit sym fi x = iRealToFloat sym fi RNE =<< realLit sym x
   iFloatLitSingle sym x =
     iFloatFromBinary sym SingleFloatRepr
-      =<< (bvLit sym knownNat $ toInteger $ IEEE754.floatToWord x)
+      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
   iFloatLitDouble sym x =
     iFloatFromBinary sym DoubleFloatRepr
-      =<< (bvLit sym knownNat $ toInteger $ IEEE754.doubleToWord x)
+      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
   iFloatLitLongDouble sym x =
     iFloatFromBinary sym X86_80FloatRepr
-      =<< (bvLit sym knownNat $ fp80ToBits x)
+      =<< (bvLit sym knownNat $ BV.mkBV knownNat $ fp80ToBits x)
 
   iFloatNeg = floatUninterpArithUnOp "uninterpreted_float_neg"
   iFloatAbs = floatUninterpArithUnOp "uninterpreted_float_abs"
@@ -6159,13 +6140,13 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatLit sym = floatLit sym . floatInfoToPrecisionRepr
   iFloatLitSingle sym x =
     floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ toInteger $ IEEE754.floatToWord x)
+      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
   iFloatLitDouble sym x =
     floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ toInteger $ IEEE754.doubleToWord x)
+      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
   iFloatLitLongDouble sym (X86_80Val e s) = do
-    el <- bvLit sym (knownNat @16) $ toInteger e
-    sl <- bvLit sym (knownNat @64) $ toInteger s
+    el <- bvLit sym (knownNat @16) $ BV.word16 e
+    sl <- bvLit sym (knownNat @64) $ BV.word64 s
     fl <- bvConcat sym el sl
     floatFromBinary sym knownRepr fl
     -- n.b. This may not be valid semantically for operations
