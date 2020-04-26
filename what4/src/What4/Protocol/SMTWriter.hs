@@ -2864,9 +2864,11 @@ data SMTEvalFunctions h
                         -- ^ Given a SMT term for real value, this should
                         -- return a rational value for that term.
                       , smtEvalFloat :: forall fpp . FloatPrecisionRepr fpp -> Term h -> IO (BV.BV (FloatPrecisionBits fpp))
-                        -- ^ Given a SMT term for a floating-point value,
-                        -- this returns an unsigned integer with the bits
-                        -- of the IEEE-754 representation.
+                        -- ^ Given floating point format, anda SMT
+                        -- term for a floating-point value in that
+                        -- format, this returns an unsigned integer
+                        -- with the bits of the IEEE-754
+                        -- representation.
                       , smtEvalBvArray :: Maybe (SMTEvalBVArrayWrapper h)
                         -- ^ If 'Just', a function to read arrays whose domain
                         -- and codomain are both bitvectors. If 'Nothing',

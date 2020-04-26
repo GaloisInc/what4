@@ -705,6 +705,7 @@ natBV :: Integer
 natBV x wNatural = case mkNatRepr wNatural of
   Some w -> Pair w (BV.mkBV w x)
 
+-- | Parse an s-expression and return a bitvector and its width
 parseBVLitHelper :: SExp -> Pair NatRepr BV.BV
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'b' : n_str))) | [(n, "")] <- readBin n_str =
   natBV n (fromIntegral (length n_str))
@@ -727,9 +728,7 @@ parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
         sb `testEquality` sb') of
     (Just Refl, Just Refl) -> return bv
       where bv = BV.concat sb (BV.concat eb' sgn  expt) sig
-    -- BGS: Improve this error message
-    _ -> fail $
-      "Unexpected float precision: " <> show eb' <> ", " <> show sb'
+    _ -> fail $ "Unexpected float precision: " <> show eb' <> ", " <> show sb'
 
 data ParsedFloatResult = forall eb sb . ParsedFloatResult
   (BV.BV 1)    -- ^ sign
@@ -739,22 +738,22 @@ data ParsedFloatResult = forall eb sb . ParsedFloatResult
   (BV.BV sb)   -- ^ significand bit
 
 parseFloatLitHelper :: MonadFail m => SExp -> m ParsedFloatResult
-parseFloatLitHelper (SApp ["fp", sign_s, expt_s, sgnf_s])
+parseFloatLitHelper (SApp ["fp", sign_s, expt_s, scand_s])
   | Pair sign_w sign <- parseBVLitHelper sign_s
   , Just Refl <- sign_w `testEquality` (knownNat @1)
   , Pair eb expt <- parseBVLitHelper expt_s
-  , Pair sb sgnf <- parseBVLitHelper sgnf_s
-  = return $ ParsedFloatResult sign eb expt sb sgnf
+  , Pair sb scand <- parseBVLitHelper scand_s
+  = return $ ParsedFloatResult sign eb expt sb scand
 parseFloatLitHelper
   s@(SApp ["_", SAtom (Text.unpack -> nm), SAtom (Text.unpack -> eb_s), SAtom (Text.unpack -> sb_s)])
   | [(eb_n, "")] <- readDec eb_s, [(sb_n, "")] <- readDec sb_s
   , Some eb <- mkNatRepr eb_n
   , Some sb <- mkNatRepr sb_n
   = case nm of
-      "+oo" -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb BV.zero
-      "-oo" -> return $ ParsedFloatResult BV.one  eb (BV.maxUnsigned eb) sb BV.zero
-      "+zero" -> return $ ParsedFloatResult BV.zero eb BV.zero sb BV.zero
-      "-zero" -> return $ ParsedFloatResult BV.one  eb BV.zero sb BV.zero
+      "+oo"   -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb BV.zero
+      "-oo"   -> return $ ParsedFloatResult BV.one  eb (BV.maxUnsigned eb) sb BV.zero
+      "+zero" -> return $ ParsedFloatResult BV.zero eb BV.zero             sb BV.zero
+      "-zero" -> return $ ParsedFloatResult BV.one  eb BV.zero             sb BV.zero
       "NaN"   -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb (BV.maxUnsigned sb)
       _       -> fail $ "Could not parse float solver value: " ++ show s
 parseFloatLitHelper s = fail $ "Could not parse float solver value: " ++ show s
