@@ -143,7 +143,6 @@ module What4.Protocol.SMTLib2.Syntax
 
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (intToDigit)
-import           Data.Monoid ((<>))
 import           Data.Parameterized.NatRepr
 import           Data.String
 import           Data.Text (Text, cons)

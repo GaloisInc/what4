@@ -140,6 +140,8 @@ import           What4.Utils.HandleReader
 import           What4.Utils.Process
 import           What4.Solver.Adapter
 
+import           Unsafe.Coerce (unsafeCoerce)
+
 -- | Set the logic to all supported logics.
 all_supported :: SMT2.Logic
 all_supported = SMT2.allSupported
@@ -697,44 +699,54 @@ parseBvSolverValue w s
       Nothing -> fail $ "Solver value parsed with width " ++
                  show w' ++ ", but should have width " ++ show w
 
-natBV :: Integer
-      -- ^ BV value
-      -> Natural
+natBV :: Natural
       -- ^ width
+      -> Integer
+      -- ^ BV value
       -> Pair NatRepr BV.BV
-natBV x wNatural = case mkNatRepr wNatural of
+natBV wNatural x = case mkNatRepr wNatural of
   Some w -> Pair w (BV.mkBV w x)
 
 -- | Parse an s-expression and return a bitvector and its width
 parseBVLitHelper :: SExp -> Pair NatRepr BV.BV
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'b' : n_str))) | [(n, "")] <- readBin n_str =
-  natBV n (fromIntegral (length n_str))
+  natBV (fromIntegral (length n_str)) n
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'x' : n_str))) | [(n, "")] <- readHex n_str =
-  natBV n (fromIntegral (length n_str * 4))
+  natBV (fromIntegral (length n_str * 4)) n
 parseBVLitHelper (SApp ["_", SAtom (Text.unpack -> ('b' : 'v' : n_str)), SAtom (Text.unpack -> w_str)])
-  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = natBV n w
+  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = natBV w n
+-- BGS: Is this correct?
 parseBVLitHelper _ = natBV 0 0
 
 parseStringSolverValue :: MonadFail m => SExp -> m ByteString
 parseStringSolverValue (SString t) | Just bs <- unescapeText t = return bs
 parseStringSolverValue x = fail ("Could not parse string solver value:\n  " ++ show x)
 
+-- | Produce evidence that @+@ is associative.
+plusAssoc :: forall f m g n h o . f m -> g n -> h o -> m+(n+o) :~: (m+n)+o
+plusAssoc = unsafeCoerce (Refl :: m+(n+o) :~: m+(n+o))
+
 parseFloatSolverValue :: MonadFail m => FloatPrecisionRepr fpp
                       -> SExp
                       -> m (BV.BV (FloatPrecisionBits fpp))
 parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
   ParsedFloatResult sgn eb' expt sb' sig <- parseFloatLitHelper s
-  case (eb `testEquality` ((knownNat @1) `addNat` eb'),
-        sb `testEquality` sb') of
-    (Just Refl, Just Refl) -> return bv
-      where bv = BV.concat sb (BV.concat eb' sgn  expt) sig
+  case (eb `testEquality` eb',
+        sb `testEquality` ((knownNat @1) `addNat` sb')) of
+    (Just Refl, Just Refl) -> do
+      -- eb' + 1 ~ 1 + eb'
+      Refl <- return $ plusComm eb' (knownNat @1)
+      -- (eb' + 1) + sb' ~ eb' + (1 + sb') 
+      Refl <- return $ plusAssoc eb' (knownNat @1) sb'
+      return bv
+        where bv = BV.concat sb' (BV.concat eb sgn expt) sig
     _ -> fail $ "Unexpected float precision: " <> show eb' <> ", " <> show sb'
 
 data ParsedFloatResult = forall eb sb . ParsedFloatResult
   (BV.BV 1)    -- ^ sign
   (NatRepr eb) -- ^ exponent width
   (BV.BV eb)   -- ^ exponent
-  (NatRepr sb) -- ^ significand bit
+  (NatRepr sb) -- ^ significand bit width
   (BV.BV sb)   -- ^ significand bit
 
 parseFloatLitHelper :: MonadFail m => SExp -> m ParsedFloatResult
@@ -748,7 +760,7 @@ parseFloatLitHelper
   s@(SApp ["_", SAtom (Text.unpack -> nm), SAtom (Text.unpack -> eb_s), SAtom (Text.unpack -> sb_s)])
   | [(eb_n, "")] <- readDec eb_s, [(sb_n, "")] <- readDec sb_s
   , Some eb <- mkNatRepr eb_n
-  , Some sb <- mkNatRepr sb_n
+  , Some sb <- mkNatRepr (sb_n-1)
   = case nm of
       "+oo"   -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb BV.zero
       "-oo"   -> return $ ParsedFloatResult BV.one  eb (BV.maxUnsigned eb) sb BV.zero

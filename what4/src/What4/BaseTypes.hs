@@ -163,7 +163,7 @@ type FloatingPointPrecision = 'FloatingPointPrecision -- ^ @:: 'GHC.TypeNats.Nat
 
 -- | This computes the number of bits occupied by a floating-point format.
 type family FloatPrecisionBits (fpp :: FloatPrecision) :: Nat where
-  FloatPrecisionBits (FloatingPointPrecision sb eb) = sb + eb
+  FloatPrecisionBits (FloatingPointPrecision eb sb) = eb + sb
 
 -- | Floating-point precision aliases
 type Prec16  = FloatingPointPrecision  5  11

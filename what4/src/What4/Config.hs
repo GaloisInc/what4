@@ -166,7 +166,6 @@ import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Parameterized.Some
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Semigroup (Semigroup(..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Map (Map)

@@ -85,7 +85,6 @@ import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import           Data.Semigroup ( (<>) )
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.String (fromString)
