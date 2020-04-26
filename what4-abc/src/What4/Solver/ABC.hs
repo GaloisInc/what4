@@ -48,6 +48,7 @@ import           Control.Lens
 import           Control.Monad.Identity
 import           Control.Monad.ST
 import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 import qualified Data.ABC as GIA
 import qualified Data.ABC.GIA as GIA
 import qualified Data.AIG.Operations as AIG
@@ -87,6 +88,7 @@ import           What4.Expr.GroundEval
 import qualified What4.Expr.UnaryBV as UnaryBV
 import           What4.Expr.VarIdentification
 import qualified What4.Expr.WeightedSum as WSum
+import           What4.Panic
 import           What4.ProgramLoc
 import           What4.Solver.Adapter
 import           What4.SatResult
@@ -164,7 +166,7 @@ type family LitValue s (tp :: BaseType) where
 -- | Newtype wrapper around names.
 data NameType s (tp :: BaseType) where
   B  :: GIA.Lit s -> NameType s BaseBoolType
-  BV :: AIG.BV (GIA.Lit s) -> NameType s (BaseBVType n)
+  BV :: NatRepr n -> AIG.BV (GIA.Lit s) -> NameType s (BaseBVType n)
   GroundNat :: Natural -> NameType s BaseNatType
   GroundInt :: Integer -> NameType s BaseIntegerType
   GroundRat :: Rational -> NameType s BaseRealType
@@ -177,7 +179,8 @@ data VarBinding t s where
               -> GIA.Lit s
               -> VarBinding t s
   BVBinding  :: (1 <= w)
-             => Nonce t (BaseBVType w)
+             => NatRepr w
+             -> Nonce t (BaseBVType w)
              -> AIG.BV (GIA.Lit s)
              -> GIA.Lit s {- side condition -}
              -> VarBinding t s
@@ -210,8 +213,8 @@ eval _ (BoolExpr b _) =
 eval _ (SemiRingLiteral SemiRingNatRepr n _) = return (GroundNat n)
 eval _ (SemiRingLiteral SemiRingIntegerRepr n _) = return (GroundInt n)
 eval _ (SemiRingLiteral SemiRingRealRepr r _) = return (GroundRat r)
-eval ntk (SemiRingLiteral (SemiRingBVRepr _ w) v _) =
-    return $ BV $ AIG.bvFromInteger (gia ntk) (widthVal w) v
+eval ntk (SemiRingLiteral (SemiRingBVRepr _ w) bv _) =
+    return $ BV w $ AIG.bvFromInteger (gia ntk) (widthVal w) (BV.asUnsigned bv)
 eval _ (StringExpr s _) = return (GroundString s)
 
 eval ntk (NonceAppExpr e) = do
@@ -235,7 +238,7 @@ eval' ntk e = do
   r <- eval ntk e
   case r of
     B l -> return l
-    BV v -> return v
+    BV _ v -> return v
     GroundNat c -> return c
     GroundInt c -> return c
     GroundRat c -> return c
@@ -331,9 +334,9 @@ bitblastExpr h ae = do
         BaseBoolRepr ->
            do c' <- eval' h c
               B <$> AIG.lazyMux g c' (eval' h x) (eval' h y)
-        BaseBVRepr _ ->
+        BaseBVRepr w ->
            do c' <- eval' h c
-              BV <$> AIG.iteM g c' (eval' h x) (eval' h y)
+              BV w <$> AIG.iteM g c' (eval' h x) (eval' h y)
         BaseNatRepr  -> natFail
         BaseIntegerRepr -> intFail
         BaseRealRepr -> realFail
@@ -371,14 +374,14 @@ bitblastExpr h ae = do
           ite p x y = do
             c <- eval' h p
             AIG.ite g c x y
-      BV <$> UnaryBV.sym_evaluate cns ite u
-    BVConcat _w xe ye -> do
+      BV w <$> UnaryBV.sym_evaluate cns ite u
+    BVConcat w xe ye -> do
       x <- eval' h xe
       y <- eval' h ye
-      return $ BV $ x AIG.++ y
+      return $ BV w $ x AIG.++ y
     BVSelect idx n xe -> do
       x <- eval' h xe
-      return $ BV $ AIG.sliceRev x (fromIntegral (natValue idx)) (fromIntegral (natValue n))
+      return $ BV n $ AIG.sliceRev x (fromIntegral (natValue idx)) (fromIntegral (natValue n))
 
     NotPred xe -> B . AIG.not <$> eval' h xe
 
@@ -394,17 +397,17 @@ bitblastExpr h ae = do
 
     SemiRingSum s ->
       case WSum.sumRepr s of
-        SemiRingBVRepr BVArithRepr w -> BV <$> WSum.evalM (AIG.add g) smul cnst s
+        SemiRingBVRepr BVArithRepr w -> BV w <$> WSum.evalM (AIG.add g) smul cnst s
           where
           smul c e =
              -- NB, better constant folding if the constant is the second value
-             flip (AIG.mul g) (AIG.bvFromInteger g (widthVal w) c) =<< eval' h e
-          cnst c = pure (AIG.bvFromInteger g (widthVal w) c)
+             flip (AIG.mul g) (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c)) =<< eval' h e
+          cnst c = pure (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c))
 
-        SemiRingBVRepr BVBitsRepr w -> BV <$> WSum.evalM (AIG.zipWithM (AIG.lXor' g)) smul cnst s
+        SemiRingBVRepr BVBitsRepr w -> BV w <$> WSum.evalM (AIG.zipWithM (AIG.lXor' g)) smul cnst s
           where
-          smul c e = AIG.zipWithM (AIG.lAnd' g) (AIG.bvFromInteger g (widthVal w) c) =<< eval' h e
-          cnst c   = pure (AIG.bvFromInteger g (widthVal w) c)
+          smul c e = AIG.zipWithM (AIG.lAnd' g) (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c)) =<< eval' h e
+          cnst c   = pure (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c))
 
         SemiRingNatRepr -> natFail
         SemiRingIntegerRepr -> intFail
@@ -413,10 +416,10 @@ bitblastExpr h ae = do
     SemiRingProd pd ->
       case WSum.prodRepr pd of
         SemiRingBVRepr BVArithRepr w ->
-          maybe (BV (AIG.bvFromInteger g (widthVal w) 1)) BV <$>
+          maybe (BV w (AIG.bvFromInteger g (widthVal w) 1)) (BV w) <$>
             WSum.prodEvalM (AIG.mul g) (eval' h) pd
         SemiRingBVRepr BVBitsRepr w ->
-          maybe (BV (AIG.bvFromInteger g (widthVal w) (maxUnsigned w))) BV <$>
+          maybe (BV w (AIG.bvFromInteger g (widthVal w) (maxUnsigned w))) (BV w) <$>
             WSum.prodEvalM (AIG.zipWithM (AIG.lAnd' g)) (eval' h) pd
 
         SemiRingNatRepr -> natFail
@@ -426,42 +429,42 @@ bitblastExpr h ae = do
     BVOrBits w bs ->
       do bs' <- traverse (eval' h) (bvOrToList bs)
          case bs' of
-           [] -> return (BV (AIG.bvFromInteger g (widthVal w) 0))
-           x:xs -> BV <$> foldM (AIG.zipWithM (AIG.lOr' g)) x xs
+           [] -> return (BV w (AIG.bvFromInteger g (widthVal w) 0))
+           x:xs -> BV w <$> foldM (AIG.zipWithM (AIG.lOr' g)) x xs
 
-    BVUdiv _w x y -> do
-     BV <$> join (AIG.uquot g <$> eval' h x <*> eval' h y)
-    BVUrem _w x y -> do
-      BV <$> join (AIG.urem g <$> eval' h x <*> eval' h y)
-    BVSdiv _w x y ->
-      BV <$> join (AIG.squot g <$> eval' h x <*> eval' h y)
-    BVSrem _w x y ->
-      BV <$> join (AIG.srem g  <$> eval' h x <*> eval' h y)
+    BVUdiv w x y -> do
+     BV w <$> join (AIG.uquot g <$> eval' h x <*> eval' h y)
+    BVUrem w x y -> do
+      BV w <$> join (AIG.urem g <$> eval' h x <*> eval' h y)
+    BVSdiv w x y ->
+      BV w <$> join (AIG.squot g <$> eval' h x <*> eval' h y)
+    BVSrem w x y ->
+      BV w <$> join (AIG.srem g  <$> eval' h x <*> eval' h y)
 
-    BVShl _w x y -> BV <$> join (AIG.shl g <$> eval' h x <*> eval' h y)
-    BVLshr _w x y -> BV <$> join (AIG.ushr g <$> eval' h x <*> eval' h y)
-    BVAshr _w x y -> BV <$> join (AIG.sshr g <$> eval' h x <*> eval' h y)
-    BVRol _w x y -> BV <$> join (AIG.rol g <$> eval' h x <*> eval' h y)
-    BVRor _w x y -> BV <$> join (AIG.ror g <$> eval' h x <*> eval' h y)
+    BVShl w x y -> BV w <$> join (AIG.shl g <$> eval' h x <*> eval' h y)
+    BVLshr w x y -> BV w <$> join (AIG.ushr g <$> eval' h x <*> eval' h y)
+    BVAshr w x y -> BV w <$> join (AIG.sshr g <$> eval' h x <*> eval' h y)
+    BVRol w x y -> BV w <$> join (AIG.rol g <$> eval' h x <*> eval' h y)
+    BVRor w x y -> BV w <$> join (AIG.ror g <$> eval' h x <*> eval' h y)
 
-    BVFill w xe -> BV . AIG.bvFromList . replicate (widthVal w) <$> eval' h xe
+    BVFill w xe -> BV w . AIG.bvFromList . replicate (widthVal w) <$> eval' h xe
 
-    BVPopcount _w xe -> do
+    BVPopcount w xe -> do
       x <- eval' h xe
-      BV <$> AIG.popCount g x
-    BVCountLeadingZeros _w xe -> do
+      BV w <$> AIG.popCount g x
+    BVCountLeadingZeros w xe -> do
       x <- eval' h xe
-      BV <$> AIG.countLeadingZeros g x
-    BVCountTrailingZeros _w xe -> do
+      BV w <$> AIG.countLeadingZeros g x
+    BVCountTrailingZeros w xe -> do
       x <- eval' h xe
-      BV <$> AIG.countTrailingZeros g x
+      BV w <$> AIG.countTrailingZeros g x
 
     BVZext  w' xe -> do
       x <- eval' h xe
-      return $ BV $ AIG.zext g x (widthVal w')
+      return $ BV w' $ AIG.zext g x (widthVal w')
     BVSext  w' xe -> do
       x <- eval' h xe
-      return $ BV $ AIG.sext g x (widthVal w')
+      return $ BV w' $ AIG.sext g x (widthVal w')
 
     ------------------------------------------------------------------------
     -- Floating point operations
@@ -574,10 +577,15 @@ withNetwork m = do
   GIA.SomeGraph h <- newNetwork
   m h
 
-asInteger :: Monad m => (l -> m Bool) -> AIG.BV l -> m Integer
-asInteger f v = go 0 0
-  where n = AIG.length v
-        go r i | i == n = return r
+data SizedBV = forall w . SizedBV (NatRepr w) (BV.BV w)
+
+asBV :: Monad m => (l -> m Bool) -> AIG.BV l -> m SizedBV
+asBV f v = do
+  x <- go 0 0
+  Some n <- return $ mkNatRepr (fromIntegral nInt)
+  return $ SizedBV n (BV.mkBV n x)
+  where nInt = AIG.length v
+        go r i | i == nInt = return r
         go r i = do
           b <- f (v `AIG.at` i)
           let q = if b then 1 else 0
@@ -594,7 +602,12 @@ evalNonce ntk n eval_fn fallback = do
   mnm <- liftST $ H.lookup (nameCache ntk) n
   case mnm of
     Just (B l) -> return $ eval_fn l
-    Just (BV bv) -> asInteger (return . eval_fn) bv
+    Just (BV w bv) -> do
+      SizedBV w' bv' <- asBV (return . eval_fn) bv
+      case w `testEquality` w' of
+        Just Refl -> return bv'
+        Nothing -> panic "What4.Solver.ABC.evalNonce"
+                   ["Got back bitvector with wrong width"]
     Just (GroundNat x) -> return x
     Just (GroundInt x) -> return x
     Just (GroundRat x) -> return x
@@ -654,7 +667,7 @@ outputExpr h e = do
   r <- eval h e
   case r of
     B l -> addOutput h l
-    BV v -> Fold.traverse_ (addOutput h) v
+    BV _ v -> Fold.traverse_ (addOutput h) v
     GroundNat _ -> fail $ "Cannot bitblast nat values."
     GroundInt _ -> fail $ "Cannot bitblast integer values."
     GroundRat _ -> fail $ "Cannot bitblast real values."
@@ -813,15 +826,15 @@ recordBinding ntk b = liftST $
     BoolBinding n r ->
       do H.insert (nameCache ntk) n (B r)
          return GIA.true
-    BVBinding n r sidecond ->
-      do H.insert (nameCache ntk) n (BV r)
+    BVBinding w n r sidecond ->
+      do H.insert (nameCache ntk) n (BV w r)
          return sidecond
 
 deleteBinding :: Network t s -> VarBinding t s -> IO ()
 deleteBinding ntk b = liftST $
   case b of
     BoolBinding n _   -> H.delete (nameCache ntk) n
-    BVBinding   n _ _ -> H.delete (nameCache ntk) n
+    BVBinding _ n _ _ -> H.delete (nameCache ntk) n
 
 freshBV :: AIG.IsAIG l g => g s -> NatRepr n -> IO (AIG.BV (l s))
 freshBV g w = AIG.generateM_msb0 (widthVal w) (\_ -> GIA.newInput g)
@@ -860,7 +873,7 @@ freshBinding ntk n l tp mbnds = do
                           AIG.lAnd' g lop hip
                  conds <- mapM rangeCond (BVD.ranges w bnds)
                  foldM (AIG.lAnd' g) GIA.true conds
-        return (BVBinding n bv cond)
+        return (BVBinding w n bv cond)
 
     BaseNatRepr     -> failAt l "Natural number variables are not supported by ABC."
     BaseIntegerRepr -> failAt l "Integer variables are not supported by ABC."
