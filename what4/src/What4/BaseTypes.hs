@@ -178,14 +178,12 @@ type Prec128 = FloatingPointPrecision 15 113
 -- | A runtime representation of a solver interface type. Parameter @bt@
 -- has kind 'BaseType'.
 data BaseTypeRepr (bt::BaseType) :: Type where
-   BaseBoolRepr :: BaseTypeRepr BaseBoolType
-   BaseBVRepr   :: (1 <= w) => !(NatRepr w) -> BaseTypeRepr (BaseBVType w)
-   BaseNatRepr  :: BaseTypeRepr BaseNatType
+   BaseBoolRepr    :: BaseTypeRepr BaseBoolType
+   BaseBVRepr      :: (1 <= w) => !(NatRepr w) -> BaseTypeRepr (BaseBVType w)
+   BaseNatRepr     :: BaseTypeRepr BaseNatType
    BaseIntegerRepr :: BaseTypeRepr BaseIntegerType
    BaseRealRepr    :: BaseTypeRepr BaseRealType
-   BaseFloatRepr
-    :: !(FloatPrecisionRepr fpp)
-    -> BaseTypeRepr (BaseFloatType fpp)
+   BaseFloatRepr   :: !(FloatPrecisionRepr fpp) -> BaseTypeRepr (BaseFloatType fpp)
    BaseStringRepr  :: StringInfoRepr si -> BaseTypeRepr (BaseStringType si)
    BaseComplexRepr :: BaseTypeRepr BaseComplexType
 

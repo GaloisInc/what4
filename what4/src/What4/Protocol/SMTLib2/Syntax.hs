@@ -8,11 +8,15 @@ so that clients can generate new values that are not exposed through
 this interface.
 -}
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 module What4.Protocol.SMTLib2.Syntax
   ( -- * Commands
     Command(..)
@@ -137,9 +141,10 @@ module What4.Protocol.SMTLib2.Syntax
   , store
   ) where
 
-import           Data.Bits hiding (xor)
+import qualified Data.BitVector.Sized as BV
 import           Data.Char (intToDigit)
 import           Data.Monoid ((<>))
+import           Data.Parameterized.NatRepr
 import           Data.String
 import           Data.Text (Text, cons)
 import           Data.Text.Lazy.Builder (Builder)
@@ -504,22 +509,21 @@ bit0 = T "#b0"
 bit1 :: Term
 bit1 = T "#b1"
 
--- | @bvbinary x w@ constructs a bitvector term with width @w@ equal to @x `mod` 2^w@.
+-- | @bvbinary w x@ constructs a bitvector term with width @w@ equal
+-- to @x `mod` 2^w@.
 --
 -- The width @w@ must be positive.
 --
 -- The literal uses a binary notation.
-bvbinary :: Integer -> Natural -> Term
-bvbinary u w0
-    | w0 > fromIntegral (maxBound :: Int) = error $ "Integer width is too large."
-    | w0 == 0 = error $ "bvbinary width must be positive."
-    | otherwise = T $ "#b" <> go (fromIntegral w0)
-  where go :: Int -> Builder
+bvbinary :: 1 <= w => NatRepr w -> BV.BV w -> Term
+bvbinary w0 u
+    | otherwise = T $ "#b" <> go (natValue w0)
+  where go :: Natural -> Builder
         go 0 = mempty
         go w =
           let i = w - 1
               b :: Builder
-              b = if  u `testBit` i then "1" else "0"
+              b = if  u `BV.testBit'` i then "1" else "0"
            in b <> go i
 
 -- | @bvdecimal x w@ constructs a bitvector term with width @w@ equal to @x `mod` 2^w@.
@@ -527,29 +531,32 @@ bvbinary u w0
 -- The width @w@ must be positive.
 --
 -- The literal uses a decimal notation.
-bvdecimal :: Integer -> Natural -> Term
-bvdecimal u w
-    | w == 0 = error "bvdecimal expects positive width"
-    | otherwise = T $ mconcat [ "(_ bv", Builder.decimal d, " ", Builder.decimal w, ")"]
-  where d = u .&. (2^w - 1)
+bvdecimal :: 1 <= w => NatRepr w -> BV.BV w -> Term
+bvdecimal w u
+    | otherwise = T $ mconcat [ "(_ bv"
+                              , Builder.decimal d
+                              , " "
+                              , Builder.decimal (natValue w)
+                              , ")"]
+  where d = BV.asUnsigned u
 
 -- | @bvhexadecimal x w@ constructs a bitvector term with width @w@ equal to @x `mod` 2^w@.
 --
 -- The width @w@ must be a positive multiple of 4.
 --
 -- The literal uses hex notation.
-bvhexadecimal :: Integer -> Natural -> Term
-bvhexadecimal u w0
-    | w0 == 0 = error $ "bvhexadecimal width must be positive."
-    | w0 > fromIntegral (maxBound :: Int) = error $ "Integer width is too large."
-    | otherwise = T $ "#x" <> go (fromIntegral w0)
-  where go :: Int -> Builder
+bvhexadecimal :: 1 <= w => NatRepr w -> BV.BV w -> Term
+bvhexadecimal w0 u
+    | otherwise = T $ "#x" <> go (natValue w0)
+  where go :: Natural -> Builder
         go 0 = mempty
         go w | w < 4 = error "bvhexadecimal width must be a multiple of 4."
         go w =
           let i = w - 4
+              charBits = BV.asUnsigned (BV.select' i (knownNat @4) u)
               c :: Char
-              c = intToDigit $ fromInteger $ (u `shiftR` i) .&. 0xf
+              c = intToDigit $ fromInteger charBits
+              -- c = intToDigit $ fromInteger $ (u `shiftR` i) .&. 0xf
            in Builder.singleton c <> go i
 
 -- | @concat x y@ returns the bitvector with the bits of @x@ followed by the bits of @y@.
