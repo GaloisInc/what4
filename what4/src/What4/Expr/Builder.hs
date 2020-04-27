@@ -5009,7 +5009,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just xv <- asBV x = do
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
-      bvLit sym w (BV.zext w xv)
+      bvLit sym w (BV.sext (bvWidth x) w xv)
 
       -- Concatenate sign extension.
     | Just (BVSext _ y) <- asApp x = do
@@ -5061,7 +5061,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvOrBits sym x y =
     case (asBV x, asBV y) of
-      (Just xv, Just yv) -> bvLit sym (bvWidth x) (xv `BV.xor` yv)
+      (Just xv, Just yv) -> bvLit sym (bvWidth x) (xv `BV.or` yv)
       (Just xv , _)
         | xv == BV.zero -> return y
         | xv == BV.maxUnsigned (bvWidth x) -> return x
