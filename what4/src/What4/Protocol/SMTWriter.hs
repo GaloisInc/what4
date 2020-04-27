@@ -102,6 +102,7 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
+import qualified Data.Bits as Bits
 import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
 import           Data.IORef
@@ -2443,9 +2444,15 @@ appSMTExpr ae = do
       addSideCondition "float_binary" $
         floatFromBinary fpp val .== xe
       -- qnan: 0b0 0b1..1 0b10..0
-      LeqProof <- return $ leqTrans (leqProof (knownNat @1) (knownNat @2)) (leqProof (knownNat @2) eb)
-      LeqProof <- return $ leqTrans (leqProof (knownNat @1) (knownNat @2)) (leqProof (knownNat @2) sb)
-      let qnan = bvTerm (addNat eb sb) $ BV.concat sb (BV.maxSigned eb) (BV.minSigned sb)
+      -- BGS: I tried using bv-sized primitives for this and it would
+      -- have required a lot of proofs. Probable worth revisiting this.
+      let qnan = bvTerm (addNat eb sb) $
+                 BV.mkBV (addNat eb sb) $
+                 Bits.shiftL
+                  (2 ^ (natValue eb + 1) - 1)
+                  (fromIntegral (natValue sb - 2))
+
+-- BV.concat  BV.concat (predNat sb) (BV.maxSigned eb) (BV.minSigned (predNat sb))
       -- return (ite (fp.isNaN xe) qnan val)
       freshBoundTerm (BVTypeMap $ addNat eb sb) $ ite (floatIsNaN xe) qnan val
     FloatFromBinary fpp x -> do

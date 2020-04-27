@@ -531,12 +531,11 @@ bvbinary w0 u
 --
 -- The literal uses a decimal notation.
 bvdecimal :: 1 <= w => NatRepr w -> BV.BV w -> Term
-bvdecimal w u
-    | otherwise = T $ mconcat [ "(_ bv"
-                              , Builder.decimal d
-                              , " "
-                              , Builder.decimal (natValue w)
-                              , ")"]
+bvdecimal w u = T $ mconcat [ "(_ bv"
+                            , Builder.decimal d
+                            , " "
+                            , Builder.decimal (natValue w)
+                            , ")"]
   where d = BV.asUnsigned u
 
 -- | @bvhexadecimal x w@ constructs a bitvector term with width @w@ equal to @x `mod` 2^w@.
