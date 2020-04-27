@@ -2451,9 +2451,6 @@ appSMTExpr ae = do
                  Bits.shiftL
                   (2 ^ (natValue eb + 1) - 1)
                   (fromIntegral (natValue sb - 2))
-
--- BV.concat  BV.concat (predNat sb) (BV.maxSigned eb) (BV.minSigned (predNat sb))
-      -- return (ite (fp.isNaN xe) qnan val)
       freshBoundTerm (BVTypeMap $ addNat eb sb) $ ite (floatIsNaN xe) qnan val
     FloatFromBinary fpp x -> do
       xe <- mkBaseExpr x
