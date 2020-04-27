@@ -33,6 +33,7 @@ module What4.Utils.BVDomain.Arith
   , arithDomainData
   , bitbounds
   , unknowns
+  , fillright
     -- * Operations
   , any
   , singleton
@@ -617,17 +618,20 @@ bitbounds a =
 -- @lo..hi@.
 unknowns :: Domain w -> Integer
 unknowns (BVDAny mask) = mask
-unknowns (BVDInterval mask al aw) = mask .&. (fillright 1 (al `Bits.xor` (al+aw)))
-  where
-    -- @fillright 1 x@ rounds up @x@ to the nearest 2^n-1.
-    fillright :: Int -> Integer -> Integer
-    fillright i x
-      | x' == x = x
-      | otherwise = fillright (2 * i) x'
-      where x' = x .|. (x `shiftR` i)
+unknowns (BVDInterval mask al aw) = mask .&. (fillright (al `Bits.xor` (al+aw)))
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
+
+-- | @fillright x@ rounds up @x@ to the nearest 2^n-1.
+fillright :: Integer -> Integer
+fillright = go 1
+  where
+  go :: Int -> Integer -> Integer
+  go i x
+    | x' == x = x
+    | otherwise = go (2 * i) x'
+    where x' = x .|. (x `shiftR` i)
 
 ------------------------------------------------------------------
 -- Correctness properties
