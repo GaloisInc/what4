@@ -45,7 +45,6 @@ import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char
 import           Data.HashSet (HashSet)
 import qualified Data.HashSet as HSet
-import           Data.Monoid ((<>))
 import           Data.Ratio
 import           Data.String
 import           Data.Word
