@@ -19,6 +19,7 @@ verify the correctness of those.
 
 import           Control.Monad.IO.Class ( liftIO )
 import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Nonce
 import           GenWhat4Expr
 import           Hedgehog
@@ -72,13 +73,13 @@ testBvIsNeg = testGroup "bvIsNeg"
 
     testCase "-1.32 bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) ((-1) .&. allbits32)
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat ((-1) .&. allbits32))
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool True) @=? r
 
   , testCase "-1 bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) (-1)
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat (-1))
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool True) @=? r
 
@@ -86,39 +87,39 @@ testBvIsNeg = testGroup "bvIsNeg"
 
   , testCase "0xffffffff bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) allbits32
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat allbits32)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool True) @=? r
 
   , testCase "0x80000000 bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) 0x80000000
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat 0x80000000)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool True) @=? r
 
   , testCase "0x7fffffff !bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) 0x7fffffff
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat 0x7fffffff)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool False) @=? r
 
   , testCase "0 !bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) 0
+        v <- bvLit sym (knownRepr :: NatRepr 32) BV.zero
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool False) @=? r
 
   , testProperty "bvIsNeg.32" $ property $ do
       i <- forAll $ Gen.integral $ Range.linear (-10) (-1)
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) i
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat i)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool True) === r
 
   , testProperty "!bvIsNeg.32" $ property $ do
       i <- forAll $ Gen.integral $ Range.linear 0 10
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) i
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.mkBV knownNat i)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool False) === r
   ]
