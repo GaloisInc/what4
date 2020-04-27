@@ -317,23 +317,36 @@ bitwiseDomainTests =
 
 overallDomainTests :: TestTree
 overallDomainTests = testGroup "Overall Domain"
-  [ genTest "correct_any" $
+  [ genTest "correct_bra1" $
+      do SW n <- genWidth
+         O.correct_bra1 n <$> genBV n <*> genBV n
+  , genTest "correct_bra2" $
+      do SW n <- genWidth
+         O.correct_bra2 n <$> genBV n <*> genBV n <*> genBV n
+  , genTest "correct_brb1" $
+      do SW n <- genWidth
+         O.correct_brb1 n <$> genBV n <*> genBV n <*> genBV n
+  , genTest "correct_brb2" $
+      do SW n <- genWidth
+         O.correct_brb2 n <$> genBV n <*> genBV n <*> genBV n <*> genBV n
+  , genTest "correct_any" $
       do SW n <- genWidth
          O.correct_any n <$> genBV n
   , genTest "correct_ubounds" $
       do SW n <- genWidth
          O.correct_ubounds n <$> O.genPair n
-
   , genTest "correct_sbounds" $
       do SW n <- genWidth
          O.correct_sbounds n <$> O.genPair n
-
   , genTest "correct_singleton" $
       do SW n <- genWidth
          O.correct_singleton n <$> genBV n <*> genBV n
   , genTest "correct_overlap" $
       do SW n <- genWidth
          O.correct_overlap <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "precise_overlap" $
+      do SW n <- genWidth
+         O.precise_overlap <$> O.genDomain n <*> O.genDomain n
   , genTest "correct_union" $
       do SW n <- genWidth
          O.correct_union n <$> O.genDomain n <*> O.genDomain n <*> genBV n

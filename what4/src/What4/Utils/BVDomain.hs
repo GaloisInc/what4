@@ -75,6 +75,10 @@ module What4.Utils.BVDomain
   , clz
   , ctz
 
+    -- * Useful bitvector computations
+  , bitwiseRoundAbove
+  , bitwiseRoundBetween
+
     -- * Correctness properties
   , genDomain
   , genElement
@@ -88,11 +92,17 @@ module What4.Utils.BVDomain
   , correct_asXorDomain
   , correct_fromXorDomain
 
+  , correct_bra1
+  , correct_bra2
+  , correct_brb1
+  , correct_brb2
+
   , correct_any
   , correct_ubounds
   , correct_sbounds
   , correct_singleton
   , correct_overlap
+  , precise_overlap
   , correct_union
   , correct_zero_ext
   , correct_sign_ext
@@ -125,6 +135,7 @@ module What4.Utils.BVDomain
 
 import qualified Data.Bits as Bits
 import           Data.Bits hiding (testBit, xor)
+import qualified Data.List as List
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
@@ -249,10 +260,113 @@ asSingleton :: BVDomain w -> Maybe Integer
 asSingleton (BVDArith a)   = A.asSingleton a
 asSingleton (BVDBitwise b) = B.asSingleton b
 
+{- |
+ Precondition: @x <= lomask@.  Find the (arithmetically) smallest
+ @z@ above @x@ which is bitwise above @lomask@.  In other words
+ find the smallest @z@ such that @x <= z@ and @lomask .|. z == z@.
+-}
+bitwiseRoundAbove ::
+  Integer {- ^ @bvmask@, based on the width of the bitvectors in question -} ->
+  Integer {- ^ @x@ -} ->
+  Integer {- ^ @lomask@ -} ->
+  Integer
+bitwiseRoundAbove bvmask x lomask = upperbits .|. lowerbits
+  where
+  upperbits = x .&. (bvmask `Bits.xor` fillmask)
+  lowerbits = lomask .&. fillmask
+  fillmask = A.fillright ((x .|. lomask) `Bits.xor` x)
+
+{- |
+ Precondition: @lomask <= x <= himask@ and @lomask .|. himask == himask@.
+ Find the (arithmetically) smallest @z@ above @x@ which is bitwise between
+ @lomask@ and @himask@.  In otherwords, find the smallest @z@ such that
+ @x <= z@ and @lomask .|. z = z@ and @z .|. himask == himask@.
+-}
+bitwiseRoundBetween ::
+  Integer {- ^ @bvmask@, based on the width of the bitvectors in question -} ->
+  Integer {- ^ @x@ -} ->
+  Integer {- ^ @lomask@ -} ->
+  Integer {- ^ @himask@ -} ->
+  Integer
+bitwiseRoundBetween bvmask x lomask himask = final
+  -- read these steps bottom up...
+  where
+  -- Finally mask out the low bits and only set those requried by the lomask
+  final = (upper .&. (lobits `Bits.xor` bvmask)) .|. lomask
+
+  -- add the correcting bit and mask out any extraneous bits set in
+  -- the previous step
+  upper = (z + highbit) .&. himask
+
+  -- set ourselves up so that when we add the high bit to correct,
+  -- the carry will ripple until it finds a bit position that we
+  -- are allowed to set.
+  z = loup .|. himask'
+
+  -- isolate just the highest incorrect bit
+  highbit = rmask `Bits.xor` lobits
+
+  -- a mask for all the bits to the right of the higest incorrect ibt
+  lobits = rmask `shiftR` 1
+
+  -- set all the bits to the right of the highest incorrect bit
+  rmask = A.fillright r
+
+  -- now, compute all the bits that are set, but are not
+  -- allowed to be set according to the himask
+  r = loup .&. himask'
+
+  -- complement of the highmask
+  himask' = himask `Bits.xor` bvmask
+
+  -- first, round up to the lomask
+  loup = bitwiseRoundAbove bvmask x lomask
+
+
+-- | Test if an arithmetic domain overlaps with a bitwise domain
+mixedDomainsOverlap :: A.Domain a -> B.Domain b -> Bool
+mixedDomainsOverlap a b =
+   case A.arithDomainData a of
+     Nothing -> B.nonempty b
+     Just (alo,_) ->
+       let (lomask,himask) = B.bitbounds b
+           brb = bitwiseRoundBetween (A.bvdMask a) alo lomask himask
+        in B.nonempty b && (A.member a lomask || A.member a himask || A.member a brb)
+
+
 -- | Return true if domains contain a common element.
 domainsOverlap :: BVDomain w -> BVDomain w -> Bool
 domainsOverlap (BVDBitwise a) (BVDBitwise b) = B.domainsOverlap a b
-domainsOverlap (asArithDomain -> a) (asArithDomain -> b) = A.domainsOverlap a b
+domainsOverlap (BVDArith a)   (BVDArith b)   = A.domainsOverlap a b
+domainsOverlap (BVDArith a)   (BVDBitwise b) = mixedDomainsOverlap a b
+domainsOverlap (BVDBitwise b) (BVDArith a)   = mixedDomainsOverlap a b
+
+arithDomainLo :: A.Domain w -> Integer
+arithDomainLo a =
+  case A.arithDomainData a of
+    Nothing -> 0
+    Just (lo,_) -> lo
+
+mixedCandidates :: A.Domain w -> B.Domain w -> [Integer]
+mixedCandidates a b =
+  case A.arithDomainData a of
+    Nothing -> [ lomask ]
+    Just (alo,_) -> [ lomask, himask, bitwiseRoundBetween (A.bvdMask a) alo lomask himask ]
+ where
+ (lomask,himask) = B.bitbounds b
+
+-- | Return a list of "candidate" overlap elements.  If two domains
+--   overlap, then they will definintely share one of the given
+--   values.
+overlapCandidates :: BVDomain w -> BVDomain w -> [Integer]
+overlapCandidates (BVDArith a)   (BVDBitwise b) = mixedCandidates a b
+overlapCandidates (BVDBitwise b) (BVDArith a)   = mixedCandidates a b
+overlapCandidates (BVDArith a)   (BVDArith b)   = [ arithDomainLo a, arithDomainLo b ]
+overlapCandidates (BVDBitwise a) (BVDBitwise b) = [ loa .|. lob ]
+  where
+  (loa,_) = B.bitbounds a
+  (lob,_) = B.bitbounds b
+
 
 eq :: BVDomain w -> BVDomain w -> Maybe Bool
 eq a b
@@ -532,6 +646,30 @@ correct_asXorDomain n (a, x) = member a x ==> X.pmember n (asXorDomain a) x
 correct_fromXorDomain :: NatRepr n -> (X.Domain n, Integer) -> Property
 correct_fromXorDomain n (a, x) = X.member a x ==> pmember n (fromXorDomain a) x
 
+
+correct_bra1 :: NatRepr n -> Integer -> Integer -> Property
+correct_bra1 n x lomask = lomask <= x ==> (x <= q && B.bitle lomask q)
+ where
+ q = bitwiseRoundAbove (maxUnsigned n) x lomask
+
+correct_bra2 :: NatRepr n -> Integer -> Integer -> Integer -> Property
+correct_bra2 n x lomask q' = (x <= q' && B.bitle lomask q') ==> q <= q'
+ where
+ q = bitwiseRoundAbove (maxUnsigned n) x lomask
+
+correct_brb1 :: NatRepr n -> Integer -> Integer -> Integer -> Property
+correct_brb1 n x lomask himask =
+    (B.bitle lomask himask && lomask <= x && x <= himask) ==>
+    (x <= q && B.bitle lomask q && B.bitle q himask)
+  where
+  q = bitwiseRoundBetween (maxUnsigned n) x lomask himask
+
+correct_brb2 :: NatRepr n -> Integer -> Integer -> Integer -> Integer -> Property
+correct_brb2 n x lomask himask q' =
+    (x <= q' && B.bitle lomask q' && B.bitle q' himask) ==> q <= q'
+  where
+  q = bitwiseRoundBetween (maxUnsigned n) x lomask himask
+
 correct_any :: (1 <= n) => NatRepr n -> Integer -> Property
 correct_any n x = property (pmember n (any n) x)
 
@@ -556,6 +694,10 @@ correct_singleton n x y = property (member (singleton n x') y' == (x' == y'))
 correct_overlap :: BVDomain n -> BVDomain n -> Integer -> Property
 correct_overlap a b x =
   member a x && member b x ==> domainsOverlap a b
+
+precise_overlap :: BVDomain n -> BVDomain n -> Property
+precise_overlap a b =
+  domainsOverlap a b ==> List.or [ member a x && member b x | x <- overlapCandidates a b ]
 
 correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
 correct_union n a b x =
@@ -691,4 +833,3 @@ correct_ctz n (a,x) = member a x ==> pmember n (ctz n a) (Arith.ctz n x)
 
 correct_clz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
 correct_clz n (a,x) = member a x ==> pmember n (clz n a) (Arith.clz n x)
-

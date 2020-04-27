@@ -15,6 +15,7 @@ Provides a bitwise implementation of bitvector abstract domains.
 
 module What4.Utils.BVDomain.Bitwise
   ( Domain(..)
+  , bitle
   , proper
   , bvdMask
   , member
