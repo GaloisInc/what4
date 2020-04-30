@@ -370,12 +370,12 @@ class Num v => SupportTermOps v where
   -- | @bvTestBit w i x@ returns predicate that holds if bit @i@
   -- in @x@ is set to true.  @w@ should be the number of bits in @x@.
   bvTestBit :: NatRepr w -> Natural -> v -> v
-  bvTestBit w i x = (bvExtract w i 1 x .== bvTerm w1 BV.one)
+  bvTestBit w i x = (bvExtract w i 1 x .== bvTerm w1 (BV.one w1))
     where w1 :: NatRepr 1
           w1 = knownNat
 
   bvSumExpr :: NatRepr w -> [v] -> v
-  bvSumExpr w [] = bvTerm w BV.zero
+  bvSumExpr w [] = bvTerm w (BV.zero w)
   bvSumExpr _ (h:r) = foldl bvAdd h r
 
   floatPZero :: FloatPrecisionRepr fpp -> v
@@ -1896,7 +1896,7 @@ appSMTExpr ae = do
     BVTestBit n xe -> do
       x <- mkBaseExpr xe
       let this_bit = bvExtract (bvWidth xe) n 1 x
-          one = bvTerm (knownNat :: NatRepr 1) BV.one
+          one = bvTerm (knownNat :: NatRepr 1) (BV.one knownNat)
       freshBoundTerm BoolTypeMap $ this_bit .== one
     BVSlt xe ye -> do
       x <- mkBaseExpr xe
@@ -1979,7 +1979,7 @@ appSMTExpr ae = do
       case WSum.prodRepr pd of
         SR.SemiRingBVRepr SR.BVArithRepr w ->
           do pd' <- WSum.prodEvalM (\a b -> pure (bvMul a b)) mkBaseExpr pd
-             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w BV.one)
+             maybe (return $ SMTExpr (BVTypeMap w) $ bvTerm w (BV.one w))
                    (freshBoundTerm (BVTypeMap w))
                    pd'
 
@@ -2034,7 +2034,7 @@ appSMTExpr ae = do
 
         SR.SemiRingBVRepr SR.BVArithRepr w ->
           let smul c e
-                | c == BV.one = (:[]) <$> mkBaseExpr e
+                | c == BV.one w = (:[]) <$> mkBaseExpr e
                 | c == BV.maxUnsigned w = (:[]) . bvNeg <$> mkBaseExpr e
                 | otherwise = (:[]) <$> (bvMul (bvTerm w c)) <$> mkBaseExpr e
               cnst (BV.BV 0) = []
@@ -2051,7 +2051,7 @@ appSMTExpr ae = do
               cnst (BV.BV 0) = []
               cnst x = [bvTerm w x]
               add x y = pure (y ++ x) -- reversed for efficiency when grouped to the left
-              xorsum [] = bvTerm w BV.zero
+              xorsum [] = bvTerm w (BV.zero w)
               xorsum xs = foldr1 bvXor xs
            in
            freshBoundTerm (BVTypeMap w) . xorsum
@@ -2141,7 +2141,7 @@ appSMTExpr ae = do
        do bs' <- traverse mkBaseExpr (bvOrToList bs)
           freshBoundTerm (BVTypeMap w) $!
             case bs' of
-              [] -> bvTerm w BV.zero
+              [] -> bvTerm w (BV.zero w)
               x:xs -> foldl bvOr x xs
 
     BVConcat w xe ye -> do
@@ -2218,7 +2218,7 @@ appSMTExpr ae = do
       let n = intValue w' - intValue w
       case someNat n of
         Just (Some w2) | Just LeqProof <- isPosNat w' -> do
-          let zeros = bvTerm w2 BV.zero
+          let zeros = bvTerm w2 (BV.zero w2)
           freshBoundTerm (BVTypeMap w') $ bvConcat zeros x
         _ -> fail "invalid zero extension"
 
@@ -2228,7 +2228,7 @@ appSMTExpr ae = do
       let n = intValue w' - intValue w
       case someNat n of
         Just (Some w2) | Just LeqProof <- isPosNat w' -> do
-          let zeros = bvTerm w2 BV.zero
+          let zeros = bvTerm w2 (BV.zero w2)
           let ones  = bvTerm w2 (BV.maxUnsigned w2)
           let sgn = bvTestBit w (natValue w - 1) x
           freshBoundTerm (BVTypeMap w') $ bvConcat (ite sgn ones zeros) x
@@ -2236,13 +2236,13 @@ appSMTExpr ae = do
 
     BVFill w xe ->
       do x <- mkBaseExpr xe
-         let zeros = bvTerm w BV.zero
+         let zeros = bvTerm w (BV.zero w)
          let ones  = bvTerm w (BV.maxUnsigned w)
          freshBoundTerm (BVTypeMap w) $ ite x ones zeros
 
     BVPopcount w xe ->
       do x <- mkBaseExpr xe
-         let zs = [ ite (bvTestBit w idx x) (bvTerm w BV.one) (bvTerm w BV.zero)
+         let zs = [ ite (bvTestBit w idx x) (bvTerm w (BV.one w)) (bvTerm w (BV.zero w))
                   | idx <- [ 0 .. natValue w - 1 ]
                   ]
          freshBoundTerm (BVTypeMap w) $! bvSumExpr w zs

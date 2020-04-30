@@ -522,7 +522,7 @@ bvbinary w0 u
         go w =
           let i = w - 1
               b :: Builder
-              b = if  u `BV.testBit'` i then "1" else "0"
+              b = if BV.testBit' i u then "1" else "0"
            in b <> go i
 
 -- | @bvdecimal x w@ constructs a bitvector term with width @w@ equal to @x `mod` 2^w@.

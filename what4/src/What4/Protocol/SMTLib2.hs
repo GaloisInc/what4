@@ -739,7 +739,7 @@ parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
       -- (eb' + 1) + sb' ~ eb' + (1 + sb') 
       Refl <- return $ plusAssoc eb' (knownNat @1) sb'
       return bv
-        where bv = BV.concat sb' (BV.concat eb sgn expt) sig
+        where bv = BV.concat (addNat (knownNat @1) eb) sb' (BV.concat knownNat eb sgn expt) sig
     _ -> fail $ "Unexpected float precision: " <> show eb' <> ", " <> show sb'
 
 data ParsedFloatResult = forall eb sb . ParsedFloatResult
@@ -762,11 +762,11 @@ parseFloatLitHelper
   , Some eb <- mkNatRepr eb_n
   , Some sb <- mkNatRepr (sb_n-1)
   = case nm of
-      "+oo"   -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb BV.zero
-      "-oo"   -> return $ ParsedFloatResult BV.one  eb (BV.maxUnsigned eb) sb BV.zero
-      "+zero" -> return $ ParsedFloatResult BV.zero eb BV.zero             sb BV.zero
-      "-zero" -> return $ ParsedFloatResult BV.one  eb BV.zero             sb BV.zero
-      "NaN"   -> return $ ParsedFloatResult BV.zero eb (BV.maxUnsigned eb) sb (BV.maxUnsigned sb)
+      "+oo"   -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.maxUnsigned eb) sb (BV.zero sb)
+      "-oo"   -> return $ ParsedFloatResult (BV.one knownNat)  eb (BV.maxUnsigned eb) sb (BV.zero sb)
+      "+zero" -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.zero eb)        sb (BV.zero sb)
+      "-zero" -> return $ ParsedFloatResult (BV.one knownNat)  eb (BV.zero eb)        sb (BV.zero sb)
+      "NaN"   -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.maxUnsigned eb) sb (BV.maxUnsigned sb)
       _       -> fail $ "Could not parse float solver value: " ++ show s
 parseFloatLitHelper s = fail $ "Could not parse float solver value: " ++ show s
 

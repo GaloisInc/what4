@@ -130,14 +130,14 @@ defaultValueForType tp =
   case tp of
     BaseBoolRepr    -> False
     BaseNatRepr     -> 0
-    BaseBVRepr _    -> BV.zero
+    BaseBVRepr w    -> BV.zero w
     BaseIntegerRepr -> 0
     BaseRealRepr    -> 0
     BaseComplexRepr -> 0 :+ 0
     BaseStringRepr si -> stringLitEmpty si
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
-    BaseFloatRepr _ -> BV.zero
+    BaseFloatRepr (FloatingPointPrecisionRepr eb sb) -> BV.zero (addNat eb sb)
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -264,9 +264,8 @@ evalGroundApp f0 a0 = do
           foldl' (&&) <$> pol t <*> mapM pol ts
 
     RealIsInteger x -> (\xv -> denominator xv == 1) <$> f x
-    -- BGS: Removed assertion on size of i.
     BVTestBit i x -> 
-        (`BV.testBit'` i) <$> f x
+        BV.testBit' i <$> f x
     BVSlt x y -> BV.slt w <$> f x <*> f y
       where w = bvWidth x
     BVUlt x y -> BV.ult <$> f x <*> f y
@@ -323,7 +322,7 @@ evalGroundApp f0 a0 = do
         SR.SemiRingIntegerRepr -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingRealRepr    -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
-          fromMaybe BV.one <$> WSum.prodEvalM (\x y -> pure (BV.mul w x y)) f pd
+          fromMaybe (BV.one w) <$> WSum.prodEvalM (\x y -> pure (BV.mul w x y)) f pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           fromMaybe (BV.maxUnsigned w) <$> WSum.prodEvalM (\x y -> pure (BV.and x y)) f pd
 
@@ -357,19 +356,19 @@ evalGroundApp f0 a0 = do
     ------------------------------------------------------------------------
     -- Bitvector Operations
 
-    BVOrBits _w bs -> foldl' BV.or BV.zero <$> traverse f (bvOrToList bs)
+    BVOrBits w bs -> foldl' BV.or (BV.zero w) <$> traverse f (bvOrToList bs)
     BVUnaryTerm u ->
       BV.mkBV (UnaryBV.width u) <$> UnaryBV.evaluate f u
-    BVConcat _w x y -> BV.concat (bvWidth y) <$> f x <*> f y
+    BVConcat _w x y -> BV.concat (bvWidth x) (bvWidth y) <$> f x <*> f y
     BVSelect idx n x -> BV.select idx n <$> f x
-    BVUdiv _w x y -> myDiv <$> f x <*> f y
-      where myDiv _ (BV.BV 0) = BV.zero
+    BVUdiv w x y -> myDiv <$> f x <*> f y
+      where myDiv _ (BV.BV 0) = BV.zero w
             myDiv u v = BV.uquot u v
     BVUrem _w x y -> myRem <$> f x <*> f y
       where myRem u (BV.BV 0) = u
             myRem u v = BV.urem u v
     BVSdiv w x y -> myDiv <$> f x <*> f y
-      where myDiv _ (BV.BV 0) = BV.zero
+      where myDiv _ (BV.BV 0) = BV.zero w
             myDiv u v = BV.sdiv w u v
     BVSrem w x y -> myRem <$> f x <*> f y
       where myRem u (BV.BV 0) = u
@@ -389,7 +388,7 @@ evalGroundApp f0 a0 = do
 
     BVFill w p ->
       do b <- f p
-         return $! if b then BV.maxUnsigned w else BV.zero
+         return $! if b then BV.maxUnsigned w else BV.zero w
 
     BVPopcount _w x ->
       BV.popCount <$> f x

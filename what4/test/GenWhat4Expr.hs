@@ -766,7 +766,7 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
                              then conTE $ teSubCon
                                   (pdesc t <> " +1")
                                   (testval t + 1)
-                                  (\sym -> do lit1 <- bvLit sym knownRepr BV.one
+                                  (\sym -> do lit1 <- bvLit sym knownRepr (BV.one knownNat)
 
                                               orig <- expr t sym
                                               bvAdd sym orig lit1)

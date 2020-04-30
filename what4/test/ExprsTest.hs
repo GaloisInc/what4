@@ -105,7 +105,7 @@ testBvIsNeg = testGroup "bvIsNeg"
 
   , testCase "0 !bvIsNeg.32" $ do
       r <- liftIO $ withTestSolver $ \sym -> do
-        v <- bvLit sym (knownRepr :: NatRepr 32) BV.zero
+        v <- bvLit sym (knownRepr :: NatRepr 32) (BV.zero knownNat)
         asConcrete <$> bvIsNeg sym v
       Just (ConcreteBool False) @=? r
 

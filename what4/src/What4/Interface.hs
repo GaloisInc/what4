@@ -733,7 +733,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | Return true if bitvector is negative.
   bvIsNeg :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNeg sym x = bvSlt sym x =<< bvLit sym (bvWidth x) BV.zero
+  bvIsNeg sym x = bvSlt sym x =<< bvLit sym (bvWidth x) (BV.zero (bvWidth x))
 
   -- | If-then-else applied to bitvectors.
   bvIte :: (1 <= w)
@@ -800,7 +800,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   bvIsNonzero :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
   bvIsNonzero sym x = do
      let w = bvWidth x
-     zro <- bvLit sym w BV.zero
+     zro <- bvLit sym w (BV.zero w)
      notPred sym  =<< bvEq sym x zro
 
   -- | Left shift.  The shift amount is treated as an unsigned value.
@@ -909,7 +909,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Return the bitvector of the desired width with all 0 bits;
   --   this is the minimum unsigned integer.
   minUnsignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  minUnsignedBV sym w = bvLit sym w BV.zero
+  minUnsignedBV sym w = bvLit sym w (BV.zero w)
 
   -- | Return the bitvector of the desired width with all bits set;
   --   this is the maximum unsigned integer.
@@ -1038,14 +1038,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
        w_leq_w@LeqProof <- return (leqProof w w)
        -- w <= w, 1 <= w implies w + 1 <= w + w
        LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
-       z  <- bvLit sym w2 BV.zero
+       z  <- bvLit sym w2 (BV.zero w2)
        x' <- bvZext sym w2 x
        xs <- sequence [ do p <- testBitBV sym (BV.asNatural i) y
                            iteM bvIte sym
                              p
                              (bvShl sym x' =<< bvLit sym w2 i)
                              (return z)
-                      | i <- BV.enumFromToUnsigned BV.zero (BV.mkBV w2 (intValue w - 1))
+                      | i <- BV.enumFromToUnsigned (BV.zero w2) (BV.mkBV w2 (intValue w - 1))
                       ]
        foldM (bvXorBits sym) z xs
 
@@ -1439,7 +1439,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
       -- Handle case where i < 0
       min_sym <- intLit sym 0
       is_lt <- intLt sym i min_sym
-      iteM bvIte sym is_lt (bvLit sym w BV.zero) $ do
+      iteM bvIte sym is_lt (bvLit sym w (BV.zero w)) $ do
         -- Handle case where i > maxUnsigned w
         let max_val = maxUnsigned w
             max_val_bv = BV.maxUnsigned w
@@ -1489,7 +1489,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   intToUInt :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
   intToUInt sym e w = do
     p <- bvIsNeg sym e
-    iteM bvIte sym p (bvLit sym w BV.zero) (uintSetWidth sym e w)
+    iteM bvIte sym p (bvLit sym w (BV.zero w)) (uintSetWidth sym e w)
 
   -- | Convert an unsigned bitvector to the nearest signed bitvector with
   -- the given width (clamp on overflow).
@@ -2518,7 +2518,7 @@ baseDefaultValue sym bt =
     BaseBoolRepr    -> return $! falsePred sym
     BaseNatRepr     -> natLit sym 0
     BaseIntegerRepr -> intLit sym 0
-    BaseBVRepr w    -> bvLit sym w BV.zero
+    BaseBVRepr w    -> bvLit sym w (BV.zero w)
     BaseRealRepr    -> return $! realZero sym
     BaseFloatRepr fpp -> floatPZero sym fpp
     BaseComplexRepr -> mkComplexLit sym (0 :+ 0)

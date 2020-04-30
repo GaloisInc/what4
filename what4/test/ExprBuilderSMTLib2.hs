@@ -335,7 +335,7 @@ testBVSelectShl :: TestTree
 testBVSelectShl = testCase "select shl simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvLit sym (knownNat @64) BV.zero
+    e0 <- bvLit sym (knownNat @64) (BV.zero knownNat)
     e1 <- bvConcat sym e0 x
     e2 <- bvShl sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e3 <- bvSelect sym (knownNat @64) (knownNat @64) e2
@@ -345,7 +345,7 @@ testBVSelectLshr :: TestTree
 testBVSelectLshr = testCase "select lshr simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) BV.zero
+    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) (BV.zero knownNat)
     e1 <- bvLshr sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e2 <- bvSelect sym (knownNat @0) (knownNat @64) e1
     e2 @?= x
@@ -368,7 +368,7 @@ testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
 
 testBVIteNesting :: TestTree
 testBVIteNesting = testCase "nested bitvector ites" $ withZ3 $ \sym s -> do
-  bv0 <- bvLit sym (knownNat @32) BV.zero
+  bv0 <- bvLit sym (knownNat @32) (BV.zero knownNat)
   let setSymBit bv idx = do
         c1 <- freshConstant sym (userSymbol' ("c1_" ++ show idx)) knownRepr
         c2 <- freshConstant sym (userSymbol' ("c2_" ++ show idx)) knownRepr

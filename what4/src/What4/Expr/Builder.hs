@@ -3094,7 +3094,7 @@ bvBinDivOp :: (1 <= w)
 bvBinDivOp f c sb x y = do
   let w = bvWidth x
   case (asBV x, asBV y) of
-    (Just i, Just j) | j /= BV.zero -> bvLit sb w $ f w i j
+    (Just i, Just j) | j /= BV.zero w -> bvLit sb w $ f w i j
     _ -> sbMakeExpr sb $ c w x y
 
 asConcreteIndices :: IsExpr e
@@ -3174,7 +3174,7 @@ reduceApp sym a0 = do
         SR.SemiRingRealRepr ->
           maybe (realLit sym 1) return =<< WSum.prodEvalM (realMul sym) return pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
-          maybe (bvLit sym w BV.one) return =<< WSum.prodEvalM (bvMul sym) return pd
+          maybe (bvLit sym w (BV.one w)) return =<< WSum.prodEvalM (bvMul sym) return pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           maybe (bvLit sym w (BV.maxUnsigned w)) return =<< WSum.prodEvalM (bvAndBits sym) return pd
 
@@ -3206,7 +3206,7 @@ reduceApp sym a0 = do
 
     BVOrBits w bs ->
       case bvOrToList bs of
-        [] -> bvLit sym w BV.zero
+        [] -> bvLit sym w (BV.zero w)
         (x:xs) -> foldM (bvOrBits sym) x xs
 
     BVTestBit i e -> testBitBV sym i e
@@ -4469,7 +4469,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       (Just xv, Just yv) -> do
           let w' = addNat (bvWidth x) (bvWidth y)
           LeqProof <- return (leqAddPos (bvWidth x) (bvWidth y))
-          bvLit sym w' (BV.concat (bvWidth y) xv yv)
+          bvLit sym w' (BV.concat (bvWidth x) (bvWidth y) xv yv)
       -- reassociate to combine constants where possible
       (Just _xv, _)
         | Just (BVConcat _w a b) <- asApp y
@@ -4532,7 +4532,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just diff <- asBV b
     , Some diffRepr <- mkNatRepr (BV.asNatural diff)
     , Just LeqProof <- testLeq (addNat idx n) diffRepr =
-      bvLit sb n BV.zero
+      bvLit sb n (BV.zero n)
 
     | Just (BVAshr w a b) <- asApp x
     , Just diff <- asBV b
@@ -4550,7 +4550,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just diff <- asBV b
     , Some diffRepr <- mkNatRepr (BV.asNatural diff)
     , Just LeqProof <- testLeq w (addNat idx diffRepr) =
-      bvLit sb n BV.zero
+      bvLit sb n (BV.zero n)
 
       -- select from a sign extension
     | Just (BVSext w b) <- asApp x = do
@@ -4576,7 +4576,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       let ext = subNat w (bvWidth b)
       Just LeqProof <- return $ isPosNat w
       Just LeqProof <- return $ isPosNat ext
-      hi    <- bvLit sb ext BV.zero
+      hi    <- bvLit sb ext (BV.zero ext)
       x'    <- bvConcat sb hi b
       -- Add dynamic check
       Just LeqProof <- return $ testLeq (addNat idx n) (addNat ext (bvWidth b))
@@ -4640,14 +4640,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (SemiRingSum s) <- asApp x
     , SR.SemiRingBVRepr SR.BVArithRepr w <- WSum.sumRepr s
     , Just Refl <- testEquality idx (knownNat :: NatRepr 0) =
-        -- BGS: Come back and look at this. I think I did this right,
-        -- but need to check.
       do let mask = case testStrictLeq n w of
                Left LeqProof -> BV.zext w (BV.maxUnsigned n)
                Right Refl -> BV.maxUnsigned n
          let reduce i
-               | i `BV.and` mask == BV.zero = writer (BV.zero, Any True)
-               | otherwise                  = writer (i, Any False)
+               | i `BV.and` mask == BV.zero w = writer (BV.zero w, Any True)
+               | otherwise                    = writer (i, Any False)
          let (s', Any changed) = runWriter $ WSum.traverseCoeffs reduce s
          x' <- if changed then sbMakeExpr sb (SemiRingSum s') else return x
          sbMakeExpr sb $ BVSelect idx n x'
@@ -4698,7 +4696,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Constant evaluation
     | Just yc <- asBV y
     , i <= fromIntegral (maxBound :: Int)
-    = return $! backendPred sym (yc `BV.testBit'` fromIntegral i)
+    = return $! backendPred sym (BV.testBit' (fromIntegral i) yc)
 
     | Just (BVZext _w y') <- asApp y
     = if i >= natValue (bvWidth y') then
@@ -4745,7 +4743,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvFill sym w p
     | Just True  <- asConstantPred p = bvLit sym w (BV.maxUnsigned w)
-    | Just False <- asConstantPred p = bvLit sym w BV.zero
+    | Just False <- asConstantPred p = bvLit sym w (BV.zero w)
     | otherwise = sbMakeExpr sym $ BVFill w p
 
   bvIte sym c x y
@@ -4869,7 +4867,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) BV.zero
+   = bvLit sym (bvWidth x) (BV.zero (bvWidth x))
 
    | Just xv <- asBV x, Just n <- asBV y
    = bvLit sym (bvWidth x) (BV.shl (bvWidth x) xv (BV.asNatural n))
@@ -4885,7 +4883,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) BV.zero
+   = bvLit sym (bvWidth x) (BV.zero (bvWidth x))
 
    | Just xv <- asBV x, Just n <- asBV y
    = bvLit sym (bvWidth x) $ BV.lshr xv (BV.asNatural n)
@@ -4915,7 +4913,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    = bvLit sym (bvWidth x) $ BV.rotateL (bvWidth x) xv (BV.asNatural n)
 
    | Just n <- asBV y
-   , n `BV.urem` BV.width (bvWidth y) == BV.zero
+   , n `BV.urem` BV.width (bvWidth y) == BV.zero (bvWidth y)
    = return x
 
    | Just (BVRol w x' n) <- asApp x
@@ -4951,7 +4949,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    = bvLit sym (bvWidth x) $ BV.rotateR (bvWidth x) xv (BV.asNatural n)
 
    | Just n <- asBV y
-   , n `BV.urem` BV.width (bvWidth y) == BV.zero
+   , n `BV.urem` BV.width (bvWidth y) == BV.zero (bvWidth y)
    = return x
 
    | Just (BVRor w x' n) <- asApp x
@@ -5029,7 +5027,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (BVSext w x)
 
   bvXorBits sym x y
-    | x == y = bvLit sym (bvWidth x) BV.zero  -- special case: x `xor` x = 0
+    | x == y = bvLit sym (bvWidth x) (BV.zero (bvWidth x))  -- special case: x `xor` x = 0
     | otherwise
     = let sr = SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x)
        in semiRingAdd sym sr x y
@@ -5063,10 +5061,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     case (asBV x, asBV y) of
       (Just xv, Just yv) -> bvLit sym (bvWidth x) (xv `BV.or` yv)
       (Just xv , _)
-        | xv == BV.zero -> return y
+        | xv == BV.zero (bvWidth x) -> return y
         | xv == BV.maxUnsigned (bvWidth x) -> return x
       (_, Just yv)
-        | yv == BV.zero -> return x
+        | yv == BV.zero (bvWidth y) -> return x
         | yv == BV.maxUnsigned (bvWidth x) -> return y
 
       _
@@ -5137,7 +5135,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             ubv
     | otherwise = do
           let w = bvWidth x
-          zro <- bvLit sym w BV.zero
+          zro <- bvLit sym w (BV.zero w)
           notPred sym =<< bvEq sym x zro
 
   bvUdiv = bvBinDivOp (const BV.uquot) BVUdiv
@@ -5489,7 +5487,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   predToBV sym p w
     | Just b <- asConstantPred p =
-        if b then bvLit sym w BV.one else bvLit sym w BV.zero
+        if b then bvLit sym w (BV.one w) else bvLit sym w (BV.zero w)
     | otherwise =
        case testNatCases w (knownNat @1) of
          NatCaseEQ   -> sbMakeExpr sym (BVFill (knownNat @1) p)

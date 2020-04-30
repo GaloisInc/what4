@@ -215,8 +215,8 @@ zero :: SemiRingRepr sr -> Coefficient sr
 zero SemiRingNatRepr          = 0 :: Natural
 zero SemiRingIntegerRepr      = 0 :: Integer
 zero SemiRingRealRepr         = 0 :: Rational
-zero (SemiRingBVRepr BVArithRepr _) = BV.zero
-zero (SemiRingBVRepr BVBitsRepr _)  = BV.zero
+zero (SemiRingBVRepr BVArithRepr w) = BV.zero w
+zero (SemiRingBVRepr BVBitsRepr w)  = BV.zero w
 
 one :: SemiRingRepr sr -> Coefficient sr
 one SemiRingNatRepr              = 1 :: Natural
