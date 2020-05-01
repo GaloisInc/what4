@@ -1499,7 +1499,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     case n `testNatCases` m of
       NatCaseLT LeqProof -> do
         -- Get maximum signed n-bit number.
-        -- max_val <- bvLit sym m (BV.mkBV m ((2^(widthVal n-1))-1))
         max_val <- bvLit sym m (BV.sext n m (BV.maxSigned n))
         -- Check if expression is less than maximum.
         p <- bvUle sym e max_val
