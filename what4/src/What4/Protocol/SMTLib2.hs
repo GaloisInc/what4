@@ -722,10 +722,6 @@ parseStringSolverValue :: MonadFail m => SExp -> m ByteString
 parseStringSolverValue (SString t) | Just bs <- unescapeText t = return bs
 parseStringSolverValue x = fail ("Could not parse string solver value:\n  " ++ show x)
 
--- | Produce evidence that @+@ is associative.
-plusAssoc :: forall f m g n h o . f m -> g n -> h o -> m+(n+o) :~: (m+n)+o
-plusAssoc = unsafeCoerce (Refl :: m+(n+o) :~: m+(n+o))
-
 parseFloatSolverValue :: MonadFail m => FloatPrecisionRepr fpp
                       -> SExp
                       -> m (BV.BV (FloatPrecisionBits fpp))

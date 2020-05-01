@@ -45,7 +45,6 @@ import Control.Monad.Fail( MonadFail )
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
--- import           Data.Bits
 import qualified Data.BitVector.Sized as BV
 import           Data.List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))

@@ -1157,8 +1157,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
        lo  <- bvTrunc sym w s
 
        -- overflow if greater or less than max representable values
-       ov1 <- bvSlt sym s =<< bvLit sym dbl_w (BV.zext dbl_w (BV.minSigned w))
-       ov2 <- bvSgt sym s =<< bvLit sym dbl_w (BV.zext dbl_w (BV.maxSigned w))
+       ov1 <- bvSlt sym s =<< bvLit sym dbl_w (BV.sext w dbl_w (BV.minSigned w))
+       ov2 <- bvSgt sym s =<< bvLit sym dbl_w (BV.sext w dbl_w (BV.maxSigned w))
        ov  <- orPred sym ov1 ov2
        return (ov, lo)
 
@@ -1462,7 +1462,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
       -- Truncate when the width of e is larger than w.
       NatCaseLT LeqProof -> do
         -- Check if e underflows
-        does_underflow <- bvSlt sym e =<< bvLit sym m (BV.zext m (BV.minSigned n))
+        does_underflow <- bvSlt sym e =<< bvLit sym m (BV.sext n m (BV.minSigned n))
         iteM bvIte sym does_underflow (bvLit sym n (BV.minSigned n)) $ do
           -- Check if e overflows target signed representation.
           does_overflow <- bvSgt sym e =<< bvLit sym m (BV.mkBV m (maxSigned n))
@@ -1499,7 +1499,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     case n `testNatCases` m of
       NatCaseLT LeqProof -> do
         -- Get maximum signed n-bit number.
-        max_val <- bvLit sym m (BV.mkBV m ((2^(widthVal n-1))-1))
+        -- max_val <- bvLit sym m (BV.mkBV m ((2^(widthVal n-1))-1))
+        max_val <- bvLit sym m (BV.sext n m (BV.maxSigned n))
         -- Check if expression is less than maximum.
         p <- bvUle sym e max_val
         -- Select appropriate number then truncate.

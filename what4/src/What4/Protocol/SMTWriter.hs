@@ -2868,7 +2868,7 @@ data SMTEvalFunctions h
                         -- ^ Given a SMT term for real value, this should
                         -- return a rational value for that term.
                       , smtEvalFloat :: forall fpp . FloatPrecisionRepr fpp -> Term h -> IO (BV.BV (FloatPrecisionBits fpp))
-                        -- ^ Given floating point format, anda SMT
+                        -- ^ Given floating point format, and an SMT
                         -- term for a floating-point value in that
                         -- format, this returns an unsigned integer
                         -- with the bits of the IEEE-754
