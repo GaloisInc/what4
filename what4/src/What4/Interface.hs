@@ -68,6 +68,8 @@ module What4.Interface
     -- ** Expression recognizers
   , IsExpr(..)
   , IsSymFn(..)
+  , UnfoldPolicy(..)
+  , shouldUnfold
 
     -- ** IsExprBuilder
   , IsExprBuilder(..)
@@ -2370,6 +2372,24 @@ class IsSymFn fn where
   -- | Get the return type of a function.
   fnReturnType :: fn args ret -> BaseTypeRepr ret
 
+
+-- | Describes when we unfold the body of defined functions.
+data UnfoldPolicy
+  = NeverUnfold
+      -- ^ What4 will not unfold the body of functions when applied to arguments
+   | AlwaysUnfold
+      -- ^ The function will be unfolded into its definition whenever it is
+      --   applied to arguments
+   | UnfoldConcrete
+      -- ^ The function will be unfolded into its definition only if all the provided
+      --   arguments are concrete.
+ deriving (Eq, Ord, Show)
+
+shouldUnfold :: IsExpr e => UnfoldPolicy -> Ctx.Assignment e args -> Bool
+shouldUnfold AlwaysUnfold _ = True
+shouldUnfold NeverUnfold _ = False
+shouldUnfold UnfoldConcrete args = allFC baseIsConcrete args
+
 -- | This extends the interface for building expressions with operations
 --   for creating new symbolic constants and functions.
 class ( IsExprBuilder sym
@@ -2449,13 +2469,8 @@ class ( IsExprBuilder sym
             -- ^ Bound variables to use as arguments for function.
             -> SymExpr sym ret
             -- ^ Operation defining result of defined function.
-            -> (Ctx.Assignment (SymExpr sym) args -> Bool)
-            -- ^ Predicate for checking if we should evaluate function.
-            --
-            --   When applied to actual arguments, this predicate indicates
-            --   if the definition of the function should be unfolded and reduced.
-            --   A typical use would be to unfold and evaluate the body of the function
-            --   if all the input arguments are concrete.
+            -> UnfoldPolicy
+            -- ^ Policy for unfolding on applications
             -> IO (SymFn sym args ret)
 
   -- | Return a function defined by Haskell computation over symbolic expressions.
@@ -2466,16 +2481,18 @@ class ( IsExprBuilder sym
                   -- ^ The name to give a function (need not be unique)
                   -> Ctx.Assignment BaseTypeRepr args
                   -- ^ Type signature for the arguments
+                  -> UnfoldPolicy
+                  -- ^ Policy for unfolding on applications
                   -> Ctx.CurryAssignment args (SymExpr sym) (IO (SymExpr sym ret))
                   -- ^ Operation defining result of defined function.
                   -> IO (SymFn sym args ret)
-  inlineDefineFun sym nm tps f = do
+  inlineDefineFun sym nm tps policy f = do
     -- Create bound variables for function
     vars <- traverseFC (freshBoundVar sym emptySymbol) tps
     -- Call operation on expressions created from variables
     r <- Ctx.uncurryAssignment f (fmapFC (varExpr sym) vars)
     -- Define function
-    definedFn sym nm vars r (\_ -> False)
+    definedFn sym nm vars r policy
 
   -- | Create a new uninterpreted function.
   freshTotalUninterpFn :: forall args ret

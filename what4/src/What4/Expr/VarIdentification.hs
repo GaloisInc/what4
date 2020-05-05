@@ -357,7 +357,7 @@ recordExprVars _ (BoundVarExpr info) = do
     UninterpVarKind ->
       VR $ uninterpConstants %= Set.insert (Some info)
 
-recordFnVars :: ExprSymFn t args ret -> VarRecorder s t ()
+recordFnVars :: ExprSymFn t (Expr t) args ret -> VarRecorder s t ()
 recordFnVars f = do
   case symFnInfo f of
     UninterpFnInfo{}  -> return ()
