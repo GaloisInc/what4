@@ -669,7 +669,7 @@ yicesAck resp earlyUnsatRef = AckAction $ \conn cmdf ->
 yicesStartSolver ::
   ProblemFeatures ->
   Maybe Handle ->
-  B.ExprBuilder t st fs ->
+  B.ExprBuilder t st ->
   IO (SolverProcess t Connection)
 yicesStartSolver features auxOutput sym = do -- FIXME
   let cfg = getConfiguration sym
@@ -1078,9 +1078,9 @@ checkSupportedByYices p = do
   return $! varInfo^.problemFeatures
 
 -- | Write a yices file that checks the satisfiability of the given predicate.
-writeYicesFile :: B.ExprBuilder t st fs -- ^ Builder for getting current bindings.
-               -> FilePath              -- ^ Path to file
-               -> B.BoolExpr t          -- ^ Predicate to check
+writeYicesFile :: B.ExprBuilder t st -- ^ Builder for getting current bindings.
+               -> FilePath           -- ^ Path to file
+               -> B.BoolExpr t       -- ^ Predicate to check
                -> IO ()
 writeYicesFile sym path p = do
   withFile path WriteMode $ \h -> do
@@ -1103,7 +1103,7 @@ writeYicesFile sym path p = do
     sendShowModel c
 
 -- | Run writer and get a yices result.
-runYicesInOverride :: B.ExprBuilder t st fs
+runYicesInOverride :: B.ExprBuilder t st
                    -> LogData
                    -> [B.BoolExpr t]
                    -> (SatResult (GroundEvalFn t) () -> IO a)

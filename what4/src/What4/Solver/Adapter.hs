@@ -57,8 +57,8 @@ data SolverAdapter st =
     --   callback completes, so any necessary information should be extracted from
     --   them before returning.
   , solver_adapter_check_sat
-        :: !(forall t fs a.
-           ExprBuilder t st fs
+        :: !(forall t a.
+           ExprBuilder t st
         -> LogData
         -> [BoolExpr t]
         -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
@@ -66,7 +66,7 @@ data SolverAdapter st =
 
     -- | Write an SMTLib2 problem instance onto the given handle, incorporating
     --   any solver-specific tweaks appropriate to this solver
-  , solver_adapter_write_smt2 :: !(forall t fs . ExprBuilder t st fs -> Handle -> [BoolExpr t] -> IO ())
+  , solver_adapter_write_smt2 :: !(forall t. ExprBuilder t st -> Handle -> [BoolExpr t] -> IO ())
   }
 
 data LogData = LogData { logCallbackVerbose :: Int -> String -> IO ()
@@ -125,7 +125,7 @@ solverAdapterOptions xs@(def:_) =
                  (Just (PP.text "Indicates which solver to use for check-sat queries"))
                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
 
-smokeTest :: ExprBuilder t st fs -> SolverAdapter st -> IO (Maybe X.SomeException)
+smokeTest :: ExprBuilder t st -> SolverAdapter st -> IO (Maybe X.SomeException)
 smokeTest sym adpt = test `X.catch` (pure . Just)
   where
   test :: IO (Maybe X.SomeException)

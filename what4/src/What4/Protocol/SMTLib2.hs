@@ -951,9 +951,9 @@ smtLibEvalFuns s = SMTEvalFunctions
 
 
 class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
-  defaultSolverPath :: a -> B.ExprBuilder t st fs -> IO FilePath
+  defaultSolverPath :: a -> B.ExprBuilder t st -> IO FilePath
 
-  defaultSolverArgs :: a -> B.ExprBuilder t st fs -> IO [String]
+  defaultSolverArgs :: a -> B.ExprBuilder t st -> IO [String]
 
   defaultFeatures :: a -> ProblemFeatures
 
@@ -963,7 +963,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a ->
        AcknowledgementAction t (Writer a) ->
        ProblemFeatures ->
-       B.ExprBuilder t st fs ->
+       B.ExprBuilder t st ->
        Streams.OutputStream Text ->
        IO (WriterConn t (Writer a))
   newDefaultWriter solver ack feats sym h =
@@ -975,7 +975,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
-    -> B.ExprBuilder t st fs
+    -> B.ExprBuilder t st
     -> FilePath
       -- ^ Path to solver executable
     -> LogData
@@ -1017,7 +1017,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
-    -> B.ExprBuilder t st fs
+    -> B.ExprBuilder t st
     -> LogData
     -> [B.BoolExpr t]
     -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO b)
@@ -1049,7 +1049,7 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
                     -- ^ Name of solver for reporting.
                  -> ProblemFeatures
                     -- ^ Features supported by solver
-                 -> B.ExprBuilder t st fs
+                 -> B.ExprBuilder t st
                  -> IO.Handle
                  -> [B.BoolExpr t]
                  -> IO ()
@@ -1070,7 +1070,7 @@ startSolver
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
   -> ProblemFeatures
   -> Maybe IO.Handle
-  -> B.ExprBuilder t st fs
+  -> B.ExprBuilder t st
   -> IO (SolverProcess t (Writer a))
 startSolver solver ack setup feats auxOutput sym = do
   path <- defaultSolverPath solver sym

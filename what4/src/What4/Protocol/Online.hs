@@ -64,10 +64,10 @@ import           What4.Utils.Process (filterAsync)
 --   online interaction modes.
 class SMTReadWriter solver => OnlineSolver solver where
   -- | Start a new solver process attached to the given `ExprBuilder`.
-  startSolverProcess :: forall scope st fs.
+  startSolverProcess :: forall scope st.
     ProblemFeatures ->
     Maybe Handle ->
-    ExprBuilder scope st fs ->
+    ExprBuilder scope st ->
     IO (SolverProcess scope solver)
 
   -- | Shut down a solver process.  The process will be asked to shut down in

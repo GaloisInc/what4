@@ -88,7 +88,7 @@ instance SMT2.SMTLib2GenericSolver STP where
       =<< getSymbolVarBimap sym
 
 runSTPInOverride
-  :: ExprBuilder t st fs
+  :: ExprBuilder t st
   -> LogData
   -> [BoolExpr t]
   -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
@@ -98,7 +98,7 @@ runSTPInOverride = SMT2.runSolverInOverride STP nullAcknowledgementAction (SMT2.
 -- | Run STP in a session. STP will be configured to produce models, buth
 -- otherwise left with the default configuration.
 withSTP
-  :: ExprBuilder t st fs
+  :: ExprBuilder t st
   -> FilePath
     -- ^ Path to STP executable
   -> LogData

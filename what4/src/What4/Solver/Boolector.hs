@@ -94,7 +94,7 @@ boolectorAdapter =
 instance SMT2.SMTLib2Tweaks Boolector where
   smtlib2tweaks = Boolector
 
-runBoolectorInOverride :: ExprBuilder t st fs
+runBoolectorInOverride :: ExprBuilder t st
                        -> LogData
                        -> [BoolExpr t]
                        -> IO (SatResult (GroundEvalFn t) ())

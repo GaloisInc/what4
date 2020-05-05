@@ -34,11 +34,11 @@ import           What4.Interface
 
 
 data State t = State
-type IteExprBuilder t fs = ExprBuilder t State fs
+type IteExprBuilder t = ExprBuilder t State
 
-withTestSolver :: (forall t. IteExprBuilder t (Flags FloatIEEE) -> IO a) -> IO a
+withTestSolver :: (forall t. IteExprBuilder t -> IO a) -> IO a
 withTestSolver f = withIONonceGenerator $ \nonce_gen ->
-  f =<< newExprBuilder FloatIEEERepr State nonce_gen
+  f =<< newExprBuilder State nonce_gen
 
 
 -- | Test natDiv and natMod properties described at their declaration
