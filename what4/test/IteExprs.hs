@@ -23,9 +23,7 @@ import           Data.List ( isInfixOf )
 import           Data.Parameterized.Nonce
 import           GenWhat4Expr
 import           Hedgehog
-import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Internal.Gen as IGen
-import qualified Hedgehog.Range as Range
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.Hedgehog
