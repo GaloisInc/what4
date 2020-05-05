@@ -68,6 +68,7 @@ module What4.Expr.Builder
     -- * Expr
   , Expr(..)
   , asApp
+  , asNonceApp
   , iteSize
   , exprLoc
   , ppExpr
@@ -141,14 +142,6 @@ module What4.Expr.Builder
   , idxCacheEval
   , idxCacheEval'
 
-    -- * Flags
-  , type FloatMode
-  , FloatModeRepr(..)
-  , FloatIEEE
-  , FloatUninterpreted
-  , FloatReal
-  , Flags
-
     -- * BV Or Set
   , BVOrSet
   , bvOrToList
@@ -175,7 +168,6 @@ import           Control.Monad.Trans.Writer.Strict (writer, runWriter)
 import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
-import qualified Data.Binary.IEEE754 as IEEE754
 import           Data.Foldable
 import qualified Data.HashTable.Class as H (toList)
 import qualified Data.HashTable.ST.Basic as H
@@ -213,7 +205,6 @@ import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
 import           What4.Interface
-import           What4.InterpretedFloatingPoint
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import           What4.Symbol
@@ -558,46 +549,10 @@ data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 ------------------------------------------------------------------------
 -- ExprBuilder
 
--- | Mode flag for how floating-point values should be interpreted.
-data FloatMode where
-  FloatIEEE :: FloatMode
-  FloatUninterpreted :: FloatMode
-  FloatReal :: FloatMode
-type FloatIEEE = 'FloatIEEE
-type FloatUninterpreted = 'FloatUninterpreted
-type FloatReal = 'FloatReal
-
-data Flags (fi :: FloatMode)
-
-
-data FloatModeRepr :: FloatMode -> Type where
-  FloatIEEERepr          :: FloatModeRepr FloatIEEE
-  FloatUninterpretedRepr :: FloatModeRepr FloatUninterpreted
-  FloatRealRepr          :: FloatModeRepr FloatReal
-
-instance Show (FloatModeRepr fm) where
-  showsPrec _ FloatIEEERepr          = showString "FloatIEEE"
-  showsPrec _ FloatUninterpretedRepr = showString "FloatUninterpreted"
-  showsPrec _ FloatRealRepr          = showString "FloatReal"
-
-instance ShowF FloatModeRepr
-
-instance KnownRepr FloatModeRepr FloatIEEE          where knownRepr = FloatIEEERepr
-instance KnownRepr FloatModeRepr FloatUninterpreted where knownRepr = FloatUninterpretedRepr
-instance KnownRepr FloatModeRepr FloatReal          where knownRepr = FloatRealRepr
-
-instance TestEquality FloatModeRepr where
-  testEquality FloatIEEERepr           FloatIEEERepr           = return Refl
-  testEquality FloatUninterpretedRepr  FloatUninterpretedRepr  = return Refl
-  testEquality FloatRealRepr           FloatRealRepr           = return Refl
-  testEquality _ _ = Nothing
-
-
 -- | Cache for storing dag terms.
 -- Parameter @t@ is a phantom type brand used to track nonces.
 data ExprBuilder t (st :: Type -> Type) (fs :: Type)
-   = forall fm. (fs ~ (Flags fm)) =>
-     SB { sbTrue  :: !(BoolExpr t)
+   = SB { sbTrue  :: !(BoolExpr t)
         , sbFalse :: !(BoolExpr t)
           -- | Constant zero.
         , sbZero  :: !(RealExpr t)
@@ -633,9 +588,6 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
           :: !(PH.HashTable RealWorld (MatlabFnWrapper t) (ExprSymFnWrapper t))
         , sbSolverLogger
           :: !(IORef (Maybe (SolverEvent -> IO ())))
-          -- | Flag dictating how floating-point values/operations are translated
-          -- when passed to the solver.
-        , sbFloatMode :: !(FloatModeRepr fm)
         }
 
 type instance SymFn (ExprBuilder t st fs) = ExprSymFn t (Expr t)
@@ -1448,14 +1400,10 @@ cacheOptDesc gen storageRef szSetting =
 
 
 newExprBuilder ::
-  FloatModeRepr fm
-  -- ^ Float interpretation mode (i.e., how are floats translated for the solver).
-  -> st t
-  -- ^ Current state for simple builder.
-  -> NonceGenerator IO t
-  -- ^ Nonce generator for names
-  ->  IO (ExprBuilder t st (Flags fm))
-newExprBuilder floatMode st gen = do
+  st t {- ^ Current state for simple builder. -} ->
+  NonceGenerator IO t {- ^ Nonce generator for names -} ->
+  IO (ExprBuilder t st fs)
+newExprBuilder st gen = do
   st_ref <- newIORef st
   es <- newStorage gen
 
@@ -1499,7 +1447,6 @@ newExprBuilder floatMode st gen = do
                , sbUninterpFnCache = uninterp_fn_cache_ref
                , sbMatlabFnCache = matlabFnCache
                , sbSolverLogger = loggerRef
-               , sbFloatMode = floatMode
                }
 
 -- | Get current variable bindings.
@@ -4164,329 +4111,6 @@ floatIEEELogicUnOp
 floatIEEELogicUnOp ctor sym x = sbMakeExpr sym $ ctor x
 
 
-----------------------------------------------------------------------
--- Float interpretations
-
-type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatReal)) fi =
-  BaseRealType
-
-instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) where
-  iFloatPZero sym _ = return $ realZero sym
-  iFloatNZero sym _ = return $ realZero sym
-  iFloatNaN _ _ = fail "NaN cannot be represented as a real value."
-  iFloatPInf _ _ = fail "+Infinity cannot be represented as a real value."
-  iFloatNInf _ _ = fail "-Infinity cannot be represented as a real value."
-  iFloatLit sym _ = realLit sym
-  iFloatLitSingle sym = realLit sym . toRational
-  iFloatLitDouble sym = realLit sym . toRational
-  iFloatLitLongDouble sym x =
-     case fp80ToRational x of
-       Nothing -> fail ("80-bit floating point value does not represent a rational number: " ++ show x)
-       Just r  -> realLit sym r
-  iFloatNeg = realNeg
-  iFloatAbs = realAbs
-  iFloatSqrt sym _ = realSqrt sym
-  iFloatAdd sym _ = realAdd sym
-  iFloatSub sym _ = realSub sym
-  iFloatMul sym _ = realMul sym
-  iFloatDiv sym _ = realDiv sym
-  iFloatRem = realMod
-  iFloatMin sym x y = do
-    c <- realLe sym x y
-    realIte sym c x y
-  iFloatMax sym x y = do
-    c <- realGe sym x y
-    realIte sym c x y
-  iFloatFMA sym _ x y z = do
-    tmp <- (realMul sym x y)
-    realAdd sym tmp z
-  iFloatEq = realEq
-  iFloatNe = realNe
-  iFloatFpEq = realEq
-  iFloatFpNe = realNe
-  iFloatLe = realLe
-  iFloatLt = realLt
-  iFloatGe = realGe
-  iFloatGt = realGt
-  iFloatIte = realIte
-  iFloatIsNaN sym _ = return $ falsePred sym
-  iFloatIsInf sym _ = return $ falsePred sym
-  iFloatIsZero sym = realEq sym $ realZero sym
-  iFloatIsPos sym = realLt sym $ realZero sym
-  iFloatIsNeg sym = realGt sym $ realZero sym
-  iFloatIsSubnorm sym _ = return $ falsePred sym
-  iFloatIsNorm sym = realNe sym $ realZero sym
-  iFloatCast _ _ _ = return
-  iFloatRound sym r x =
-    integerToReal sym =<< case r of
-      RNA -> realRound sym x
-      RTP -> realCeil sym x
-      RTN -> realFloor sym x
-      RTZ -> do
-        is_pos <- realLt sym (realZero sym) x
-        iteM intIte sym is_pos (realFloor sym x) (realCeil sym x)
-      RNE -> fail "Unsupported rond to nearest even for real values."
-  iFloatFromBinary sym _ x
-    | Just (FnApp fn args) <- asNonceApp x
-    , "uninterpreted_real_to_float_binary" == solverSymbolAsText (symFnName fn)
-    , UninterpFnInfo param_types (BaseBVRepr _) <- symFnInfo fn
-    , (Ctx.Empty Ctx.:> BaseRealRepr) <- param_types
-    , (Ctx.Empty Ctx.:> rval) <- args
-    = return rval
-    | otherwise = mkFreshUninterpFnApp sym
-                                       "uninterpreted_real_from_float_binary"
-                                       (Ctx.Empty Ctx.:> x)
-                                       knownRepr
-  iFloatToBinary sym fi x =
-    mkFreshUninterpFnApp sym
-                         "uninterpreted_real_to_float_binary"
-                         (Ctx.Empty Ctx.:> x)
-                         (floatInfoToBVTypeRepr fi)
-  iBVToFloat sym _ _ = uintToReal sym
-  iSBVToFloat sym _ _ = sbvToReal sym
-  iRealToFloat _ _ _ = return
-  iFloatToBV sym w _ x = realToBV sym x w
-  iFloatToSBV sym w _ x = realToSBV sym x w
-  iFloatToReal _ = return
-  iFloatBaseTypeRepr _ _ = knownRepr
-
-type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatUninterpreted)) fi =
-  BaseBVType (FloatInfoToBitWidth fi)
-
-instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpreted)) where
-  iFloatPZero sym =
-    floatUninterpArithCt "uninterpreted_float_pzero" sym . iFloatBaseTypeRepr sym
-  iFloatNZero sym =
-    floatUninterpArithCt "uninterpreted_float_nzero" sym . iFloatBaseTypeRepr sym
-  iFloatNaN sym =
-    floatUninterpArithCt "uninterpreted_float_nan" sym . iFloatBaseTypeRepr sym
-  iFloatPInf sym =
-    floatUninterpArithCt "uninterpreted_float_pinf" sym . iFloatBaseTypeRepr sym
-  iFloatNInf sym =
-    floatUninterpArithCt "uninterpreted_float_ninf" sym . iFloatBaseTypeRepr sym
-  iFloatLit sym fi x = iRealToFloat sym fi RNE =<< realLit sym x
-  iFloatLitSingle sym x =
-    iFloatFromBinary sym SingleFloatRepr
-      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
-  iFloatLitDouble sym x =
-    iFloatFromBinary sym DoubleFloatRepr
-      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
-  iFloatLitLongDouble sym x =
-    iFloatFromBinary sym X86_80FloatRepr
-      =<< (bvLit sym knownNat $ BV.mkBV knownNat $ fp80ToBits x)
-
-  iFloatNeg = floatUninterpArithUnOp "uninterpreted_float_neg"
-  iFloatAbs = floatUninterpArithUnOp "uninterpreted_float_abs"
-  iFloatSqrt = floatUninterpArithUnOpR "uninterpreted_float_sqrt"
-  iFloatAdd = floatUninterpArithBinOpR "uninterpreted_float_add"
-  iFloatSub = floatUninterpArithBinOpR "uninterpreted_float_sub"
-  iFloatMul = floatUninterpArithBinOpR "uninterpreted_float_mul"
-  iFloatDiv = floatUninterpArithBinOpR "uninterpreted_float_div"
-  iFloatRem = floatUninterpArithBinOp "uninterpreted_float_rem"
-  iFloatMin = floatUninterpArithBinOp "uninterpreted_float_min"
-  iFloatMax = floatUninterpArithBinOp "uninterpreted_float_max"
-  iFloatFMA sym r x y z = do
-    let ret_type = exprType x
-    r_arg <- roundingModeToSymNat sym r
-    mkUninterpFnApp sym
-                    "uninterpreted_float_fma"
-                    (Ctx.empty Ctx.:> r_arg Ctx.:> x Ctx.:> y Ctx.:> z)
-                    ret_type
-  iFloatEq = isEq
-  iFloatNe sym x y = notPred sym =<< isEq sym x y
-  iFloatFpEq = floatUninterpLogicBinOp "uninterpreted_float_fp_eq"
-  iFloatFpNe = floatUninterpLogicBinOp "uninterpreted_float_fp_ne"
-  iFloatLe = floatUninterpLogicBinOp "uninterpreted_float_le"
-  iFloatLt = floatUninterpLogicBinOp "uninterpreted_float_lt"
-  iFloatGe sym x y = floatUninterpLogicBinOp "uninterpreted_float_le" sym y x
-  iFloatGt sym x y = floatUninterpLogicBinOp "uninterpreted_float_lt" sym y x
-  iFloatIte = baseTypeIte
-  iFloatIsNaN = floatUninterpLogicUnOp "uninterpreted_float_is_nan"
-  iFloatIsInf = floatUninterpLogicUnOp "uninterpreted_float_is_inf"
-  iFloatIsZero = floatUninterpLogicUnOp "uninterpreted_float_is_zero"
-  iFloatIsPos = floatUninterpLogicUnOp "uninterpreted_float_is_pos"
-  iFloatIsNeg = floatUninterpLogicUnOp "uninterpreted_float_is_neg"
-  iFloatIsSubnorm = floatUninterpLogicUnOp "uninterpreted_float_is_subnorm"
-  iFloatIsNorm = floatUninterpLogicUnOp "uninterpreted_float_is_norm"
-  iFloatCast sym =
-    floatUninterpCastOp "uninterpreted_float_cast" sym . iFloatBaseTypeRepr sym
-  iFloatRound = floatUninterpArithUnOpR "uninterpreted_float_round"
-  iFloatFromBinary _ _ = return
-  iFloatToBinary _ _ = return
-  iBVToFloat sym =
-    floatUninterpCastOp "uninterpreted_bv_to_float" sym . iFloatBaseTypeRepr sym
-  iSBVToFloat sym =
-    floatUninterpCastOp "uninterpreted_sbv_to_float" sym . iFloatBaseTypeRepr sym
-  iRealToFloat sym =
-    floatUninterpCastOp "uninterpreted_real_to_float" sym . iFloatBaseTypeRepr sym
-  iFloatToBV sym =
-    floatUninterpCastOp "uninterpreted_float_to_bv" sym . BaseBVRepr
-  iFloatToSBV sym =
-    floatUninterpCastOp "uninterpreted_float_to_sbv" sym . BaseBVRepr
-  iFloatToReal sym x =
-    mkUninterpFnApp sym
-                    "uninterpreted_float_to_real"
-                    (Ctx.empty Ctx.:> x)
-                    knownRepr
-  iFloatBaseTypeRepr _ = floatInfoToBVTypeRepr
-
-floatUninterpArithBinOp
-  :: (e ~ Expr t) => String -> ExprBuilder t st fs -> e bt -> e bt -> IO (e bt)
-floatUninterpArithBinOp fn sym x y =
-  let ret_type = exprType x
-  in  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x Ctx.:> y) ret_type
-
-floatUninterpArithBinOpR
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> RoundingMode
-  -> e bt
-  -> e bt
-  -> IO (e bt)
-floatUninterpArithBinOpR fn sym r x y = do
-  let ret_type = exprType x
-  r_arg <- roundingModeToSymNat sym r
-  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x Ctx.:> y) ret_type
-
-floatUninterpArithUnOp
-  :: (e ~ Expr t) => String -> ExprBuilder t st fs -> e bt -> IO (e bt)
-floatUninterpArithUnOp fn sym x =
-  let ret_type = exprType x
-  in  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x) ret_type
-floatUninterpArithUnOpR
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> RoundingMode
-  -> e bt
-  -> IO (e bt)
-floatUninterpArithUnOpR fn sym r x = do
-  let ret_type = exprType x
-  r_arg <- roundingModeToSymNat sym r
-  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x) ret_type
-
-floatUninterpArithCt
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> BaseTypeRepr bt
-  -> IO (e bt)
-floatUninterpArithCt fn sym ret_type =
-  mkUninterpFnApp sym fn Ctx.empty ret_type
-
-floatUninterpLogicBinOp
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> e bt
-  -> e bt
-  -> IO (e BaseBoolType)
-floatUninterpLogicBinOp fn sym x y =
-  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x Ctx.:> y) knownRepr
-
-floatUninterpLogicUnOp
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> e bt
-  -> IO (e BaseBoolType)
-floatUninterpLogicUnOp fn sym x =
-  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x) knownRepr
-
-floatUninterpCastOp
-  :: (e ~ Expr t)
-  => String
-  -> ExprBuilder t st fs
-  -> BaseTypeRepr bt
-  -> RoundingMode
-  -> e bt'
-  -> IO (e bt)
-floatUninterpCastOp fn sym ret_type r x = do
-  r_arg <- roundingModeToSymNat sym r
-  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x) ret_type
-
-roundingModeToSymNat
-  :: (sym ~ ExprBuilder t st fs) => sym -> RoundingMode -> IO (SymNat sym)
-roundingModeToSymNat sym = natLit sym . fromIntegral . fromEnum
-
-
-type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatIEEE)) fi =
-  BaseFloatType (FloatInfoToPrecision fi)
-
-instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) where
-  iFloatPZero sym = floatPZero sym . floatInfoToPrecisionRepr
-  iFloatNZero sym = floatNZero sym . floatInfoToPrecisionRepr
-  iFloatNaN sym = floatNaN sym . floatInfoToPrecisionRepr
-  iFloatPInf sym = floatPInf sym . floatInfoToPrecisionRepr
-  iFloatNInf sym = floatNInf sym . floatInfoToPrecisionRepr
-  iFloatLit sym = floatLit sym . floatInfoToPrecisionRepr
-  iFloatLitSingle sym x =
-    floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
-  iFloatLitDouble sym x =
-    floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
-  iFloatLitLongDouble sym (X86_80Val e s) = do
-    el <- bvLit sym (knownNat @16) $ BV.word16 e
-    sl <- bvLit sym (knownNat @64) $ BV.word64 s
-    fl <- bvConcat sym el sl
-    floatFromBinary sym knownRepr fl
-    -- n.b. This may not be valid semantically for operations
-    -- performed on 80-bit values, but it allows them to be present in
-    -- formulas.
-  iFloatNeg = floatNeg
-  iFloatAbs = floatAbs
-  iFloatSqrt = floatSqrt
-  iFloatAdd = floatAdd
-  iFloatSub = floatSub
-  iFloatMul = floatMul
-  iFloatDiv = floatDiv
-  iFloatRem = floatRem
-  iFloatMin = floatMin
-  iFloatMax = floatMax
-  iFloatFMA = floatFMA
-  iFloatEq = floatEq
-  iFloatNe = floatNe
-  iFloatFpEq = floatFpEq
-  iFloatFpNe = floatFpNe
-  iFloatLe = floatLe
-  iFloatLt = floatLt
-  iFloatGe = floatGe
-  iFloatGt = floatGt
-  iFloatIte = floatIte
-  iFloatIsNaN = floatIsNaN
-  iFloatIsInf = floatIsInf
-  iFloatIsZero = floatIsZero
-  iFloatIsPos = floatIsPos
-  iFloatIsNeg = floatIsNeg
-  iFloatIsSubnorm = floatIsSubnorm
-  iFloatIsNorm = floatIsNorm
-  iFloatCast sym = floatCast sym . floatInfoToPrecisionRepr
-  iFloatRound = floatRound
-  iFloatFromBinary sym fi x = case fi of
-    HalfFloatRepr         -> floatFromBinary sym knownRepr x
-    SingleFloatRepr       -> floatFromBinary sym knownRepr x
-    DoubleFloatRepr       -> floatFromBinary sym knownRepr x
-    QuadFloatRepr         -> floatFromBinary sym knownRepr x
-    X86_80FloatRepr       -> fail "x86_80 is not an IEEE-754 format."
-    DoubleDoubleFloatRepr -> fail "double-double is not an IEEE-754 format."
-  iFloatToBinary sym fi x = case fi of
-    HalfFloatRepr         -> floatToBinary sym x
-    SingleFloatRepr       -> floatToBinary sym x
-    DoubleFloatRepr       -> floatToBinary sym x
-    QuadFloatRepr         -> floatToBinary sym x
-    X86_80FloatRepr       -> fail "x86_80 is not an IEEE-754 format."
-    DoubleDoubleFloatRepr -> fail "double-double is not an IEEE-754 format."
-  iBVToFloat sym = bvToFloat sym . floatInfoToPrecisionRepr
-  iSBVToFloat sym = sbvToFloat sym . floatInfoToPrecisionRepr
-  iRealToFloat sym = realToFloat sym . floatInfoToPrecisionRepr
-  iFloatToBV = floatToBV
-  iFloatToSBV = floatToSBV
-  iFloatToReal = floatToReal
-  iFloatBaseTypeRepr _ = BaseFloatRepr . floatInfoToPrecisionRepr
-
-
 instance IsSymExprBuilder (ExprBuilder t st fs) where
   freshConstant sym nm tp = do
     v <- sbMakeBoundVar sym nm tp UninterpVarKind Nothing
@@ -4582,6 +4206,11 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
     updateVarBinding sym fn_name (FnSymbolBinding fn)
     return fn
 
+  asFnApp _ x =
+    case asNonceApp x of
+      Just (FnApp fn args) -> SomeFnApp fn args
+      _ -> NoFnApp 
+
   applySymFn sym fn args = do
    case symFnInfo fn of
      DefinedFnInfo bound_vars e policy
@@ -4591,9 +4220,8 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
        evalMatlabSolverFn f sym args
      _ -> sbNonceExpr sym $! FnApp fn args
 
-
-instance IsInterpretedFloatExprBuilder (ExprBuilder t st fs) => IsInterpretedFloatSymExprBuilder (ExprBuilder t st fs)
-
+  symFnByName sym name arg_types ret_type =
+    cachedUninterpFn sym name arg_types ret_type freshTotalUninterpFn
 
 --------------------------------------------------------------------------------
 -- MatlabSymbolicArrayBuilder instance
@@ -4619,16 +4247,10 @@ instance MatlabSymbolicArrayBuilder (ExprBuilder t st fs) where
         stToIO $ PH.insert (sbMatlabFnCache sym) key (ExprSymFnWrapper f)
         return f
 
-unsafeUserSymbol :: String -> IO SolverSymbol
-unsafeUserSymbol s =
-  case userSymbol s of
-    Left err -> fail (show err)
-    Right symbol  -> return symbol
-
 cachedUninterpFn
   :: (sym ~ ExprBuilder t st fs)
   => sym
-  -> SolverSymbol
+  -> String
   -> Ctx.Assignment BaseTypeRepr args
   -> BaseTypeRepr ret
   -> (  sym
@@ -4648,33 +4270,10 @@ cachedUninterpFn sym fn_name arg_types ret_type handler = do
       | otherwise
       -> fail "Duplicate uninterpreted function declaration."
     Nothing -> do
-      fn <- handler sym fn_name arg_types ret_type
+      fn <- handler sym fn_symbol arg_types ret_type
       modifyIORef' (sbUninterpFnCache sym) (Map.insert fn_key (SomeSymFn fn))
       return fn
-  where fn_key =  (fn_name, Some (arg_types Ctx.:> ret_type))
+  where
+  fn_key = (fn_symbol, Some (arg_types Ctx.:> ret_type))
+  fn_symbol = systemSymbol ("fn!"++fn_name)
 
-mkUninterpFnApp
-  :: (sym ~ ExprBuilder t st fs)
-  => sym
-  -> String
-  -> Ctx.Assignment (SymExpr sym) args
-  -> BaseTypeRepr ret
-  -> IO (SymExpr sym ret)
-mkUninterpFnApp sym str_fn_name args ret_type = do
-  fn_name <- unsafeUserSymbol str_fn_name
-  let arg_types = fmapFC exprType args
-  fn <- cachedUninterpFn sym fn_name arg_types ret_type freshTotalUninterpFn
-  applySymFn sym fn args
-
-mkFreshUninterpFnApp
-  :: (sym ~ ExprBuilder t st fs)
-  => sym
-  -> String
-  -> Ctx.Assignment (SymExpr sym) args
-  -> BaseTypeRepr ret
-  -> IO (SymExpr sym ret)
-mkFreshUninterpFnApp sym str_fn_name args ret_type = do
-  fn_name <- unsafeUserSymbol str_fn_name
-  let arg_types = fmapFC exprType args
-  fn <- freshTotalUninterpFn sym fn_name arg_types ret_type
-  applySymFn sym fn args

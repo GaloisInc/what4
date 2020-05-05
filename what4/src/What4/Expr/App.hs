@@ -248,6 +248,9 @@ testExprSymFnEq f g = testEquality (symFnId f) (symFnId g)
 
 
 instance IsExpr e => IsSymFn (ExprSymFn t e) where
+  fnTestEq x y =
+    do Refl <- testEquality (symFnId x) (symFnId y)
+       return (Refl, Refl)
   fnArgTypes = symFnArgTypes
   fnReturnType = symFnReturnType
 

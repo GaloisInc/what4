@@ -75,6 +75,7 @@ module What4.Interface
   , IsExprBuilder(..)
   , IsSymExprBuilder(..)
   , SolverEvent(..)
+  , MaybeFnApp(..)
 
     -- ** Bitvector operations
   , bvJoinVector
@@ -2365,7 +2366,10 @@ iteM ite sym p mx my = do
 type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
 -- | A class for extracting type representatives from symbolic functions
-class IsSymFn fn where
+class IsSymFn (fn  :: Ctx BaseType -> BaseType -> Type) where
+  -- | Test symbolic functions for syntactic equality
+  fnTestEq :: fn args ret -> fn args' ret' -> Maybe (args :~: args', ret :~: ret')
+
   -- | Get the argument types of a function.
   fnArgTypes :: fn args ret -> Ctx.Assignment BaseTypeRepr args
 
@@ -2514,6 +2518,39 @@ class ( IsExprBuilder sym
              -> Ctx.Assignment (SymExpr sym) args
                 -- ^ Arguments to function
              -> IO (SymExpr sym ret)
+
+  -- | Test if the given expression is the application
+  --   of a SymFn to some arguments.
+  asFnApp :: sym -> SymExpr sym tp -> MaybeFnApp sym tp
+
+  -- | Create an uninterpreted SymFn identified by the given name and signature.
+  --   Subsequent calls to this method with the same arguments will
+  --   result in the same @SymFn@ value.
+  symFnByName :: sym
+              -> String
+              -> Ctx.Assignment BaseTypeRepr args
+              -> BaseTypeRepr ret
+              -> IO (SymFn sym args ret)
+
+
+  -- | Create or lookup an uninterpreted function by name
+  --   and apply it to the given arguments.
+  mkUninterpFnApp ::
+    sym ->
+    String ->
+    Ctx.Assignment (SymExpr sym) args ->
+    BaseTypeRepr ret ->
+    IO (SymExpr sym ret)
+  mkUninterpFnApp sym str_fn_name args ret_type = do
+    let arg_types = fmapFC exprType args
+    fn <- symFnByName sym str_fn_name arg_types ret_type
+    applySymFn sym fn args
+
+
+data MaybeFnApp sym tp where
+  NoFnApp :: MaybeFnApp sym tp
+  SomeFnApp :: SymFn sym args tp -> Ctx.Assignment (SymExpr sym) args -> MaybeFnApp sym tp
+
 
 -- | This returns true if the value corresponds to a concrete value.
 baseIsConcrete :: forall e bt
