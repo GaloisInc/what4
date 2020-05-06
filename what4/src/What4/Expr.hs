@@ -12,6 +12,9 @@ module What4.Expr
   ( -- * Expression builder
     ExprBuilder
   , newExprBuilder
+  , IsExprLoc
+  , ExprNonceBrand
+  , ExprLoc
 
     -- * Type abbreviations
   , BoolExpr

@@ -13,6 +13,7 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -55,6 +56,7 @@ import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           Numeric.Natural
+import           Text.PrettyPrint.ANSI.Leijen (Pretty)
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -142,9 +144,10 @@ defaultValueForType tp =
 -- | Helper function for evaluating @Expr@ expressions in a model.
 --
 --   This function is intended for implementers of symbolic backends.
-evalGroundExpr :: (forall u . Expr t u -> IO (GroundValue u))
-              -> Expr t tp
-              -> IO (GroundValue tp)
+evalGroundExpr :: Pretty (ExprLoc t) =>
+  (forall u . Expr t u -> IO (GroundValue u)) ->
+  Expr t tp ->
+  IO (GroundValue tp)
 evalGroundExpr f e =
  runMaybeT (tryEvalGroundExpr f e) >>= \case
     Nothing -> fail $ unwords ["evalGroundExpr: could not evaluate expression:", show e]

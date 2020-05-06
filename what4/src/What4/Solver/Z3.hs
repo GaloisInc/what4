@@ -9,12 +9,13 @@
 --
 -- Z3-specific tweaks to the basic SMTLib2 solver interface.
 ------------------------------------------------------------------------
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
-
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE UndecidableInstances #-}
 module What4.Solver.Z3
   ( Z3(..)
   , z3Adapter
@@ -123,11 +124,12 @@ z3Features = useNonlinearArithmetic
          .|. useFloatingPoint
          .|. useBitvectors
 
-writeZ3SMT2File
-   :: ExprBuilder t st
-   -> Handle
-   -> [BoolExpr t]
-   -> IO ()
+writeZ3SMT2File ::
+   IsExprLoc t =>
+   ExprBuilder t st ->
+   Handle ->
+   [BoolExpr t] ->
+   IO ()
 writeZ3SMT2File = SMT2.writeDefaultSMT2 Z3 "Z3" z3Features
 
 instance SMT2.SMTLib2GenericSolver Z3 where
@@ -152,29 +154,31 @@ instance SMT2.SMTLib2GenericSolver Z3 where
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $
       SMT2.setOption writer "produce-unsat-cores" "true"
 
-runZ3InOverride
-  :: ExprBuilder t st
-  -> LogData
-  -> [BoolExpr t]
-  -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
-  -> IO a
+runZ3InOverride ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  LogData ->
+  [BoolExpr t] ->
+  (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a) ->
+  IO a
 runZ3InOverride = SMT2.runSolverInOverride Z3 nullAcknowledgementAction z3Features
 
 -- | Run Z3 in a session. Z3 will be configured to produce models, but
 -- otherwise left with the default configuration.
-withZ3
-  :: ExprBuilder t st
-  -> FilePath
-    -- ^ Path to CVC4 executable
-  -> LogData
-  -> (SMT2.Session t Z3 -> IO a)
-    -- ^ Action to run
-  -> IO a
+withZ3 ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  FilePath
+    {- ^ Path to CVC4 executable -} ->
+  LogData ->
+  (SMT2.Session t Z3 -> IO a)
+    {- ^ Action to run -} ->
+  IO a
 withZ3 = SMT2.withSolver Z3 nullAcknowledgementAction z3Features
 
 
 setInteractiveLogicAndOptions ::
-  SMT2.SMTLib2Tweaks a =>
+  (IsExprLoc t, SMT2.SMTLib2Tweaks a) =>
   WriterConn t (SMT2.Writer a) ->
   IO ()
 setInteractiveLogicAndOptions writer = do

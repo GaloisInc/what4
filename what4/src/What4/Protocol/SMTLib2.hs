@@ -15,6 +15,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -548,29 +549,32 @@ instance SupportTermOps Term where
 ------------------------------------------------------------------------
 -- Writer
 
-newWriter :: a
-          -> Streams.OutputStream Text
-          -> AcknowledgementAction t (Writer a)
-             -- ^ Action to run for consuming acknowledgement messages
-          -> String
-             -- ^ Name of solver for reporting purposes.
-          -> Bool
-             -- ^ Flag indicating if it is permitted to use
-             -- "define-fun" when generating SMTLIB
-          -> ProblemFeatures
-             -- ^ Indicates what level of arithmetic is supported by solver.
-          -> Bool
-             -- ^ Indicates if quantifiers are supported.
-          -> B.SymbolVarBimap t
-             -- ^ Variable bindings for names.
-          -> IO (WriterConn t (Writer a))
-newWriter _ h ack solver_name permitDefineFun arithOption quantSupport bindings = do
+newWriter ::
+  a ->
+  Streams.OutputStream Text ->
+  AcknowledgementAction t (Writer a)
+   {- ^ Action to run for consuming acknowledgement messages -} ->
+  String
+   {- ^ Name of solver for reporting purposes. -} ->
+  Bool
+   {- ^ Flag indicating if it is permitted to use
+      "define-fun" when generating SMTLIB -} ->
+  ProblemFeatures
+   {- ^ Indicates what level of arithmetic is supported by solver. -} ->
+  Bool
+   {- ^ Indicates if quantifiers are supported. -} ->
+  B.ExprLoc t
+   {- ^ initial position -} ->
+  B.SymbolVarBimap t
+   {- ^ Variable bindings for names. -} ->
+  IO (WriterConn t (Writer a))
+newWriter _ h ack solver_name permitDefineFun arithOption quantSupport initLoc bindings = do
   r <- newIORef Set.empty
   let initWriter =
         Writer
         { declaredTuples = r
         }
-  conn <- newWriterConn h ack solver_name arithOption bindings initWriter
+  conn <- newWriterConn h ack solver_name arithOption bindings initLoc initWriter
   return $! conn { supportFunctionDefs = permitDefineFun
                  , supportQuantifiers = quantSupport
                  }
@@ -650,29 +654,29 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
        Streams.write (Just "") (connHandle conn)
 
 -- | Write check sat command
-writeCheckSat :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeCheckSat :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> IO ()
 writeCheckSat w = addCommandNoAck w SMT2.checkSat
 
-writeExit :: forall a t. SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeExit :: forall a t. (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> IO ()
 writeExit w = addCommand w SMT2.exit
 
-setLogic :: SMTLib2Tweaks a => WriterConn t (Writer a) -> SMT2.Logic -> IO ()
+setLogic :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> SMT2.Logic -> IO ()
 setLogic w l = addCommand w $ SMT2.setLogic l
 
-setOption :: SMTLib2Tweaks a => WriterConn t (Writer a) -> Text -> Text -> IO ()
+setOption :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> Text -> Text -> IO ()
 setOption w nm val = addCommand w $ SMT2.setOption nm val
 
-getVersion :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+getVersion :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> IO ()
 getVersion w = writeCommand w $ SMT2.getVersion
 
-getName :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+getName :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> IO ()
 getName w = writeCommand w $ SMT2.getName
 
 -- | Set the produce models option (We typically want this)
-setProduceModels :: SMTLib2Tweaks a => WriterConn t (Writer a) -> Bool -> IO ()
+setProduceModels :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> Bool -> IO ()
 setProduceModels w b = addCommand w $ SMT2.setProduceModels b
 
-writeGetValue :: SMTLib2Tweaks a => WriterConn t (Writer a) -> [Term] -> IO ()
+writeGetValue :: (B.IsExprLoc t, SMTLib2Tweaks a) => WriterConn t (Writer a) -> [Term] -> IO ()
 writeGetValue w l = addCommandNoAck w $ SMT2.getValue l
 
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
@@ -805,10 +809,11 @@ parseSMTLib2String = AT.char '\"' >> go
           ) <|> return xs
 
 -- | Get a value from a solver (must be called after checkSat)
-runGetValue :: SMTLib2Tweaks a
-            => Session t a
-            -> Term
-            -> IO SExp
+runGetValue ::
+  (B.IsExprLoc t, SMTLib2Tweaks a) =>
+  Session t a ->
+  Term ->
+  IO SExp
 runGetValue s e = do
   writeGetValue (sessionWriter s) [ e ]
   msexp <- try $ Streams.parseFromStream (parseSExp parseSMTLib2String) (sessionResponse s)
@@ -819,12 +824,12 @@ runGetValue s e = do
 
 -- | This function runs a check sat command
 runCheckSat :: forall b t a.
-               SMTLib2Tweaks b
-            => Session t b
-            -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
-               -- ^ Function for evaluating model.
-               -- The evaluation should be complete before
-            -> IO a
+   (B.IsExprLoc t, SMTLib2Tweaks b) =>
+   Session t b ->
+   (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
+               {- ^ Function for evaluating model.
+                  The evaluation should be complete before -} ->
+   IO a
 runCheckSat s doEval =
   do let w = sessionWriter s
          r = sessionResponse s
@@ -925,8 +930,8 @@ smtAckResult resp = AckAction $ \_conn cmd ->
                        , "*** Exception: " ++ displayException e
                        ]
 
-smtLibEvalFuns ::
-  forall t a. SMTLib2Tweaks a => Session t a -> SMTEvalFunctions (Writer a)
+smtLibEvalFuns :: forall t a.
+  (B.IsExprLoc t, SMTLib2Tweaks a) => Session t a -> SMTEvalFunctions (Writer a)
 smtLibEvalFuns s = SMTEvalFunctions
                   { smtEvalBool = evalBool
                   , smtEvalBV = evalBV
@@ -957,31 +962,33 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
 
   defaultFeatures :: a -> ProblemFeatures
 
-  setDefaultLogicAndOptions :: WriterConn t (Writer a) -> IO()
+  setDefaultLogicAndOptions :: B.IsExprLoc t => WriterConn t (Writer a) -> IO()
 
-  newDefaultWriter
-    :: a ->
+  newDefaultWriter ::
+       B.IsExprLoc t =>
+       a ->
        AcknowledgementAction t (Writer a) ->
        ProblemFeatures ->
        B.ExprBuilder t st ->
        Streams.OutputStream Text ->
        IO (WriterConn t (Writer a))
   newDefaultWriter solver ack feats sym h =
-    newWriter solver h ack (show solver) True feats True
-      =<< B.getSymbolVarBimap sym
+    do initLoc <- I.getCurrentProgramLoc sym
+       bindings <- B.getSymbolVarBimap sym
+       newWriter solver h ack (show solver) True feats True initLoc bindings
 
   -- | Run the solver in a session.
-  withSolver
-    :: a
-    -> AcknowledgementAction t (Writer a)
-    -> ProblemFeatures
-    -> B.ExprBuilder t st
-    -> FilePath
-      -- ^ Path to solver executable
-    -> LogData
-    -> (Session t a -> IO b)
-      -- ^ Action to run
-    -> IO b
+  withSolver :: B.IsExprLoc t =>
+    a ->
+    AcknowledgementAction t (Writer a) ->
+    ProblemFeatures ->
+    B.ExprBuilder t st ->
+    FilePath
+      {- ^ Path to solver executable -} ->
+    LogData ->
+    (Session t a -> IO b)
+      {- ^ Action to run -} ->
+    IO b
   withSolver solver ack feats sym path logData action = do
     args <- defaultSolverArgs solver sym
     withProcessHandles path args Nothing $
@@ -1013,15 +1020,16 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
           Exit.ExitFailure exit_code -> fail $
             show solver ++ " exited with unexpected code: " ++ show exit_code
 
-  runSolverInOverride
-    :: a
-    -> AcknowledgementAction t (Writer a)
-    -> ProblemFeatures
-    -> B.ExprBuilder t st
-    -> LogData
-    -> [B.BoolExpr t]
-    -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO b)
-    -> IO b
+  runSolverInOverride ::
+    B.IsExprLoc t =>
+    a ->
+    AcknowledgementAction t (Writer a) ->
+    ProblemFeatures ->
+    B.ExprBuilder t st ->
+    LogData ->
+    [B.BoolExpr t] ->
+    (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO b) ->
+    IO b
   runSolverInOverride solver ack feats sym logData predicates cont = do
     I.logSolverEvent sym
       I.SolverStartSATQuery
@@ -1043,35 +1051,37 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
 
 -- | A default method for writing SMTLib2 problems without any
 --   solver-specific tweaks.
-writeDefaultSMT2 :: SMTLib2Tweaks a
-                 => a
-                 -> String
-                    -- ^ Name of solver for reporting.
-                 -> ProblemFeatures
-                    -- ^ Features supported by solver
-                 -> B.ExprBuilder t st
-                 -> IO.Handle
-                 -> [B.BoolExpr t]
-                 -> IO ()
+writeDefaultSMT2 ::
+  (B.IsExprLoc t, SMTLib2Tweaks a) =>
+  a ->
+  String
+   {- ^ Name of solver for reporting. -} ->
+  ProblemFeatures
+   {- ^ Features supported by solver -} ->
+  B.ExprBuilder t st ->
+  IO.Handle ->
+  [B.BoolExpr t] ->
+  IO ()
 writeDefaultSMT2 a nm feat sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-  c <- newWriter a str nullAcknowledgementAction nm True feat True bindings
+  initLoc <- I.getCurrentProgramLoc sym
+  c <- newWriter a str nullAcknowledgementAction nm True feat True initLoc bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
   writeCheckSat c
   writeExit c
 
-startSolver
-  :: SMTLib2GenericSolver a
-  => a
-  -> (Streams.InputStream Text -> AcknowledgementAction t (Writer a))
-        -- ^ Action for acknowledging command responses
-  -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
-  -> ProblemFeatures
-  -> Maybe IO.Handle
-  -> B.ExprBuilder t st
-  -> IO (SolverProcess t (Writer a))
+startSolver ::
+  (B.IsExprLoc t, SMTLib2GenericSolver a) =>
+  a ->
+  (Streams.InputStream Text -> AcknowledgementAction t (Writer a))
+        {- ^ Action for acknowledging command responses -} ->
+  (WriterConn t (Writer a) -> IO ()) {- ^ Action for setting start-up-time options and logic -} ->
+  ProblemFeatures ->
+  Maybe IO.Handle ->
+  B.ExprBuilder t st ->
+  IO (SolverProcess t (Writer a))
 startSolver solver ack setup feats auxOutput sym = do
   path <- defaultSolverPath solver sym
   args <- defaultSolverArgs solver sym
@@ -1107,8 +1117,9 @@ startSolver solver ack setup feats auxOutput sym = do
     }
 
 
-shutdownSolver
-  :: SMTLib2GenericSolver a => a -> SolverProcess t (Writer a) -> IO (Exit.ExitCode, Lazy.Text)
+shutdownSolver ::
+  (B.IsExprLoc t, SMTLib2GenericSolver a) =>
+  a -> SolverProcess t (Writer a) -> IO (Exit.ExitCode, Lazy.Text)
 shutdownSolver _solver p = do
   -- Tell solver to exit
   writeExit (solverConn p)
@@ -1188,7 +1199,8 @@ nameResult _ s =
 
 
 -- | Query the solver's error behavior setting
-queryErrorBehavior :: SMTLib2Tweaks a =>
+queryErrorBehavior ::
+  (B.IsExprLoc t, SMTLib2Tweaks a) =>
   WriterConn t (Writer a) -> Streams.InputStream Text -> IO ErrorBehavior
 queryErrorBehavior conn resp =
   do let cmd = SMT2.getErrorBehavior
@@ -1215,7 +1227,8 @@ versionResult _ s =
           throwSMTLib2ParseError "version query" cmd e
 
 -- | Ensure the solver's version falls within a known-good range.
-checkSolverVersion' :: SMTLib2Tweaks solver =>
+checkSolverVersion' ::
+  (B.IsExprLoc scope, SMTLib2Tweaks solver) =>
   Map String Version {- ^ min version bounds (inclusive) -} ->
   Map String Version {- ^ max version bounds (non-inclusive) -} ->
   SolverProcess scope (Writer solver) ->
@@ -1250,7 +1263,8 @@ checkSolverVersion' mins maxes proc =
 
 
 -- | Ensure the solver's version falls within a known-good range.
-checkSolverVersion :: SMTLib2Tweaks solver =>
+checkSolverVersion ::
+  (B.IsExprLoc scope, SMTLib2Tweaks solver) =>
   SolverProcess scope (Writer solver) ->
   IO (Either SolverVersionCheckError (Maybe SolverVersionError))
 checkSolverVersion =

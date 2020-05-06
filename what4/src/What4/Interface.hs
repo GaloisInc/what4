@@ -61,12 +61,14 @@ module What4.Interface
   ( -- * Interface classes
     -- ** Type Families
     SymExpr
+  , SymLoc
   , BoundVar
   , SymFn
   , SymAnnotation
 
     -- ** Expression recognizers
   , IsExpr(..)
+  , PrintExpr(..)
   , IsSymFn(..)
   , UnfoldPolicy(..)
   , shouldUnfold
@@ -186,7 +188,6 @@ import           What4.BaseTypes
 import           What4.Config
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.IndexLit
-import           What4.ProgramLoc
 import           What4.Concrete
 import           What4.SatResult
 import           What4.Symbol
@@ -245,6 +246,10 @@ type family BoundVar (sym :: Type) :: BaseType -> Type
 type family SymAnnotation (sym :: Type) :: BaseType -> Type
 
 ------------------------------------------------------------------------
+-- | Type used to record current program locations
+type family SymLoc (sym :: Type) :: Type
+
+------------------------------------------------------------------------
 -- IsBoolSolver
 
 -- | Perform an ite on a predicate lazily.
@@ -267,8 +272,7 @@ itePredM sym c mx my =
 -- IsExpr
 
 -- | This class provides operations for recognizing when symbolic expressions
---   represent concrete values, extracting the type from an expression,
---   and for providing pretty-printed representations of an expression.
+--   represent concrete values, extracting the type from an expression.
 class HasAbsValue e => IsExpr e where
   -- | Evaluate if predicate is constant.
   asConstantPred :: e BaseBoolType -> Maybe Bool
@@ -340,9 +344,6 @@ class HasAbsValue e => IsExpr e where
     case exprType e of
       BaseBVRepr w -> w
 
-  -- | Print a sym expression for debugging or display purposes.
-  printSymExpr :: e tp -> Doc
-
 
 newtype ArrayResultWrapper f idx tp =
   ArrayResultWrapper { unwrapArrayResult :: f (BaseArrayType idx tp) }
@@ -371,6 +372,12 @@ data SolverEvent
     }
  deriving (Show, Generic)
 
+
+-- | This class provides basic pretty-printing for symbolic expressions.
+class PrintExpr (e :: BaseType -> Type) where
+  -- | Print a sym expression for debugging or display purposes.
+  printSymExpr :: e tp -> Doc
+
 ------------------------------------------------------------------------
 -- IsExprBuilder
 
@@ -396,7 +403,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Retrieve the configuration object corresponding to this solver interface.
   getConfiguration :: sym -> Config
 
-
   -- | Install an action that will be invoked before and after calls to
   --   backend solvers.  This action is primarily intended to be used for
   --   logging\/profiling\/debugging purposes.  Passing 'Nothing' to this
@@ -420,10 +426,10 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- Program location operations
 
   -- | Get current location of program for term creation purposes.
-  getCurrentProgramLoc :: sym -> IO ProgramLoc
+  getCurrentProgramLoc :: sym -> IO (SymLoc sym)
 
   -- | Set current location of program for term creation purposes.
-  setCurrentProgramLoc :: sym -> ProgramLoc -> IO ()
+  setCurrentProgramLoc :: sym -> SymLoc sym -> IO ()
 
   -- | Return true if two expressions are equal. The default
   -- implementation dispatches 'eqPred', 'bvEq', 'natEq', 'intEq',

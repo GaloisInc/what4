@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
 {-|
@@ -33,12 +34,16 @@ import           What4.Expr
 import           What4.Interface
 
 
+data What4Test s
+type instance ExprNonceBrand (What4Test t) = t
+type instance ExprLoc (What4Test t) = ()
+
 data State t = State
 type IteExprBuilder t = ExprBuilder t State
 
-withTestSolver :: (forall t. IteExprBuilder t -> IO a) -> IO a
-withTestSolver f = withIONonceGenerator $ \nonce_gen ->
-  f =<< newExprBuilder State nonce_gen
+withTestSolver :: (forall t. IsExprLoc t => IteExprBuilder t -> IO a) -> IO a
+withTestSolver f = withIONonceGenerator $ \(nonce_gen :: NonceGenerator IO s) ->
+  f =<< newExprBuilder (State :: State (What4Test s)) nonce_gen ()
 
 -- | What branch (arm) is expected from the ITE evaluation?
 data ExpITEArm = Then | Else

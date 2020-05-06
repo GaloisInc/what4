@@ -15,6 +15,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -84,7 +85,6 @@ import           Data.Parameterized.Nonce
 
 import           What4.BaseTypes
 import           What4.Config
-import           What4.ProgramLoc
 import           What4.Concrete
 import           What4.Interface
 import           What4.SatResult
@@ -121,7 +121,7 @@ bltAdapter =
        fail "BLT backend does not support writing SMTLIB2 files."
    }
 
-runBLTInOverride :: IsExprBuilder sym
+runBLTInOverride :: (IsExprLoc t, IsExprBuilder sym)
                  => sym
                  -> LogData
                  -> [BoolExpr t] -- ^ propositions to check
@@ -343,7 +343,7 @@ data Handle t = Handle
   { -- | pointer to the C library problem context
     getCtx     :: HContext
     -- | associate elements for variables to the index.
-  , varIndices :: !(PH.HashTable RealWorld (Nonce t) VarIndex)
+  , varIndices :: !(PH.HashTable RealWorld (Nonce (ExprNonceBrand t)) VarIndex)
     -- | associate each observed Expr with a BLTExpr that represents the
     -- variable on the BLT side
   , exprCache  :: !(IdxCache t NameType)
@@ -405,7 +405,7 @@ setUNSAT h = do
 ------------------------------------------------------------------------
 
 -- | Parse given Expr Bool as a conjunction of inequalities and record them
-assume :: Handle t -> BoolExpr t -> IO ()
+assume :: IsExprLoc t => Handle t -> BoolExpr t -> IO ()
 assume _ (BoundVarExpr v) =
   failAt' (bvarLoc v) "Boolean variables are not supported by BLT."
 #if !MIN_VERSION_GLASGOW_HASKELL(8,8,0,0)
@@ -415,7 +415,7 @@ assume h (NonceAppExpr (nonceExprApp -> Annotation _ _ x)) =
   assume h x
 assume _ (NonceAppExpr e) =
   fail . show $
-    text "Unsupported term created at" <+> pretty (plSourceLoc l) <>
+    text "Unsupported term created at" <+> pretty l <>
     text ":" <$$> indent 2 (pretty (NonceAppExpr e))
   where
   l = nonceExprLoc e
@@ -448,7 +448,7 @@ assume h b@(AppExpr ba) =
       _ -> unsupported
   where
   unsupported = fail $ show $
-        text "Unsupported term created at" <+> pretty (plSourceLoc l) <>
+        text "Unsupported term created at" <+> pretty l <>
         text ":" <$$> indent 2 (pretty b)
   l = appExprLoc ba
   appLEq lhs rhs =
@@ -531,12 +531,12 @@ recordUpperBound h r e = assert (isBLTHomog e && leadingCoeff e > 0) $ do
 
 -- | Cached version of evalReal'. We wrap and unwrap the NameType to be
 -- compatible with IdxCache functions in Core.
-evalReal :: Handle t -> RealExpr t -> IO BLTExpr
+evalReal :: IsExprLoc t => Handle t -> RealExpr t -> IO BLTExpr
 evalReal h e = asName <$> idxCacheEval (exprCache h) e (N <$> evalReal' h e)
 
 -- | Parse a RealVal expression, flattening it to a (new) BLTExpr.
 
-evalReal' :: Handle t -> RealExpr t -> IO BLTExpr
+evalReal' :: IsExprLoc t => Handle t -> RealExpr t -> IO BLTExpr
 -- Integer variables are supported, but not Real
 evalReal' _ (BoundVarExpr v) =
   failAt (bvarLoc v) "Real variables are not supported by BLT."
@@ -585,17 +585,17 @@ evalReal' h epr@(AppExpr epa) = do
 
     _ ->
       fail $ "BLT encountered a real expression that it does not support.\n"
-          ++ "The term was created at " ++ show (plSourceLoc l) ++ ":\n"
+          ++ "The term was created at " ++ show (pretty l) ++ ":\n"
           ++ "  " ++ show (ppExprTop epr)
 
 
 -- | Cached version of evalInteger'. We wrap and unwrap the NameType to be
 -- compatible with IdxCache functions in Core.
-evalInteger :: Handle t -> IntegerExpr t -> IO BLTExpr
+evalInteger :: IsExprLoc t => Handle t -> IntegerExpr t -> IO BLTExpr
 evalInteger h e = asName <$> idxCacheEval (exprCache h) e (N <$> evalInteger' h e)
 
 -- | Parse an IntegerType element, flattening it to a (new) BLTExpr.
-evalInteger' :: Handle t -> IntegerExpr t -> IO BLTExpr
+evalInteger' :: IsExprLoc t => Handle t -> IntegerExpr t -> IO BLTExpr
 -- Match integer variable.
 evalInteger' h (BoundVarExpr info) =
   case bvarKind info of
@@ -646,7 +646,7 @@ evalInteger' h (AppExpr epa) = do
     _ -> failAt l "The given integer expressions"
 
 -- | Evaluate complex symbolic expressions to their ModelExpr type.
-evalCplx :: Handle t -> CplxExpr t -> IO (Complex BLTExpr)
+evalCplx :: IsExprLoc t => Handle t -> CplxExpr t -> IO (Complex BLTExpr)
 evalCplx _ (BoundVarExpr i) = failAt (bvarLoc i) "Complex variables"
 #if !MIN_VERSION_GLASGOW_HASKELL(8,8,0,0)
 evalCplx _ (SemiRingLiteral sr _ _) = case sr of {}
@@ -674,7 +674,7 @@ evalCplx h (AppExpr ea) =
 ------------------------------------------------------------------------
 
 -- | check here for lwr, upr bounds
-checkSat :: forall t . Handle t -> IO (SatResult (GroundEvalFn t) ())
+checkSat :: forall t . IsExprLoc t => Handle t -> IO (SatResult (GroundEvalFn t) ())
 checkSat h = do
     let ctx = getCtx h
     bnds <- readIORef (boundMap h)
@@ -735,18 +735,16 @@ checkSat h = do
 -- Failures and Warnings
 ------------------------------------------------------------------------
 
-failAt :: ProgramLoc -> String -> IO a
+failAt :: Pretty l => l  -> String -> IO a
 failAt l msg = failAt' l (msg ++ " is/are not supported by BLT.")
 
-failAt' :: ProgramLoc -> String -> IO a
-failAt' l msg = throwIO $ BLTE $ msg ++ "\nTerm created at " ++ show sl ++ "."
-  where sl = plSourceLoc l
+failAt' :: Pretty l => l -> String -> IO a
+failAt' l msg = throwIO $ BLTE $ msg ++ "\nTerm created at " ++ show (pretty l) ++ "."
 
-warnAt :: ProgramLoc -> String -> IO ()
+warnAt :: Pretty l => l -> String -> IO ()
 warnAt l msg = hPutStrLn stderr
      $ "BLT: WARNING: " ++ msg
-    ++ "\nTerm created at " ++ show sl ++ "."
-  where sl = plSourceLoc l
+    ++ "\nTerm created at " ++ show (pretty l) ++ "."
 
 ------------------------------------------------------------------------
 -- Exceptions

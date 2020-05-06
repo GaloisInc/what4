@@ -11,6 +11,7 @@
 -- the results back.
 ------------------------------------------------------------------------
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 module What4.Solver.DReal
@@ -102,16 +103,18 @@ drealAdapter =
 instance SMT2.SMTLib2Tweaks DReal where
   smtlib2tweaks = DReal
 
-writeDRealSMT2File
-   :: ExprBuilder t st
-   -> Handle
-   -> [BoolExpr t]
-   -> IO ()
+writeDRealSMT2File ::
+   IsExprLoc t =>
+   ExprBuilder t st ->
+   Handle ->
+   [BoolExpr t] ->
+   IO ()
 writeDRealSMT2File sym h ps = do
+  initLoc <- getCurrentProgramLoc sym
   bindings <- getSymbolVarBimap sym
   in_str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   c <- SMT2.newWriter DReal in_str SMTWriter.nullAcknowledgementAction "dReal"
-          False useComputableReals False bindings
+          False useComputableReals False initLoc bindings
   SMT2.setProduceModels c True
   SMT2.setLogic c (SMT2.Logic "QF_NRA")
   forM_ ps (SMT2.assume c)
@@ -120,17 +123,17 @@ writeDRealSMT2File sym h ps = do
 
 type DRealBindings = Map Text (Maybe Rational, Maybe Rational)
 
-parseDRealModel
-   :: Handle
-   -> IO DRealBindings
+parseDRealModel :: Handle -> IO DRealBindings
 parseDRealModel h = do
    str <- BS.hGetContents h
    let ls = drop 1 $ UTF8.lines str
    Map.fromList <$> mapM parseDRealBinding ls
 
-getAvgBindings :: SMT2.WriterConn t (SMT2.Writer DReal)
-               -> DRealBindings
-               -> IO (GroundEvalFn t)
+getAvgBindings ::
+  IsExprLoc t =>
+  SMT2.WriterConn t (SMT2.Writer DReal) ->
+  DRealBindings ->
+  IO (GroundEvalFn t)
 getAvgBindings c m = do
   let evalBool _ = fail "dReal does not support Boolean vars"
       evalBV _ _ = fail "dReal does not support bitvectors."
@@ -147,10 +150,12 @@ getAvgBindings c m = do
                                            }
   SMTWriter.smtExprGroundEvalFn c evalFns
 
-getMaybeEval :: ((Maybe Rational, Maybe Rational) -> Maybe Rational)
-             -> SMT2.WriterConn t (SMT2.Writer DReal)
-             -> DRealBindings
-             -> IO (RealExpr t -> IO (Maybe Rational))
+getMaybeEval ::
+  IsExprLoc t =>
+  ((Maybe Rational, Maybe Rational) -> Maybe Rational) ->
+  SMT2.WriterConn t (SMT2.Writer DReal) ->
+  DRealBindings ->
+  IO (RealExpr t -> IO (Maybe Rational))
 getMaybeEval proj c m = do
   let evalBool _ = fail "dReal does not return Boolean value"
       evalBV _ _ = fail "dReal does not return Bitvector values."
@@ -174,9 +179,11 @@ getMaybeEval proj c m = do
       handler e = throwIO e
   return $ \elt -> (Just <$> evalFn elt) `catch` handler
 
-getBoundBindings :: SMT2.WriterConn t (SMT2.Writer DReal)
-                 -> DRealBindings
-                 -> IO (ExprRangeBindings t)
+getBoundBindings ::
+  IsExprLoc t =>
+  SMT2.WriterConn t (SMT2.Writer DReal) ->
+  DRealBindings ->
+  IO (ExprRangeBindings t)
 getBoundBindings c m = do
   l_evalFn <- getMaybeEval fst c m
   h_evalFn <- getMaybeEval snd c m
@@ -248,12 +255,13 @@ parseNextWord = do
   skipSpace
   UTF8.toString <$> takeWhile1 (\c -> isAlphaNum c || c == '-')
 
-runDRealInOverride
-   :: ExprBuilder t st
-   -> LogData
-   -> [BoolExpr t]   -- ^ propositions to check
-   -> (SatResult (SMT2.WriterConn t (SMT2.Writer DReal), DRealBindings) () -> IO a)
-   -> IO a
+runDRealInOverride ::
+   IsExprLoc t =>
+   ExprBuilder t st ->
+   LogData ->
+   [BoolExpr t]  {- ^ propositions to check -} ->
+   (SatResult (SMT2.WriterConn t (SMT2.Writer DReal), DRealBindings) () -> IO a) ->
+   IO a
 runDRealInOverride sym logData ps modelFn = do
   p <- andAllOf sym folded ps
   solver_path <- findSolverPath drealPath (getConfiguration sym)
@@ -273,6 +281,7 @@ runDRealInOverride sym logData ps modelFn = do
       logCallbackVerbose logData 2 "Sending Satisfiability problem to dReal"
       -- dReal does not support (define-fun ...)
       bindings <- getSymbolVarBimap sym
+      initLoc <- getCurrentProgramLoc sym
 
       in_str  <-
         case logHandle logData of
@@ -282,7 +291,7 @@ runDRealInOverride sym logData ps modelFn = do
                Streams.encodeUtf8 =<< teeOutputStream aux_str =<< Streams.handleToOutputStream in_h
 
       c <- SMT2.newWriter DReal in_str SMTWriter.nullAcknowledgementAction "dReal"
-             False useComputableReals False bindings
+             False useComputableReals False initLoc bindings
 
       -- Set the dReal default logic
       SMT2.setLogic c (SMT2.Logic "QF_NRA")

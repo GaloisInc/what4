@@ -88,6 +88,7 @@ library
     What4.Expr.MATLAB
     What4.Expr.Simplify
     What4.Expr.StringSeq
+    What4.Expr.TyFam
     What4.Expr.VarIdentification
     What4.Expr.WeightedSum
     What4.Expr.UnaryBV

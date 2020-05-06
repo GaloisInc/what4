@@ -663,7 +663,7 @@ matlabSolverReturnType f =
     CplxCosFn            -> knownRepr
     CplxTanFn            -> knownRepr
 
-ppMatlabSolverFn :: IsExpr f => MatlabSolverFn f a r -> Doc
+ppMatlabSolverFn :: PrintExpr f => MatlabSolverFn f a r -> Doc
 ppMatlabSolverFn f =
   case f of
     BoolOrFn             -> text "bool_or"

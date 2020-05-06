@@ -9,6 +9,7 @@
 --
 -- CVC4-specific tweaks to the basic SMTLib2 solver interface.
 ------------------------------------------------------------------------
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -122,27 +123,30 @@ cvc4Features = useComputableReals
            .|. useBitvectors
            .|. useQuantifiers
 
-writeMultiAsmpCVC4SMT2File
-   :: ExprBuilder t st
-   -> Handle
-   -> [BoolExpr t]
-   -> IO ()
+writeMultiAsmpCVC4SMT2File ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  Handle ->
+  [BoolExpr t] ->
+  IO ()
 writeMultiAsmpCVC4SMT2File sym h ps = do
+  initLoc <- getCurrentProgramLoc sym
   bindings <- getSymbolVarBimap sym
   in_str  <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   c <- SMT2.newWriter CVC4 in_str nullAcknowledgementAction "CVC4"
-         True cvc4Features True bindings
+         True cvc4Features True initLoc bindings
   SMT2.setLogic c SMT2.allSupported
   SMT2.setProduceModels c True
   forM_ ps $ SMT2.assume c
   SMT2.writeCheckSat c
   SMT2.writeExit c
 
-writeCVC4SMT2File
-   :: ExprBuilder t st
-   -> Handle
-   -> [BoolExpr t]
-   -> IO ()
+writeCVC4SMT2File ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  Handle ->
+  [BoolExpr t] ->
+  IO ()
 writeCVC4SMT2File sym h ps = writeMultiAsmpCVC4SMT2File sym h ps
 
 instance SMT2.SMTLib2GenericSolver CVC4 where
@@ -164,28 +168,30 @@ instance SMT2.SMTLib2GenericSolver CVC4 where
     -- Tell CVC4 to produce models
     SMT2.setProduceModels writer True
 
-runCVC4InOverride
-  :: ExprBuilder t st
-  -> LogData
-  -> [BoolExpr t]
-  -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
-  -> IO a
+runCVC4InOverride ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  LogData ->
+  [BoolExpr t] ->
+  (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a) ->
+  IO a
 runCVC4InOverride = SMT2.runSolverInOverride CVC4 nullAcknowledgementAction (SMT2.defaultFeatures CVC4)
 
 -- | Run CVC4 in a session. CVC4 will be configured to produce models, but
 -- otherwise left with the default configuration.
-withCVC4
-  :: ExprBuilder t st
-  -> FilePath
-    -- ^ Path to CVC4 executable
-  -> LogData
-  -> (SMT2.Session t CVC4 -> IO a)
-    -- ^ Action to run
-  -> IO a
+withCVC4 ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  FilePath
+    {- ^ Path to CVC4 executable -} ->
+  LogData ->
+  (SMT2.Session t CVC4 -> IO a)
+    {- ^ Action to run -} ->
+  IO a
 withCVC4 = SMT2.withSolver CVC4 nullAcknowledgementAction (SMT2.defaultFeatures CVC4)
 
 setInteractiveLogicAndOptions ::
-  SMT2.SMTLib2Tweaks a =>
+  (IsExprLoc t, SMT2.SMTLib2Tweaks a) =>
   WriterConn t (SMT2.Writer a) ->
   IO ()
 setInteractiveLogicAndOptions writer = do

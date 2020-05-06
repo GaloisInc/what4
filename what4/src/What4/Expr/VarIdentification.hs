@@ -49,7 +49,7 @@ import           Data.Bits
 import qualified Data.HashTable.ST.Basic as H
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Map.Strict as Map
-import           Data.Parameterized.Nonce
+import           Data.Parameterized.Nonce (indexValue)
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Sequence (Seq)
@@ -322,7 +322,7 @@ recurseAssertedAppExprVars scope p e = go e
  go _ = recordExprVars scope e
 
 
-memoExprVars :: Nonce t (tp::BaseType) -> VarRecorder s t () -> VarRecorder s t ()
+memoExprVars :: ExprNonce t (tp::BaseType) -> VarRecorder s t () -> VarRecorder s t ()
 memoExprVars n recurse = do
   let idx = indexValue n
   ht <- VR ask

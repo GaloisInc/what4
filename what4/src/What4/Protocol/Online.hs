@@ -8,6 +8,7 @@ This module defines an API for interacting with
 solvers that support online interaction modes.
 
 -}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -65,6 +66,7 @@ import           What4.Utils.Process (filterAsync)
 class SMTReadWriter solver => OnlineSolver solver where
   -- | Start a new solver process attached to the given `ExprBuilder`.
   startSolverProcess :: forall scope st.
+    IsExprLoc scope =>
     ProblemFeatures ->
     Maybe Handle ->
     ExprBuilder scope st ->
@@ -75,6 +77,7 @@ class SMTReadWriter solver => OnlineSolver solver where
   --   the process's `stdin`.  Use `killProcess` instead to shutdown a process
   --   via a signal.
   shutdownSolverProcess :: forall scope.
+    IsExprLoc scope =>
     SolverProcess scope solver ->
     IO (ExitCode, LazyText.Text)
 
@@ -140,7 +143,7 @@ killSolver p =
 --   solver state, without requesting a model.  This is done in a
 --   fresh frame, which is exited after the check call.
 checkSatisfiable ::
-  SMTReadWriter solver =>
+  (IsExprLoc scope, SMTReadWriter solver) =>
   SolverProcess scope solver ->
   String ->
   BoolExpr scope ->
@@ -160,7 +163,7 @@ checkSatisfiable proc rsn p =
 --   complets. The evaluation function can be used to query the model.
 --   The model is valid only in the given continuation.
 checkSatisfiableWithModel ::
-  SMTReadWriter solver =>
+  (IsExprLoc scope, SMTReadWriter solver) =>
   SolverProcess scope solver ->
   String ->
   BoolExpr scope ->
@@ -178,7 +181,7 @@ checkSatisfiableWithModel proc rsn p k =
 --------------------------------------------------------------------------------
 -- Basic solver interaction.
 
-reset :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+reset :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> IO ()
 reset p =
   do let c = solverConn p
      resetEntryStack c
@@ -187,7 +190,7 @@ reset p =
      addCommand c (resetCommand c)
 
 -- | Push a new solver assumption frame.
-push :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+push :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> IO ()
 push p =
   readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
@@ -196,7 +199,7 @@ push p =
     Just i  -> writeIORef (solverEarlyUnsat p) $! (Just $! i+1)
 
 -- | Pop a previous solver assumption frame.
-pop :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+pop :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> IO ()
 pop p =
   readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
@@ -212,7 +215,7 @@ pop p =
 -- | Pop a previous solver assumption frame, but don't communicate
 --   the pop command to the solver.  This is really only useful in
 --   error recovery code when we know the solver has already exited.
-popStackOnly :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+popStackOnly :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> IO ()
 popStackOnly p =
   readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
@@ -225,16 +228,21 @@ popStackOnly p =
 
 
 -- | Perform an action in the scope of a solver assumption frame.
-inNewFrame :: (MonadIO m, MonadMask m, SMTReadWriter solver) => SolverProcess scope solver -> m a -> m a
+inNewFrame ::
+  (MonadIO m, MonadMask m, IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  m a ->
+  m a
 inNewFrame p action = inNewFrameWithVars p [] action
 
 -- | Perform an action in the scope of a solver assumption frame, where the given
 -- bound variables are considered free within that frame.
-inNewFrameWithVars :: (MonadIO m, MonadMask m, SMTReadWriter solver)
-                   => SolverProcess scope solver
-                   -> [Some (ExprBoundVar scope)]
-                   -> m a
-                   -> m a
+inNewFrameWithVars ::
+  (MonadIO m, MonadMask m, IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  [Some (ExprBoundVar scope)] ->
+  m a ->
+  m a
 inNewFrameWithVars p vars action =
   case solverErrorBehavior p of
     ContinueOnError ->
@@ -253,7 +261,7 @@ inNewFrameWithVars p vars action =
       forM_ vars (\(Some bv) -> bindVarAsFree conn bv)
 
 checkWithAssumptions ::
-  SMTReadWriter solver =>
+  (IsExprLoc scope, SMTReadWriter solver) =>
   SolverProcess scope solver ->
   String ->
   [BoolExpr scope] ->
@@ -280,7 +288,7 @@ checkWithAssumptions proc rsn ps =
             return (nms, sat_result)
 
 checkWithAssumptionsAndModel ::
-  SMTReadWriter solver =>
+  (IsExprLoc scope, SMTReadWriter solver) =>
   SolverProcess scope solver ->
   String ->
   [BoolExpr scope] ->
@@ -294,7 +302,7 @@ checkWithAssumptionsAndModel proc rsn ps =
 
 -- | Send a check command to the solver, and get the SatResult without asking
 --   a model.
-check :: SMTReadWriter solver => SolverProcess scope solver -> String -> IO (SatResult () ())
+check :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> String -> IO (SatResult () ())
 check p rsn =
   readIORef (solverEarlyUnsat p) >>= \case
     Just _  -> return (Unsat ())
@@ -315,7 +323,11 @@ check p rsn =
          return sat_result
 
 -- | Send a check command to the solver and get the model in the case of a SAT result.
-checkAndGetModel :: SMTReadWriter solver => SolverProcess scope solver -> String -> IO (SatResult (GroundEvalFn scope) ())
+checkAndGetModel ::
+  (IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  String ->
+  IO (SatResult (GroundEvalFn scope) ())
 checkAndGetModel yp rsn = do
   sat_result <- check yp rsn
   case sat_result of
@@ -325,7 +337,7 @@ checkAndGetModel yp rsn = do
 
 -- | Following a successful check-sat command, build a ground evaulation function
 --   that will evaluate terms in the context of the current model.
-getModel :: SMTReadWriter solver => SolverProcess scope solver -> IO (GroundEvalFn scope)
+getModel :: (IsExprLoc scope, SMTReadWriter solver) => SolverProcess scope solver -> IO (GroundEvalFn scope)
 getModel p = smtExprGroundEvalFn (solverConn p)
              $ smtEvalFuns (solverConn p) (solverResponse p)
 
@@ -334,7 +346,10 @@ getModel p = smtExprGroundEvalFn (solverConn p)
 --   Note: the returned unsatisfiable set might not be minimal.  The boolean value
 --   returned along with the name indicates if the assumption was negated or not:
 --   @True@ indidcates a positive atom, and @False@ represents a negated atom.
-getUnsatAssumptions :: SMTReadWriter solver => SolverProcess scope solver -> IO [(Bool,Text)]
+getUnsatAssumptions ::
+  (IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  IO [(Bool,Text)]
 getUnsatAssumptions proc =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useUnsatAssumptions) $
@@ -345,7 +360,10 @@ getUnsatAssumptions proc =
 -- | After an unsatisfiable check-sat command, compute a set of the named assertions
 --   that (together with all the unnamed assertions) form an unsatisfiable core.
 --   Note: the returned unsatisfiable core might not be minimal.
-getUnsatCore :: SMTReadWriter solver => SolverProcess scope solver -> IO [Text]
+getUnsatCore ::
+  (IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  IO [Text]
 getUnsatCore proc =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useUnsatCores) $
@@ -354,7 +372,10 @@ getUnsatCore proc =
      smtUnsatCoreResult conn (solverResponse proc)
 
 -- | Get the sat result from a previous SAT command.
-getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
+getSatResult ::
+  (IsExprLoc scope, SMTReadWriter solver) =>
+  SolverProcess scope solver ->
+  IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
   let err_reader = solverStderr yp

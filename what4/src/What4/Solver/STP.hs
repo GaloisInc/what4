@@ -9,9 +9,11 @@
 --
 -- STP-specific tweaks to the basic SMTLib2 solver interface.
 ------------------------------------------------------------------------
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module What4.Solver.STP
   ( STP(..)
   , stpAdapter
@@ -84,27 +86,30 @@ instance SMT2.SMTLib2GenericSolver STP where
     SMT2.setLogic writer SMT2.qf_bv
 
   newDefaultWriter solver ack feats sym h =
-    SMT2.newWriter solver h ack (show solver) True feats False
-      =<< getSymbolVarBimap sym
+    do initLoc <- getCurrentProgramLoc sym
+       bindings <- getSymbolVarBimap sym
+       SMT2.newWriter solver h ack (show solver) True feats False initLoc bindings
 
-runSTPInOverride
-  :: ExprBuilder t st
-  -> LogData
-  -> [BoolExpr t]
-  -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
-  -> IO a
+runSTPInOverride ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  LogData ->
+  [BoolExpr t] ->
+  (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a) ->
+  IO a
 runSTPInOverride = SMT2.runSolverInOverride STP nullAcknowledgementAction (SMT2.defaultFeatures STP)
 
 -- | Run STP in a session. STP will be configured to produce models, buth
 -- otherwise left with the default configuration.
-withSTP
-  :: ExprBuilder t st
-  -> FilePath
-    -- ^ Path to STP executable
-  -> LogData
-  -> (SMT2.Session t STP -> IO a)
-    -- ^ Action to run
-  -> IO a
+withSTP ::
+  IsExprLoc t =>
+  ExprBuilder t st ->
+  FilePath
+    {- ^ Path to STP executable -} ->
+  LogData ->
+  (SMT2.Session t STP -> IO a)
+    {- ^ Action to run -} ->
+  IO a
 withSTP = SMT2.withSolver STP nullAcknowledgementAction (SMT2.defaultFeatures STP)
 
 instance OnlineSolver (SMT2.Writer STP) where
