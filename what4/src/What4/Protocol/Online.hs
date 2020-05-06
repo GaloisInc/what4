@@ -62,16 +62,21 @@ import           What4.Utils.Process (filterAsync)
 -- | This class provides an API for starting and shutting down
 --   connections to various different solvers that support
 --   online interaction modes.
-class SMTReadWriter solver => OnlineSolver scope solver where
+class SMTReadWriter solver => OnlineSolver solver where
   -- | Start a new solver process attached to the given `ExprBuilder`.
-  startSolverProcess    :: ProblemFeatures -> Maybe Handle -> ExprBuilder scope st fs -> IO (SolverProcess scope solver)
+  startSolverProcess :: forall scope st fs.
+    ProblemFeatures ->
+    Maybe Handle ->
+    ExprBuilder scope st fs ->
+    IO (SolverProcess scope solver)
 
   -- | Shut down a solver process.  The process will be asked to shut down in
   --   a "polite" way, e.g., by sending an `(exit)` message, or by closing
   --   the process's `stdin`.  Use `killProcess` instead to shutdown a process
   --   via a signal.
-  shutdownSolverProcess :: SolverProcess scope solver -> IO (ExitCode, LazyText.Text)
-
+  shutdownSolverProcess :: forall scope.
+    SolverProcess scope solver ->
+    IO (ExitCode, LazyText.Text)
 
 -- | This datatype describes how a solver will behave following an error.
 data ErrorBehavior
