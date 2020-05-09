@@ -15,6 +15,7 @@ First pass: resolving Integer ~ BV.BV w mismatch
 * Num operators ==> BV operators
 * Bits operators ==> BV operators
 * shifting/masking ==> BV concat/select/trunc/zext/sext
+* bvLit sym w (intValue w) ==> bvLit sym w (BV.width w)
 
 Second pass: resolving "no Num instance"
 * 0 ==> BV.zero w
