@@ -4886,7 +4886,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    = bvLit sym (bvWidth x) (BV.zero (bvWidth x))
 
    | Just xv <- asBV x, Just n <- asBV y
-   = bvLit sym (bvWidth x) $ BV.lshr xv (BV.asNatural n)
+   = bvLit sym (bvWidth x) $ BV.lshr (bvWidth x) xv (BV.asNatural n)
 
    | otherwise
    = sbMakeExpr sym $ BVLshr (bvWidth x) x y

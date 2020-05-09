@@ -373,7 +373,7 @@ evalGroundApp f0 a0 = do
       where myRem u (BV.BV 0) = u
             myRem u v = BV.srem w u v
     BVShl  w x y  -> BV.shl w  <$> f x <*> (BV.asNatural <$> f y)
-    BVLshr _w x y -> BV.lshr   <$> f x <*> (BV.asNatural <$> f y)
+    BVLshr w x y -> BV.lshr w <$> f x <*> (BV.asNatural <$> f y)
     BVAshr w x y  -> BV.ashr w <$> f x <*> (BV.asNatural <$> f y)
     BVRol w x y -> BV.rotateL w <$> f x <*> (BV.asNatural <$> f y)
     BVRor w x y -> BV.rotateR w <$> f x <*> (BV.asNatural <$> f y)
