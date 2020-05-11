@@ -972,57 +972,31 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
   --          (\sym -> do x' <- expr x sym
   --                      bvSext sym knownRepr x'))
 
-  ] ++
-  if width <= 16
-  then
-    [
-      -- Currently, shifts must be handled very carefully.  The
-      -- underlying datatype for a BV is Integer, which is not
-      -- Bounded, and the shift amount is the same BV size as the
-      -- shifted source.  Shifting a 64-bit value left by something
-      -- between 32 and 64-bits requires a very large Haskell
-      -- allocation for storing those huge integers.
-      --
-      -- Properly, the shift source should return 0 (or -1) if the
-      -- shift amount is greater than the current BV size, but this is
-      -- not currently implemented.  For the time being, the
-      -- constraint above limits these tests to be run for shift sizes
-      -- that are supportable within a couple of GB of system memory.
-      --
-      -- Observed results:
-      --
-      --   8bit & 16bit BV : test time < 8 sec, tests pass
-      --   32-bit BV : memory utilization goes up to ~4-5GB
-      --               and tests take 90+ seconds (but pass)
-      --   64-bit BV : tests *fail* in 9-25 sec with either
-      --               "Unable to commit 136366260224 bytes of memory" or
-      --               "Exception: heap overflow"
 
-      subBVTerms2
-      (\x y -> teSubCon (unwords [pdesc x, pfx "<<", pdesc y])
-               (mask (testval x `shiftL` (fromEnum $ uBV $ testval y)))
-               (\sym -> do x' <- expr x sym
-                           y' <- expr y sym
-                           bvShl sym x' y'))
+  , subBVTerms2
+    (\x y -> teSubCon (unwords [pdesc x, pfx "<<", pdesc y])
+             (mask (uBV (testval x) `shiftL` (fromEnum $ min (toInteger width) $ uBV $ testval y)))
+             (\sym -> do x' <- expr x sym
+                         y' <- expr y sym
+                         bvShl sym x' y'))
 
-    , subBVTerms2
-      (\x y -> teSubCon (unwords [pdesc x, pfx "lsr", pdesc y])
-               (let s = fromEnum $ uBV $ testval y
-                in mask (uBV (testval x) `shiftR` s))
-               (\sym -> do x' <- expr x sym
-                           y' <- expr y sym
-                           bvLshr sym x' y'))
+  , subBVTerms2
+    (\x y -> teSubCon (unwords [pdesc x, pfx "lsr", pdesc y])
+             (let s = fromEnum $ min (toInteger width) $ uBV $ testval y
+              in mask (uBV (testval x) `shiftR` s))
+             (\sym -> do x' <- expr x sym
+                         y' <- expr y sym
+                         bvLshr sym x' y'))
 
-    , subBVTerms2
-      (\x y -> teSubCon (unwords [pdesc x, pfx "asr", pdesc y])
-               (let s = fromEnum $ uBV $ testval y
-                in mask (sBV (testval x) `shiftR` s))
-               (\sym -> do x' <- expr x sym
-                           y' <- expr y sym
-                           bvAshr sym x' y'))
+  , subBVTerms2
+    (\x y -> teSubCon (unwords [pdesc x, pfx "asr", pdesc y])
+             (let s = fromEnum $ min (toInteger width) $ uBV $ testval y
+              in mask (sBV (testval x) `shiftR` s))
+             (\sym -> do x' <- expr x sym
+                         y' <- expr y sym
+                         bvAshr sym x' y'))
 
-    ]
-    else []
+  ]
 
 
 bvTGMixedExprs :: Monad m => BVTermsGen m -> Natural -> [GenT m TestExpr]

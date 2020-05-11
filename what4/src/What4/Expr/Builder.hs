@@ -12,6 +12,7 @@ an instance of the classes 'IsExprBuilder' and 'IsSymExprBuilder'.
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -190,6 +191,7 @@ import           Data.Monoid (Any(..))
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
 import qualified Data.Parameterized.HashTable as PH
+import qualified Data.Parameterized.Map as PM
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
@@ -231,6 +233,7 @@ import qualified What4.Expr.UnaryBV as UnaryBV
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
 import qualified What4.Utils.BVDomain as BVD
+import qualified What4.Utils.BVDomain.Bitwise as B
 import           What4.Utils.Complex
 import           What4.Utils.StringLiteral
 import           What4.Utils.IncrHash
@@ -355,10 +358,10 @@ data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
 -------------------------------------------------------------------------------
 -- BVOrSet
 
-data BVOrNote w = BVOrNote !IncrHash !(BVD.BVDomain w)
+data BVOrNote w = BVOrNote !IncrHash !(B.Domain w)
 
 instance Semigroup (BVOrNote w) where
-  BVOrNote xh xa <> BVOrNote yh ya = BVOrNote (xh <> yh) (BVD.or xa ya)
+  BVOrNote xh xa <> BVOrNote yh ya = BVOrNote (xh <> yh) (B.or xa ya)
 
 newtype BVOrSet e w = BVOrSet (AM.AnnotatedMap (Wrap e (BaseBVType w)) (BVOrNote w) ())
 
@@ -369,7 +372,9 @@ traverseBVOrSet f (BVOrSet m) =
   foldr bvOrInsert (BVOrSet AM.empty) <$> traverse (f . unWrap . fst) (AM.toList m)
 
 bvOrInsert :: (OrdF e, HashableF e, HasAbsValue e) => e (BaseBVType w) -> BVOrSet e w -> BVOrSet e w
-bvOrInsert e (BVOrSet m) = BVOrSet $ AM.insert (Wrap e) (BVOrNote (mkIncrHash (hashF e)) (getAbsValue e)) () m
+bvOrInsert e (BVOrSet m) =
+  let nt = BVOrNote (mkIncrHash (hashF e)) (BVD.asBitwiseDomain (getAbsValue e)) in
+  BVOrSet $ AM.insert (Wrap e) nt () m
 
 bvOrSingleton :: (OrdF e, HashableF e, HasAbsValue e) => e (BaseBVType w) -> BVOrSet e w
 bvOrSingleton e = bvOrInsert e (BVOrSet AM.empty)
@@ -386,7 +391,7 @@ bvOrToList (BVOrSet m) = unWrap . fst <$> AM.toList m
 bvOrAbs :: (OrdF e, 1 <= w) => NatRepr w -> BVOrSet e w -> BVD.BVDomain w
 bvOrAbs w (BVOrSet m) =
   case AM.annotation m of
-    Just (BVOrNote _ a) -> a
+    Just (BVOrNote _ a) -> BVD.BVDBitwise a
     Nothing -> BVD.singleton w 0
 
 instance (OrdF e, TestEquality e) => Eq (BVOrSet e w) where
@@ -1584,19 +1589,18 @@ abstractEval f a0 = do
     BVSdiv w x y -> BVD.sdiv w (f x) (f y)
     BVSrem w x y -> BVD.srem w (f x) (f y)
 
-    BVShl  _ x y -> BVD.shl (f x) (f y)
-    BVLshr _ x y -> BVD.lshr (f x) (f y)
+    BVShl  w x y -> BVD.shl w (f x) (f y)
+    BVLshr w x y -> BVD.lshr w (f x) (f y)
     BVAshr w x y -> BVD.ashr w (f x) (f y)
-    BVRol  w _ _ -> BVD.any w -- TODO?
-    BVRor  w _ _ -> BVD.any w -- TODO?
+    BVRol  w x y -> BVD.rol w (f x) (f y)
+    BVRor  w x y -> BVD.ror w (f x) (f y)
     BVZext w x   -> BVD.zext (f x) w
     BVSext w x   -> BVD.sext (bvWidth x) (f x) w
     BVFill w _   -> BVD.range w (-1) 0
 
-    -- TODO: pretty sure we can do better for popcount, ctz and clz
-    BVPopcount w _ -> BVD.range w 0 (intValue w)
-    BVCountLeadingZeros w _ -> BVD.range w 0 (intValue w)
-    BVCountTrailingZeros w _ -> BVD.range w 0 (intValue w)
+    BVPopcount w x -> BVD.popcnt w (f x)
+    BVCountLeadingZeros w x -> BVD.clz w (f x)
+    BVCountTrailingZeros w x -> BVD.ctz w (f x)
 
     FloatPZero{} -> ()
     FloatNZero{} -> ()
@@ -2102,12 +2106,12 @@ instance Eq (Dummy tp) where
 instance EqF Dummy where
   eqF _ _ = True
 instance TestEquality Dummy where
-  testEquality !_x !_y = error "you made a magic Dummy value!"
+  testEquality x _y = case x of {}
 
 instance Ord (Dummy tp) where
   compare _ _ = EQ
 instance OrdF Dummy where
-  compareF !_x !_y = error "you made a magic Dummy value!"
+  compareF x _y = case x of {}
 
 instance HashableF Dummy where
   hashWithSaltF _ _ = 0
@@ -2772,11 +2776,11 @@ instance HashableF (App (Expr t)) where
 -- an 'IO' hash table. Parameter @t@ is a phantom type brand used to
 -- track nonces.
 newtype IdxCache t (f :: BaseType -> Type)
-      = IdxCache { cMap :: PH.HashTable RealWorld (Nonce t) f }
+      = IdxCache { cMap :: IORef (PM.MapF (Nonce t) f) }
 
 -- | Create a new IdxCache
 newIdxCache :: MonadIO m => m (IdxCache t f)
-newIdxCache = liftIO $ stToIO $ IdxCache <$> PH.new
+newIdxCache = liftIO $ IdxCache <$> newIORef PM.empty
 
 {-# INLINE lookupIdxValue #-}
 -- | Return the value associated to the expr in the index.
@@ -2790,22 +2794,21 @@ lookupIdxValue c (BoundVarExpr i) = lookupIdx c (bvarId i)
 
 {-# INLINE lookupIdx #-}
 lookupIdx :: (MonadIO m) => IdxCache t f -> Nonce t tp -> m (Maybe (f tp))
-lookupIdx c n = liftIO $ stToIO $ PH.lookup (cMap c) n
+lookupIdx c n = liftIO $ PM.lookup n <$> readIORef (cMap c)
 
 {-# INLINE insertIdxValue #-}
 -- | Bind the value to the given expr in the index.
 insertIdxValue :: MonadIO m => IdxCache t f -> Nonce t tp -> f tp -> m ()
-insertIdxValue c e v = seq v $ liftIO $ stToIO $ PH.insert (cMap c) e v
+insertIdxValue c e v = seq v $ liftIO $ modifyIORef (cMap c) $ PM.insert e v
 
 {-# INLINE deleteIdxValue #-}
 -- | Remove a value from the IdxCache
 deleteIdxValue :: MonadIO m => IdxCache t f -> Nonce t (tp :: BaseType) -> m ()
-deleteIdxValue c e = liftIO $ stToIO $ do
-  PH.delete (cMap c) e
+deleteIdxValue c e = liftIO $ modifyIORef (cMap c) $ PM.delete e
 
 -- | Remove all values from the IdxCache
 clearIdxCache :: MonadIO m => IdxCache t f -> m ()
-clearIdxCache c = liftIO $ stToIO $ PH.clear (cMap c)
+clearIdxCache c = liftIO $ writeIORef (cMap c) PM.empty
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
@@ -4890,28 +4893,53 @@ instance IsExprBuilder (ExprBuilder t st fs) where
            -> sbMakeExpr sym $ BVUlt x y
 
   bvShl sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftL i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVShl (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns 0
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvLit sym (bvWidth x) 0
+
+   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) (Bits.shiftL i (fromIntegral n))
+
+   | otherwise
+   = sbMakeExpr sym $ BVShl (bvWidth x) x y
 
   bvLshr sym x y
-   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVLshr (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns 0
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvLit sym (bvWidth x) 0
+
+   | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
+
+   | otherwise
+   = sbMakeExpr sym $ BVLshr (bvWidth x) x y
 
   bvAshr sym x y
-   | Just i <- asSignedBV x, Just n <- asUnsignedBV y = do
-     bvLit sym (bvWidth x) $ Bits.shiftR i (fromIntegral n)
-   | Just 0 <- asUnsignedBV y = do
-     pure x
-   | otherwise = do
-     sbMakeExpr sym $ BVAshr (bvWidth x) x y
+   -- shift by 0 is the identity function
+   | Just 0 <- asUnsignedBV y
+   = pure x
+
+   -- shift by more than word width returns either 0 (if x is nonnegative)
+   -- or 1 (if x is negative)
+   | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
+   , lo >= intValue (bvWidth x)
+   = bvFill sym (bvWidth x) =<< bvIsNeg sym x
+
+   | Just i <- asSignedBV x, Just n <- asUnsignedBV y
+   = bvLit sym (bvWidth x) (Bits.shiftR i (fromIntegral n))
+
+   | otherwise
+   = sbMakeExpr sym $ BVAshr (bvWidth x) x y
 
   bvRol sym x y
    | Just i <- asUnsignedBV x, Just n <- asUnsignedBV y

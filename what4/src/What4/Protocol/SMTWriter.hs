@@ -115,7 +115,6 @@ import           Data.Parameterized.Nonce (Nonce)
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import           Data.Semigroup( (<>) )
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Text.Lazy.Builder (Builder)
@@ -130,7 +129,7 @@ import           System.IO.Streams (OutputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (ArrayResultWrapper(..), IndexLit(..), RoundingMode(..), StringLiteral(..), stringInfo)
+import           What4.Interface (RoundingMode(..), stringInfo)
 import           What4.ProblemFeatures
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
@@ -1212,13 +1211,19 @@ addPartialSideCond _ t RealTypeMap (Just rng) =
        Unbounded -> return ()
        Inclusive hi -> addSideCondition "real_range" $ t .<= rationalTerm hi
 
-addPartialSideCond _ t (BVTypeMap w) (Just rng) = mapM_ assertRange (BVD.ranges w rng)
- where
- assertRange (lo,hi) =
-   do when (lo > 0)
-           (addSideCondition "bv_range" $ bvULe (bvTerm w lo) t)
-      when (hi < maxUnsigned w)
-           (addSideCondition "bv_range" $ bvULe t (bvTerm w hi))
+addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDArith rng)) = assertRange (BVD.arithDomainData rng)
+   where
+   assertRange Nothing = return ()
+   assertRange (Just (lo, sz)) =
+     addSideCondition "bv_range" $ bvULe (bvSub t (bvTerm w lo)) (bvTerm w sz)
+
+addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRange (BVD.bitbounds rng)
+   where
+   assertBitRange (lo, hi) = do
+     when (lo > 0) $
+       addSideCondition "bv_bitrange" $ (bvOr (bvTerm w lo) t) .== t
+     when (hi < maxUnsigned w) $
+       addSideCondition "bv_bitrange" $ (bvOr t (bvTerm w hi)) .== (bvTerm w hi)
 
 addPartialSideCond _ t (Char8TypeMap) (Just (StringAbs len)) =
   do case natRangeLow len of
