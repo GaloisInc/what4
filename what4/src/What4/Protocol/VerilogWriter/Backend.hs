@@ -8,7 +8,7 @@ Convert What4 expressions into the data types defined in the @What4.Protocol.Ver
 -}
 {-# LANGUAGE GADTs, GeneralizedNewtypeDeriving, ScopedTypeVariables, RankNTypes,
   TypeApplications, PolyKinds, DataKinds, ExplicitNamespaces, TypeOperators,
-  LambdaCase, FlexibleContexts, LambdaCase #-}
+  LambdaCase, FlexibleContexts, LambdaCase, OverloadedStrings #-}
 
 module What4.Protocol.VerilogWriter.Backend
   where
@@ -20,11 +20,13 @@ import           Control.Monad.Except
 import           Data.List.NonEmpty ( NonEmpty(..) )
 
 import           Data.Parameterized.Context
+import           GHC.TypeNats
 
 
 import qualified What4.Expr.BoolMap as BMap
-import qualified What4.BaseTypes as WT
+import           What4.BaseTypes as WT
 import           What4.Expr.Builder
+import           What4.Interface
 import qualified What4.SemiRing as SR
 import qualified What4.Expr.WeightedSum as WS
 import qualified What4.Expr.UnaryBV as UBV
@@ -38,7 +40,10 @@ doNotSupportMsg :: String
 doNotSupportMsg = "the Verilog backend to What4 does not support "
 
 -- | Convert What4 expresssions into verilog expressions
-exprToVerilogExpr :: Expr n tp -> VerilogM n (IExp tp)
+exprToVerilogExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  Expr n tp ->
+  VerilogM sym n (IExp tp)
 exprToVerilogExpr e = do
   cache <- vsExpCache <$> get
   let cacheEval go = idxCacheEval cache e (go e)
@@ -50,8 +55,8 @@ exprToVerilogExpr e = do
         doNotSupportError "non-bit-vector literals"
       BoolExpr b _   -> litBool b
       StringExpr _ _ -> doNotSupportError "strings"
-      AppExpr app -> appVerilogExpr app
-      NonceAppExpr n -> appExprVerilogExpr n
+      AppExpr app -> appExprVerilogExpr app
+      NonceAppExpr n -> nonceAppExprVerilogExpr n
       BoundVarExpr x ->
         do name <- addFreshInput tp base
            return $ Ident tp name
@@ -59,7 +64,11 @@ exprToVerilogExpr e = do
           tp = bvarType x
           base = bvarIdentifier x
 
-eqToVerilogExpr :: Expr n tp -> Expr n tp -> VerilogM n (IExp WT.BaseBoolType)
+eqToVerilogExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  Expr n tp ->
+  Expr n tp ->
+  VerilogM sym n (IExp WT.BaseBoolType)
 eqToVerilogExpr x y = do
   x' <- exprToVerilogExpr x
   y' <- exprToVerilogExpr y
@@ -68,8 +77,11 @@ eqToVerilogExpr x y = do
 bvarIdentifier :: ExprBoundVar t tp -> Identifier
 bvarIdentifier x = show (bvarName x)
 
-appExprVerilogExpr :: NonceAppExpr n tp -> VerilogM n (IExp tp)
-appExprVerilogExpr nae =
+nonceAppExprVerilogExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  NonceAppExpr n tp ->
+  VerilogM sym n (IExp tp)
+nonceAppExprVerilogExpr nae =
   case nonceExprApp nae of
     Forall _ _ -> doNotSupportError "universal quantification"
     Exists _ _ -> doNotSupportError "existential quantification"
@@ -84,7 +96,6 @@ appExprVerilogExpr nae =
           base = show (symFnName f)
     -- TODO: inline defined functions?
     -- TODO: implement uninterpreted functions as uninterpreted functions
-    -- FnApp f es | show f == "Prelude.Eq" -> throwError "nyi: Eq"
     FnApp _ _ -> doNotSupportError "named function applications"
     Annotation _ _ e -> exprToVerilogExpr e
 
@@ -95,12 +106,70 @@ appExprVerilogExpr nae =
 mkVerilogFn :: ExprSymFn t args ret -> String
 mkVerilogFn f = show (symFnName f)
 
+buildSimplifiedBVSlt ::
+  (1 <= w, IsExprBuilder sym) =>
+  sym ->
+  SymBV sym w ->
+  SymBV sym w ->
+  IO (Pred sym)
+buildSimplifiedBVSlt sym x y = do
+  let w = bvWidth x
+  cmp <- bvUlt sym x y
+  xsgn <- testBitBV sym (natValue w - 1) x
+  ysgn <- testBitBV sym (natValue w - 1) y
+  ysgn' <- notPred sym ysgn
+  negPos <- andPred sym xsgn ysgn'
+  eqSgn <- eqPred sym xsgn ysgn
+  eqSignCmp <- andPred sym eqSgn cmp
+  orPred sym negPos eqSignCmp
+
+buildSimplifiedBVZext ::
+  (1 <= w, w+1 <= r, 1 <= r, IsExprBuilder sym) =>
+  sym ->
+  NatRepr r ->
+  SymBV sym w ->
+  IO (SymBV sym r)
+buildSimplifiedBVZext sym r xe =
+  case testLeq w r of
+    Just prf1 -> withLeqProof prf1 $
+      let n = r `subNat` w in
+      case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
+        (Just Refl, Just prf2) -> withLeqProof prf2 $ do
+          zeros <- bvLit sym n 0
+          bvConcat sym zeros xe
+        _ -> error "unreachable"
+    _ -> error "unreachable"
+  where w = bvWidth xe
+
+buildSimplifiedBVSext ::
+  (1 <= w, w+1 <= r, 1 <= r, IsExprBuilder sym) =>
+  sym ->
+  NatRepr r ->
+  SymBV sym w ->
+  IO (SymBV sym r)
+buildSimplifiedBVSext sym r xe =
+  case testLeq w r of
+    Just prf1 -> withLeqProof prf1 $
+      let n = r `subNat` w in
+      case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
+        (Just Refl, Just prf2) -> withLeqProof prf2 $ do
+          zeros <- bvLit sym n 0
+          ones <- bvLit sym n (maxUnsigned n)
+          sgn <- testBitBV sym (natValue w - 1) xe
+          ext <- bvIte sym sgn ones zeros
+          bvConcat sym ext xe
+        _ -> error "unreachable"
+    _ -> error "unreachable"
+  where w = bvWidth xe
+
+
 boolMapToExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   Bool ->
   Bool ->
   Binop WT.BaseBoolType WT.BaseBoolType ->
   BMap.BoolMap (Expr n) ->
-  VerilogM n (IExp WT.BaseBoolType)
+  VerilogM sym n (IExp WT.BaseBoolType)
 boolMapToExpr u du op es =
   let pol (x,Positive) = exprToVerilogExpr x
       pol (x,Negative) = unop Not =<< exprToVerilogExpr x
@@ -114,9 +183,18 @@ boolMapToExpr u du op es =
       ts' <- mapM pol ts
       foldM (binop op) t' ts'
 
-appVerilogExpr :: AppExpr n tp -> VerilogM n (IExp tp)
-appVerilogExpr ae =
-  case appExprApp ae of
+appExprVerilogExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  AppExpr n tp ->
+  VerilogM sym n (IExp tp)
+appExprVerilogExpr = appVerilogExpr . appExprApp
+
+appVerilogExpr ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  App (Expr n) tp ->
+  VerilogM sym n (IExp tp)
+appVerilogExpr app =
+  case app of
     -- Generic operations
     BaseIte _ _ b etrue efalse -> do
       b' <- exprToVerilogExpr b
@@ -139,10 +217,10 @@ appVerilogExpr ae =
     -- We only support bitvector semiring operations
     SemiRingSum s
       | SR.SemiRingBVRepr SR.BVArithRepr w <- WS.sumRepr s -> do
-        let scalMult' c e = scalMult BVMul c =<< exprToVerilogExpr e
+        let scalMult' c e = scalMult w BVMul c =<< exprToVerilogExpr e
         WS.evalM (binop BVAdd) scalMult' (litBV w) s
       | SR.SemiRingBVRepr SR.BVBitsRepr w <- WS.sumRepr s ->
-        let scalMult' c e = scalMult BVAnd c =<< exprToVerilogExpr e in
+        let scalMult' c e = scalMult w BVAnd c =<< exprToVerilogExpr e in
         WS.evalM (binop BVXor) scalMult' (litBV w) s
     SemiRingSum _ -> doNotSupportError "semiring operations on non-bitvectors"
     SemiRingProd p
@@ -186,7 +264,10 @@ appVerilogExpr ae =
     -- Bitvector operations
     BVTestBit i e -> do v <- exprToVerilogExpr e
                         bit v (fromIntegral i)
-    BVSlt _ _ -> doNotSupportError "bit vector signed less than" -- TODO
+    BVSlt x y -> do
+      sym <- vsSym <$> get
+      e' <- liftIO $ buildSimplifiedBVSlt sym x y
+      exprToVerilogExpr e'
     BVUlt e1 e2 -> do e1' <- exprToVerilogExpr e1
                       e2' <- exprToVerilogExpr e2
                       binop Lt e1' e2'
@@ -240,8 +321,14 @@ appVerilogExpr ae =
            SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= WT.intValue w ->
              abcLet (BVRotateR w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
-    BVZext _ _ -> doNotSupportError "bit vector zero extension" -- TODO
-    BVSext _ _ -> doNotSupportError "bit vector sign extension" -- TODO
+    BVZext w e -> do
+      sym <- vsSym <$> get
+      e' <- liftIO $ buildSimplifiedBVZext sym w e
+      exprToVerilogExpr e'
+    BVSext w e -> do
+      sym <- vsSym <$> get
+      e' <- liftIO $ buildSimplifiedBVSext sym w e
+      exprToVerilogExpr e'
     BVPopcount _ _ ->
       doNotSupportError "bit vector population count" -- TODO
     BVCountTrailingZeros _ _ ->

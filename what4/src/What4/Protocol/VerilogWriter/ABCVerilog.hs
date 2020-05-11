@@ -20,7 +20,7 @@ import What4.Protocol.VerilogWriter.AST
 import Prelude hiding ((<$>))
 import Numeric (showHex)
 
-moduleDoc :: Module n -> Doc () -> Doc ()
+moduleDoc :: Module sym n -> Doc () -> Doc ()
 moduleDoc (Module ms) name =
   vsep
     [ nest 2 $ vsep

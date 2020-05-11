@@ -50,7 +50,10 @@ data Binop (inTp :: WT.BaseType) (outTp :: WT.BaseType) where
 
 
 
-binopType :: Binop inTp outTp -> WT.BaseTypeRepr inTp -> WT.BaseTypeRepr outTp
+binopType ::
+  Binop inTp outTp ->
+  WT.BaseTypeRepr inTp ->
+  WT.BaseTypeRepr outTp
 binopType And _ = WT.BaseBoolRepr
 binopType Or  _ = WT.BaseBoolRepr
 binopType Xor _ = WT.BaseBoolRepr
@@ -152,29 +155,35 @@ expType (BVLit w _) = WT.BaseBVRepr w
 expType (BoolLit _) = WT.BaseBoolRepr
 
 
-abcLet :: Exp tp -> VerilogM n (IExp tp)
+abcLet :: Exp tp -> VerilogM sym n (IExp tp)
 abcLet (IExp x) = return x
 abcLet e = do
     let tp = expType e
     x <- addFreshWire tp "x" e
     return (Ident tp x)
 
-binop :: Binop inTp outTp -> IExp inTp -> IExp inTp -> VerilogM n (IExp outTp)
+binop ::
+  Binop inTp outTp ->
+  IExp inTp -> IExp inTp ->
+  VerilogM sym n (IExp outTp)
 binop op e1 e2 = abcLet (Binop op e1 e2)
 
 scalMult ::
   1 <= w =>
+  WT.NatRepr w ->
   Binop (WT.BaseBVType w) (WT.BaseBVType w) ->
   Integer ->
   IExp (WT.BaseBVType w) ->
-  VerilogM n (IExp (WT.BaseBVType w))
-scalMult op n e | WT.BaseBVRepr w <- iexpType e = do
+  VerilogM sym n (IExp (WT.BaseBVType w))
+scalMult w op n e = do
   n' <- litBV w n
   binop op n' e
-scalMult _ _ _ =
-  throwError "Unsupported expression passed to scalMult" -- TODO
 
-litBV :: (1 <= w) => WT.NatRepr w -> Integer -> VerilogM n (IExp (WT.BaseBVType w))
+litBV ::
+  (1 <= w) =>
+  WT.NatRepr w ->
+  Integer ->
+  VerilogM sym n (IExp (WT.BaseBVType w))
 litBV w i = do
   cache <- vsBVCache <$> get
   case Map.lookup (Some w, i) cache of
@@ -184,7 +193,7 @@ litBV w i = do
       modify $ \s -> s { vsBVCache = Map.insert (Some w, i) name (vsBVCache s) }
       return x
 
-litBool :: Bool -> VerilogM n (IExp WT.BaseBoolType)
+litBool :: Bool -> VerilogM sym n (IExp WT.BaseBoolType)
 litBool b = do
   cache <- vsBoolCache <$> get
   case Map.lookup b cache of
@@ -197,26 +206,36 @@ litBool b = do
 maxBV :: WT.NatRepr w -> Integer
 maxBV w = 2^(WT.intValue w) - 1
 
-unop :: Unop tp -> IExp tp -> VerilogM n (IExp tp)
+unop :: Unop tp -> IExp tp -> VerilogM sym n (IExp tp)
 unop op e = abcLet (Unop op e)
 
-mux :: IExp WT.BaseBoolType -> IExp tp -> IExp tp -> VerilogM n (IExp tp)
+mux ::
+  IExp WT.BaseBoolType ->
+  IExp tp ->
+  IExp tp ->
+  VerilogM sym n (IExp tp)
 mux e e1 e2 = abcLet (Mux e e1 e2)
 
-bit :: IExp (WT.BaseBVType w) -> Integer-> VerilogM n (IExp WT.BaseBoolType)
+bit ::
+  IExp (WT.BaseBVType w) ->
+  Integer->
+  VerilogM sym n (IExp WT.BaseBoolType)
 bit e i = abcLet (Bit e i)
 
-bitSelect :: (1 WT.<= len, idx WT.+ len WT.<= w)
-          => IExp (WT.BaseBVType w)
-          -> WT.NatRepr idx
-          -> WT.NatRepr len
-          -> VerilogM n (IExp (WT.BaseBVType len))
+bitSelect ::
+  (1 WT.<= len, idx WT.+ len WT.<= w) =>
+  IExp (WT.BaseBVType w) ->
+  WT.NatRepr idx ->
+  WT.NatRepr len ->
+  VerilogM sym n (IExp (WT.BaseBVType len))
 bitSelect e start len = abcLet (BitSelect e start len)
 
-concat2 :: (w ~ (w1 WT.+ w2), 1 <= w)
-        => WT.NatRepr w
-        -> IExp (WT.BaseBVType w1) -> IExp (WT.BaseBVType w2)
-        -> VerilogM n (IExp (WT.BaseBVType w))
+concat2 ::
+  (w ~ (w1 WT.+ w2), 1 <= w) =>
+  WT.NatRepr w ->
+  IExp (WT.BaseBVType w1) ->
+  IExp (WT.BaseBVType w2) ->
+  VerilogM sym n (IExp (WT.BaseBVType w))
 concat2 w e1 e2 = abcLet (Concat w [Some e1, Some e2])
 
 
@@ -229,7 +248,7 @@ data Item where
 
 -- | Necessary monadic operations
 
-data ModuleState n =
+data ModuleState sym n =
     ModuleState { vsInputs :: [(Some WT.BaseTypeRepr, Identifier)] -- In reverse order
                 , vsOutputs :: [(Some WT.BaseTypeRepr, Identifier, Some Exp)] -- In reverse order
                 , vsWires :: [(Some WT.BaseTypeRepr, Identifier, Some Exp)] -- In reverse order
@@ -237,78 +256,103 @@ data ModuleState n =
                 , vsExpCache :: IdxCache n IExp
                 , vsBVCache :: Map.Map (Some WT.NatRepr, Integer) Identifier
                 , vsBoolCache :: Map.Map Bool Identifier
+                , vsSym :: sym
                 }
 
-newtype VerilogM n a = VerilogM (StateT (ModuleState n) (ExceptT String IO) a)
+newtype VerilogM sym n a =
+ VerilogM (StateT (ModuleState sym n) (ExceptT String IO) a)
  deriving ( Functor
           , Applicative
           , Monad
-          , MonadState (ModuleState n)
+          , MonadState (ModuleState sym n)
           , MonadError String
           , MonadIO
           )
 
 
-newtype Module n = Module (ModuleState n)
+newtype Module sym n = Module (ModuleState sym n)
 
-mkModule :: VerilogM n (IExp tp) -> ExceptT String IO (Module n)
-mkModule op = fmap Module $ execVerilogM $ do
+mkModule ::
+  sym ->
+  VerilogM sym n (IExp tp) ->
+  ExceptT String IO (Module sym n)
+mkModule sym op = fmap Module $ execVerilogM sym $ do
     e <- op
     out <- freshIdentifier "out"
     addOutput (iexpType e) out (IExp e)
 
-initModuleState :: IO (ModuleState n)
-initModuleState = do
+initModuleState :: sym -> IO (ModuleState sym n)
+initModuleState sym = do
   cache <- newIdxCache
-  return $ ModuleState [] [] [] 0 cache Map.empty Map.empty
+  return $ ModuleState [] [] [] 0 cache Map.empty Map.empty sym
 
 runVerilogM ::
-  VerilogM n a ->
-  ModuleState n ->
-  ExceptT String IO (a, ModuleState n)
+  VerilogM sym n a ->
+  ModuleState sym n ->
+  ExceptT String IO (a, ModuleState sym n)
 runVerilogM (VerilogM op) = runStateT op
 
-execVerilogM :: VerilogM n a -> ExceptT String IO (ModuleState n)
-execVerilogM op =
-  do s <- liftIO $ initModuleState
+execVerilogM ::
+  sym ->
+  VerilogM sym n a ->
+  ExceptT String IO (ModuleState sym n)
+execVerilogM sym op =
+  do s <- liftIO $ initModuleState sym
      (_a,m) <- runVerilogM op s
      return m
 
-addFreshInput :: WT.BaseTypeRepr tp -> Identifier -> VerilogM n Identifier
+addFreshInput ::
+  WT.BaseTypeRepr tp ->
+  Identifier ->
+  VerilogM sym n Identifier
 addFreshInput tp base = do
   st <- get
   name <- freshIdentifier base
   put $ st { vsInputs = (Some tp, name) : vsInputs st }
   return name
 
-addOutput :: WT.BaseTypeRepr tp -> Identifier -> Exp tp -> VerilogM n ()
+addOutput ::
+  WT.BaseTypeRepr tp ->
+  Identifier ->
+  Exp tp ->
+  VerilogM sym n ()
 addOutput tp name e = do
   st <- get
   put $ st { vsOutputs = (Some tp, name, Some e) : vsOutputs st }
 
-addWire :: WT.BaseTypeRepr tp -> Identifier -> Exp tp -> VerilogM n ()
+addWire ::
+  WT.BaseTypeRepr tp ->
+  Identifier ->
+  Exp tp ->
+  VerilogM sym n ()
 addWire tp name e = do
   st <- get
   put $ st { vsWires = (Some tp, name, Some e) : vsWires st }
 
 -- | Returns true if an identifier is already in the list of inputs, outputs, or
 -- wires.
-isDeclared :: Identifier -> VerilogM n Bool
+isDeclared :: Identifier -> VerilogM sym n Bool
 isDeclared x = do
     st <- get
     return $ any ((==)x) (idents st)
   where
-    idents st = (snd <$> vsInputs st) ++ (wireName <$> vsOutputs st) ++ (wireName <$> vsWires st)
+    idents st = (snd <$> vsInputs st) ++
+                (wireName <$> vsOutputs st) ++
+                (wireName <$> vsWires st)
     wireName (_, n, _) = n
 
-freshIdentifier :: String -> VerilogM n Identifier
+freshIdentifier :: String -> VerilogM sym n Identifier
 freshIdentifier basename = do
   st <- get
   let x = vsFreshIdent st
   put $ st { vsFreshIdent = x+1 }
   return $ basename ++ "_" ++ show x
 
-addFreshWire :: WT.BaseTypeRepr tp -> String -> Exp tp -> VerilogM n Identifier
+addFreshWire ::
+  WT.BaseTypeRepr tp ->
+  String ->
+  Exp tp ->
+  VerilogM sym n Identifier
 addFreshWire repr basename e = do
   x <- freshIdentifier basename
   addWire repr x e

@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-
 Module           : What4.Protocol.VerilogWriter.AST
 Copyright        : (c) Galois, Inc 2020
@@ -18,21 +19,42 @@ module What4.Protocol.VerilogWriter
 
 import Control.Monad.Except
 import Data.Text.Prettyprint.Doc
-import What4.Expr.Builder (Expr)
+import What4.Expr.Builder (Expr, SymExpr)
+import What4.Interface (IsExprBuilder)
 
 import What4.Protocol.VerilogWriter.AST
 import What4.Protocol.VerilogWriter.ABCVerilog
 import What4.Protocol.VerilogWriter.Backend
 
 -- | Convert the What4 epxression into a Verilog module of the name given
-exprVerilog :: Expr n tp -> Doc () -> ExceptT String IO (Doc ())
-exprVerilog e name = fmap (\m -> moduleDoc m name) (exprToModule e)
+exprVerilog ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  sym ->
+  Expr n tp ->
+  Doc () ->
+  ExceptT String IO (Doc ())
+exprVerilog sym e name = fmap (\m -> moduleDoc m name) (exprToModule sym e)
 
-eqVerilog :: Expr n tp -> Expr n tp -> Doc () -> ExceptT String IO (Doc ())
-eqVerilog x y name =  fmap (\m -> moduleDoc m name) (eqToModule x y)
+eqVerilog ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  sym ->
+  Expr n tp ->
+  Expr n tp ->
+  Doc () ->
+  ExceptT String IO (Doc ())
+eqVerilog sym x y name =  fmap (\m -> moduleDoc m name) (eqToModule sym x y)
 
-exprToModule :: Expr n tp -> ExceptT String IO (Module n)
-exprToModule e = mkModule $ exprToVerilogExpr e
+exprToModule ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  sym ->
+  Expr n tp ->
+  ExceptT String IO (Module sym n)
+exprToModule sym e = mkModule sym $ exprToVerilogExpr e
 
-eqToModule :: Expr n tp -> Expr n tp -> ExceptT String IO (Module n)
-eqToModule x y = mkModule $ eqToVerilogExpr x y
+eqToModule ::
+  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
+  sym ->
+  Expr n tp ->
+  Expr n tp ->
+  ExceptT String IO (Module sym n)
+eqToModule sym x y = mkModule sym $ eqToVerilogExpr x y
