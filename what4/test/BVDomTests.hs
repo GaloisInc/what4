@@ -24,6 +24,7 @@ These tests are intended to supplement those proofs for the actual
 implementations, which are transliterated from the Cryptol.
 -}
 
+import qualified Data.Bits as Bits
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Data.Parameterized.NatRepr
@@ -317,7 +318,16 @@ bitwiseDomainTests =
 
 overallDomainTests :: TestTree
 overallDomainTests = testGroup "Overall Domain"
-  [ genTest "correct_bra1" $
+  [ -- test that the union of consecutive singletons gives a precise interval
+    genTest "singleton/union size" $
+      do SW n <- genWidth
+         let w =  maxUnsigned n
+         x <- genBV n
+         y <- min 1000 <$> genBV n
+         let as = [ O.singleton n ((x + i) Bits..&. w) | i <- [0 .. y] ]
+         let a = foldl1 O.union as
+         pure $ property (O.size a == y+1)
+  , genTest "correct_bra1" $
       do SW n <- genWidth
          O.correct_bra1 n <$> genBV n <*> genBV n
   , genTest "correct_bra2" $
