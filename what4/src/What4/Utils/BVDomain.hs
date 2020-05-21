@@ -20,6 +20,7 @@ module What4.Utils.BVDomain
     BVDomain(..)
   , proper
   , member
+  , size
     -- ** Domain transfer functions
   , asArithDomain
   , asBitwiseDomain
@@ -234,6 +235,10 @@ member :: BVDomain w -> Integer -> Bool
 member (BVDArith a) x = A.member a x
 member (BVDBitwise a) x = B.member a x
 
+size :: BVDomain w -> Integer
+size (BVDArith a)   = A.size a
+size (BVDBitwise b) = B.size b
+
 genDomain :: NatRepr w -> Gen (BVDomain w)
 genDomain w =
   do b <- arbitrary
@@ -407,7 +412,7 @@ any w = BVDBitwise (B.any w)
 
 -- | Create a bitvector domain representing the integer.
 singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> BVDomain w
-singleton w x = BVDBitwise (B.singleton w x)
+singleton w x = BVDArith (A.singleton w x)
 
 -- | @range w l u@ returns domain containing all bitvectors formed
 -- from the @w@ low order bits of some @i@ in @[l,u]@.  Note that per
@@ -423,7 +428,14 @@ fromAscEltList w xs = BVDArith (A.fromAscEltList w xs)
 -- | Return union of two domains.
 union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
 union (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.union a b)
-union (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.union a b)
+union (BVDArith a) (BVDArith b) = BVDArith (A.union a b)
+union (BVDBitwise a) (BVDArith b) = mixedUnion b a
+union (BVDArith a) (BVDBitwise b) = mixedUnion a b
+
+mixedUnion :: (1 <= w) => A.Domain w -> B.Domain w  -> BVDomain w
+mixedUnion a b
+  | Just _ <- A.asSingleton a = BVDBitwise (B.union (arithToBitwiseDomain a) b)
+  | otherwise = BVDArith (A.union a (bitwiseToArithDomain b))
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits

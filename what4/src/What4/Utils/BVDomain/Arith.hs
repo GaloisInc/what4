@@ -22,6 +22,7 @@ module What4.Utils.BVDomain.Arith
   , member
   , pmember
   , interval
+  , size
   -- * Projection functions
   , asSingleton
   , ubounds
@@ -122,6 +123,10 @@ data Domain (w :: Nat)
   -- satisfy the invariants @0 <= l < 2^w@ and @0 <= d < 2^w@. The
   -- first argument caches the value @2^w-1@.
   deriving Show
+
+size :: Domain w -> Integer
+size (BVDAny mask)        = mask + 1
+size (BVDInterval _ _ sz) = sz + 1
 
 member :: Domain w -> Integer -> Bool
 member (BVDAny _) _ = True
@@ -308,13 +313,13 @@ union a b =
         BVDInterval mask bl bw ->
           interval mask cl (ch - cl)
           where
-            size = mask + 1
+            sz = mask + 1
             ac = 2 * al + aw -- twice the average value of a
             bc = 2 * bl + bw -- twice the average value of b
             -- If the averages are 2^(w-1) or more apart,
             -- then shift the lower interval up by 2^w.
-            al' = if ac + mask < bc then al + size else al
-            bl' = if bc + mask < ac then bl + size else bl
+            al' = if ac + mask < bc then al + sz else al
+            bl' = if bc + mask < ac then bl + sz else bl
             ah' = al' + aw
             bh' = bl' + bw
             cl = min al' bl'
@@ -403,13 +408,13 @@ shl w a b
   | otherwise = interval mask lo (hi - lo)
     where
       mask = bvdMask a
-      size = mask + 1
+      sz = mask + 1
       (bl, bh) = ubounds b
       bl' = clamp w bl
       bh' = clamp w bh
       -- compute bounds for c = 2^b
-      cl = if (mask `shiftR` bl' == 0) then size else bit bl'
-      ch = if (mask `shiftR` bh' == 0) then size else bit bh'
+      cl = if (mask `shiftR` bl' == 0) then sz else bit bl'
+      ch = if (mask `shiftR` bh' == 0) then sz else bit bh'
       (lo, hi) = mulRange (zbounds a) (cl, ch)
 
 lshr :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
