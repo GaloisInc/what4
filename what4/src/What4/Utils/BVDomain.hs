@@ -13,19 +13,32 @@ domains.
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module What4.Utils.BVDomain
-  ( BVDomain
-    -- * Projection functions
+  ( -- * Bitvector abstract domains
+    BVDomain(..)
+  , proper
+  , member
+    -- ** Domain transfer functions
+  , asArithDomain
+  , asBitwiseDomain
+  , asXorDomain
+  , fromXorDomain
+  , arithToXorDomain
+  , bitwiseToXorDomain
+  , xorToBitwiseDomain
+    -- ** Projection functions
   , asSingleton
-  , ubounds
-  , sbounds
   , eq
   , slt
   , ult
   , testBit
   , domainsOverlap
-  , ranges
+  , ubounds
+  , sbounds
+  , A.arithDomainData
+  , B.bitbounds
     -- * Operations
   , any
   , singleton
@@ -36,10 +49,12 @@ module What4.Utils.BVDomain
   , select
   , zext
   , sext
-    -- ** Shifts
+    -- ** Shifts and rotates
   , shl
   , lshr
   , ashr
+  , rol
+  , ror
     -- ** Arithmetic
   , add
   , negate
@@ -54,108 +69,304 @@ module What4.Utils.BVDomain
   , and
   , or
   , xor
+
+    -- ** Misc
+  , popcnt
+  , clz
+  , ctz
+
+    -- * Useful bitvector computations
+  , bitwiseRoundAbove
+  , bitwiseRoundBetween
+
+    -- * Correctness properties
+  , genDomain
+  , genElement
+  , genPair
+
+  , correct_arithToBitwise
+  , correct_bitwiseToArith
+  , correct_bitwiseToXorDomain
+  , correct_arithToXorDomain
+  , correct_xorToBitwiseDomain
+  , correct_asXorDomain
+  , correct_fromXorDomain
+
+  , correct_bra1
+  , correct_bra2
+  , correct_brb1
+  , correct_brb2
+
+  , correct_any
+  , correct_ubounds
+  , correct_sbounds
+  , correct_singleton
+  , correct_overlap
+  , precise_overlap
+  , correct_union
+  , correct_zero_ext
+  , correct_sign_ext
+  , correct_concat
+  , correct_select
+  , correct_add
+  , correct_neg
+  , correct_mul
+  , correct_udiv
+  , correct_urem
+  , correct_sdiv
+  , correct_srem
+  , correct_shl
+  , correct_lshr
+  , correct_ashr
+  , correct_rol
+  , correct_ror
+  , correct_eq
+  , correct_ult
+  , correct_slt
+  , correct_and
+  , correct_or
+  , correct_not
+  , correct_xor
+  , correct_testBit
+  , correct_popcnt
+  , correct_clz
+  , correct_ctz
   ) where
 
 import qualified Data.Bits as Bits
 import           Data.Bits hiding (testBit, xor)
+import qualified Data.List as List
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
 import           GHC.Stack
 
-import           Prelude hiding (any, concat, negate, and, or)
+import qualified Prelude
+import           Prelude hiding (any, concat, negate, and, or, not)
+
+import qualified What4.Utils.Arithmetic as Arith
+
+import qualified What4.Utils.BVDomain.Arith as A
+import qualified What4.Utils.BVDomain.Bitwise as B
+import qualified What4.Utils.BVDomain.XOR as X
+
+import           Test.QuickCheck (Property, property, (==>), Gen, arbitrary)
+
+
+arithToBitwiseDomain :: A.Domain w -> B.Domain w
+arithToBitwiseDomain a =
+  let mask = A.bvdMask a in
+  case A.arithDomainData a of
+    Nothing -> B.interval mask 0 mask
+    Just (alo,_) -> B.interval mask lo hi
+      where
+        u = A.unknowns a
+        hi = alo .|. u
+        lo = hi `Bits.xor` u
+
+bitwiseToArithDomain :: B.Domain w -> A.Domain w
+bitwiseToArithDomain b = A.interval mask lo ((hi - lo) .&. mask)
+  where
+  mask = B.bvdMask b
+  (lo,hi) = B.bitbounds b
+
+bitwiseToXorDomain :: B.Domain w -> X.Domain w
+bitwiseToXorDomain b = X.interval mask lo hi
+  where
+  mask = B.bvdMask b
+  (lo,hi) = B.bitbounds b
+
+arithToXorDomain :: A.Domain w -> X.Domain w
+arithToXorDomain a =
+  let mask = A.bvdMask a in
+  case A.arithDomainData a of
+    Nothing -> X.BVDXor mask mask mask
+    Just (alo,_) -> X.BVDXor mask hi u
+      where
+        u = A.unknowns a
+        hi = alo .|. u
+
+xorToBitwiseDomain :: X.Domain w -> B.Domain w
+xorToBitwiseDomain x = B.interval mask lo hi
+  where
+  mask = X.bvdMask x
+  (lo, hi) = X.bitbounds x
+
+asXorDomain :: BVDomain w -> X.Domain w
+asXorDomain (BVDArith a) = arithToXorDomain a
+asXorDomain (BVDBitwise b) = bitwiseToXorDomain b
+
+fromXorDomain :: X.Domain w -> BVDomain w
+fromXorDomain x = BVDBitwise (xorToBitwiseDomain x)
+
+asArithDomain :: BVDomain w -> A.Domain w
+asArithDomain (BVDArith a)   = a
+asArithDomain (BVDBitwise b) = bitwiseToArithDomain b
+
+asBitwiseDomain :: BVDomain w -> B.Domain w
+asBitwiseDomain (BVDArith a)   = arithToBitwiseDomain a
+asBitwiseDomain (BVDBitwise b) = b
 
 --------------------------------------------------------------------------------
 -- BVDomain definition
 
 -- | A value of type @'BVDomain' w@ represents a set of bitvectors of
--- width @w@. Each 'BVDomain' can represent a single contiguous
--- interval of bitvectors that may wrap around from -1 to 0.
+-- width @w@. A BVDomain represents either an arithmetic interval, or
+-- a bitwise interval.
+
 data BVDomain (w :: Nat)
-  = BVDAny !Integer
-  -- ^ The set of all bitvectors of width @w@. Argument caches @2^w-1@.
-  | BVDInterval !Integer !Integer !Integer
-  -- ^ Intervals are represented by a starting value and a size.
-  -- @BVDInterval mask l d@ represents the set of values of the form
-  -- @x mod 2^w@ for @x@ such that @l <= x <= l + d@. It should
-  -- satisfy the invariants @0 <= l < 2^w@ and @0 <= d < 2^w@. The
-  -- first argument caches the value @2^w-1@.
+  = BVDArith !(A.Domain w)
+  | BVDBitwise !(B.Domain w)
   deriving Show
 
 bvdMask :: BVDomain w -> Integer
 bvdMask x =
   case x of
-    BVDAny mask -> mask
-    BVDInterval mask _ _ -> mask
+    BVDArith a   -> A.bvdMask a
+    BVDBitwise b -> B.bvdMask b
 
---------------------------------------------------------------------------------
+-- | Test if the domain satisfies its invariants
+proper :: NatRepr w -> BVDomain w -> Bool
+proper w (BVDArith a) = A.proper w a
+proper w (BVDBitwise b) = B.proper w b
 
--- | @halfRange n@ returns @2^(n-1)@.
-halfRange :: (1 <= w) => NatRepr w -> Integer
-halfRange w = bit (widthVal w - 1)
+member :: BVDomain w -> Integer -> Bool
+member (BVDArith a) x = A.member a x
+member (BVDBitwise a) x = B.member a x
+
+genDomain :: NatRepr w -> Gen (BVDomain w)
+genDomain w =
+  do b <- arbitrary
+     if b then
+       BVDArith <$> A.genDomain w
+     else
+       BVDBitwise <$> B.genDomain w
+
+genElement :: BVDomain w -> Gen Integer
+genElement (BVDArith a) = A.genElement a
+genElement (BVDBitwise b) = B.genElement b
+
+genPair :: NatRepr w -> Gen (BVDomain w, Integer)
+genPair w =
+  do a <- genDomain w
+     x <- genElement a
+     return (a,x)
 
 --------------------------------------------------------------------------------
 -- Projection functions
 
--- | Convert domain to list of ranges.
-ranges :: NatRepr w -> BVDomain w -> [(Integer, Integer)]
-ranges _w x =
-  case x of
-    BVDAny mask -> [(0, mask)]
-    BVDInterval mask xl xd
-      | xh > mask -> [(0, xh .&. mask), (xl, mask)]
-      | otherwise -> [(xl, xh)]
-      where xh = xl + xd
-
 -- | Return value if this is a singleton.
 asSingleton :: BVDomain w -> Maybe Integer
-asSingleton x =
-  case x of
-    BVDAny _ -> Nothing
-    BVDInterval _ xl xd
-      | xd == 0 -> Just xl
-      | otherwise -> Nothing
+asSingleton (BVDArith a)   = A.asSingleton a
+asSingleton (BVDBitwise b) = B.asSingleton b
 
-isSingletonZero :: BVDomain w -> Bool
-isSingletonZero x =
-  case x of
-    BVDInterval _ 0 0 -> True
-    _ -> False
-
-isBVDAny :: BVDomain w -> Bool
-isBVDAny x =
-  case x of
-    BVDAny {} -> True
-    BVDInterval {} -> False
-
--- | Return unsigned bounds for domain.
-ubounds :: BVDomain w -> (Integer, Integer)
-ubounds a =
-  case a of
-    BVDAny mask -> (0, mask)
-    BVDInterval mask al aw
-      | ah > mask -> (0, mask)
-      | otherwise -> (al, ah)
-      where ah = al + aw
-
--- | Return signed bounds for domain.
-sbounds :: (1 <= w) => NatRepr w -> BVDomain w -> (Integer, Integer)
-sbounds w a = (lo - delta, hi - delta)
+{- |
+ Precondition: @x <= lomask@.  Find the (arithmetically) smallest
+ @z@ above @x@ which is bitwise above @lomask@.  In other words
+ find the smallest @z@ such that @x <= z@ and @lomask .|. z == z@.
+-}
+bitwiseRoundAbove ::
+  Integer {- ^ @bvmask@, based on the width of the bitvectors in question -} ->
+  Integer {- ^ @x@ -} ->
+  Integer {- ^ @lomask@ -} ->
+  Integer
+bitwiseRoundAbove bvmask x lomask = upperbits .|. lowerbits
   where
-    delta = halfRange w
-    (lo, hi) = ubounds (add a (BVDInterval (bvdMask a) delta 0))
+  upperbits = x .&. (bvmask `Bits.xor` fillmask)
+  lowerbits = lomask .&. fillmask
+  fillmask = A.fillright ((x .|. lomask) `Bits.xor` x)
+
+{- |
+ Precondition: @lomask <= x <= himask@ and @lomask .|. himask == himask@.
+ Find the (arithmetically) smallest @z@ above @x@ which is bitwise between
+ @lomask@ and @himask@.  In otherwords, find the smallest @z@ such that
+ @x <= z@ and @lomask .|. z = z@ and @z .|. himask == himask@.
+-}
+bitwiseRoundBetween ::
+  Integer {- ^ @bvmask@, based on the width of the bitvectors in question -} ->
+  Integer {- ^ @x@ -} ->
+  Integer {- ^ @lomask@ -} ->
+  Integer {- ^ @himask@ -} ->
+  Integer
+bitwiseRoundBetween bvmask x lomask himask = final
+  -- read these steps bottom up...
+  where
+  -- Finally mask out the low bits and only set those requried by the lomask
+  final = (upper .&. (lobits `Bits.xor` bvmask)) .|. lomask
+
+  -- add the correcting bit and mask out any extraneous bits set in
+  -- the previous step
+  upper = (z + highbit) .&. himask
+
+  -- set ourselves up so that when we add the high bit to correct,
+  -- the carry will ripple until it finds a bit position that we
+  -- are allowed to set.
+  z = loup .|. himask'
+
+  -- isolate just the highest incorrect bit
+  highbit = rmask `Bits.xor` lobits
+
+  -- a mask for all the bits to the right of the higest incorrect ibt
+  lobits = rmask `shiftR` 1
+
+  -- set all the bits to the right of the highest incorrect bit
+  rmask = A.fillright r
+
+  -- now, compute all the bits that are set, but are not
+  -- allowed to be set according to the himask
+  r = loup .&. himask'
+
+  -- complement of the highmask
+  himask' = himask `Bits.xor` bvmask
+
+  -- first, round up to the lomask
+  loup = bitwiseRoundAbove bvmask x lomask
+
+
+-- | Test if an arithmetic domain overlaps with a bitwise domain
+mixedDomainsOverlap :: A.Domain a -> B.Domain b -> Bool
+mixedDomainsOverlap a b =
+   case A.arithDomainData a of
+     Nothing -> B.nonempty b
+     Just (alo,_) ->
+       let (lomask,himask) = B.bitbounds b
+           brb = bitwiseRoundBetween (A.bvdMask a) alo lomask himask
+        in B.nonempty b && (A.member a lomask || A.member a himask || A.member a brb)
+
 
 -- | Return true if domains contain a common element.
 domainsOverlap :: BVDomain w -> BVDomain w -> Bool
-domainsOverlap a b =
-  case a of
-    BVDAny _ -> True
-    BVDInterval _ al aw ->
-      case b of
-        BVDAny _ -> True
-        BVDInterval mask bl bw ->
-          diff <= bw || diff + aw > mask
-          where diff = (al - bl) .&. mask
+domainsOverlap (BVDBitwise a) (BVDBitwise b) = B.domainsOverlap a b
+domainsOverlap (BVDArith a)   (BVDArith b)   = A.domainsOverlap a b
+domainsOverlap (BVDArith a)   (BVDBitwise b) = mixedDomainsOverlap a b
+domainsOverlap (BVDBitwise b) (BVDArith a)   = mixedDomainsOverlap a b
+
+arithDomainLo :: A.Domain w -> Integer
+arithDomainLo a =
+  case A.arithDomainData a of
+    Nothing -> 0
+    Just (lo,_) -> lo
+
+mixedCandidates :: A.Domain w -> B.Domain w -> [Integer]
+mixedCandidates a b =
+  case A.arithDomainData a of
+    Nothing -> [ lomask ]
+    Just (alo,_) -> [ lomask, himask, bitwiseRoundBetween (A.bvdMask a) alo lomask himask ]
+ where
+ (lomask,himask) = B.bitbounds b
+
+-- | Return a list of "candidate" overlap elements.  If two domains
+--   overlap, then they will definintely share one of the given
+--   values.
+overlapCandidates :: BVDomain w -> BVDomain w -> [Integer]
+overlapCandidates (BVDArith a)   (BVDBitwise b) = mixedCandidates a b
+overlapCandidates (BVDBitwise b) (BVDArith a)   = mixedCandidates a b
+overlapCandidates (BVDArith a)   (BVDArith b)   = [ arithDomainLo a, arithDomainLo b ]
+overlapCandidates (BVDBitwise a) (BVDBitwise b) = [ loa .|. lob ]
+  where
+  (loa,_) = B.bitbounds a
+  (lob,_) = B.bitbounds b
+
 
 eq :: BVDomain w -> BVDomain w -> Maybe Bool
 eq a b
@@ -166,23 +377,11 @@ eq a b
 
 -- | Check if all elements in one domain are less than all elements in other.
 slt :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> Maybe Bool
-slt w a b
-  | a_max < b_min = Just True
-  | a_min >= b_max = Just False
-  | otherwise = Nothing
-  where
-    (a_min, a_max) = sbounds w a
-    (b_min, b_max) = sbounds w b
+slt w a b = A.slt w (asArithDomain a) (asArithDomain b)
 
 -- | Check if all elements in one domain are less than all elements in other.
 ult :: (1 <= w) => BVDomain w -> BVDomain w -> Maybe Bool
-ult a b
-  | a_max < b_min = Just True
-  | a_min >= b_max = Just False
-  | otherwise = Nothing
-  where
-    (a_min, a_max) = ubounds a
-    (b_min, b_max) = ubounds b
+ult a b = A.ult (asArithDomain a) (asArithDomain b)
 
 -- | Return @Just@ if every bitvector in the domain has the same bit
 -- at the given index.
@@ -191,121 +390,47 @@ testBit ::
   BVDomain w ->
   Natural {- ^ Index of bit (least-significant bit has index 0) -} ->
   Maybe Bool
-testBit w a i =
-  if i >= natValue w then Nothing else
-  case a of
-    BVDAny _ -> Nothing
-    BVDInterval _ al aw
-      | (al `shiftR` j) == (ah `shiftR` j) ->
-        Just (al `Bits.testBit` j)
-      | otherwise ->
-        Nothing
-      where
-        j = fromIntegral i
-        ah = al + aw
+testBit _w a i = B.testBit (asBitwiseDomain a) i
+
+ubounds :: BVDomain w -> (Integer, Integer)
+ubounds a = A.ubounds (asArithDomain a)
+
+sbounds :: (1 <= w) => NatRepr w -> BVDomain w -> (Integer, Integer)
+sbounds w a = A.sbounds w (asArithDomain a)
 
 --------------------------------------------------------------------------------
 -- Operations
 
 -- | Represents all values
 any :: (1 <= w) => NatRepr w -> BVDomain w
-any w = BVDAny (maxUnsigned w)
+any w = BVDBitwise (B.any w)
 
 -- | Create a bitvector domain representing the integer.
 singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> BVDomain w
-singleton w x = BVDInterval mask (x .&. mask) 0
-  where mask = maxUnsigned w
+singleton w x = BVDBitwise (B.singleton w x)
 
 -- | @range w l u@ returns domain containing all bitvectors formed
 -- from the @w@ low order bits of some @i@ in @[l,u]@.  Note that per
 -- @testBit@, the least significant bit has index @0@.
 range :: NatRepr w -> Integer -> Integer -> BVDomain w
-range w al ah = interval mask al ((ah - al) .&. mask)
-  where mask = maxUnsigned w
-
--- | Unsafe constructor for internal use only. Caller must ensure that
--- @mask = maxUnsigned w@, and that @aw@ is non-negative.
-interval :: Integer -> Integer -> Integer -> BVDomain w
-interval mask al aw =
-  if aw >= mask then BVDAny mask else BVDInterval mask (al .&. mask) aw
+range w al ah = BVDArith (A.range w al ah)
 
 -- | Create an abstract domain from an ascending list of elements.
 -- The elements are assumed to be distinct.
 fromAscEltList :: (1 <= w) => NatRepr w -> [Integer] -> BVDomain w
-fromAscEltList w [] = singleton w 0
-fromAscEltList w [x] = singleton w x
-fromAscEltList w (x0 : x1 : xs) = go (x0, x0) (x1, x1) xs
-  where
-    -- Invariant: the gap between @b@ and @c@ is the biggest we've
-    -- seen between adjacent values so far.
-    go (a, b) (c, d) [] = union (range w a b) (range w c d)
-    go (a, b) (c, d) (e : rest)
-      | e - d > c - b = go (a, d) (e, e) rest
-      | otherwise     = go (a, b) (c, e) rest
+fromAscEltList w xs = BVDArith (A.fromAscEltList w xs)
 
 -- | Return union of two domains.
 union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-union a b =
-  case a of
-    BVDAny _ -> a
-    BVDInterval _ al aw ->
-      case b of
-        BVDAny _ -> b
-        BVDInterval mask bl bw ->
-          interval mask cl (ch - cl)
-          where
-            size = mask + 1
-            ac = 2 * al + aw -- twice the average value of a
-            bc = 2 * bl + bw -- twice the average value of b
-            -- If the averages are 2^(w-1) or more apart,
-            -- then shift the lower interval up by 2^w.
-            al' = if ac + mask < bc then al + size else al
-            bl' = if bc + mask < ac then bl + size else bl
-            ah' = al' + aw
-            bh' = bl' + bw
-            cl = min al' bl'
-            ch = max ah' bh'
+union (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.union a b)
+union (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.union a b)
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits
 -- are @a@, and the least significant bits are @y@.
 concat :: NatRepr u -> BVDomain u -> NatRepr v -> BVDomain v -> BVDomain (u + v)
-concat u a v b =
-  case a of
-    BVDAny _ -> BVDAny mask
-    BVDInterval _ al aw -> interval mask (cat al bl) (cat aw bw)
-  where
-    cat i j = i `shiftL` widthVal v + j
-    mask = maxUnsigned (addNat u v)
-    (bl, bh) = ubounds b
-    bw = bh - bl
-
--- | @shrink i a@ drops the @i@ least significant bits from @a@.
-shrink ::
-  NatRepr i ->
-  BVDomain (i + n) -> BVDomain n
-shrink i a =
-  case a of
-    BVDAny mask -> BVDAny (shr mask)
-    BVDInterval mask al aw ->
-      interval (shr mask) bl (bh - bl)
-      where
-        bl = shr al
-        bh = shr (al + aw)
-  where
-    shr x = x `shiftR` widthVal i
-
--- | @trunc n d@ selects the @n@ least significant bits from @d@.
-trunc ::
-  (n <= w) =>
-  NatRepr n ->
-  BVDomain w -> BVDomain n
-trunc n a =
-  case a of
-    BVDAny _ -> BVDAny mask
-    BVDInterval _ al aw -> interval mask al aw
-  where
-    mask = maxUnsigned n
+concat u (BVDArith a) v (BVDArith b) = BVDArith (A.concat u a v b)
+concat u (asBitwiseDomain -> a) v (asBitwiseDomain -> b) = BVDBitwise (B.concat u a v b)
 
 -- | @select i n a@ selects @n@ bits starting from index @i@ from @a@.
 select ::
@@ -313,11 +438,12 @@ select ::
   NatRepr i ->
   NatRepr n ->
   BVDomain w -> BVDomain n
-select i n a = shrink i (trunc (addNat i n) a)
+select i n (BVDArith a)   = BVDArith (A.select i n a)
+select i n (BVDBitwise b) = BVDBitwise (B.select i n b)
 
 zext :: (1 <= w, w+1 <= u) => BVDomain w -> NatRepr u -> BVDomain u
-zext a u = range u al ah
-  where (al, ah) = ubounds a
+zext (BVDArith a) u   = BVDArith (A.zext a u)
+zext (BVDBitwise b) u = BVDBitwise (B.zext b u)
 
 sext ::
   forall w u. (1 <= w, w + 1 <= u) =>
@@ -325,278 +451,385 @@ sext ::
   BVDomain w ->
   NatRepr u ->
   BVDomain u
-sext w a u =
-  case fProof of
-    LeqProof ->
-      range u al ah
-      where (al, ah) = sbounds w a
-  where
-    wProof :: LeqProof 1 w
-    wProof = LeqProof
-    uProof :: LeqProof (w+1) u
-    uProof = LeqProof
-    fProof :: LeqProof 1 u
-    fProof = leqTrans (leqAdd wProof (knownNat :: NatRepr 1)) uProof
+sext w (BVDArith a) u   = BVDArith (A.sext w a u)
+sext w (BVDBitwise b) u = BVDBitwise (B.sext w b u)
 
 --------------------------------------------------------------------------------
 -- Shifts
 
-shl :: BVDomain w -> BVDomain w -> BVDomain w
-shl a b
-  | isBVDAny a = a
-  | isSingletonZero a = a
-  | isSingletonZero b = a
-  | otherwise = interval mask lo (hi - lo)
-    where
-      mask = bvdMask a
-      size = mask + 1
-      (bl, bh) = ubounds b
-      bl' = clamp bl
-      bh' = clamp bh
-      -- compute bounds for c = 2^b
-      cl = if (mask `shiftR` bl' == 0) then size else bit bl'
-      ch = if (mask `shiftR` bh' == 0) then size else bit bh'
-      (lo, hi) = mulRange (zbounds a) (cl, ch)
+-- An arbitrary value; if we have to union together more than this many
+-- bitwise shifts or rotates we'll fall back on some default instead
+shiftBound :: Integer
+shiftBound = 16
 
-lshr :: BVDomain w -> BVDomain w -> BVDomain w
-lshr a b = interval mask cl (ch - cl)
+shl :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+shl w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.shl w a y | y <- [lo .. hi'] ]
   where
-    mask = bvdMask a
-    (al, ah) = ubounds a
-    (bl, bh) = ubounds b
-    cl = al `shiftR` clamp bh
-    ch = ah `shiftR` clamp bl
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
+
+shl w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.shl w a b)
+
+
+lshr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+lshr w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.lshr w a y | y <- [lo .. hi'] ]
+  where
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
+
+lshr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.lshr w a b)
+
+
 
 ashr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-ashr w a b = interval mask cl (ch - cl)
+ashr w (BVDBitwise a) (asArithDomain -> b)
+  | lo <= hi' && hi' - lo <= shiftBound =
+      BVDBitwise $ foldl1 B.union [ B.ashr w a y | y <- [lo .. hi'] ]
   where
-    mask = bvdMask a
-    (al, ah) = sbounds w a
-    (bl, bh) = ubounds b
-    cl = al `shiftR` (if al < 0 then clamp bl else clamp bh)
-    ch = ah `shiftR` (if ah < 0 then clamp bh else clamp bl)
+  (lo, hi) = A.ubounds b
+  hi' = max hi (intValue w)
 
--- | Return nearest representable Int, suitable for use as a shift amount.
-clamp :: Integer -> Int
-clamp x
-  | x > toInteger (maxBound :: Int) = maxBound
-  | x < toInteger (minBound :: Int) = minBound
-  | otherwise = fromInteger x
+ashr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.ashr w a b)
+
+
+rol :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+
+-- Special cases, rotating all 0 or all 1 bits makes no difference
+rol _w a@(asSingleton -> Just x) _
+  | x == 0 = a
+  | x == bvdMask a = a
+
+rol w (asBitwiseDomain -> a) (asArithDomain -> b) =
+    if (lo <= hi && hi - lo <= shiftBound) then
+      BVDBitwise $ foldl1 B.union [ B.rol w a y | y <- [lo .. hi] ]
+    else
+      any w
+
+  where
+  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
+
+
+ror :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+
+-- Special cases, rotating all 0 or all 1 bits makes no difference
+ror _w a@(asSingleton -> Just x) _
+  | x == 0 = a
+  | x == bvdMask a = a
+
+ror w (asBitwiseDomain -> a) (asArithDomain -> b) =
+    if (lo <= hi && hi - lo <= shiftBound) then
+      BVDBitwise $ foldl1 B.union [ B.ror w a y | y <- [lo .. hi] ]
+    else
+      any w
+
+  where
+  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
 
 --------------------------------------------------------------------------------
 -- Arithmetic
 
 add :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-add a b =
-  case a of
-    BVDAny _ -> a
-    BVDInterval _ al aw ->
-      case b of
-        BVDAny _ -> b
-        BVDInterval mask bl bw ->
-          interval mask (al + bl) (aw + bw)
+add a b
+  | Just 0 <- asSingleton a = b
+  | Just 0 <- asSingleton b = a
+  | otherwise = BVDArith (A.add (asArithDomain a) (asArithDomain b))
 
 negate :: (1 <= w) => BVDomain w -> BVDomain w
-negate a =
-  case a of
-    BVDAny _ -> a
-    BVDInterval mask al aw -> BVDInterval mask ((-ah) .&. mask) aw
-      where ah = al + aw
+negate (asArithDomain -> a) = BVDArith (A.negate a)
 
 scale :: (1 <= w) => Integer -> BVDomain w -> BVDomain w
 scale k a
-  | k == 0 = BVDInterval (bvdMask a) 0 0
   | k == 1 = a
-  | otherwise =
-    case a of
-      BVDAny _ -> a
-      BVDInterval mask al aw
-        | k >= 0 -> interval mask (k * al) (k * aw)
-        | otherwise -> interval mask (k * ah) (k * aw)
-        where ah = al + aw
+  | otherwise = BVDArith (A.scale k (asArithDomain a))
 
 mul :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
 mul a b
-  | isSingletonZero a = a
-  | isSingletonZero b = b
-  | isBVDAny a = a
-  | isBVDAny b = b
-  | otherwise = interval mask cl (ch - cl)
-    where
-      mask = bvdMask a
-      (cl, ch) = mulRange (zbounds a) (zbounds b)
-
--- | Choose a representative integer range (positive or negative) for
--- the given bitvector domain such that the endpoints are as close to
--- zero as possible.
-zbounds :: BVDomain w -> (Integer, Integer)
-zbounds a =
-  case a of
-    BVDAny mask -> (0, mask)
-    BVDInterval mask lo sz -> (lo', lo' + sz)
-      where lo' = if 2*lo + sz > mask then lo - (mask + 1) else lo
-
-mulRange :: (Integer, Integer) -> (Integer, Integer) -> (Integer, Integer)
-mulRange (al, ah) (bl, bh) = (cl, ch)
-  where
-    (albl, albh) = scaleRange al (bl, bh)
-    (ahbl, ahbh) = scaleRange ah (bl, bh)
-    cl = min albl ahbl
-    ch = max albh ahbh
-
-scaleRange :: Integer -> (Integer, Integer) -> (Integer, Integer)
-scaleRange k (lo, hi)
-  | k < 0 = (k * hi, k * lo)
-  | otherwise = (k * lo, k * hi)
+  | Just 1 <- asSingleton a = b
+  | Just 1 <- asSingleton b = a
+  | otherwise = BVDArith (A.mul (asArithDomain a) (asArithDomain b))
 
 udiv :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-udiv a b = interval mask ql (qh - ql)
-  where
-    mask = bvdMask a
-    (al, ah) = ubounds a
-    (bl, bh) = ubounds b
-    ql = al `div` max 1 bh -- assume that division by 0 does not happen
-    qh = ah `div` max 1 bl -- assume that division by 0 does not happen
+udiv (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.udiv a b)
 
 urem :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-urem a b
-  | qh == ql = interval mask rl (rh - rl)
-  | otherwise = interval mask 0 (bh - 1)
-  where
-    mask = bvdMask a
-    (al, ah) = ubounds a
-    (bl, bh) = ubounds b
-    (ql, rl) = al `divMod` max 1 bh -- assume that division by 0 does not happen
-    (qh, rh) = ah `divMod` max 1 bl -- assume that division by 0 does not happen
-
--- | Pairs of nonzero integers @(lo, hi)@ such that @1\/lo <= 1\/hi@.
--- This pair represents the set of all nonzero integers @x@ such that
--- @1\/lo <= 1\/x <= 1\/hi@.
-data ReciprocalRange = ReciprocalRange Integer Integer
-
--- | Nonzero signed values in a domain with the least and greatest
--- reciprocals.
-rbounds :: (1 <= w) => NatRepr w -> BVDomain w -> ReciprocalRange
-rbounds w a =
-  case a of
-    BVDAny _ -> ReciprocalRange (-1) 1
-    BVDInterval mask al aw
-      | ah > mask + 1 -> ReciprocalRange (-1) 1
-      | otherwise     -> ReciprocalRange (signed (min mask ah)) (signed (max 1 al))
-      where
-        ah = al + aw
-        signed x = if x < halfRange w then x else x - (mask + 1)
-
--- | Interval arithmetic for integer division (rounding towards 0).
--- Given @a@ and @b@ with @al <= a <= ah@ and @1\/bl <= 1\/b <= 1/bh@,
--- @sdivRange (al, ah) (ReciprocalRange bl bh)@ returns @(ql, qh)@
--- such that @ql <= a `quot` b <= qh@.
-sdivRange :: (Integer, Integer) -> ReciprocalRange -> (Integer, Integer)
-sdivRange (al, ah) (ReciprocalRange bl bh) = (ql, qh)
-  where
-    (ql1, qh1) = scaleDownRange (al, ah) bh
-    (ql2, qh2) = scaleDownRange (al, ah) bl
-    ql = min ql1 ql2
-    qh = max qh1 qh2
-
--- | @scaleDownRange (lo, hi) k@ returns an interval @(ql, qh)@ such that for any
--- @x@ in @[lo..hi]@, @x `quot` k@ is in @[ql..qh]@.
-scaleDownRange :: (Integer, Integer) -> Integer -> (Integer, Integer)
-scaleDownRange (lo, hi) k
-  | k > 0 = (lo `quot` k, hi `quot` k)
-  | k < 0 = (hi `quot` k, lo `quot` k)
-  | otherwise = (lo, hi) -- assume k is nonzero
+urem (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.urem a b)
 
 sdiv :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-sdiv w a b = interval mask ql (qh - ql)
-  where
-    mask = bvdMask a
-    (ql, qh) = sdivRange (sbounds w a) (rbounds w b)
+sdiv w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.sdiv w a b)
 
 srem :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-srem w a b =
-  -- If the quotient is a singleton @q@, then we compute the remainder
-  -- @r = a - q*b@.
-  if ql == qh then
-    (if ql < 0
-     then interval mask (al - ql * bl) (aw - ql * bw)
-     else interval mask (al - ql * bh) (aw + ql * bw))
-  -- Otherwise the range of possible remainders is determined by the
-  -- modulus and the sign of the first argument.
-  else interval mask rl (rh - rl)
-  where
-    mask = bvdMask a
-    (al, ah) = sbounds w a
-    (bl, bh) = sbounds w b
-    (ql, qh) = sdivRange (al, ah) (rbounds w b)
-    rl = if al < 0 then min (bl+1) (-bh+1) else 0
-    rh = if ah > 0 then max (-bl-1) (bh-1) else 0
-    aw = ah - al
-    bw = bh - bl
+srem w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.srem w a b)
 
 --------------------------------------------------------------------------------
 -- Bitwise logical
 
 -- | Complement bits in range.
 not :: BVDomain w -> BVDomain w
-not a =
-  case a of
-    BVDAny _ -> a
-    BVDInterval mask al aw ->
-      BVDInterval mask (Bits.complement ah .&. mask) aw
-      where ah = al + aw
+not (BVDArith a) = BVDArith (A.not a)
+not (BVDBitwise b) = BVDBitwise (B.not b)
 
 and :: BVDomain w -> BVDomain w -> BVDomain w
-and a b = interval mask cl (ch - cl)
-  where
-    mask = bvdMask a
-    (al, ah) = bitbounds a
-    (bl, bh) = bitbounds b
-    (cl, ch) = (al .&. bl, ah .&. bh)
+and a b
+  | Just x <- asSingleton a, x == mask = b
+  | Just x <- asSingleton b, x == mask = a
+  | otherwise = BVDBitwise (B.and (asBitwiseDomain a) (asBitwiseDomain b))
+ where
+ mask = bvdMask a
 
 or :: BVDomain w -> BVDomain w -> BVDomain w
-or a b = interval mask cl (ch - cl)
-  where
-    mask = bvdMask a
-    (al, ah) = bitbounds a
-    (bl, bh) = bitbounds b
-    (cl, ch) = (al .|. bl, ah .|. bh)
+or a b
+  | Just 0 <- asSingleton a = b
+  | Just 0 <- asSingleton b = a
+  | otherwise = BVDBitwise (B.or (asBitwiseDomain a) (asBitwiseDomain b))
 
 xor :: BVDomain w -> BVDomain w -> BVDomain w
-xor a b =
-  case a of
-    BVDAny _ -> a
-    BVDInterval _ al aw ->
-      case b of
-        BVDAny _ -> b
-        BVDInterval mask bl bw ->
-          interval mask cl cu
-          where
-            au = unknowns al (al + aw)
-            bu = unknowns bl (bl + bw)
-            cu = au .|. bu
-            cl = (al `Bits.xor` bl) .&. complement cu
+xor a b
+  | Just 0 <- asSingleton a = b
+  | Just 0 <- asSingleton b = a
+  | otherwise = BVDBitwise (B.xor (asBitwiseDomain a) (asBitwiseDomain b))
 
--- | Return bitwise bounds for domain (i.e. logical AND of all
--- possible values, paired with logical OR of all possible values).
-bitbounds :: BVDomain w -> (Integer, Integer)
-bitbounds a =
-  case a of
-    BVDAny mask -> (0, mask)
-    BVDInterval mask al aw
-      | al + aw > mask -> (0, mask)
-      | otherwise -> (al .&. complement au, al .|. au)
-      where au = unknowns al (al + aw)
+-------------------------------------------------------------------------------
+-- Misc operations
 
--- | @unknowns lo hi@ returns a bitmask representing the set of bit
--- positions whose values are not constant throughout the range
--- @lo..hi@.
-unknowns :: Integer -> Integer -> Integer
-unknowns lo hi = fillright 1 (lo `Bits.xor` hi)
+popcnt :: NatRepr w -> BVDomain w -> BVDomain w
+popcnt w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
   where
-    -- @fillright 1 x@ rounds up @x@ to the nearest 2^n-1.
-    fillright :: Int -> Integer -> Integer
-    fillright i x
-      | x' == x = x
-      | otherwise = fillright (2 * i) x'
-      where x' = x .|. (x `shiftR` i)
+  (bitlo, bithi) = B.bitbounds b
+  lo = toInteger (Bits.popCount bitlo)
+  hi = toInteger (Bits.popCount bithi)
+
+clz :: NatRepr w -> BVDomain w -> BVDomain w
+clz w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
+  where
+  (bitlo, bithi) = B.bitbounds b
+  lo = Arith.clz w bithi
+  hi = Arith.clz w bitlo
+
+ctz :: NatRepr w -> BVDomain w -> BVDomain w
+ctz w (asBitwiseDomain -> b) = BVDArith (A.range w lo hi)
+  where
+  (bitlo, bithi) = B.bitbounds b
+  lo = Arith.ctz w bithi
+  hi = Arith.ctz w bitlo
+
+
+------------------------------------------------------------------
+-- Correctness properties
+
+-- | Check that a domain is proper, and that
+--   the given value is a member
+pmember :: NatRepr n -> BVDomain n -> Integer -> Bool
+pmember n a x = proper n a && member a x
+
+correct_arithToBitwise :: NatRepr n -> (A.Domain n, Integer) -> Property
+correct_arithToBitwise n (a,x) = A.member a x ==> B.pmember n (arithToBitwiseDomain a) x
+
+correct_bitwiseToArith :: NatRepr n -> (B.Domain n, Integer) -> Property
+correct_bitwiseToArith n (b,x) = B.member b x ==> A.pmember n (bitwiseToArithDomain b) x
+
+correct_bitwiseToXorDomain :: NatRepr n -> (B.Domain n, Integer) -> Property
+correct_bitwiseToXorDomain n (b,x) = B.member b x ==> X.pmember n (bitwiseToXorDomain b) x
+
+correct_arithToXorDomain :: NatRepr n -> (A.Domain n, Integer) -> Property
+correct_arithToXorDomain n (a,x) = A.member a x ==> X.pmember n (arithToXorDomain a) x
+
+correct_xorToBitwiseDomain :: NatRepr n -> (X.Domain n, Integer) -> Property
+correct_xorToBitwiseDomain n (a,x) = X.member a x ==> B.pmember n (xorToBitwiseDomain a) x
+
+correct_asXorDomain :: NatRepr n -> (BVDomain n, Integer) -> Property
+correct_asXorDomain n (a, x) = member a x ==> X.pmember n (asXorDomain a) x
+
+correct_fromXorDomain :: NatRepr n -> (X.Domain n, Integer) -> Property
+correct_fromXorDomain n (a, x) = X.member a x ==> pmember n (fromXorDomain a) x
+
+
+correct_bra1 :: NatRepr n -> Integer -> Integer -> Property
+correct_bra1 n x lomask = lomask <= x ==> (x <= q && B.bitle lomask q)
+ where
+ q = bitwiseRoundAbove (maxUnsigned n) x lomask
+
+correct_bra2 :: NatRepr n -> Integer -> Integer -> Integer -> Property
+correct_bra2 n x lomask q' = (x <= q' && B.bitle lomask q') ==> q <= q'
+ where
+ q = bitwiseRoundAbove (maxUnsigned n) x lomask
+
+correct_brb1 :: NatRepr n -> Integer -> Integer -> Integer -> Property
+correct_brb1 n x lomask himask =
+    (B.bitle lomask himask && lomask <= x && x <= himask) ==>
+    (x <= q && B.bitle lomask q && B.bitle q himask)
+  where
+  q = bitwiseRoundBetween (maxUnsigned n) x lomask himask
+
+correct_brb2 :: NatRepr n -> Integer -> Integer -> Integer -> Integer -> Property
+correct_brb2 n x lomask himask q' =
+    (x <= q' && B.bitle lomask q' && B.bitle q' himask) ==> q <= q'
+  where
+  q = bitwiseRoundBetween (maxUnsigned n) x lomask himask
+
+correct_any :: (1 <= n) => NatRepr n -> Integer -> Property
+correct_any n x = property (pmember n (any n) x)
+
+correct_ubounds :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_ubounds n (a,x) = member a x' ==> lo <= x' && x' <= hi
+  where
+  x' = toUnsigned n x
+  (lo,hi) = ubounds a
+
+correct_sbounds :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_sbounds n (a,x) = member a x' ==> lo <= x' && x' <= hi
+  where
+  x' = toSigned n x
+  (lo,hi) = sbounds n a
+
+correct_singleton :: (1 <= n) => NatRepr n -> Integer -> Integer -> Property
+correct_singleton n x y = property (member (singleton n x') y' == (x' == y'))
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_overlap :: BVDomain n -> BVDomain n -> Integer -> Property
+correct_overlap a b x =
+  member a x && member b x ==> domainsOverlap a b
+
+precise_overlap :: BVDomain n -> BVDomain n -> Property
+precise_overlap a b =
+  domainsOverlap a b ==> List.or [ member a x && member b x | x <- overlapCandidates a b ]
+
+correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
+correct_union n a b x =
+  (member a x || member b x) ==> pmember n (union a b) x
+
+correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
+correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
+  where
+  x' = toUnsigned w x
+
+correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
+correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
+  where
+  x' = toSigned w x
+
+correct_concat :: NatRepr m -> (BVDomain m,Integer) -> NatRepr n -> (BVDomain n,Integer) -> Property
+correct_concat m (a,x) n (b,y) =
+    member a x ==> member b y ==> pmember (addNat m n) (concat m a n b) z
+  where
+  z = (x `shiftL` (widthVal n)) .|. y
+
+correct_select :: (1 <= n, i + n <= w) =>
+  NatRepr i -> NatRepr n -> (BVDomain w, Integer) -> Property
+correct_select i n (a, x) = member a x ==> pmember n (select i n a) y
+  where
+  y = toUnsigned n ((x .&. bvdMask a) `shiftR` (widthVal i))
+
+correct_add :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_add n (a,x) (b,y) = member a x ==> member b y ==> pmember n (add a b) (x + y)
+
+correct_neg :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_neg n (a,x) = member a x ==> pmember n (negate a) (Prelude.negate x)
+
+correct_mul :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
+correct_udiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_urem :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_urem n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (urem a b) (x' `rem` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_sdiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_sdiv n (a,x) (b,y) =
+    member a x' ==> member b y' ==> y' /= 0 ==> pmember n (sdiv n a b) (x' `quot` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+
+correct_srem :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_srem n (a,x) (b,y) =
+    member a x' ==> member b y' ==> y' /= 0 ==> pmember n (srem n a b) (x' `rem` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+
+correct_shl :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_shl n (a,x) (b,y) = member a x ==> member b y ==> pmember n (shl n a b) z
+  where
+  z = (toUnsigned n x) `shiftL` fromInteger (min (intValue n) y)
+
+correct_lshr :: (1 <= n) => NatRepr n ->  (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_lshr n (a,x) (b,y) = member a x ==> member b y ==> pmember n (lshr n a b) z
+  where
+  z = (toUnsigned n x) `shiftR` fromInteger (min (intValue n) y)
+
+correct_ashr :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_ashr n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ashr n a b) z
+  where
+  z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
+
+correct_rol :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_rol n (a,x) (b,y) = member a x ==> member b y ==> pmember n (rol n a b) (Arith.rotateLeft n x y)
+
+correct_ror :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_ror n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ror n a b) (Arith.rotateRight n x y)
+
+correct_eq :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_eq n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    case eq a b of
+      Just True  -> toUnsigned n x == toUnsigned n y
+      Just False -> toUnsigned n x /= toUnsigned n y
+      Nothing    -> True
+
+correct_ult :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_ult n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    case ult a b of
+      Just True  -> toUnsigned n x < toUnsigned n y
+      Just False -> toUnsigned n x >= toUnsigned n y
+      Nothing    -> True
+
+correct_slt :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_slt n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    case slt n a b of
+      Just True  -> toSigned n x < toSigned n y
+      Just False -> toSigned n x >= toSigned n y
+      Nothing    -> True
+
+correct_not :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
+
+correct_and :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_and n (a,x) (b,y) = member a x ==> member b y ==> pmember n (and a b) (x .&. y)
+
+correct_or :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_or n (a,x) (b,y) = member a x ==> member b y ==> pmember n (or a b) (x .|. y)
+
+correct_xor :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
+correct_xor n (a,x) (b,y) = member a x ==> member b y ==> pmember n (xor a b) (x `Bits.xor` y)
+
+correct_testBit :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Natural -> Property
+correct_testBit n (a,x) i =
+  i < natValue n ==>
+    case testBit n a i of
+      Just True  -> Bits.testBit x (fromIntegral i)
+      Just False -> Prelude.not (Bits.testBit x (fromIntegral i))
+      Nothing    -> True
+
+correct_popcnt :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_popcnt n (a,x) = member a x ==> pmember n (popcnt n a) (toInteger (Bits.popCount x))
+
+correct_ctz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_ctz n (a,x) = member a x ==> pmember n (ctz n a) (Arith.ctz n x)
+
+correct_clz :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> Property
+correct_clz n (a,x) = member a x ==> pmember n (clz n a) (Arith.clz n x)

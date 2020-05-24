@@ -43,7 +43,9 @@ lg i0 | i0 > 0 = go 0 (i0 `shiftR` 1)
         go r n = go (r+1) (n `shiftR` 1)
 
 -- | Returns ceil of log base 2.
+--   We define @lgCeil 0 = 0@
 lgCeil :: (Bits a, Num a, Ord a) => a -> Int
+lgCeil 0 = 0
 lgCeil 1 = 0
 lgCeil i | i > 1 = 1 + lg (i-1)
          | otherwise = error "lgCeil given number that is not positive."

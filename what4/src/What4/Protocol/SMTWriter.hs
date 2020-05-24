@@ -1212,15 +1212,19 @@ addPartialSideCond _ t RealTypeMap (Just rng) =
        Unbounded -> return ()
        Inclusive hi -> addSideCondition "real_range" $ t .<= rationalTerm hi
 
--- BGS: Unnecessary masks will go away when BVDomain uses BV instead
--- of Integer
-addPartialSideCond _ t (BVTypeMap w) (Just rng) = mapM_ assertRange (BVD.ranges w rng)
- where
- assertRange (lo,hi) =
-   do when (lo > 0)
-           (addSideCondition "bv_range" $ bvULe (bvTerm w (BV.mkBV w lo)) t)
-      when (hi < maxUnsigned w)
-           (addSideCondition "bv_range" $ bvULe t (bvTerm w (BV.mkBV w hi)))
+addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDArith rng)) = assertRange (BVD.arithDomainData rng)
+   where
+   assertRange Nothing = return ()
+   assertRange (Just (lo, sz)) =
+     addSideCondition "bv_range" $ bvULe (bvSub t (bvTerm w (BV.mkBV w lo))) (bvTerm w (BV.mkBV w sz))
+
+addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRange (BVD.bitbounds rng)
+   where
+   assertBitRange (lo, hi) = do
+     when (lo > 0) $
+       addSideCondition "bv_bitrange" $ (bvOr (bvTerm w (BV.mkBV w lo)) t) .== t
+     when (hi < maxUnsigned w) $
+       addSideCondition "bv_bitrange" $ (bvOr t (bvTerm w (BV.mkBV w hi))) .== (bvTerm w (BV.mkBV w hi))
 
 addPartialSideCond _ t (Char8TypeMap) (Just (StringAbs len)) =
   do case natRangeLow len of

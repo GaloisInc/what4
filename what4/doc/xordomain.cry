@@ -1,0 +1,53 @@
+/*
+This file contains a Cryptol implementation of a specialzed bitwise
+abstract domain that is optimized for the XOR/AND semiring representation.
+The standard bitwise domain from "bitsdomain.cry" requires 6 bitwise
+operations to compute XOR, whereas AND and OR only requre 2.
+In this domain, XOR and AND both can be computed in 3 bitwise operations,
+and scalar AND can be computed in 2.
+*/
+
+module xordomain where
+
+// In this presentation "val" is a bitwise upper bound on
+// the values in the set, and "unknown" represents all the
+// bits whose values are not concretely known
+type Dom n = { val : [n], unknown : [n] }
+
+// Membership predicate for the XOR bitwise domain
+mem : {n} (fin n) => Dom n -> [n] -> Bit
+mem a x = a.val == x || a.unknown
+
+bxor : {n} (fin n) => Dom n -> Dom n -> Dom n
+bxor a b = { val = v || u, unknown = u }
+  where
+  v = a.val ^ b.val
+  u = a.unknown || b.unknown
+
+band : {n} (fin n) => Dom n -> Dom n -> Dom n
+band a b = { val = v, unknown = u && v }
+  where
+  v   = a.val && b.val
+  u   = a.unknown || b.unknown
+
+band_scalar : {n} (fin n) => Dom n -> [n] -> Dom n
+band_scalar a x = { val = a.val && x, unknown = a.unknown && x }
+
+////////////////////////////////////////////////////////////
+// Soundness properties
+
+correct_bxor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_bxor a b x y =
+  mem a x ==> mem b y ==> mem (bxor a b) (x ^ y)
+
+correct_band : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_band a b x y =
+  mem a x ==> mem b y ==> mem (band a b) (x && y)
+
+correct_band_scalar : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_band_scalar a x y =
+  mem a x ==> mem (band_scalar a y) (x && y)
+
+property x1 = correct_bxor`{16}
+property x2 = correct_band`{16}
+property x3 = correct_band_scalar`{16}
