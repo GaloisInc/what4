@@ -140,8 +140,6 @@ import           What4.Utils.HandleReader
 import           What4.Utils.Process
 import           What4.Solver.Adapter
 
-import           Unsafe.Coerce (unsafeCoerce)
-
 -- | Set the logic to all supported logics.
 all_supported :: SMT2.Logic
 all_supported = SMT2.allSupported
