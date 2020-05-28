@@ -554,7 +554,6 @@ bvhexadecimal w0 u
               charBits = BV.asUnsigned (BV.select' i (knownNat @4) u)
               c :: Char
               c = intToDigit $ fromInteger charBits
-              -- c = intToDigit $ fromInteger $ (u `shiftR` i) .&. 0xf
            in Builder.singleton c <> go i
 
 -- | @concat x y@ returns the bitvector with the bits of @x@ followed by the bits of @y@.
