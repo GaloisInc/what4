@@ -20,6 +20,7 @@ module What4.Utils.BVDomain.Bitwise
   , bvdMask
   , member
   , pmember
+  , size
   , asSingleton
   , nonempty
   , eq
@@ -112,6 +113,14 @@ proper w (BVBitInterval mask lo hi) =
 member :: Domain w -> Integer -> Bool
 member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
   where x' = x .&. mask
+
+size :: Domain w -> Integer
+size (BVBitInterval _ lo hi)
+  | bitle lo hi = Bits.bit p
+  | otherwise   = 0
+ where
+ u = Bits.xor lo hi
+ p = Bits.popCount u
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
