@@ -36,11 +36,16 @@ moduleDoc (Module ms) name =
     outputNames = map (identDoc . (\(_, _, n, _) -> n)) (vsOutputs ms)
     params = reverse inputNames ++ reverse outputNames
 
-typeDoc :: Doc () -> BaseTypeRepr tp -> Doc ()
-typeDoc ty BaseBoolRepr = ty
-typeDoc ty (BaseBVRepr w) =
-  ty <+> lbracket <> pretty (intValue w - 1) <> ":0" <> rbracket
-typeDoc _ _ = "<type error>"
+typeDoc :: Doc () -> Bool -> BaseTypeRepr tp -> Doc ()
+typeDoc ty _ BaseBoolRepr = ty
+typeDoc ty isSigned (BaseBVRepr w) =
+  ty <+>
+  (if isSigned then "signed " else mempty) <>
+  lbracket <>
+  pretty (intValue w - 1) <>
+  ":0" <>
+  rbracket
+typeDoc _ _ _ = "<type error>"
 
 identDoc :: Identifier -> Doc ()
 identDoc = pretty
@@ -52,12 +57,11 @@ lhsDoc (LHSBit name idx) =
 
 inputDoc :: (Some BaseTypeRepr, Identifier) -> Doc ()
 inputDoc (tp, name) =
-  viewSome (typeDoc "input") tp <+> identDoc name <> semi
+  viewSome (typeDoc "input" False) tp <+> identDoc name <> semi
 
 wireDoc :: Doc () -> (Some BaseTypeRepr, Bool, Identifier, Some Exp) -> Doc ()
 wireDoc ty (tp, isSigned, name, e) =
-  viewSome (typeDoc ty) tp <+>
-  (if isSigned then "signed " else mempty) <>
+  viewSome (typeDoc ty isSigned) tp <+>
   identDoc name <+>
   equals <+>
   viewSome expDoc e <>
