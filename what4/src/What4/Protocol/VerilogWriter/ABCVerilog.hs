@@ -33,7 +33,7 @@ moduleDoc (Module ms) name =
     ]
   where
     inputNames = map (identDoc . snd) (vsInputs ms)
-    outputNames = map (identDoc . (\(_, n, _) -> n)) (vsOutputs ms)
+    outputNames = map (identDoc . (\(_, _, n, _) -> n)) (vsOutputs ms)
     params = reverse inputNames ++ reverse outputNames
 
 typeDoc :: Doc () -> BaseTypeRepr tp -> Doc ()
@@ -54,9 +54,14 @@ inputDoc :: (Some BaseTypeRepr, Identifier) -> Doc ()
 inputDoc (tp, name) =
   viewSome (typeDoc "input") tp <+> identDoc name <> semi
 
-wireDoc :: Doc () -> (Some BaseTypeRepr, Identifier, Some Exp) -> Doc ()
-wireDoc ty (tp, name, e) =
-  viewSome (typeDoc ty) tp <+> identDoc name <+> equals <+> viewSome expDoc e <> semi
+wireDoc :: Doc () -> (Some BaseTypeRepr, Bool, Identifier, Some Exp) -> Doc ()
+wireDoc ty (tp, isSigned, name, e) =
+  (if isSigned then "signed" else mempty) <+>
+  viewSome (typeDoc ty) tp <+>
+  identDoc name <+>
+  equals <+>
+  viewSome expDoc e <>
+  semi
 
 unopDoc :: Unop tp -> Doc ()
 unopDoc = pretty . showUnop

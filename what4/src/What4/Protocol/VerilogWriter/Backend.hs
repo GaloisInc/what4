@@ -264,13 +264,19 @@ appVerilogExpr app =
     -- Bitvector operations
     BVTestBit i e -> do v <- exprToVerilogExpr e
                         bit v (fromIntegral i)
-    BVSlt x y -> do
-      sym <- vsSym <$> get
-      e' <- liftIO $ buildSimplifiedBVSlt sym x y
-      exprToVerilogExpr e'
-    BVUlt e1 e2 -> do e1' <- exprToVerilogExpr e1
-                      e2' <- exprToVerilogExpr e2
-                      binop Lt e1' e2'
+    BVSlt e1 e2 ->
+      {-
+      do sym <- vsSym <$> get
+         e' <- liftIO $ buildSimplifiedBVSlt sym x y
+         exprToVerilogExpr e'
+      -}
+      do e1' <- signed =<< exprToVerilogExpr e1
+         e2' <- signed =<< exprToVerilogExpr e2
+         binop Lt e1' e2'
+    BVUlt e1 e2 ->
+      do e1' <- exprToVerilogExpr e1
+         e2' <- exprToVerilogExpr e2
+         binop Lt e1' e2'
 
     BVOrBits w bs ->
       do exprs <- mapM exprToVerilogExpr (bvOrToList bs)
@@ -292,21 +298,29 @@ appVerilogExpr app =
                        e1 <- litBV len (maxBV len)
                        e2 <- litBV len 0
                        mux e e1 e2
-    BVUdiv _   bv1 bv2 -> do bv1' <- exprToVerilogExpr bv1
-                             bv2' <- exprToVerilogExpr bv2
-                             binop BVDiv bv1' bv2'
-    BVUrem _   bv1 bv2 -> do bv1' <- exprToVerilogExpr bv1
-                             bv2' <- exprToVerilogExpr bv2
-                             binop BVRem bv1' bv2'
-    BVSdiv _   _   _   -> doNotSupportError "bit vector signed division" -- TODO
-    BVSrem _   _   _   -> doNotSupportError "bit vector signed remainder" -- TODO
+    BVUdiv _   bv1 bv2 ->
+      do bv1' <- exprToVerilogExpr bv1
+         bv2' <- exprToVerilogExpr bv2
+         binop BVDiv bv1' bv2'
+    BVUrem _   bv1 bv2 ->
+      do bv1' <- exprToVerilogExpr bv1
+         bv2' <- exprToVerilogExpr bv2
+         binop BVRem bv1' bv2'
+    BVSdiv _   bv1 bv2 ->
+      do bv1' <- signed =<< exprToVerilogExpr bv1
+         bv2' <- signed =<< exprToVerilogExpr bv2
+         binop BVDiv bv1' bv2'
+    BVSrem _   bv1 bv2 ->
+      do bv1' <- signed =<< exprToVerilogExpr bv1
+         bv2' <- signed =<< exprToVerilogExpr bv2
+         binop BVRem bv1' bv2'
     BVShl  _   bv1 bv2 -> do e1 <- exprToVerilogExpr bv1
                              e2 <- exprToVerilogExpr bv2
                              binop BVShiftL e1 e2
     BVLshr _   bv1 bv2 -> do e1 <- exprToVerilogExpr bv1
                              e2 <- exprToVerilogExpr bv2
                              binop BVShiftR e1 e2
-    BVAshr _   bv1 bv2 -> do e1 <- exprToVerilogExpr bv1
+    BVAshr _   bv1 bv2 -> do e1 <- signed =<< exprToVerilogExpr bv1
                              e2 <- exprToVerilogExpr bv2
                              binop BVShiftRA e1 e2
     BVRol  w   bv1 bv2 ->

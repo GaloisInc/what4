@@ -159,7 +159,13 @@ abcLet :: Exp tp -> VerilogM sym n (IExp tp)
 abcLet (IExp x) = return x
 abcLet e = do
     let tp = expType e
-    x <- addFreshWire tp "x" e
+    x <- addFreshWire tp False "x" e
+    return (Ident tp x)
+
+signed :: IExp tp -> VerilogM sym n (IExp tp)
+signed e = do
+    let tp = iexpType e
+    x <- addFreshWire tp True "x" (IExp e)
     return (Ident tp x)
 
 binop ::
@@ -250,8 +256,8 @@ data Item where
 
 data ModuleState sym n =
     ModuleState { vsInputs :: [(Some WT.BaseTypeRepr, Identifier)] -- In reverse order
-                , vsOutputs :: [(Some WT.BaseTypeRepr, Identifier, Some Exp)] -- In reverse order
-                , vsWires :: [(Some WT.BaseTypeRepr, Identifier, Some Exp)] -- In reverse order
+                , vsOutputs :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)] -- In reverse order
+                , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)] -- In reverse order
                 , vsFreshIdent :: Int
                 , vsExpCache :: IdxCache n IExp
                 , vsBVCache :: Map.Map (Some WT.NatRepr, Integer) Identifier
@@ -318,16 +324,17 @@ addOutput ::
   VerilogM sym n ()
 addOutput tp name e = do
   st <- get
-  put $ st { vsOutputs = (Some tp, name, Some e) : vsOutputs st }
+  put $ st { vsOutputs = (Some tp, False, name, Some e) : vsOutputs st }
 
 addWire ::
   WT.BaseTypeRepr tp ->
+  Bool ->
   Identifier ->
   Exp tp ->
   VerilogM sym n ()
-addWire tp name e = do
+addWire tp isSigned name e = do
   st <- get
-  put $ st { vsWires = (Some tp, name, Some e) : vsWires st }
+  put $ st { vsWires = (Some tp, isSigned, name, Some e) : vsWires st }
 
 -- | Returns true if an identifier is already in the list of inputs, outputs, or
 -- wires.
@@ -339,7 +346,7 @@ isDeclared x = do
     idents st = (snd <$> vsInputs st) ++
                 (wireName <$> vsOutputs st) ++
                 (wireName <$> vsWires st)
-    wireName (_, n, _) = n
+    wireName (_, _, n, _) = n
 
 freshIdentifier :: String -> VerilogM sym n Identifier
 freshIdentifier basename = do
@@ -350,10 +357,11 @@ freshIdentifier basename = do
 
 addFreshWire ::
   WT.BaseTypeRepr tp ->
+  Bool ->
   String ->
   Exp tp ->
   VerilogM sym n Identifier
-addFreshWire repr basename e = do
+addFreshWire repr isSigned basename e = do
   x <- freshIdentifier basename
-  addWire repr x e
+  addWire repr isSigned x e
   return x
