@@ -56,8 +56,8 @@ inputDoc (tp, name) =
 
 wireDoc :: Doc () -> (Some BaseTypeRepr, Bool, Identifier, Some Exp) -> Doc ()
 wireDoc ty (tp, isSigned, name, e) =
-  (if isSigned then "signed" else mempty) <+>
   viewSome (typeDoc ty) tp <+>
+  (if isSigned then "signed " else mempty) <>
   identDoc name <+>
   equals <+>
   viewSome expDoc e <>
