@@ -160,7 +160,7 @@ import           Control.Exception (assert)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 import           Data.Coerce (coerce)
 import           Data.Foldable
 import           Data.Hashable
@@ -296,18 +296,16 @@ class HasAbsValue e => IsExpr e where
   asComplex :: e BaseComplexType -> Maybe (Complex Rational)
   asComplex _ = Nothing
 
-  -- | Return the unsigned value if this is a constant bitvector.
-  asUnsignedBV :: e (BaseBVType w) -> Maybe Integer
-  asUnsignedBV _ = Nothing
+  -- | Return a bitvector if this is a constant bitvector.
+  asBV :: e (BaseBVType w) -> Maybe (BV.BV w)
+  asBV _ = Nothing
 
-  -- | Return the signed value if this is a constant bitvector.
-  asSignedBV   :: (1 <= w) => e (BaseBVType w) -> Maybe Integer
-  asSignedBV _ = Nothing
-
-  -- | If we have bounds information about the term, return unsigned upper and lower bounds
+  -- | If we have bounds information about the term, return unsigned
+  -- upper and lower bounds as integers
   unsignedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (Integer, Integer)
 
-  -- | If we have bounds information about the term, return signed upper and lower bounds
+  -- | If we have bounds information about the term, return signed
+  -- upper and lower bounds as integers
   signedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (Integer, Integer)
 
   asAffineVar :: e tp -> Maybe (ConcreteVal tp, e tp, ConcreteVal tp)
@@ -636,7 +634,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- Bitvector operations
 
   -- | Create a bitvector with the given width and value.
-  bvLit :: (1 <= w) => sym -> NatRepr w -> Integer -> IO (SymBV sym w)
+  bvLit :: (1 <= w) => sym -> NatRepr w -> BV.BV w -> IO (SymBV sym w)
 
   -- | Concatenate two bitvectors.
   bvConcat :: (1 <= u, 1 <= v)
@@ -735,7 +733,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | Return true if bitvector is negative.
   bvIsNeg :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNeg sym x = bvSlt sym x =<< bvLit sym (bvWidth x) 0
+  bvIsNeg sym x = bvSlt sym x =<< bvLit sym (bvWidth x) (BV.zero (bvWidth x))
 
   -- | If-then-else applied to bitvectors.
   bvIte :: (1 <= w)
@@ -802,7 +800,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   bvIsNonzero :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
   bvIsNonzero sym x = do
      let w = bvWidth x
-     zro <- bvLit sym w 0
+     zro <- bvLit sym w (BV.zero w)
      notPred sym  =<< bvEq sym x zro
 
   -- | Left shift.  The shift amount is treated as an unsigned value.
@@ -895,9 +893,9 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     -- of the original term and bvFill terms. It has the nice property that we
     -- do not introduce any additional subterm sharing.
     do let w    = bvWidth v
-       let mask = bit (fromIntegral i)
+       let mask = BV.bit' w i
        pbits <- bvFill sym w p
-       vbits <- bvAndBits sym v =<< bvLit sym w (complement mask)
+       vbits <- bvAndBits sym v =<< bvLit sym w (BV.complement w mask)
        bvXorBits sym vbits =<< bvAndBits sym pbits =<< bvLit sym w mask
 
   -- | @bvFill sym w p@ returns a bitvector @w@-bits long where every bit
@@ -911,24 +909,24 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Return the bitvector of the desired width with all 0 bits;
   --   this is the minimum unsigned integer.
   minUnsignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  minUnsignedBV sym w = bvLit sym w 0
+  minUnsignedBV sym w = bvLit sym w (BV.zero w)
 
   -- | Return the bitvector of the desired width with all bits set;
   --   this is the maximum unsigned integer.
   maxUnsignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  maxUnsignedBV sym w = bvLit sym w (maxUnsigned w)
+  maxUnsignedBV sym w = bvLit sym w (BV.maxUnsigned w)
 
   -- | Return the bitvector representing the largest 2's complement
   --   signed integer of the given width.  This consists of all bits
   --   set except the MSB.
   maxSignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  maxSignedBV sym w = bvLit sym w (maxSigned w)
+  maxSignedBV sym w = bvLit sym w (BV.maxSigned w)
 
   -- | Return the bitvector representing the smallest 2's complement
   --   signed integer of the given width. This consists of all 0 bits
   --   except the MSB, which is set.
   minSignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  minSignedBV sym w = bvLit sym w (minSigned w)
+  minSignedBV sym w = bvLit sym w (BV.minSigned w)
 
   -- | Return the number of 1 bits in the input.
   bvPopcount :: (1 <= w) => sym -> SymBV sym w -> IO (SymBV sym w)
@@ -1022,8 +1020,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     SymBV sym w ->
     IO (SymBV sym (w+w))
   carrylessMultiply sym x0 y0
-    | Just _  <- asUnsignedBV x0
-    , Nothing <- asUnsignedBV y0
+    | Just _  <- BV.asUnsigned <$> asBV x0
+    , Nothing <- BV.asUnsigned <$> asBV y0
     = go y0 x0
     | otherwise
     = go x0 y0
@@ -1032,16 +1030,22 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
    go x y =
     do let w = bvWidth x
        let w2 = addNat w w
-       Just LeqProof <- return (testLeq (knownNat @1) w2)
-       Just LeqProof <- return (testLeq (addNat w (knownNat @1)) w2)
-       z  <- bvLit sym w2 0
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
+       z  <- bvLit sym w2 (BV.zero w2)
        x' <- bvZext sym w2 x
-       xs <- sequence [ do p <- testBitBV sym i y
+       xs <- sequence [ do p <- testBitBV sym (BV.asNatural i) y
                            iteM bvIte sym
                              p
-                             (bvShl sym x' =<< bvLit sym w2 (toInteger i))
+                             (bvShl sym x' =<< bvLit sym w2 i)
                              (return z)
-                      | i <- [ 0 .. natValue w - 1 ]
+                      | i <- BV.enumFromToUnsigned (BV.zero w2) (BV.mkBV w2 (intValue w - 1))
                       ]
        foldM (bvXorBits sym) z xs
 
@@ -1057,16 +1061,19 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   unsignedWideMultiplyBV sym x y = do
        let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert w' is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
        lo  <- bvTrunc sym w s
-       n   <- bvLit sym dbl_w (intValue w)
+       n   <- bvLit sym dbl_w (BV.zext dbl_w (BV.width w))
        hi  <- bvTrunc sym w =<< bvLshr sym s n
        return (hi, lo)
 
@@ -1080,18 +1087,21 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   mulUnsignedOF sym x y =
     do let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert w' is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvZext sym dbl_w x
        y'  <- bvZext sym dbl_w y
        s   <- bvMul sym x' y'
        lo  <- bvTrunc sym w s
 
        -- overflow if the result is greater than the max representable value in w bits
-       ov  <- bvUgt sym s =<< bvLit sym dbl_w (maxUnsigned w)
+       ov  <- bvUgt sym s =<< bvLit sym dbl_w (BV.zext dbl_w (BV.maxUnsigned w))
 
        return (ov, lo)
 
@@ -1107,16 +1117,19 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   signedWideMultiplyBV sym x y = do
        let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert dbl_w is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
        lo  <- bvTrunc sym w s
-       n   <- bvLit sym dbl_w (fromIntegral (widthVal w))
+       n   <- bvLit sym dbl_w (BV.zext dbl_w (BV.width w))
        hi  <- bvTrunc sym w =<< bvLshr sym s n
        return (hi, lo)
 
@@ -1130,19 +1143,22 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   mulSignedOF sym x y =
     do let w = bvWidth x
        let dbl_w = addNat w w
-       -- Add dynamic check to assert dbl_w is positive to work around
-       -- Haskell typechecker limitation.
-       Just LeqProof <- return (isPosNat dbl_w)
-       -- Add dynamic check to assert w+1 <= 2*w.
-       Just LeqProof <- return (testLeq (incNat w) dbl_w)
+       -- 1 <= w
+       one_leq_w@LeqProof <- return (leqProof (knownNat @1) w)
+       -- 1 <= w implies 1 <= w + w
+       LeqProof <- return (leqAdd one_leq_w w)
+       -- w <= w
+       w_leq_w@LeqProof <- return (leqProof w w)
+       -- w <= w, 1 <= w implies w + 1 <= w + w
+       LeqProof <- return (leqAdd2 w_leq_w one_leq_w)
        x'  <- bvSext sym dbl_w x
        y'  <- bvSext sym dbl_w y
        s   <- bvMul sym x' y'
        lo  <- bvTrunc sym w s
 
        -- overflow if greater or less than max representable values
-       ov1 <- bvSlt sym s =<< bvLit sym dbl_w (minSigned w)
-       ov2 <- bvSgt sym s =<< bvLit sym dbl_w (maxSigned w)
+       ov1 <- bvSlt sym s =<< bvLit sym dbl_w (BV.sext w dbl_w (BV.minSigned w))
+       ov2 <- bvSgt sym s =<< bvLit sym dbl_w (BV.sext w dbl_w (BV.maxSigned w))
        ov  <- orPred sym ov1 ov2
        return (ov, lo)
 
@@ -1395,18 +1411,20 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   clampedIntToSBV :: (1 <= w) => sym -> SymInteger sym -> NatRepr w -> IO (SymBV sym w)
   clampedIntToSBV sym i w
     | Just v <- asInteger i = do
-      bvLit sym w $ signedClamp w v
+      bvLit sym w $ BV.signedClamp w v
     | otherwise = do
       -- Handle case where i < minSigned w
       let min_val = minSigned w
+          min_val_bv = BV.minSigned w
       min_sym <- intLit sym min_val
       is_lt <- intLt sym i min_sym
-      iteM bvIte sym is_lt (bvLit sym w min_val) $ do
+      iteM bvIte sym is_lt (bvLit sym w min_val_bv) $ do
         -- Handle case where i > maxSigned w
         let max_val = maxSigned w
+            max_val_bv = BV.maxSigned w
         max_sym <- intLit sym max_val
         is_gt <- intLt sym max_sym i
-        iteM bvIte sym is_gt (bvLit sym w max_val) $ do
+        iteM bvIte sym is_gt (bvLit sym w max_val_bv) $ do
           -- Do unclamped conversion.
           integerToBV sym i w
 
@@ -1416,17 +1434,18 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   clampedIntToBV :: (1 <= w) => sym -> SymInteger sym -> NatRepr w -> IO (SymBV sym w)
   clampedIntToBV sym i w
     | Just v <- asInteger i = do
-      bvLit sym w $ unsignedClamp w v
+      bvLit sym w $ BV.unsignedClamp w v
     | otherwise = do
       -- Handle case where i < 0
       min_sym <- intLit sym 0
       is_lt <- intLt sym i min_sym
-      iteM bvIte sym is_lt (bvLit sym w 0) $ do
+      iteM bvIte sym is_lt (bvLit sym w (BV.zero w)) $ do
         -- Handle case where i > maxUnsigned w
         let max_val = maxUnsigned w
+            max_val_bv = BV.maxUnsigned w
         max_sym <- intLit sym max_val
         is_gt <- intLt sym max_sym i
-        iteM bvIte sym is_gt (bvLit sym w max_val) $
+        iteM bvIte sym is_gt (bvLit sym w max_val_bv) $
           -- Do unclamped conversion.
           integerToBV sym i w
 
@@ -1437,76 +1456,60 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- the given width. If the resulting width is smaller, this clamps
   -- the value to min-int or max-int when necessary.
   intSetWidth :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
-  intSetWidth sym e w = do
-    let e_width = bvWidth e
-    case w `compareNat` e_width of
+  intSetWidth sym e n = do
+    let m = bvWidth e
+    case n `testNatCases` m of
       -- Truncate when the width of e is larger than w.
-      NatLT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat w) e_width)
+      NatCaseLT LeqProof -> do
         -- Check if e underflows
-        does_underflow <- bvSlt sym e =<< bvLit sym e_width (minSigned w)
-        iteM bvIte sym does_underflow (bvLit sym w (minSigned w)) $ do
+        does_underflow <- bvSlt sym e =<< bvLit sym m (BV.sext n m (BV.minSigned n))
+        iteM bvIte sym does_underflow (bvLit sym n (BV.minSigned n)) $ do
           -- Check if e overflows target signed representation.
-          does_overflow <- bvSgt sym e =<< bvLit sym e_width (maxSigned w)
-          iteM bvIte sym does_overflow (bvLit sym w (maxSigned w)) $ do
+          does_overflow <- bvSgt sym e =<< bvLit sym m (BV.mkBV m (maxSigned n))
+          iteM bvIte sym does_overflow (bvLit sym n (BV.maxSigned n)) $ do
             -- Just do truncation.
-            bvTrunc sym w e
-      NatEQ -> return e
-      NatGT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat e_width) w)
-        bvSext sym w e
+            bvTrunc sym n e
+      NatCaseEQ -> return e
+      NatCaseGT LeqProof -> bvSext sym n e
 
   -- | Convert an unsigned bitvector to the nearest unsigned bitvector with
   -- the given width (clamp on overflow).
   uintSetWidth :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
-  uintSetWidth sym e w = do
-    let e_width = bvWidth e
-    case w `compareNat` e_width of
-      NatLT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat w) e_width)
-          -- Check if e overflows target unsigned representation.
-        does_overflow <- bvUgt sym e =<< bvLit sym e_width (maxUnsigned w)
-        iteM bvIte sym does_overflow (bvLit sym w (maxUnsigned w)) $ do
-          -- Just do truncation.
-          bvTrunc sym w e
-      NatEQ -> return e
-      NatGT _ -> do
-        -- Add dynamic check due to limitation in GHC typechecker.
-        Just LeqProof <- return (testLeq (incNat e_width) w)
-        bvZext sym w e
+  uintSetWidth sym e n = do
+    let m = bvWidth e
+    case n `testNatCases` m of
+      NatCaseLT LeqProof -> do
+        does_overflow <- bvUgt sym e =<< bvLit sym m (BV.mkBV m (maxUnsigned n))
+        iteM bvIte sym does_overflow (bvLit sym n (BV.maxUnsigned n)) $ bvTrunc sym n e
+      NatCaseEQ -> return e
+      NatCaseGT LeqProof -> bvZext sym n e
 
   -- | Convert an signed bitvector to the nearest unsigned bitvector with
   -- the given width (clamp on overflow).
   intToUInt :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
   intToUInt sym e w = do
     p <- bvIsNeg sym e
-    iteM bvIte sym p (bvLit sym w 0) (uintSetWidth sym e w)
+    iteM bvIte sym p (bvLit sym w (BV.zero w)) (uintSetWidth sym e w)
 
   -- | Convert an unsigned bitvector to the nearest signed bitvector with
   -- the given width (clamp on overflow).
   uintToInt :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
-  uintToInt sym e w = do
-    let n = bvWidth e
-    case w `compareNat` n of
-      NatLT _ -> do
-        -- Get maximum signed w-bit number.
-        max_val <- bvLit sym n ((2^(widthVal w-1))-1)
+  uintToInt sym e n = do
+    let m = bvWidth e
+    case n `testNatCases` m of
+      NatCaseLT LeqProof -> do
+        -- Get maximum signed n-bit number.
+        max_val <- bvLit sym m (BV.sext n m (BV.maxSigned n))
         -- Check if expression is less than maximum.
         p <- bvUle sym e max_val
-        Just LeqProof <- return (testLeq (incNat w) n)
         -- Select appropriate number then truncate.
-        bvTrunc sym w =<< bvIte sym p e max_val
-      NatEQ -> do
-        max_val <- maxSignedBV sym w
+        bvTrunc sym n =<< bvIte sym p e max_val
+      NatCaseEQ -> do
+        max_val <- maxSignedBV sym n
         p <- bvUle sym e max_val
         bvIte sym p e max_val
-      NatGT _ -> do
-        -- Add dynamic check to ensure GHC typechecks.
-        Just LeqProof <- return (testLeq (incNat n) w)
-        bvZext sym w e
+      NatCaseGT LeqProof -> do
+        bvZext sym n e
 
   ----------------------------------------------------------------------
   -- String operations
@@ -2492,7 +2495,7 @@ baseIsConcrete x =
     BaseBoolRepr    -> isJust $ asConstantPred x
     BaseNatRepr     -> isJust $ asNat x
     BaseIntegerRepr -> isJust $ asInteger x
-    BaseBVRepr _    -> isJust $ asUnsignedBV x
+    BaseBVRepr _    -> isJust $ asBV x
     BaseRealRepr    -> isJust $ asRational x
     BaseFloatRepr _ -> False
     BaseStringRepr{} -> isJust $ asString x
@@ -2515,7 +2518,7 @@ baseDefaultValue sym bt =
     BaseBoolRepr    -> return $! falsePred sym
     BaseNatRepr     -> natLit sym 0
     BaseIntegerRepr -> intLit sym 0
-    BaseBVRepr w    -> bvLit sym w 0
+    BaseBVRepr w    -> bvLit sym w (BV.zero w)
     BaseRealRepr    -> return $! realZero sym
     BaseFloatRepr fpp -> floatPZero sym fpp
     BaseComplexRepr -> mkComplexLit sym (0 :+ 0)
@@ -2692,7 +2695,7 @@ asConcrete x =
     BaseRealRepr    -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
-    BaseBVRepr w    -> ConcreteBV w <$> asUnsignedBV x
+    BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
     BaseStructRepr _ -> Nothing -- FIXME?
     BaseArrayRepr _ _ -> Nothing -- FIXME?

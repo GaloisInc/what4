@@ -22,6 +22,7 @@ library
     ansi-wl-pprint,
     bimap >= 0.2,
     bifunctors >= 5,
+    bv-sized >= 1.0.0,
     bytestring,
     deriving-compat >= 0.5,
     containers >= 0.5.0.0,
@@ -38,7 +39,7 @@ library
     lens,
     mtl,
     panic >= 0.3,
-    parameterized-utils >= 1.0.8 && < 2.2,
+    parameterized-utils >= 2.1 && < 2.2,
     process,
     QuickCheck >= 2.14 && < 2.15,
     scientific,
@@ -144,6 +145,7 @@ test-suite expr-builder-smtlib2
 
   build-depends:
     base,
+    bv-sized,
     bytestring,
     containers,
     data-binary-ieee754,
@@ -167,6 +169,7 @@ test-suite exprs_tests
     GenWhat4Expr
 
   build-depends: base
+               , bv-sized
                , hedgehog >= 1.0.2
                , parameterized-utils
                , tasty >= 0.10
@@ -187,6 +190,7 @@ test-suite iteexprs_tests
     GenWhat4Expr
 
   build-depends: base
+               , bv-sized
                , hedgehog >= 1.0.2
                , parameterized-utils
                , tasty >= 0.10

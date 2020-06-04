@@ -75,6 +75,7 @@ import           Control.Monad
 import           Control.Monad.Identity
 import qualified Data.Attoparsec.Text as Atto
 import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 
 import           Data.IORef
 import           Data.Foldable (toList)
@@ -232,7 +233,7 @@ instance SupportTermOps (YicesTerm s) where
   (.>=) = bin_app ">="
 
   bvTerm w u = term_app "mk-bv" [width_term w, decimal_term d]
-    where d = toUnsigned w u
+    where d = BV.asUnsigned u
 
   bvNeg x = term_app "bv-neg" [x]
   bvAdd = bin_app "bv-add"
@@ -558,7 +559,7 @@ instance SMTReadWriter (Connection s) where
     SMTEvalFunctions { smtEvalBool    = yicesEvalBool conn resp
                      , smtEvalBV      = \w -> yicesEvalBV w conn resp
                      , smtEvalReal    = yicesEvalReal conn resp
-                     , smtEvalFloat   = \_ -> fail "Yices does not support floats."
+                     , smtEvalFloat   = \_ _ -> fail "Yices does not support floats."
                      , smtEvalBvArray = Nothing
                      , smtEvalString  = \_ -> fail "Yices does not support strings."
                      }
@@ -861,17 +862,17 @@ yicesBV w =
      readBit w (Text.unpack digits)
 
 -- | Send eval command and get result back.
-yicesEvalBV :: Int -> Eval s t Integer
+yicesEvalBV :: NatRepr w -> Eval s t (BV.BV w)
 yicesEvalBV w conn resp tm =
   do eval conn tm
-     mb <- tryJust filterAsync (Streams.parseFromStream (skipSpaceOrNewline *> yicesBV w) resp)
+     mb <- tryJust filterAsync (Streams.parseFromStream (skipSpaceOrNewline *> yicesBV (widthVal w)) resp)
      case mb of
        Left (SomeException ex) ->
            fail $ unlines
              [ "Could not parse bitvector value returned by yices: "
              , displayException ex
              ]
-       Right b -> pure b
+       Right b -> pure (BV.mkBV w b)
 
 readBit :: MonadFail m => Int -> String -> m Integer
 readBit w0 = go 0 0

@@ -14,6 +14,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -84,7 +85,8 @@ import           Control.Applicative
 import           Control.Exception
 import           Control.Monad.State.Strict
 import qualified Data.Attoparsec.Text as AT
-import           Data.Bits (bit, setBit, shiftL, shiftR, (.&.))
+import qualified Data.BitVector.Sized as BV
+import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
@@ -96,6 +98,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Monoid
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
+import           Data.Parameterized.Pair
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
@@ -198,8 +201,8 @@ byteStringTerm bs = SMT2.T ("\"" <> BS.foldr f "\"" bs)
    | isPrint c = Builder.singleton c <> x
    | otherwise = "\\x" <> h1 <> h2  <> x
   where
-  h1 = Builder.fromString (showHex (w `shiftR` 4) "")
-  h2 = Builder.fromString (showHex (w .&. 0xF) "")
+  h1 = Builder.fromString (showHex (w `Bits.shiftR` 4) "")
+  h2 = Builder.fromString (showHex (w Bits..&. 0xF) "")
 
   c :: Char
   c = toEnum (fromEnum w)
@@ -445,7 +448,9 @@ instance SupportTermOps Term where
   x .>  y = SMT2.gt [x,y]
   x .>= y = SMT2.ge [x,y]
 
-  bvTerm w u = SMT2.bvdecimal u (natValue w)
+  bvTerm w u = case isZeroOrGT1 w of
+    Left Refl -> error "Cannot construct BV term with 0 width"
+    Right LeqProof -> SMT2.bvdecimal w u
 
   bvNeg = SMT2.bvneg
   bvAdd x y = SMT2.bvadd x [y]
@@ -685,47 +690,79 @@ parseRealSolverValue (SApp ["/", x , y]) = do
       <*> parseRealSolverValue y
 parseRealSolverValue s = fail $ "Could not parse solver value: " ++ show s
 
-parseBvSolverValue :: MonadFail m => Int -> SExp -> m Integer
-parseBvSolverValue _ s
-  | (n, _) <- parseBVLitHelper s = return n
-  | otherwise = fail $ "Could not parse solver value: " ++ show s
+parseBvSolverValue :: MonadFail m => NatRepr w -> SExp -> m (BV.BV w)
+parseBvSolverValue w s
+  | Pair w' bv <- parseBVLitHelper s = case w' `testEquality` w of
+      Just Refl -> return bv
+      Nothing -> fail $ "Solver value parsed with width " ++
+                 show w' ++ ", but should have width " ++ show w
 
-parseBVLitHelper :: SExp -> (Integer, Int)
+natBV :: Natural
+      -- ^ width
+      -> Integer
+      -- ^ BV value
+      -> Pair NatRepr BV.BV
+natBV wNatural x = case mkNatRepr wNatural of
+  Some w -> Pair w (BV.mkBV w x)
+
+-- | Parse an s-expression and return a bitvector and its width
+parseBVLitHelper :: SExp -> Pair NatRepr BV.BV
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'b' : n_str))) | [(n, "")] <- readBin n_str =
-  (n, length n_str)
+  natBV (fromIntegral (length n_str)) n
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'x' : n_str))) | [(n, "")] <- readHex n_str =
-  (n, length n_str * 4)
+  natBV (fromIntegral (length n_str * 4)) n
 parseBVLitHelper (SApp ["_", SAtom (Text.unpack -> ('b' : 'v' : n_str)), SAtom (Text.unpack -> w_str)])
-  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = (n, w)
-parseBVLitHelper _ = (0, 0)
+  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = natBV w n
+-- BGS: Is this correct?
+parseBVLitHelper _ = natBV 0 0
 
 parseStringSolverValue :: MonadFail m => SExp -> m ByteString
 parseStringSolverValue (SString t) | Just bs <- unescapeText t = return bs
 parseStringSolverValue x = fail ("Could not parse string solver value:\n  " ++ show x)
 
-parseFloatSolverValue :: MonadFail m => SExp -> m Integer
-parseFloatSolverValue (SApp ["fp", sign_s, exponent_s, significant_s])
-  | (sign_n, 1) <- parseBVLitHelper sign_s
-  , (exponent_n, eb) <- parseBVLitHelper exponent_s
-  , 2 <= eb
-  , (significant_n, sb) <- parseBVLitHelper significant_s
-  , 1 <= sb
-  = return $ (((sign_n `shiftL` eb) + exponent_n) `shiftL` sb) + significant_n
-parseFloatSolverValue
+parseFloatSolverValue :: MonadFail m => FloatPrecisionRepr fpp
+                      -> SExp
+                      -> m (BV.BV (FloatPrecisionBits fpp))
+parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
+  ParsedFloatResult sgn eb' expt sb' sig <- parseFloatLitHelper s
+  case (eb `testEquality` eb',
+        sb `testEquality` ((knownNat @1) `addNat` sb')) of
+    (Just Refl, Just Refl) -> do
+      -- eb' + 1 ~ 1 + eb'
+      Refl <- return $ plusComm eb' (knownNat @1)
+      -- (eb' + 1) + sb' ~ eb' + (1 + sb') 
+      Refl <- return $ plusAssoc eb' (knownNat @1) sb'
+      return bv
+        where bv = BV.concat (addNat (knownNat @1) eb) sb' (BV.concat knownNat eb sgn expt) sig
+    _ -> fail $ "Unexpected float precision: " <> show eb' <> ", " <> show sb'
+
+data ParsedFloatResult = forall eb sb . ParsedFloatResult
+  (BV.BV 1)    -- ^ sign
+  (NatRepr eb) -- ^ exponent width
+  (BV.BV eb)   -- ^ exponent
+  (NatRepr sb) -- ^ significand bit width
+  (BV.BV sb)   -- ^ significand bit
+
+parseFloatLitHelper :: MonadFail m => SExp -> m ParsedFloatResult
+parseFloatLitHelper (SApp ["fp", sign_s, expt_s, scand_s])
+  | Pair sign_w sign <- parseBVLitHelper sign_s
+  , Just Refl <- sign_w `testEquality` (knownNat @1)
+  , Pair eb expt <- parseBVLitHelper expt_s
+  , Pair sb scand <- parseBVLitHelper scand_s
+  = return $ ParsedFloatResult sign eb expt sb scand
+parseFloatLitHelper
   s@(SApp ["_", SAtom (Text.unpack -> nm), SAtom (Text.unpack -> eb_s), SAtom (Text.unpack -> sb_s)])
-
-  | [(eb, "")] <- readDec eb_s, [(sb, "")] <- readDec sb_s = case nm of
-    "+oo"   -> return $ ones eb `shiftL` (sb - 1)
-    "-oo"   -> return $ setBit (ones eb `shiftL` (sb - 1)) (eb + sb - 1)
-    "+zero" -> return 0
-    "-zero" -> return $ bit (eb + sb - 1)
-    "NaN"   -> return $ ones (eb + sb - 1)
-    _       -> fail $ "Could not parse float solver value: " ++ show s
-parseFloatSolverValue s =
-  fail $ "Could not parse float solver value: " ++ show s
-
-ones :: Int -> Integer
-ones n = foldl setBit 0 ([0..(n - 1)] :: [Int])
+  | [(eb_n, "")] <- readDec eb_s, [(sb_n, "")] <- readDec sb_s
+  , Some eb <- mkNatRepr eb_n
+  , Some sb <- mkNatRepr (sb_n-1)
+  = case nm of
+      "+oo"   -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.maxUnsigned eb) sb (BV.zero sb)
+      "-oo"   -> return $ ParsedFloatResult (BV.one knownNat)  eb (BV.maxUnsigned eb) sb (BV.zero sb)
+      "+zero" -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.zero eb)        sb (BV.zero sb)
+      "-zero" -> return $ ParsedFloatResult (BV.one knownNat)  eb (BV.zero eb)        sb (BV.zero sb)
+      "NaN"   -> return $ ParsedFloatResult (BV.zero knownNat) eb (BV.maxUnsigned eb) sb (BV.maxUnsigned sb)
+      _       -> fail $ "Could not parse float solver value: " ++ show s
+parseFloatLitHelper s = fail $ "Could not parse float solver value: " ++ show s
 
 parseBvArraySolverValue :: (MonadFail m,
                             1 <= w,
@@ -735,14 +772,14 @@ parseBvArraySolverValue :: (MonadFail m,
                         -> SExp
                         -> m (Maybe (GroundArray (Ctx.SingleCtx (BaseBVType w)) (BaseBVType v)))
 parseBvArraySolverValue _ v (SApp [SApp ["as", "const", _], c]) = do
-  c' <- parseBvSolverValue (widthVal v) c
+  c' <- parseBvSolverValue v c
   return . Just $ ArrayConcrete c' Map.empty
 parseBvArraySolverValue w v (SApp ["store", arr, idx, val]) = do
   arr' <- parseBvArraySolverValue w v arr
   case arr' of
     Just (ArrayConcrete base m) -> do
-      idx' <- B.BVIndexLit w <$> parseBvSolverValue (widthVal w) idx
-      val' <- parseBvSolverValue (widthVal v) val
+      idx' <- B.BVIndexLit w <$> parseBvSolverValue w idx
+      val' <- parseBvSolverValue v val
       return . Just $ ArrayConcrete base (Map.insert (Ctx.empty Ctx.:> idx') val' m)
     _ -> return Nothing
 parseBvArraySolverValue _ _ _ = return Nothing
@@ -900,10 +937,14 @@ smtLibEvalFuns s = SMTEvalFunctions
                   }
   where
   evalBool tm = parseBoolSolverValue =<< runGetValue s tm
-  evalBV w tm = parseBvSolverValue w =<< runGetValue s tm
   evalReal tm = parseRealSolverValue =<< runGetValue s tm
-  evalFloat tm = parseFloatSolverValue =<< runGetValue s tm
   evalStr tm = parseStringSolverValue =<< runGetValue s tm
+
+  evalBV :: NatRepr w -> Term -> IO (BV.BV w)
+  evalBV w tm = parseBvSolverValue w =<< runGetValue s tm
+
+  evalFloat :: FloatPrecisionRepr fpp -> Term -> IO (BV.BV (FloatPrecisionBits fpp))
+  evalFloat fpp tm = parseFloatSolverValue fpp =<< runGetValue s tm
 
   evalBvArray :: SMTEvalBVArrayFn (Writer a) w v
   evalBvArray w v tm = parseBvArraySolverValue w v =<< runGetValue s tm

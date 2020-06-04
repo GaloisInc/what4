@@ -17,6 +17,7 @@ import Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
+import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
 import qualified Data.Binary.IEEE754 as IEEE754
 import           Data.Foldable
@@ -252,8 +253,8 @@ testFloatSat0 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   p1 <- floatEq sym y e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    (@?=) (toInteger $ IEEE754.floatToWord 2.5) =<< groundEval x
-    y_val <- IEEE754.wordToFloat . fromInteger <$> groundEval y
+    (@?=) (BV.word32 $ IEEE754.floatToWord 2.5) =<< groundEval x
+    y_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval y
     assertBool ("expected y = +infinity, actual y = " ++ show y_val) $
       isInfinite y_val && 0 < y_val
 
@@ -267,7 +268,7 @@ testFloatSat1 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   p1 <- floatLe sym x e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    x_val <- IEEE754.wordToFloat . fromInteger <$> groundEval x
+    x_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval x
     assertBool ("expected x in [0.5, 1.5], actual x = " ++ show x_val) $
       0.5 <= x_val && x_val <= 1.5
 
@@ -334,9 +335,9 @@ testBVSelectShl :: TestTree
 testBVSelectShl = testCase "select shl simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvLit sym (knownNat @64) 0
+    e0 <- bvLit sym (knownNat @64) (BV.zero knownNat)
     e1 <- bvConcat sym e0 x
-    e2 <- bvShl sym e1 =<< bvLit sym knownRepr 64
+    e2 <- bvShl sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e3 <- bvSelect sym (knownNat @64) (knownNat @64) e2
     e3 @?= x
 
@@ -344,8 +345,8 @@ testBVSelectLshr :: TestTree
 testBVSelectLshr = testCase "select lshr simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) 0
-    e1 <- bvLshr sym e0 =<< bvLit sym knownRepr 64
+    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) (BV.zero knownNat)
+    e1 <- bvLshr sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e2 <- bvSelect sym (knownNat @0) (knownNat @64) e1
     e2 @?= x
 
@@ -367,7 +368,7 @@ testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
 
 testBVIteNesting :: TestTree
 testBVIteNesting = testCase "nested bitvector ites" $ withZ3 $ \sym s -> do
-  bv0 <- bvLit sym (knownNat @32) 0
+  bv0 <- bvLit sym (knownNat @32) (BV.zero knownNat)
   let setSymBit bv idx = do
         c1 <- freshConstant sym (userSymbol' ("c1_" ++ show idx)) knownRepr
         c2 <- freshConstant sym (userSymbol' ("c2_" ++ show idx)) knownRepr
@@ -389,11 +390,11 @@ testRotate1 :: TestTree
 testRotate1 = testCase "rotate test1" $ withOnlineZ3 $ \sym s -> do
   bv <- freshConstant sym (userSymbol' "bv") (BaseBVRepr (knownNat @32))
 
-  bv1 <- bvRol sym bv =<< bvLit sym knownNat 8
-  bv2 <- bvRol sym bv1 =<< bvLit sym knownNat 16
-  bv3 <- bvRol sym bv2 =<< bvLit sym knownNat 8
-  bv4 <- bvRor sym bv2 =<< bvLit sym knownNat 24
-  bv5 <- bvRor sym bv2 =<< bvLit sym knownNat 28
+  bv1 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 8)
+  bv2 <- bvRol sym bv1 =<< bvLit sym knownNat (BV.mkBV knownNat 16)
+  bv3 <- bvRol sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 8)
+  bv4 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 24)
+  bv5 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 28)
 
   res <- checkSatisfiable s "test" =<< notPred sym =<< bvEq sym bv bv3
   isUnsat res @? "unsat1"
@@ -411,7 +412,7 @@ testRotate2 = testCase "rotate test2" $ withOnlineZ3 $ \sym s -> do
 
   bv1 <- bvRol sym bv amt
   bv2 <- bvRor sym bv1 amt
-  bv3 <- bvRol sym bv =<< bvLit sym knownNat 20
+  bv3 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 20)
 
   bv == bv2 @? "syntactic equality"
 
@@ -428,7 +429,7 @@ testRotate3 = testCase "rotate test3" $ withOnlineZ3 $ \sym s -> do
 
   bv1 <- bvRol sym bv amt
   bv2 <- bvRor sym bv1 amt
-  bv3 <- bvRol sym bv =<< bvLit sym knownNat 3
+  bv3 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 3)
 
   -- Note, because 7 is not a power of two, this simplification doesn't quite
   -- work out... it would probably be significant work to make it do so.

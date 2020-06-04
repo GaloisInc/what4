@@ -12,8 +12,10 @@
 ------------------------------------------------------------------------
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module What4.Solver.Boolector
   ( Boolector(..)
   , boolectorPath
@@ -31,12 +33,15 @@ import           Control.Lens(folded)
 import           Control.Monad
 import           Control.Monad.Identity
 import           Data.Bits ( (.|.) )
+import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Parameterized.Some ( Some(..) )
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as Text
 import qualified Data.Text.Lazy.Builder as Builder
+import           Numeric.Natural
 import           System.Exit
 import qualified System.IO.Streams as Streams
 import           System.Process
@@ -159,11 +164,15 @@ boolectorBoolValue "1" = return True
 boolectorBoolValue "0" = return False
 boolectorBoolValue s = fail $ "Could not parse " ++ s ++ " as a Boolean."
 
-boolectorBVValue :: MonadFail m => Int -> String -> m Integer
-boolectorBVValue w0 s0 = go 0 0 s0
-  where go w r [] = do
-          when (w /= w0) $ fail "Unexpected number of bits in output."
-          return r
+boolectorBVValue :: forall m w . MonadFail m => NatRepr w -> String -> m (BV.BV w)
+boolectorBVValue w0 s0 = do
+  (wNatural, x) <- go 0 0 s0
+  Some w <- return $ mkNatRepr wNatural
+  case w0 `testEquality` w of
+    Just Refl -> return $ BV.mkBV w0 x
+    Nothing -> fail "Unexpected number of bits in output."
+  where go :: Natural -> Integer -> String -> m (Natural, Integer)
+        go w r [] = return (w, r)
         go w r ('1':s) = go (w+1) (2 * r + 1) s
         go w r ('0':s) = go (w+1) (2 * r) s
         go _ _ _ = fail $ "Could not parse " ++ s0 ++ " as a bitvector."
@@ -192,9 +201,10 @@ parseBoolectorOutput c out_lines =
       let mdl_lines = filter (/= "") mdl_lines0
       m <- Map.fromList <$> mapM parseBoolectorOutputLine mdl_lines
       let evalBool tm = lookupBoolectorVar m boolectorBoolValue   $ Builder.toLazyText $ SMT2.renderTerm tm
-      let evalBV w tm = lookupBoolectorVar m (boolectorBVValue w) $ Builder.toLazyText $ SMT2.renderTerm tm
+      let evalBV :: NatRepr w -> SMT2.Term -> IO (BV.BV w)
+          evalBV w tm = lookupBoolectorVar m (boolectorBVValue w) $ Builder.toLazyText $ SMT2.renderTerm tm
       let evalReal _ = fail "Boolector does not support real variables."
-      let evalFloat _ = fail "Boolector does not support floats."
+      let evalFloat _ _ = fail "Boolector does not support floats."
       let evalStr _ = fail "Boolector does not support strings."
       let evalFns = SMTEvalFunctions { smtEvalBool = evalBool
                                      , smtEvalBV = evalBV
