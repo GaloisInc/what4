@@ -737,11 +737,11 @@ parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
     _ -> fail $ "Unexpected float precision: " <> show eb' <> ", " <> show sb'
 
 data ParsedFloatResult = forall eb sb . ParsedFloatResult
-  (BV.BV 1)    -- ^ sign
-  (NatRepr eb) -- ^ exponent width
-  (BV.BV eb)   -- ^ exponent
-  (NatRepr sb) -- ^ significand bit width
-  (BV.BV sb)   -- ^ significand bit
+  (BV.BV 1)    -- sign
+  (NatRepr eb) -- exponent width
+  (BV.BV eb)   -- exponent
+  (NatRepr sb) -- significand bit width
+  (BV.BV sb)   -- significand bit
 
 parseFloatLitHelper :: MonadFail m => SExp -> m ParsedFloatResult
 parseFloatLitHelper (SApp ["fp", sign_s, expt_s, scand_s])
