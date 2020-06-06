@@ -5099,6 +5099,21 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         | Just (BVOrBits w ys) <- asApp y
         -> sbMakeExpr sym $ BVOrBits w $ bvOrInsert x ys
 
+        | Just (BVShl w x' n) <- asApp x
+        , Just (BVZext _ hi) <- asApp x'
+        , Just (BVZext _ lo) <- asApp y
+        , Just Refl <- testEquality w (addNat (bvWidth hi) (bvWidth lo))
+        , Just ni <- BV.asUnsigned <$> asBV n
+        , intValue (bvWidth lo) == ni
+        -> bvConcat sym hi lo
+        | Just (BVShl w y' n) <- asApp y
+        , Just (BVZext _ hi) <- asApp y'
+        , Just (BVZext _ lo) <- asApp x
+        , Just Refl <- testEquality w (addNat (bvWidth hi) (bvWidth lo))
+        , Just ni <- BV.asUnsigned <$> asBV n
+        , intValue (bvWidth lo) == ni
+        -> bvConcat sym hi lo
+
         | otherwise
         -> sbMakeExpr sym $ BVOrBits (bvWidth x) $ bvOrInsert x $ bvOrSingleton y
 
