@@ -72,6 +72,7 @@ module What4.Protocol.SMTWriter
   , mkFreeVar
   , bindVarAsFree
   , TypeMap(..)
+  , typeMap
   , freshBoundVarName
   , assumeFormula
   , assumeFormulaWithName
@@ -86,6 +87,9 @@ module What4.Protocol.SMTWriter
   , mkAtomicFormula
   , SMTEvalFunctions(..)
   , smtExprGroundEvalFn
+  , CollectorResults(..)
+  , mkBaseExpr
+  , runInSandbox
     -- * Reexports
   , What4.Interface.RoundingMode(..)
   ) where
