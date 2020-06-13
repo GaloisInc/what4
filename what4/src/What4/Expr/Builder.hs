@@ -823,6 +823,7 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   IntegerToBV  :: (1 <= w) => !(e BaseIntegerType) -> NatRepr w -> App e (BaseBVType w)
 
   RoundReal :: !(e BaseRealType) -> App e BaseIntegerType
+  RoundEvenReal :: !(e BaseRealType) -> App e BaseIntegerType
   FloorReal :: !(e BaseRealType) -> App e BaseIntegerType
   CeilReal  :: !(e BaseRealType) -> App e BaseIntegerType
 
@@ -1244,6 +1245,7 @@ appType a =
     RealSqrt{} -> knownRepr
 
     RoundReal{} -> knownRepr
+    RoundEvenReal{} -> knownRepr
     FloorReal{} -> knownRepr
     CeilReal{}  -> knownRepr
 
@@ -1657,6 +1659,7 @@ abstractEval f a0 = do
     SBVToInteger x -> valueRange (Inclusive lx) (Inclusive ux)
       where (lx, ux) = BVD.sbounds (bvWidth x) (f x)
     RoundReal x -> mapRange roundAway (ravRange (f x))
+    RoundEvenReal x -> mapRange round (ravRange (f x))
     FloorReal x -> mapRange floor (ravRange (f x))
     CeilReal x  -> mapRange ceiling (ravRange (f x))
     IntegerToNat x -> intRangeToNatRange (f x)
@@ -1987,6 +1990,7 @@ ppApp' a0 = do
     SBVToInteger x  -> ppSExpr "sbvToInteger" [x]
 
     RoundReal x -> ppSExpr "round" [x]
+    RoundEvenReal x -> ppSExpr "roundEven" [x]
     FloorReal x -> ppSExpr "floor" [x]
     CeilReal  x -> ppSExpr "ceil"  [x]
 
@@ -3289,6 +3293,7 @@ reduceApp sym a0 = do
     IntegerToBV x w -> integerToBV sym x w
 
     RoundReal x -> realRound sym x
+    RoundEvenReal x -> realRoundEven sym x
     FloorReal x -> realFloor sym x
     CeilReal  x -> realCeil sym x
 
@@ -5526,6 +5531,17 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (RealToInteger x)
       -- Unsimplified case
     | otherwise = sbMakeExpr sym (RoundReal x)
+
+  realRoundEven sym x
+      -- Ground case
+    | SemiRingLiteral SR.SemiRingRealRepr r l <- x = return $ SemiRingLiteral SR.SemiRingIntegerRepr (round r) l
+      -- Match integerToReal
+    | Just (IntegerToReal xi) <- asApp x = return xi
+      -- Static case
+    | Just True <- ravIsInteger (exprAbsValue x) =
+      sbMakeExpr sym (RealToInteger x)
+      -- Unsimplified case
+    | otherwise = sbMakeExpr sym (RoundEvenReal x)
 
   realFloor sym x
       -- Ground case
