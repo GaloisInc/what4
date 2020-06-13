@@ -497,6 +497,7 @@ evalGroundApp f0 a0 = do
     SBVToInteger x -> BV.asSigned (bvWidth x) <$> f x
 
     RoundReal x -> roundAway <$> f x
+    RoundEvenReal x -> round <$> f x
     FloorReal x -> floor <$> f x
     CeilReal  x -> ceiling <$> f x
 

@@ -477,6 +477,74 @@ testBoundVarAsFree = testCase "boundvarasfree" $ withOnlineZ3 $ \sym s -> do
   expectFailure $ checkSatisfiable s "test" px
   expectFailure $ checkSatisfiable s "test" py
 
+
+roundingTest ::
+  OnlineSolver t solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+roundingTest sym solver =
+  do r <- freshConstant sym (userSymbol' "r") BaseRealRepr
+
+     let runErrTest nm op errOp =
+           do diff <- realAbs sym =<< realSub sym r =<< integerToReal sym =<< op sym r
+              p'   <- notPred sym =<< errOp diff
+              res  <- checkSatisfiable solver nm p'
+              isUnsat res @? nm
+
+     runErrTest "floor"   realFloor (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "ceiling" realCeil  (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "trunc"   realTrunc (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "rna"     realRound (\diff -> realLe sym diff =<< realLit sym 0.5)
+     runErrTest "rne"     realRoundEven (\diff -> realLe sym diff =<< realLit sym 0.5)
+
+     -- floor test
+     do ri <- integerToReal sym =<< realFloor sym r
+        p  <- realLe sym ri r
+
+        res <- checkSatisfiable solver "floorTest" =<< notPred sym p
+        isUnsat res @? "floorTest"
+
+     -- ceiling test
+     do ri <- integerToReal sym =<< realCeil sym r
+        p  <- realLe sym r ri
+
+        res <- checkSatisfiable solver "ceilingTest" =<< notPred sym p
+        isUnsat res @? "ceilingTest"
+
+     -- truncate test
+     do ri <- integerToReal sym =<< realTrunc sym r
+        rabs  <- realAbs sym r
+        riabs <- realAbs sym ri
+        p  <- realLe sym riabs rabs
+
+        res <- checkSatisfiable solver "truncateTest" =<< notPred sym p
+        isUnsat res @? "truncateTest"
+
+     -- round away test
+     do ri <- integerToReal sym =<< realRound sym r
+        diff <- realAbs sym =<< realSub sym r ri
+        ptie <- realEq sym diff =<< realLit sym 0.5
+        rabs <- realAbs sym r
+        iabs <- realAbs sym ri
+        plarge <- realGt sym iabs rabs
+
+        res <- checkSatisfiable solver "rnaTest" =<<
+                  andPred sym ptie =<< notPred sym plarge
+        isUnsat res @? "rnaTest"
+
+     -- round-to-even test
+     do i <- realRoundEven sym r
+        ri <- integerToReal sym i
+        diff <- realAbs sym =<< realSub sym r ri
+        ptie <- realEq sym diff =<< realLit sym 0.5
+        ieven <- intDivisible sym i 2
+
+        res <- checkSatisfiable solver "rneTest" =<<
+                 andPred sym ptie =<< notPred sym ieven
+        isUnsat res @? "rneTest"
+
+
 zeroTupleTest ::
   OnlineSolver t solver =>
   SimpleExprBuilder t fs ->
@@ -886,4 +954,8 @@ main = defaultMain $ testGroup "Tests"
 
   , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
   , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
+
+  , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
+  , testCase "Yices rounding" $ withYices roundingTest
+  , testCase "CVC4 rounding" $ withCVC4 roundingTest
   ]

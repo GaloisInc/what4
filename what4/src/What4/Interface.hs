@@ -1345,15 +1345,28 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | Round a real number to an integer.
   --
-  -- Numbers are rounded to the nearest representable number, with rounding away from
+  -- Numbers are rounded to the nearest integer, with rounding away from
   -- zero when two integers are equi-distant (e.g., 1.5 rounds to 2).
   realRound :: sym -> SymReal sym -> IO (SymInteger sym)
+
+  -- | Round a real number to an integer.
+  --
+  -- Numbers are rounded to the neareset integer, with rounding toward
+  -- even values when two integers are equi-distant (e.g., 2.5 rounds to 2).
+  realRoundEven :: sym -> SymReal sym -> IO (SymInteger sym)
 
   -- | Round down to the nearest integer that is at most this value.
   realFloor :: sym -> SymReal sym -> IO (SymInteger sym)
 
   -- | Round up to the nearest integer that is at least this value.
   realCeil :: sym -> SymReal sym -> IO (SymInteger sym)
+
+  -- | Round toward zero.  This is @floor(x)@ when x is positive
+  --   and @celing(x)@ when @x@ is negative.
+  realTrunc :: sym -> SymReal sym -> IO (SymInteger sym)
+  realTrunc sym x =
+    do pneg <- realLt sym x =<< realLit sym 0
+       iteM intIte sym pneg (realCeil sym x) (realFloor sym x)
 
   -- | Convert an integer to a bitvector.  The result is the unique bitvector
   --   whose value (signed or unsigned) is congruent to the input integer, modulo @2^w@.
