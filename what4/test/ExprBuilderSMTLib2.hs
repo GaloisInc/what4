@@ -350,6 +350,19 @@ testBVSelectLshr = testCase "select lshr simplification" $
     e2 <- bvSelect sym (knownNat @0) (knownNat @64) e1
     e2 @?= x
 
+testBVOrShlZext :: TestTree
+testBVOrShlZext = testCase "bv or-shl-zext -> concat simplification" $
+  withSym FloatIEEERepr $ \sym -> do
+    x  <- freshConstant sym (userSymbol' "x") (BaseBVRepr $ knownNat @8)
+    y  <- freshConstant sym (userSymbol' "y") (BaseBVRepr $ knownNat @8)
+    e0 <- bvZext sym (knownNat @16) x
+    e1 <- bvShl sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 8)
+    e2 <- bvZext sym (knownNat @16) y
+    e3 <- bvOrBits sym e1 e2
+    show e3 @?= "bvConcat cx@0:bv cy@1:bv"
+    e4 <- bvOrBits sym e2 e1
+    show e4 @?= show e3
+
 testUninterpretedFunctionScope :: TestTree
 testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
   withOnlineZ3 $ \sym s -> do
@@ -910,6 +923,7 @@ main = defaultMain $ testGroup "Tests"
   , testFloatCastNoSimplification
   , testBVSelectShl
   , testBVSelectLshr
+  , testBVOrShlZext
   , testUninterpretedFunctionScope
   , testBVIteNesting
   , testRotate1
