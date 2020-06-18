@@ -5099,20 +5099,35 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         | Just (BVOrBits w ys) <- asApp y
         -> sbMakeExpr sym $ BVOrBits w $ bvOrInsert x ys
 
+        -- (or (shl x n) (zext w y)) is equivalent to (concat (trunc (w - n) x) y) when n is
+        -- the number of bits of y. Notice that the low bits of a shl expression are 0 and
+        -- the high bits of a zext expression are 0, thus the or expression is equivalent to
+        -- the concatenation between the high bits of the shl expression and the low bits of
+        -- the zext expression.
         | Just (BVShl w x' n) <- asApp x
-        , Just (BVZext _ hi) <- asApp x'
         , Just (BVZext _ lo) <- asApp y
-        , Just Refl <- testEquality w (addNat (bvWidth hi) (bvWidth lo))
         , Just ni <- BV.asUnsigned <$> asBV n
         , intValue (bvWidth lo) == ni
-        -> bvConcat sym hi lo
+        , Just LeqProof <- testLeq (bvWidth lo) w -- dynamic check for GHC typechecker
+        , w' <- subNat w (bvWidth lo)
+        , Just LeqProof <- testLeq (knownNat @1) w' -- dynamic check for GHC typechecker
+        , Just LeqProof <- testLeq (addNat w' (knownNat @1)) w -- dynamic check for GHC typechecker
+        , Just Refl <- testEquality w (addNat w' (bvWidth lo)) -- dynamic check for GHC typechecker
+        -> do
+          hi <- bvTrunc sym w' x'
+          bvConcat sym hi lo
         | Just (BVShl w y' n) <- asApp y
-        , Just (BVZext _ hi) <- asApp y'
         , Just (BVZext _ lo) <- asApp x
-        , Just Refl <- testEquality w (addNat (bvWidth hi) (bvWidth lo))
         , Just ni <- BV.asUnsigned <$> asBV n
         , intValue (bvWidth lo) == ni
-        -> bvConcat sym hi lo
+        , Just LeqProof <- testLeq (bvWidth lo) w -- dynamic check for GHC typechecker
+        , w' <- subNat w (bvWidth lo)
+        , Just LeqProof <- testLeq (knownNat @1) w' -- dynamic check for GHC typechecker
+        , Just LeqProof <- testLeq (addNat w' (knownNat @1)) w -- dynamic check for GHC typechecker
+        , Just Refl <- testEquality w (addNat w' (bvWidth lo)) -- dynamic check for GHC typechecker
+        -> do
+          hi <- bvTrunc sym w' y'
+          bvConcat sym hi lo
 
         | otherwise
         -> sbMakeExpr sym $ BVOrBits (bvWidth x) $ bvOrInsert x $ bvOrSingleton y

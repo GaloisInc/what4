@@ -359,9 +359,9 @@ testBVOrShlZext = testCase "bv or-shl-zext -> concat simplification" $
     e1 <- bvShl sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 8)
     e2 <- bvZext sym (knownNat @16) y
     e3 <- bvOrBits sym e1 e2
-    "bvConcat cx@0:bv cy@1:bv" @?= show e3
+    show e3 @?= "bvConcat cx@0:bv cy@1:bv"
     e4 <- bvOrBits sym e2 e1
-    show e3 @?= show e4
+    show e4 @?= show e3
 
 testUninterpretedFunctionScope :: TestTree
 testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
