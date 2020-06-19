@@ -1838,7 +1838,7 @@ ppApp' a0 = do
           where ppConstant 0 = []
                 ppConstant c = [ stringPrettyArg (ppRat c) ]
                 ppEntry 1 e  = [ exprPrettyArg e ]
-                ppEntry sm e = [ PrettyFunc "realAdd" [stringPrettyArg (ppRat sm), exprPrettyArg e ] ]
+                ppEntry sm e = [ PrettyFunc "realMul" [stringPrettyArg (ppRat sm), exprPrettyArg e ] ]
                 ppRat r | d == 1 = show n
                         | otherwise = "(" ++ show n ++ "/" ++ show d ++ ")"
                      where n = numerator r
