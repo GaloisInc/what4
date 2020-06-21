@@ -469,7 +469,7 @@ scale k a
       BVDAny _ -> a
       BVDInterval mask al aw
         | k >= 0 -> interval mask (k * al) (k * aw)
-        | otherwise -> interval mask (k * ah) (k * aw)
+        | otherwise -> interval mask (k * ah) (abs k * aw)
         where ah = al + aw
 
 mul :: (1 <= w) => Domain w -> Domain w -> Domain w

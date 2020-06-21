@@ -911,8 +911,9 @@ testBVDomainArithScale = testCase "bv domain arith scale" $
     x  <- freshConstant sym (userSymbol' "x") (BaseBVRepr $ knownNat @8)
     e0 <- bvZext sym (knownNat @16) x
     e1 <- bvNeg sym e0
-    e2 <- bvUgt sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 256)
-    e2 @?= truePred sym
+    e2 <- bvSub sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 1)
+    e3 <- bvUgt sym e2 =<< bvLit sym knownRepr (BV.mkBV knownNat 256)
+    e3 @?= truePred sym
 
 main :: IO ()
 main = defaultMain $ testGroup "Tests"
