@@ -120,9 +120,11 @@ abstractTerm sr c e =
     SR.SemiRingNatRepr     -> SRAbsNatAdd (AD.natRangeScalarMul c (AD.getAbsValue e))
     SR.SemiRingIntegerRepr -> SRAbsIntAdd (AD.rangeScalarMul c (AD.getAbsValue e))
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.ravScalarMul c (AD.getAbsValue e))
-    SR.SemiRingBVRepr fv _w ->
+    SR.SemiRingBVRepr fv w ->
       case fv of
-        SR.BVArithRepr -> SRAbsBVAdd (A.scale (BV.asUnsigned c) (BVD.asArithDomain (AD.getAbsValue e)))
+        SR.BVArithRepr ->
+          -- A.scale expects a signed integer coefficient
+          SRAbsBVAdd (A.scale (BV.asSigned w c) (BVD.asArithDomain (AD.getAbsValue e)))
         SR.BVBitsRepr  -> SRAbsBVXor (X.and_scalar (BV.asUnsigned c) (BVD.asXorDomain (AD.getAbsValue e)))
 
 abstractVal :: AD.HasAbsValue f => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRAbsValue sr

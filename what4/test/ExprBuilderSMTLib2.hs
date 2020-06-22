@@ -905,6 +905,16 @@ testSolverVersion = testCase "test solver version bounds" $
                     , _vRel = [] }
     checkSolverVersion' (Map.singleton "Z3" v) Map.empty proc >> return ()
 
+testBVDomainArithScale :: TestTree
+testBVDomainArithScale = testCase "bv domain arith scale" $
+  withSym FloatIEEERepr $ \sym -> do
+    x  <- freshConstant sym (userSymbol' "x") (BaseBVRepr $ knownNat @8)
+    e0 <- bvZext sym (knownNat @16) x
+    e1 <- bvNeg sym e0
+    e2 <- bvSub sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 1)
+    e3 <- bvUgt sym e2 =<< bvLit sym knownRepr (BV.mkBV knownNat 256)
+    e3 @?= truePred sym
+
 main :: IO ()
 main = defaultMain $ testGroup "Tests"
   [ testInterpretedFloatReal
@@ -933,6 +943,7 @@ main = defaultMain $ testGroup "Tests"
   , testBoundVarAsFree
   , testSolverInfo
   , testSolverVersion
+  , testBVDomainArithScale
 
   , testCase "Yices 0-tuple" $ withYices zeroTupleTest
   , testCase "Yices 1-tuple" $ withYices oneTupleTest
