@@ -80,6 +80,8 @@ module What4.Utils.BVDomain.Arith
   , correct_add
   , correct_neg
   , correct_mul
+  , correct_scale
+  , correct_scale_eq
   , correct_udiv
   , correct_urem
   , correct_sdivRange
@@ -123,6 +125,11 @@ data Domain (w :: Nat)
   -- satisfy the invariants @0 <= l < 2^w@ and @0 <= d < 2^w@. The
   -- first argument caches the value @2^w-1@.
   deriving Show
+
+sameDomain :: Domain w -> Domain w -> Bool
+sameDomain (BVDAny _) (BVDAny _) = True
+sameDomain (BVDInterval _ x w) (BVDInterval _ x' w') = x == x' && w == w'
+sameDomain _ _ = False
 
 size :: Domain w -> Integer
 size (BVDAny mask)        = mask + 1
@@ -719,6 +726,16 @@ correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
 
 correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
+correct_scale :: (1 <= n) => NatRepr n -> Integer -> (Domain n, Integer) -> Property
+correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
+  where
+  k' = toSigned n k
+
+correct_scale_eq :: (1 <= n) => NatRepr n -> Integer -> Domain n -> Property
+correct_scale_eq n k a = property $ sameDomain (scale k' a) (mul (singleton n k) a)
+  where
+  k' = toSigned n k
 
 correct_udiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')
