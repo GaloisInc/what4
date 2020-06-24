@@ -21,25 +21,11 @@ import qualified Control.Lens as L
 import Control.Monad (join)
 import qualified Data.Parameterized.Context as Ctx
 import Data.Parameterized.Nonce
--- import Data.Parameterized.Some
--- import Data.Parameterized.TraversableFC
--- import qualified Data.Set as Set
--- import Data.Text (Text)
--- import qualified Data.Text.Lazy as Lazy
--- import qualified Data.Text.Lazy.Builder as Builder
 import Language.Sally
-import Language.Sally.Writer
-import qualified System.IO.Streams as Streams
--- import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import What4.BaseTypes
 import What4.Expr
 import What4.Expr.Builder
 import qualified What4.Interface as What4
--- import What4.ProblemFeatures
--- import What4.Protocol.SMTLib2 hiding (newWriter)
--- import What4.Protocol.SMTLib2.Syntax as SMT2
-import What4.Protocol.SMTWriter as SMTWriter
-import What4.Solver.Adapter
 import What4.TransitionSystem
 import Prelude hiding (init)
 
@@ -55,8 +41,8 @@ displayTransitionSystem ::
 displayTransitionSystem sym transitionSystem =
   do
     sts <- transitionSystemToSally sym mySallyNames transitionSystem
-    sexp <- sexpOfTrResult sym sts
-    print . sxPretty $ sexp
+    sexp <- sexpOfSally sym sts
+    print . sexpToCompactDoc $ sexp
 
 main :: IO ()
 main =
@@ -128,7 +114,7 @@ counterTransitions ::
   What4.SymStruct sym CounterStateType ->
   -- | next state
   What4.SymStruct sym CounterStateType ->
-  IO [(String, What4.Pred sym)]
+  IO [(Name, What4.Pred sym)]
 counterTransitions sym state next =
   do
     stateCounterIsEven <- What4.structField sym state counterIsEven
@@ -143,7 +129,7 @@ counterTransitions sym state next =
     bStateNeg <- What4.notPred sym stateCounterIsEven
     boolCond <- What4.eqPred sym nextCounterIsEven bStateNeg
     andCond <- What4.andPred sym boolCond natCond
-    return [("CounterTransition", andCond)]
+    return [(userSymbol' "CounterTransition", andCond)]
 
 -- | TODO
 counterTransitionSystem ::
@@ -153,11 +139,11 @@ counterTransitionSystem sym =
   do
     return $
       TransitionSystem
-        { stateFieldsRepr = knownRepr,
-          stateFieldsNames = counterFieldNames,
-          initialStatePred = counterInitial sym,
+        { stateReprs = knownRepr,
+          stateNames = counterFieldNames,
+          initialStatePredicate = counterInitial sym,
           stateTransitions = counterTransitions sym,
-          queries = pure []
+          queries = const (pure [])
         }
 
 --
@@ -211,7 +197,7 @@ realsTransitions ::
   What4.SymStruct sym RealsStateType ->
   -- | next state
   What4.SymStruct sym RealsStateType ->
-  IO [(String, What4.Pred sym)]
+  IO [(Name, What4.Pred sym)]
 realsTransitions sym state next =
   do
     pState <- What4.structField sym state pReals
@@ -227,7 +213,7 @@ realsTransitions sym state next =
     -- (= next.x state.x)
     c3 <- What4.realEq sym xNext xState
     t <- What4.andPred sym c1 =<< What4.andPred sym c2 c3
-    return [("RealsTransition", t)]
+    return [(userSymbol' "RealsTransition", t)]
 
 -- | TODO
 realsTransitionSystem ::
@@ -237,9 +223,9 @@ realsTransitionSystem sym =
   do
     return $
       TransitionSystem
-        { stateFieldsRepr = knownRepr,
-          stateFieldsNames = realsFieldNames,
-          initialStatePred = realsInitial sym,
+        { stateReprs = knownRepr,
+          stateNames = realsFieldNames,
+          initialStatePredicate = realsInitial sym,
           stateTransitions = realsTransitions sym,
-          queries = pure []
+          queries = const (pure [])
         }

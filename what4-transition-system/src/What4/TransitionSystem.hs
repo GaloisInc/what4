@@ -18,7 +18,6 @@ module What4.TransitionSystem
   ( CtxState,
     TransitionSystem (..),
     createStateStruct,
-    mkAccessors,
     mySallyNames,
     -- stateField,
     transitionSystemToSally,
@@ -28,9 +27,8 @@ where
 
 import qualified Control.Lens as L
 import Control.Monad.Identity
-import Data.Functor.Const
+import Data.Functor.Const (Const (..))
 import qualified Data.Parameterized.Context as Ctx
-import Data.Parameterized.TraversableFC
 import qualified Language.Sally as S
 import What4.BaseTypes
 import What4.Expr
@@ -65,7 +63,20 @@ data TransitionSystem sym state = TransitionSystem
       What4.SymStruct sym state ->
       What4.SymStruct sym state ->
       IO [(S.Name, What4.Pred sym)],
-    queries :: IO [What4.Pred sym]
+    -- | Sally queries that must hold at all states
+    --
+    -- It may seem surprising that it receives a state, since Sally queries are
+    -- not namespaced.  The issue is, if we don't namespace the fields
+    -- corresponding to the arguments of the block that the query refers to,
+    -- they will be anonymized by the SMTWriter.
+    --
+    -- By creating the "query" state struct, the fields will be namespaced as
+    -- "query.field".  We can detect those fields in the writer (just as we do
+    -- for the "init" namespace, that must exist for What4 but must be erased
+    -- for Sally), and remove the field access as we print.
+    queries ::
+      What4.SymStruct sym state ->
+      IO [What4.Pred sym]
   }
 
 data SallyNames = SallyNames
@@ -124,36 +135,20 @@ sideConditions ::
   IO (S.SallyPred t)
 sideConditions sym stateReprs state =
   do
-    preds <- concat <$> toListFC getConst <$> Ctx.traverseWithIndex createSideCondition stateReprs
+    preds <- Ctx.traverseAndCollect sideConditionsForIndex stateReprs
     What4.andAllOf sym L.folded preds
   where
-    createSideCondition :: Ctx.Index state bt -> BaseTypeRepr bt -> IO (Const [S.SallyPred t] bt)
-    createSideCondition _index _tp = pure (Const []) -- FIXME
-          -- do
-          --   let zipped = Ctx.zipWith Pair stateReprs accessors
-          --   natConditions <- foldrMFC' addSideCondition [] zipped
-          --   What4.andAllOf sym L.folded natConditions
-          -- where
-          --   addSideCondition ::
-          --     Product BaseTypeRepr (ExprSymFn t (CtxState state)) tp ->
-          --     [S.SallyPred t] ->
-          --     IO [S.SallyPred t]
-          --   addSideCondition p acc = do
-          --     c <- sideCondition p
-          --     return $ c ++ acc
-          --   sideCondition ::
-          --     Product BaseTypeRepr (ExprSymFn t (CtxState state)) tp ->
-          --     IO [S.SallyPred t]
-          --   sideCondition (Pair BaseBoolRepr _) = return []
-          --   sideCondition (Pair BaseNatRepr e) =
-          --     do
-          --       nZ <- What4.natLit sym 0
-          --       natFieldValue <- What4.applySymFn sym e (Ctx.Empty Ctx.:> state)
-          --       (: []) <$> What4.natLe sym nZ natFieldValue
-          --   sideCondition (Pair BaseIntegerRepr _) = return []
-          --   sideCondition (Pair BaseRealRepr _) = return []
-          --   sideCondition (Pair (BaseBVRepr _) _) = return []
-          --   sideCondition (Pair _ _) = error "Not implemented"
+    sideConditionsForIndex :: Ctx.Index state tp -> BaseTypeRepr tp -> IO [S.SallyPred t]
+    sideConditionsForIndex _ BaseBoolRepr = return []
+    sideConditionsForIndex i BaseNatRepr =
+      do
+        nZ <- What4.natLit sym 0
+        natFieldValue <- What4.structField sym state i
+        (: []) <$> What4.natLe sym nZ natFieldValue
+    sideConditionsForIndex _ BaseIntegerRepr = return []
+    sideConditionsForIndex _ BaseRealRepr = return []
+    sideConditionsForIndex _ (BaseBVRepr _) = return []
+    sideConditionsForIndex _ bt = error $ "sideConditions: Not implemented for base type " ++ show bt ++ ". Please report."
 
 createStateStruct ::
   What4.IsSymExprBuilder sym =>
@@ -233,10 +228,17 @@ makeSallyTransitions
       return (allTransitions ++ [mainTransition])
 
 makeSallyQueries ::
-  S.Name ->
-  [What4.Pred (ExprBuilder t st fs)] ->
-  [S.SallyQuery t]
-makeSallyQueries systemName = map (sallyQuery systemName)
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  SallyNames ->
+  TransitionSystem sym state ->
+  IO [S.SallyQuery t]
+makeSallyQueries sym
+  SallyNames {systemName }
+  TransitionSystem { queries, stateReprs }
+  = do
+  queryState <- createStateStruct sym "query" stateReprs
+  map (sallyQuery systemName) <$> queries queryState
 
 sallyQuery :: S.Name -> What4.Pred (ExprBuilder t st fs) -> S.SallyQuery t
 sallyQuery systemName sallyQueryPredicate =
@@ -260,13 +262,11 @@ transitionSystemToSally
       stateName,
       systemName
     }
-  ts@TransitionSystem
-    { queries
-    } =
+  ts =
     do
       sallyStateFormulaPredicate <- sallyInitialState sym ts
       sallyTransitions <- makeSallyTransitions sym sn ts
-      sallyQueries <- makeSallyQueries systemName <$> queries
+      sallyQueries <- makeSallyQueries sym sn ts
       let sallyInitialFormula =
             S.SallyStateFormula
               { S.sallyStateFormulaName = initialName,
@@ -291,49 +291,5 @@ transitionSystemToSally
             S.sallyQueries
           }
 
--- | @mkAccessors@ creates an assignment of function symbols to each state field.  The
--- name is given by the @Const String@ assignment, the input type is the whole
--- state type, and the return type is the type of the given field.
-mkAccessors ::
-  What4.IsSymExprBuilder sym =>
-  sym ->
-  Ctx.Assignment BaseTypeRepr state ->
-  Ctx.Assignment (Const What4.SolverSymbol) state ->
-  IO (Ctx.Assignment (What4.SymFn sym (CtxState state)) state)
-mkAccessors sym stateType =
-  Ctx.traverseWithIndex
-    ( \index (Const symbol) ->
-        What4.freshTotalUninterpFn
-          sym
-          symbol
-          (Ctx.Empty Ctx.:> BaseStructRepr stateType)
-          (stateType Ctx.! index)
-    )
-
--- | @freshStateVars@ instantiates a state type with fresh variables, and
--- returns the assignment of fields to variables.  This can be used any time a
--- new state is needed.
--- freshStateVars ::
---   What4.IsSymExprBuilder sym =>
---   sym ->
---   String ->
---   -- | state type
---   Ctx.Assignment BaseTypeRepr state ->
---   IO (Ctx.Assignment (SymExpr sym) state)
--- freshStateVars sym name ctx =
---   Ctx.traverseWithIndex (\ ndx -> What4.freshConstant sym (userSymbol' (name ++ "_" ++ show (Ctx.indexVal ndx)))) ctx
-
 -- | A context with just one field, a struct type for the state
 type CtxState state = Ctx.EmptyCtx Ctx.::> BaseStructType state
-
--- stateField ::
---   What4.IsSymExprBuilder sym =>
---   sym ->
---   -- Ctx.Assignment (What4.SymFn sym (CtxState state)) state ->
---   -- L.Lens' (Ctx.Assignment (What4.SymFn sym (CtxState state)) state) (What4.SymFn sym (CtxState state) ret) ->
---   Ctx.Index state ret ->
---   What4.SymStruct sym state ->
---   IO (SymExpr sym ret)
--- stateField sym state index =
---   What4.structField sym state index
---   -- What4.applySymFn sym (L.view field fields) (Ctx.Empty Ctx.:> state)

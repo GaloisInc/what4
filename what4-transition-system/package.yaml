@@ -10,7 +10,7 @@ dependencies:
   - containers ^>= 0.6
   - io-streams
   - lens
-  - language-sally ^>= 0.2
+  - language-sally ^>= 0.2.1.0
   - mtl
   - parameterized-utils ^>= 2.0
   - text
@@ -42,4 +42,4 @@ tests:
     main: TransitionSystemTest.hs
     source-dirs: test
 
-version: 0.0.1.0
+version: 0.0.2.0
