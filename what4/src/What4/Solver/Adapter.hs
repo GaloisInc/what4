@@ -10,6 +10,7 @@
 --
 ------------------------------------------------------------------------
 
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 module What4.Solver.Adapter
   ( SolverAdapter(..)
@@ -19,8 +20,10 @@ module What4.Solver.Adapter
   , LogData(..)
   , logCallback
   , defaultLogData
+  , smokeTest
   ) where
 
+import qualified Control.Exception as X
 import           Data.Bits
 import           Data.IORef
 import qualified Data.Map as Map
@@ -28,14 +31,15 @@ import qualified Data.Text as T
 import           System.IO
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
+
 import           What4.BaseTypes
 import           What4.Config
 import           What4.Concrete
+import           What4.Interface
 import           What4.SatResult
 import           What4.ProblemFeatures
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
-import           What4.Utils.StringLiteral
 
 
 data SolverAdapter st =
@@ -120,3 +124,12 @@ solverAdapterOptions xs@(def:_) =
                  (listOptSty (vals ref))
                  (Just (PP.text "Indicates which solver to use for check-sat queries"))
                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
+
+smokeTest :: ExprBuilder t st fs -> SolverAdapter st -> IO (Maybe X.SomeException)
+smokeTest sym adpt = test `X.catch` (pure . Just)
+  where
+  test :: IO (Maybe X.SomeException)
+  test =
+    solver_adapter_check_sat adpt sym defaultLogData [falsePred sym] $ \case
+      Unsat{} -> pure Nothing
+      _ -> fail "Smoke test failed: expected UNSAT"
