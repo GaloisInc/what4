@@ -225,7 +225,7 @@ inNewFrame p action = inNewFrameWithVars p [] action
 
 -- | Perform an action in the scope of a solver assumption frame, where the given
 -- bound variables are considered free within that frame.
-inNewFrameWithVars :: (MonadIO m, MonadMask m, SMTReadWriter solver) 
+inNewFrameWithVars :: (MonadIO m, MonadMask m, SMTReadWriter solver)
                    => SolverProcess scope solver
                    -> [Some (ExprBoundVar scope)]
                    -> m a
@@ -358,9 +358,11 @@ getSatResult yp = do
     Right ok -> return ok
 
     Left (SomeException e) ->
-       do txt <- readAllLines err_reader
-          -- Interrupt process; suppress any exceptions that occur.
-          catch (terminateProcess ph) (\(_ :: IOError) -> return ())
+       do -- Interrupt process
+          terminateProcess ph
+
+          txt <- readAllLines err_reader
+
           -- Wait for process to end
           ec <- waitForProcess ph
           let ec_code = case ec of
