@@ -10,7 +10,7 @@ import qualified Data.Text.IO as Text
 import           Control.Exception(bracket,catch,IOException)
 import           Control.Concurrent(ThreadId,forkIO,killThread)
 import           Control.Concurrent.Chan(Chan,newChan,readChan,writeChan)
-import           System.IO(Handle,hPutStrLn,stderr,hClose)
+import           System.IO(Handle,hClose)
 import           System.IO.Streams( OutputStream, InputStream )
 import qualified System.IO.Streams as Streams
 

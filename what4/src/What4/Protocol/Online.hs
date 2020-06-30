@@ -35,7 +35,7 @@ module What4.Protocol.Online
   ) where
 
 import           Control.Exception
-                   ( SomeException(..), catch, catchJust, tryJust, displayException )
+                   ( SomeException(..), catchJust, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
 import           Control.Monad.Catch ( MonadMask, bracket_, onException )
