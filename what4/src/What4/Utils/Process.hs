@@ -75,7 +75,7 @@ cleanupProcess :: (Handle, Handle, Handle, ProcessHandle) -> IO ExitCode
 cleanupProcess (h_in, h_out, h_err, ph) =
  do catchJust filterAsync
          (hClose h_in >> hClose h_out >> hClose h_err)
-         (\(ex :: SomeException) -> hPutStrLn stderr $ displayException ex)
+         (\(_ :: SomeException) -> return ())
     waitForProcess ph
 
 -- | Start a process connected to this one via pipes.
