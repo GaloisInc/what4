@@ -83,7 +83,7 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification (Property, property, (==>), GenV, chooseInteger)
 
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
@@ -130,7 +130,7 @@ bvdMask (BVBitInterval mask _ _) = mask
 
 -- | Random generator for domain values.  We always generate
 --   nonempty domains values.
-genDomain :: NatRepr w -> Gen (Domain w)
+genDomain :: Monad m => NatRepr w -> GenV m (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
      lo <- chooseInteger (0, mask)
@@ -143,7 +143,7 @@ genDomain w =
 -- random bits for the "unknown" values of
 -- the domain, then stripes them out among
 -- the unknown bit positions.
-genElement :: Domain w -> Gen Integer
+genElement :: Monad m => Domain w -> GenV m Integer
 genElement (BVBitInterval _mask lo hi) =
   do x <- chooseInteger (0, bit bs - 1)
      pure $ stripe lo x 0
@@ -161,7 +161,7 @@ genElement (BVBitInterval _mask lo hi) =
 {- A faster generator, but I worry that it
    doesn't have very good statistical properties...
 
-genElement :: Domain w -> Gen Integer
+genElement :: Monad m => Domain w -> GenV m Integer
 genElement (BVBitInterval mask lo hi) =
   do let u = Bits.xor lo hi
      x <- chooseInteger (0, mask)
@@ -169,7 +169,7 @@ genElement (BVBitInterval mask lo hi) =
 -}
 
 
-genPair :: NatRepr w -> Gen (Domain w, Integer)
+genPair :: Monad m => NatRepr w -> GenV m (Domain w, Integer)
 genPair w =
   do a <- genDomain w
      x <- genElement a

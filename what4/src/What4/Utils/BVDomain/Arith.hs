@@ -105,7 +105,7 @@ import           GHC.Stack
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification ( Property, property, (==>), GenV, chooseInteger )
 
 --------------------------------------------------------------------------------
 -- BVDomain definition
@@ -149,20 +149,20 @@ bvdMask x =
     BVDInterval mask _ _ -> mask
 
 -- | Random generator for domain values
-genDomain :: NatRepr w -> Gen (Domain w)
+genDomain :: Monad m => NatRepr w -> GenV m (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
      lo <- chooseInteger (0, mask)
      sz <- chooseInteger (0, mask)
      pure $! interval mask lo sz
 
-genElement :: Domain w -> Gen Integer
+genElement :: Monad m => Domain w -> GenV m Integer
 genElement (BVDAny mask) = chooseInteger (0, mask)
 genElement (BVDInterval mask lo sz) =
    do x <- chooseInteger (0, sz)
       pure ((x+lo) .&. mask)
 
-genPair :: NatRepr w -> Gen (Domain w, Integer)
+genPair :: Monad m => NatRepr w -> GenV m (Domain w, Integer)
 genPair w =
   do a <- genDomain w
      x <- genElement a

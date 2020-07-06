@@ -26,7 +26,8 @@ implementations, which are transliterated from the Cryptol.
 
 import qualified Data.Bits as Bits
 import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Test.Verification
+import           VerifyBindings
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 
@@ -38,12 +39,7 @@ import qualified What4.Utils.BVDomain.XOR as X
 
 main :: IO ()
 main = defaultMain $
-  -- some tests discard a lot of values based on preconditions;
-  -- this helps prevent those tests from failing for insufficent coverage
-  localOption (QuickCheckMaxRatio 1000) $
-
-  -- run at least 5000 tests
-  adjustOption (\(QuickCheckTests x) -> QuickCheckTests (max x 5000)) $
+  setTestOptions $
 
     testGroup "Bitvector Domain"
     [ arithDomainTests
@@ -56,7 +52,7 @@ main = defaultMain $
 data SomeWidth where
   SW :: (1 <= w) => NatRepr w -> SomeWidth
 
-genWidth :: Gen SomeWidth
+genWidth :: Monad m => GenV m SomeWidth
 genWidth =
   do sz <- getSize
      x <- chooseInt (1, sz+4)
@@ -65,11 +61,9 @@ genWidth =
          | Just LeqProof <- isPosNat n -> pure (SW n)
        _ -> error "test panic! genWidth"
 
-genBV :: NatRepr w -> Gen Integer
+genBV :: Monad m => NatRepr w -> GenV m Integer
 genBV w = chooseInteger (minUnsigned w, maxUnsigned w)
 
-genTest :: String -> Gen Property -> TestTree
-genTest nm p = testProperty nm p
 
 arithDomainTests :: TestTree
 arithDomainTests = testGroup "Arith Domain"
