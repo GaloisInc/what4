@@ -83,7 +83,7 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification (Property, property, (==>), Gen, chooseInteger)
 
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)

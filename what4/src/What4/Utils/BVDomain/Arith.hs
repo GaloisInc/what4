@@ -107,7 +107,7 @@ import           GHC.Stack
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 --------------------------------------------------------------------------------
 -- BVDomain definition

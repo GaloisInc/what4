@@ -152,7 +152,7 @@ import qualified What4.Utils.BVDomain.Arith as A
 import qualified What4.Utils.BVDomain.Bitwise as B
 import qualified What4.Utils.BVDomain.XOR as X
 
-import           Test.QuickCheck (Property, property, (==>), Gen, arbitrary)
+import           Test.Verification ( Property, property, (==>), Gen, chooseBool )
 
 
 arithToBitwiseDomain :: A.Domain w -> B.Domain w
@@ -242,7 +242,7 @@ size (BVDBitwise b) = B.size b
 
 genDomain :: NatRepr w -> Gen (BVDomain w)
 genDomain w =
-  do b <- arbitrary
+  do b <- chooseBool
      if b then
        BVDArith <$> A.genDomain w
      else
