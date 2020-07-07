@@ -540,6 +540,7 @@ bitblastExpr h ae = do
     SBVToInteger{} -> intFail
 
     RoundReal{} -> realFail
+    RoundEvenReal{} -> realFail
     FloorReal{} -> realFail
     CeilReal{}  -> realFail
     RealToInteger{} -> intFail

@@ -139,6 +139,12 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_mul" $
       do SW n <- genWidth
          A.correct_mul n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         A.correct_scale n <$> genBV n <*> A.genPair n
+  , genTest "correct_scale_eq" $
+      do SW n <- genWidth
+         A.correct_scale_eq n <$> genBV n <*> A.genDomain n
   , genTest "correct_udiv" $
       do SW n <- genWidth
          A.correct_udiv n <$> A.genPair n <*> A.genPair n
@@ -392,6 +398,9 @@ overallDomainTests = testGroup "Overall Domain"
   , genTest "correct_neg" $
       do SW n <- genWidth
          O.correct_neg n <$> O.genPair n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         O.correct_scale n <$> genBV n <*> O.genPair n
   , genTest "correct_mul" $
       do SW n <- genWidth
          O.correct_mul n <$> O.genPair n <*> O.genPair n

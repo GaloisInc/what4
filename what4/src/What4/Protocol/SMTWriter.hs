@@ -72,6 +72,7 @@ module What4.Protocol.SMTWriter
   , mkFreeVar
   , bindVarAsFree
   , TypeMap(..)
+  , typeMap
   , freshBoundVarName
   , assumeFormula
   , assumeFormulaWithName
@@ -86,6 +87,9 @@ module What4.Protocol.SMTWriter
   , mkAtomicFormula
   , SMTEvalFunctions(..)
   , smtExprGroundEvalFn
+  , CollectorResults(..)
+  , mkBaseExpr
+  , runInSandbox
     -- * Reexports
   , What4.Interface.RoundingMode(..)
   ) where
@@ -2625,6 +2629,19 @@ appSMTExpr ae = do
       addSideCondition "round" $ x .<  0 .|| posExpr
       addSideCondition "round" $ x .>= 0 .|| negExpr
       return nm
+
+    RoundEvenReal xe -> do
+      checkIntegerSupport i
+      x <- mkBaseExpr xe
+      nm <- asBase <$> freshConstant "roundEven" IntegerTypeMap
+      r <- asBase <$> freshBoundTerm RealTypeMap (termIntegerToReal nm)
+      -- Assert that `x` is in the interval `[r, r+1]`
+      addSideCondition "roundEven" $ (r .<= x) .&& (x .<= r+1)
+      diff <- asBase <$> freshBoundTerm RealTypeMap (x - r)
+      freshBoundTerm IntegerTypeMap $
+        ite (diff .< rationalTerm 0.5) nm $
+          ite (diff .> rationalTerm 0.5) (nm+1) $
+            ite (intDivisible nm 2) nm (nm+1)
 
     FloorReal xe -> do
       checkIntegerSupport i

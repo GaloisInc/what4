@@ -112,6 +112,7 @@ module What4.Utils.BVDomain
   , correct_add
   , correct_neg
   , correct_mul
+  , correct_scale
   , correct_udiv
   , correct_urem
   , correct_sdiv
@@ -745,6 +746,11 @@ correct_neg n (a,x) = member a x ==> pmember n (negate a) (Prelude.negate x)
 
 correct_mul :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
+correct_scale :: (1 <= n) => NatRepr n -> Integer -> (BVDomain n, Integer) -> Property
+correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
+  where
+  k' = toSigned n k
 
 correct_udiv :: (1 <= n) => NatRepr n -> (BVDomain n, Integer) -> (BVDomain n, Integer) -> Property
 correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')

@@ -1,4 +1,4 @@
-
+{-# LANGUAGE ScopedTypeVariables #-}
 module What4.Utils.HandleReader where
 
 import           Control.Monad (unless)
@@ -7,11 +7,10 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LazyText
 import qualified Data.Text.IO as Text
-import           Control.Exception(bracket,catch)
+import           Control.Exception(bracket,catch,IOException)
 import           Control.Concurrent(ThreadId,forkIO,killThread)
 import           Control.Concurrent.Chan(Chan,newChan,readChan,writeChan)
-import           System.IO(Handle,hPutStrLn,stderr,hClose)
-import           System.IO.Error(isEOFError,ioeGetErrorType)
+import           System.IO(Handle,hClose)
 import           System.IO.Streams( OutputStream, InputStream )
 import qualified System.IO.Streams as Streams
 
@@ -113,12 +112,7 @@ streamLines c h (Just auxstr) = go
 startHandleReader :: Handle -> Maybe (OutputStream Text) -> IO HandleReader
 startHandleReader h auxOutput = do
   c <- newChan
-  let handle_err e
-        | isEOFError e = do
-            writeChan c Nothing
-        | otherwise = do
-            hPutStrLn stderr $ show (ioeGetErrorType e)
-            hPutStrLn stderr $ show e
+  let handle_err (_e :: IOException) = writeChan c Nothing
   tid <- forkIO $ streamLines c h auxOutput `catch` handle_err
 
   return $! HandleReader { hrChan     = c

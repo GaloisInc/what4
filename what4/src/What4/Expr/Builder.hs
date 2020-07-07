@@ -823,6 +823,7 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   IntegerToBV  :: (1 <= w) => !(e BaseIntegerType) -> NatRepr w -> App e (BaseBVType w)
 
   RoundReal :: !(e BaseRealType) -> App e BaseIntegerType
+  RoundEvenReal :: !(e BaseRealType) -> App e BaseIntegerType
   FloorReal :: !(e BaseRealType) -> App e BaseIntegerType
   CeilReal  :: !(e BaseRealType) -> App e BaseIntegerType
 
@@ -1244,6 +1245,7 @@ appType a =
     RealSqrt{} -> knownRepr
 
     RoundReal{} -> knownRepr
+    RoundEvenReal{} -> knownRepr
     FloorReal{} -> knownRepr
     CeilReal{}  -> knownRepr
 
@@ -1657,6 +1659,7 @@ abstractEval f a0 = do
     SBVToInteger x -> valueRange (Inclusive lx) (Inclusive ux)
       where (lx, ux) = BVD.sbounds (bvWidth x) (f x)
     RoundReal x -> mapRange roundAway (ravRange (f x))
+    RoundEvenReal x -> mapRange round (ravRange (f x))
     FloorReal x -> mapRange floor (ravRange (f x))
     CeilReal x  -> mapRange ceiling (ravRange (f x))
     IntegerToNat x -> intRangeToNatRange (f x)
@@ -1835,7 +1838,7 @@ ppApp' a0 = do
           where ppConstant 0 = []
                 ppConstant c = [ stringPrettyArg (ppRat c) ]
                 ppEntry 1 e  = [ exprPrettyArg e ]
-                ppEntry sm e = [ PrettyFunc "realAdd" [stringPrettyArg (ppRat sm), exprPrettyArg e ] ]
+                ppEntry sm e = [ PrettyFunc "realMul" [stringPrettyArg (ppRat sm), exprPrettyArg e ] ]
                 ppRat r | d == 1 = show n
                         | otherwise = "(" ++ show n ++ "/" ++ show d ++ ")"
                      where n = numerator r
@@ -1987,6 +1990,7 @@ ppApp' a0 = do
     SBVToInteger x  -> ppSExpr "sbvToInteger" [x]
 
     RoundReal x -> ppSExpr "round" [x]
+    RoundEvenReal x -> ppSExpr "roundEven" [x]
     FloorReal x -> ppSExpr "floor" [x]
     CeilReal  x -> ppSExpr "ceil"  [x]
 
@@ -3289,6 +3293,7 @@ reduceApp sym a0 = do
     IntegerToBV x w -> integerToBV sym x w
 
     RoundReal x -> realRound sym x
+    RoundEvenReal x -> realRoundEven sym x
     FloorReal x -> realFloor sym x
     CeilReal  x -> realCeil sym x
 
@@ -5094,6 +5099,36 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         | Just (BVOrBits w ys) <- asApp y
         -> sbMakeExpr sym $ BVOrBits w $ bvOrInsert x ys
 
+        -- (or (shl x n) (zext w y)) is equivalent to (concat (trunc (w - n) x) y) when n is
+        -- the number of bits of y. Notice that the low bits of a shl expression are 0 and
+        -- the high bits of a zext expression are 0, thus the or expression is equivalent to
+        -- the concatenation between the high bits of the shl expression and the low bits of
+        -- the zext expression.
+        | Just (BVShl w x' n) <- asApp x
+        , Just (BVZext _ lo) <- asApp y
+        , Just ni <- BV.asUnsigned <$> asBV n
+        , intValue (bvWidth lo) == ni
+        , Just LeqProof <- testLeq (bvWidth lo) w -- dynamic check for GHC typechecker
+        , w' <- subNat w (bvWidth lo)
+        , Just LeqProof <- testLeq (knownNat @1) w' -- dynamic check for GHC typechecker
+        , Just LeqProof <- testLeq (addNat w' (knownNat @1)) w -- dynamic check for GHC typechecker
+        , Just Refl <- testEquality w (addNat w' (bvWidth lo)) -- dynamic check for GHC typechecker
+        -> do
+          hi <- bvTrunc sym w' x'
+          bvConcat sym hi lo
+        | Just (BVShl w y' n) <- asApp y
+        , Just (BVZext _ lo) <- asApp x
+        , Just ni <- BV.asUnsigned <$> asBV n
+        , intValue (bvWidth lo) == ni
+        , Just LeqProof <- testLeq (bvWidth lo) w -- dynamic check for GHC typechecker
+        , w' <- subNat w (bvWidth lo)
+        , Just LeqProof <- testLeq (knownNat @1) w' -- dynamic check for GHC typechecker
+        , Just LeqProof <- testLeq (addNat w' (knownNat @1)) w -- dynamic check for GHC typechecker
+        , Just Refl <- testEquality w (addNat w' (bvWidth lo)) -- dynamic check for GHC typechecker
+        -> do
+          hi <- bvTrunc sym w' y'
+          bvConcat sym hi lo
+
         | otherwise
         -> sbMakeExpr sym $ BVOrBits (bvWidth x) $ bvOrInsert x $ bvOrSingleton y
 
@@ -5526,6 +5561,17 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (RealToInteger x)
       -- Unsimplified case
     | otherwise = sbMakeExpr sym (RoundReal x)
+
+  realRoundEven sym x
+      -- Ground case
+    | SemiRingLiteral SR.SemiRingRealRepr r l <- x = return $ SemiRingLiteral SR.SemiRingIntegerRepr (round r) l
+      -- Match integerToReal
+    | Just (IntegerToReal xi) <- asApp x = return xi
+      -- Static case
+    | Just True <- ravIsInteger (exprAbsValue x) =
+      sbMakeExpr sym (RealToInteger x)
+      -- Unsimplified case
+    | otherwise = sbMakeExpr sym (RoundEvenReal x)
 
   realFloor sym x
       -- Ground case
