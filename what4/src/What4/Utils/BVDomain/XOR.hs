@@ -52,7 +52,7 @@ import           GHC.TypeNats
 
 import           Prelude hiding (any, concat, negate, and, or, not)
 
-import           Test.Verification ( Property, property, (==>), GenV, chooseInteger )
+import           Test.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 -- | A value of type @'BVDomain' w@ represents a set of bitvectors of
 -- width @w@.  This is an alternate representation of the bitwise
@@ -97,14 +97,14 @@ bitbounds (BVDXor _ hi u) = (Bits.xor u hi, hi)
 asSingleton :: Domain w -> Maybe Integer
 asSingleton (BVDXor _ hi u) = if u == 0 then Just hi else Nothing
 
-genDomain :: Monad m => NatRepr w -> GenV m (Domain w)
+genDomain :: NatRepr w -> Gen (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
      val <- chooseInteger (0, mask)
      u   <- chooseInteger (0, mask)
      pure $ BVDXor mask (val .|. u) u
 
-genElement :: Monad m => Domain w -> GenV m Integer
+genElement :: Domain w -> Gen Integer
 genElement (BVDXor _mask v u) =
    do x <- chooseInteger (0, bit bs - 1)
       pure $ stripe lo x 0
@@ -119,7 +119,7 @@ genElement (BVDXor _mask v u) =
        stripe val' (x `shiftR` 1) (i+1)
    | otherwise = stripe val x (i+1)
 
-genPair :: Monad m => NatRepr w -> GenV m (Domain w, Integer)
+genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
   do a <- genDomain w
      x <- genElement a

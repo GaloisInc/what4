@@ -83,7 +83,7 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
-import           Test.Verification (Property, property, (==>), GenV, chooseInteger)
+import           Test.Verification (Property, property, (==>), Gen, chooseInteger)
 
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
@@ -130,7 +130,7 @@ bvdMask (BVBitInterval mask _ _) = mask
 
 -- | Random generator for domain values.  We always generate
 --   nonempty domains values.
-genDomain :: Monad m => NatRepr w -> GenV m (Domain w)
+genDomain :: NatRepr w -> Gen (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
      lo <- chooseInteger (0, mask)
@@ -143,7 +143,7 @@ genDomain w =
 -- random bits for the "unknown" values of
 -- the domain, then stripes them out among
 -- the unknown bit positions.
-genElement :: Monad m => Domain w -> GenV m Integer
+genElement :: Domain w -> Gen Integer
 genElement (BVBitInterval _mask lo hi) =
   do x <- chooseInteger (0, bit bs - 1)
      pure $ stripe lo x 0
@@ -169,7 +169,7 @@ genElement (BVBitInterval mask lo hi) =
 -}
 
 
-genPair :: Monad m => NatRepr w -> GenV m (Domain w, Integer)
+genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
   do a <- genDomain w
      x <- genElement a

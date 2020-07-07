@@ -12,7 +12,6 @@ instance Testable V.Property where
   property = \case
     V.BoolProperty b -> property b
     V.AssumptionProp a -> (V.preCondition a) ==> (V.assumedProp a)
-    V.PropProperty p -> property p
 
 verifyGenerators :: V.GenEnv Gen
 verifyGenerators = V.GenEnv { V.genChooseBool = elements [ True, False ]
@@ -22,7 +21,7 @@ verifyGenerators = V.GenEnv { V.genChooseBool = elements [ True, False ]
                             }
 
 
-genTest :: String -> V.GenV Gen V.Property -> TestTree
+genTest :: String -> V.Gen V.Property -> TestTree
 genTest nm p = testProperty nm (property $ V.toNativeProperty verifyGenerators p)
 
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes #-}
 
 {-
 Module      : Test.Verification
@@ -72,7 +73,7 @@ module Test.Verification
   , chooseBool
   , chooseInt
   , chooseInteger
-  , GenV(..)      -- internals should only be used in concretization
+  , Gen(..)      -- internals should only be used in concretization
   , getSize
 
     -- * Test concretization
@@ -86,6 +87,7 @@ module Test.Verification
   )
 where
 
+import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Reader
 
 -- | Local definition of a Property: intended to be a proxy for a
@@ -98,7 +100,6 @@ import Control.Monad.Trans.Reader
 -- concretization.
 data Property = BoolProperty Bool
               | AssumptionProp Assumption
-              | PropProperty Property
   deriving Show
 
 -- | A class specifying things that can be verified by constructing a
@@ -133,7 +134,7 @@ infixr 0 ==>
 
 
 instance Verifiable Property where
-  verifying = PropProperty
+  verifying = id
 
 -- ----------------------------------------------------------------------
 
@@ -152,37 +153,40 @@ data GenEnv m = GenEnv { genChooseBool :: m Bool
 -- generator, and the 'a' return type is the type returned by running
 -- this monad.
 --
--- Tests should only use the 'GenV m TYPE' as an output; the
+-- Tests should only use the 'Gen TYPE' as an output; the
 -- constructors and internals should be used only by the test
 -- concretization.
-newtype GenV m a = GenV { unGenV :: ReaderT (GenEnv m) m a }
-  deriving (Applicative, Functor, Monad)
+newtype Gen a =
+  Gen { unGen :: forall m. Monad m => ReaderT (GenEnv m) m a }
 
+instance Functor Gen where
+  fmap f (Gen m) = Gen (fmap f m)
+
+instance Applicative Gen where
+  pure x = Gen (pure x)
+  (Gen f) <*> (Gen x) = Gen (f <*> x)
+
+instance Monad Gen where
+  Gen x >>= f = Gen (x >>= \x' -> unGen (f x'))
 
 -- | A test generator that returns True or False
-chooseBool :: Monad m => GenV m Bool
-chooseBool = do gs <- GenV $ asks genChooseBool
-                GenV $ ReaderT $ \_ -> gs
+chooseBool :: Gen Bool
+chooseBool = Gen (asks genChooseBool >>= lift)
 
 -- | A test generator that returns an 'Int' value between the
 -- specified (inclusive) bounds.
-chooseInt :: Monad m => (Int, Int) -> GenV m Int
-chooseInt r = do gs <- GenV $ asks genChooseInt
-                 GenV $ ReaderT $ \_ -> gs r
+chooseInt :: (Int, Int) -> Gen Int
+chooseInt r = Gen (asks genChooseInt >>= lift . ($r))
 
 -- | A test generator that returns an 'Integer' value between the
 -- specified (inclusive) bounds.
-chooseInteger :: Monad m => (Integer, Integer) -> GenV m Integer
-chooseInteger r = do gs <- GenV $ asks genChooseInteger
-                     GenV $ ReaderT $ \_ -> gs r
+chooseInteger :: (Integer, Integer) -> Gen Integer
+chooseInteger r = Gen (asks genChooseInteger >>= lift . ($r))
 
 -- | A test generator that returns the current shrink size of the
 -- generator functionality.
-getSize :: Monad m => GenV m Int
-getSize = do gs <- GenV $ asks genGetSize
-             -- GenV $ ReaderT $ \s -> gs >>= \b -> return (b, s)
-             GenV $ ReaderT $ \_ -> gs
-
+getSize :: Gen Int
+getSize = Gen (asks genGetSize >>= lift)
 
 -- | This function should be called by the testing code to convert the
 -- proxy tests in this module into the native tests (e.g. QuickCheck
@@ -190,5 +194,5 @@ getSize = do gs <- GenV $ asks genGetSize
 -- environment between the proxy tests here and the native
 -- equivalents, and a local Generator monad expression, returning a
 -- native Generator equivalent.
-toNativeProperty :: Monad m => GenEnv m -> GenV m b -> m b
-toNativeProperty gens gprops = runReaderT (unGenV gprops) gens
+toNativeProperty :: Monad m => GenEnv m -> Gen b -> m b
+toNativeProperty gens (Gen gprops) = runReaderT gprops gens

@@ -20,11 +20,10 @@ verifyGenerators = V.GenEnv { V.genChooseBool = Gen.bool
                             }
 
 
-genTest :: String -> V.GenV Gen V.Property -> TestTree
+genTest :: String -> V.Gen V.Property -> TestTree
 genTest nm p = testProperty nm $ property $ mkProp =<< (forAll $ V.toNativeProperty verifyGenerators p)
   where mkProp (V.BoolProperty b) = test $ assert b
         mkProp (V.AssumptionProp a) = if (V.preCondition a) then (mkProp $ V.assumedProp a) else discard
-        mkProp (V.PropProperty x) = mkProp x
 
 
 setTestOptions :: TestTree -> TestTree

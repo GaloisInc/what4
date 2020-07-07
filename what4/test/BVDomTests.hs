@@ -52,7 +52,7 @@ main = defaultMain $
 data SomeWidth where
   SW :: (1 <= w) => NatRepr w -> SomeWidth
 
-genWidth :: Monad m => GenV m SomeWidth
+genWidth :: Gen SomeWidth
 genWidth =
   do sz <- getSize
      x <- chooseInt (1, sz+4)
@@ -61,7 +61,7 @@ genWidth =
          | Just LeqProof <- isPosNat n -> pure (SW n)
        _ -> error "test panic! genWidth"
 
-genBV :: Monad m => NatRepr w -> GenV m Integer
+genBV :: NatRepr w -> Gen Integer
 genBV w = chooseInteger (minUnsigned w, maxUnsigned w)
 
 
