@@ -48,12 +48,12 @@ For example, to bind to QuickCheck, specify:
 > import qualified Test.Verification as V
 >
 > quickCheckGenerators = V.GenEnv { V.genChooseBool = elements [ True, False ]
->                                 , V.genChooseInteger = \r -> chooseInteger r
->                                 , V.genChooseInt = \r -> chooseInt r
+>                                 , V.genChooseInteger = \r -> choose r
+>                                 , V.genChooseInt = \r -> choose r
 >                                 , V.genGetSize = getSize
 >                                 }
 >
-> genTest :: String -> V.GenM Gen V.Property -> TestTree
+> genTest :: String -> V.Gen V.Property -> TestTree
 > genTest nm p = testProperty nm
 >                (property $ V.toNativeProperty quickCheckGenerators p)
 
@@ -69,11 +69,10 @@ module Test.Verification
     assuming
   , (==>)
   , property
-  , Property(..)  -- constructors should only be used in concretization
   , chooseBool
   , chooseInt
   , chooseInteger
-  , Gen(..)      -- internals should only be used in concretization
+  , Gen
   , getSize
 
     -- * Test concretization
@@ -81,6 +80,7 @@ module Test.Verification
     -- Used by test implementation functions to map from this
     -- Verification abstraction to the actual test mechanism
     -- (e.g. QuickCheck, HedgeHog, etc.)
+  , Property(..)
   , Assumption(..)
   , GenEnv(..)
   , toNativeProperty
