@@ -214,7 +214,7 @@ test-suite bvdomain_tests
                , parameterized-utils
                , tasty >= 0.10
                , tasty-quickcheck >= 0.10
-               , QuickCheck
+               , QuickCheck >= 2.12
                , transformers
                , what4
 
@@ -233,7 +233,7 @@ test-suite bvdomain_tests_hh
                , parameterized-utils
                , tasty >= 0.10
                , tasty-hedgehog
-               , hedgehog
+               , hedgehog >= 1.0.2
                , transformers
                , what4
 

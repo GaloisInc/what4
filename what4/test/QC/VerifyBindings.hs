@@ -15,8 +15,8 @@ instance Testable V.Property where
 
 verifyGenerators :: V.GenEnv Gen
 verifyGenerators = V.GenEnv { V.genChooseBool = elements [ True, False ]
-                            , V.genChooseInteger = \r -> chooseInteger r
-                            , V.genChooseInt = \r -> chooseInt r
+                            , V.genChooseInteger = \r -> choose r
+                            , V.genChooseInt = \r -> choose r
                             , V.genGetSize = getSize
                             }
 
