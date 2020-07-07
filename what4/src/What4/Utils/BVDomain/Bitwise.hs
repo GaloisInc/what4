@@ -161,7 +161,7 @@ genElement (BVBitInterval _mask lo hi) =
 {- A faster generator, but I worry that it
    doesn't have very good statistical properties...
 
-genElement :: Monad m => Domain w -> GenV m Integer
+genElement :: Domain w -> Gen Integer
 genElement (BVBitInterval mask lo hi) =
   do let u = Bits.xor lo hi
      x <- chooseInteger (0, mask)
