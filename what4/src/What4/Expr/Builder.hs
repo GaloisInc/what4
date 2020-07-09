@@ -68,6 +68,7 @@ module What4.Expr.Builder
     -- * Expr
   , Expr(..)
   , asApp
+  , asNonceApp
   , iteSize
   , exprLoc
   , ppExpr
