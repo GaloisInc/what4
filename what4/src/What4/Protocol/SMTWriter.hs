@@ -2778,7 +2778,7 @@ defineFn conn nm arg_vars return_value arg_types =
 mkSMTSymFn :: SMTWriter h
            => WriterConn t h
            -> Text
-           -> ExprSymFn t args ret
+           -> ExprSymFn t (Expr t) args ret
            -> Ctx.Assignment TypeMap args
            -> IO (TypeMap ret)
 mkSMTSymFn conn nm f arg_types =
@@ -2818,7 +2818,7 @@ mkSMTSymFn conn nm f arg_types =
 -- Returns the name of the function and the type of the result.
 getSMTSymFn :: SMTWriter h
             => WriterConn t h
-            -> ExprSymFn t args ret -- ^ Function to
+            -> ExprSymFn t (Expr t) args ret -- ^ Function to
             -> Ctx.Assignment TypeMap args
             -> IO (Text, TypeMap ret)
 getSMTSymFn conn fn arg_types = do

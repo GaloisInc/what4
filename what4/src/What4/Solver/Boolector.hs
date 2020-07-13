@@ -241,6 +241,6 @@ setInteractiveLogicAndOptions writer = do
       SMT2.setOption writer "produce-unsat-cores" "true"
     SMT2.setLogic writer SMT2.allSupported
 
-instance OnlineSolver t (SMT2.Writer Boolector) where
+instance OnlineSolver (SMT2.Writer Boolector) where
   startSolverProcess = SMT2.startSolver Boolector SMT2.smtAckResult setInteractiveLogicAndOptions
   shutdownSolverProcess = SMT2.shutdownSolver Boolector

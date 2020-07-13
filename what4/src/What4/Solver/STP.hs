@@ -107,7 +107,7 @@ withSTP
   -> IO a
 withSTP = SMT2.withSolver STP nullAcknowledgementAction (SMT2.defaultFeatures STP)
 
-instance OnlineSolver t (SMT2.Writer STP) where
+instance OnlineSolver (SMT2.Writer STP) where
   startSolverProcess =
     SMT2.startSolver STP (\_ -> nullAcknowledgementAction) SMT2.setDefaultLogicAndOptions
   shutdownSolverProcess = SMT2.shutdownSolver STP
