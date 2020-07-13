@@ -1,11 +1,11 @@
 {-|
 Module      : What4.Expr.App
-Copyright   : (c) Galois Inc, 2015-2016
+Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 
 This module defines datastructures that encode the basic
-syntax formers used in What4.ExprBuidler.
+syntax formers used in What4.ExprBuilder.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
@@ -178,6 +178,9 @@ data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
 
 -- | This describes information about an undefined or defined function.
 -- Parameter @t@ is a phantom type brand used to track nonces.
+-- Parameter @e@ is used everywhere a recursive sub-expression would
+-- go. The @args@ and @ret@ parameters define the types of arguments
+-- and the return type of the function.
 data SymFnInfo t e (args :: Ctx BaseType) (ret :: BaseType)
    = UninterpFnInfo !(Ctx.Assignment BaseTypeRepr args)
                     !(BaseTypeRepr ret)
@@ -199,8 +202,11 @@ data SymFnInfo t e (args :: Ctx BaseType) (ret :: BaseType)
 
 -- | This represents a symbolic function in the simulator.
 -- Parameter @t@ is a phantom type brand used to track nonces.
+-- Parameter @e@ is used everywhere a recursive sub-expression would
+-- go. The @args@ and @ret@ parameters define the types of arguments
+-- and the return type of the function.
 --
--- Type @'ExprSymFn' t@ instantiates the type family @'SymFn'
+-- Type @'ExprSymFn' t (Expr t)@ instantiates the type family @'SymFn'
 -- ('ExprBuilder' t st)@.
 data ExprSymFn t e (args :: Ctx BaseType) (ret :: BaseType)
    = ExprSymFn { symFnId :: !(Nonce t (args ::> ret))
@@ -216,7 +222,6 @@ data ExprSymFn t e (args :: Ctx BaseType) (ret :: BaseType)
 instance Show (ExprSymFn t e args ret) where
   show f | symFnName f == emptySymbol = "f" ++ show (indexValue (symFnId f))
          | otherwise                  = show (symFnName f)
-
 
 symFnArgTypes :: ExprSymFn t e args ret -> Ctx.Assignment BaseTypeRepr args
 symFnArgTypes f =
