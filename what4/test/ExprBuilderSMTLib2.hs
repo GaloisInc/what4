@@ -970,7 +970,10 @@ main = defaultMain $ testGroup "Tests"
 
   , testCase "CVC4 string1" $ withCVC4 stringTest1
   , testCase "CVC4 string2" $ withCVC4 stringTest2
-  , testCase "CVC4 string3" $ withCVC4 stringTest3
+
+  -- TODO, reenable this test, or a similar one, once the following is fixed
+  -- https://github.com/GaloisInc/what4/issues/56
+  -- , testCase "CVC4 string3" $ withCVC4 stringTest3
   , testCase "CVC4 string4" $ withCVC4 stringTest4
   , testCase "CVC4 string5" $ withCVC4 stringTest5
 
