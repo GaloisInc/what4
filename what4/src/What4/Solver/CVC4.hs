@@ -201,6 +201,6 @@ setInteractiveLogicAndOptions writer = do
     -- Tell CVC4 to use all supported logics.
     SMT2.setLogic writer SMT2.allSupported
 
-instance OnlineSolver t (SMT2.Writer CVC4) where
+instance OnlineSolver (SMT2.Writer CVC4) where
   startSolverProcess = SMT2.startSolver CVC4 SMT2.smtAckResult setInteractiveLogicAndOptions
   shutdownSolverProcess = SMT2.shutdownSolver CVC4

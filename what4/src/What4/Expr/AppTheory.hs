@@ -208,6 +208,7 @@ appTheory a0 =
     SBVToInteger{}  -> LinearArithTheory
 
     RoundReal{} -> LinearArithTheory
+    RoundEvenReal{} -> LinearArithTheory
     FloorReal{} -> LinearArithTheory
     CeilReal{}  -> LinearArithTheory
     RealToInteger{} -> LinearArithTheory

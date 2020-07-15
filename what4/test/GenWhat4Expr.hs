@@ -37,6 +37,7 @@ these generators to attempt simplification.
 module GenWhat4Expr where
 
 import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 import           Data.Word
 import           GHC.Natural
 import           GHC.TypeNats ( KnownNat )
@@ -508,7 +509,7 @@ genBV8TestExpr = let ret8 = return . TE_BV8 in
   Gen.recursive Gen.choice
   [
     do n <- genBV8val
-       ret8 $ BV8TestExpr (show n <> "`8") n $ \sym -> bvLit sym knownRepr n
+       ret8 $ BV8TestExpr (show n <> "`8") n $ \sym -> bvLit sym knownRepr (BV.mkBV knownNat n)
   , ret8 $ BV8TestExpr ("0`8") 0 $ \sym -> minUnsignedBV sym knownRepr
   , let n = allbits8
     in ret8 $ BV8TestExpr (show n <> "`8") n $ \sym -> maxUnsignedBV sym knownRepr
@@ -549,7 +550,7 @@ genBV16TestExpr = let ret16 = return . TE_BV16 in
   Gen.recursive Gen.choice
   [
     do n <- genBV16val
-       ret16 $ BV16TestExpr (show n <> "`16") n $ \sym -> bvLit sym knownRepr n
+       ret16 $ BV16TestExpr (show n <> "`16") n $ \sym -> bvLit sym knownRepr (BV.mkBV knownNat n)
   , ret16 $ BV16TestExpr ("0`16") 0 $ \sym -> minUnsignedBV sym knownRepr
   , let n = allbits16
     in ret16 $ BV16TestExpr (show n <> "`16") n $ \sym -> maxUnsignedBV sym knownRepr
@@ -592,7 +593,7 @@ genBV32TestExpr = let ret32 = return . TE_BV32 in
   Gen.recursive Gen.choice
   [
     do n <- genBV32val
-       ret32 $ BV32TestExpr (show n <> "`32") n $ \sym -> bvLit sym knownRepr n
+       ret32 $ BV32TestExpr (show n <> "`32") n $ \sym -> bvLit sym knownRepr (BV.mkBV knownNat n)
   , ret32 $ BV32TestExpr ("0`32") 0 $ \sym -> minUnsignedBV sym knownRepr
   , let n = allbits32
     in ret32 $ BV32TestExpr (show n <> "`32") n $ \sym -> maxUnsignedBV sym knownRepr
@@ -636,7 +637,7 @@ genBV64TestExpr = let ret64 = return . TE_BV64 in
   Gen.recursive Gen.choice
   [
     do n <- genBV64val
-       ret64 $ BV64TestExpr (show n <> "`64") n $ \sym -> bvLit sym knownRepr n
+       ret64 $ BV64TestExpr (show n <> "`64") n $ \sym -> bvLit sym knownRepr (BV.mkBV knownNat n)
   , ret64 $ BV64TestExpr ("0`64") 0 $ \sym -> minUnsignedBV sym knownRepr
   , let n = allbits64
     in ret64 $ BV64TestExpr (show n <> "`64") n $ \sym -> maxUnsignedBV sym knownRepr
@@ -765,7 +766,7 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
                              then conTE $ teSubCon
                                   (pdesc t <> " +1")
                                   (testval t + 1)
-                                  (\sym -> do lit1 <- bvLit sym knownRepr 1
+                                  (\sym -> do lit1 <- bvLit sym knownRepr (BV.one knownNat)
 
                                               orig <- expr t sym
                                               bvAdd sym orig lit1)

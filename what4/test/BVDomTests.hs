@@ -24,8 +24,10 @@ These tests are intended to supplement those proofs for the actual
 implementations, which are transliterated from the Cryptol.
 -}
 
+import qualified Data.Bits as Bits
 import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Test.Verification
+import           VerifyBindings
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 
@@ -37,12 +39,7 @@ import qualified What4.Utils.BVDomain.XOR as X
 
 main :: IO ()
 main = defaultMain $
-  -- some tests discard a lot of values based on preconditions;
-  -- this helps prevent those tests from failing for insufficent coverage
-  localOption (QuickCheckMaxRatio 1000) $
-
-  -- run at least 5000 tests
-  adjustOption (\(QuickCheckTests x) -> QuickCheckTests (max x 5000)) $
+  setTestOptions $
 
     testGroup "Bitvector Domain"
     [ arithDomainTests
@@ -67,8 +64,6 @@ genWidth =
 genBV :: NatRepr w -> Gen Integer
 genBV w = chooseInteger (minUnsigned w, maxUnsigned w)
 
-genTest :: String -> Gen Property -> TestTree
-genTest nm p = testProperty nm p
 
 arithDomainTests :: TestTree
 arithDomainTests = testGroup "Arith Domain"
@@ -144,6 +139,12 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_mul" $
       do SW n <- genWidth
          A.correct_mul n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         A.correct_scale n <$> genBV n <*> A.genPair n
+  , genTest "correct_scale_eq" $
+      do SW n <- genWidth
+         A.correct_scale_eq n <$> genBV n <*> A.genDomain n
   , genTest "correct_udiv" $
       do SW n <- genWidth
          A.correct_udiv n <$> A.genPair n <*> A.genPair n
@@ -317,7 +318,16 @@ bitwiseDomainTests =
 
 overallDomainTests :: TestTree
 overallDomainTests = testGroup "Overall Domain"
-  [ genTest "correct_bra1" $
+  [ -- test that the union of consecutive singletons gives a precise interval
+    genTest "singleton/union size" $
+      do SW n <- genWidth
+         let w =  maxUnsigned n
+         x <- genBV n
+         y <- min 1000 <$> genBV n
+         let as = [ O.singleton n ((x + i) Bits..&. w) | i <- [0 .. y] ]
+         let a = foldl1 O.union as
+         pure $ property (O.size a == y+1)
+  , genTest "correct_bra1" $
       do SW n <- genWidth
          O.correct_bra1 n <$> genBV n <*> genBV n
   , genTest "correct_bra2" $
@@ -388,6 +398,9 @@ overallDomainTests = testGroup "Overall Domain"
   , genTest "correct_neg" $
       do SW n <- genWidth
          O.correct_neg n <$> O.genPair n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         O.correct_scale n <$> genBV n <*> O.genPair n
   , genTest "correct_mul" $
       do SW n <- genWidth
          O.correct_mul n <$> O.genPair n <*> O.genPair n

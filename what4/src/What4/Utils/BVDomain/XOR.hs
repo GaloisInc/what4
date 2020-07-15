@@ -52,7 +52,7 @@ import           GHC.TypeNats
 
 import           Prelude hiding (any, concat, negate, and, or, not)
 
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 -- | A value of type @'BVDomain' w@ represents a set of bitvectors of
 -- width @w@.  This is an alternate representation of the bitwise

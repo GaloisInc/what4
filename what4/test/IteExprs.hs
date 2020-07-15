@@ -19,6 +19,7 @@ those.
 -}
 
 import           Control.Monad.IO.Class ( liftIO )
+import qualified Data.BitVector.Sized as BV
 import           Data.List ( isInfixOf )
 import           Data.Parameterized.Nonce
 import           GenWhat4Expr
@@ -99,13 +100,13 @@ calcBVIte :: ITETestCond -> CalcReturn (BaseBVType 16)
 calcBVIte itc =
   withTestSolver $ \sym -> do
   let w = knownRepr :: NatRepr 16
-  l <- bvLit sym w 12890
-  r <- bvLit sym w 8293
+  l <- bvLit sym w (BV.mkBV w 12890)
+  r <- bvLit sym w (BV.mkBV w 8293)
   c <- cond itc sym
   i <- baseTypeIte sym c l r
   let e = case expect itc of
-            Then -> 12890
-            Else -> 8293
+            Then -> BV.mkBV w 12890
+            Else -> BV.mkBV w 8293
   return (asConcrete i, ConcreteBV w e, desc itc, show c)
 
 -- | Given a function that returns a condition, generate ITE's of

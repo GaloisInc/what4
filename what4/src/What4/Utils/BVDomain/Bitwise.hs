@@ -20,6 +20,7 @@ module What4.Utils.BVDomain.Bitwise
   , bvdMask
   , member
   , pmember
+  , size
   , asSingleton
   , nonempty
   , eq
@@ -82,7 +83,7 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification (Property, property, (==>), Gen, chooseInteger)
 
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
@@ -112,6 +113,14 @@ proper w (BVBitInterval mask lo hi) =
 member :: Domain w -> Integer -> Bool
 member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
   where x' = x .&. mask
+
+size :: Domain w -> Integer
+size (BVBitInterval _ lo hi)
+  | bitle lo hi = Bits.bit p
+  | otherwise   = 0
+ where
+ u = Bits.xor lo hi
+ p = Bits.popCount u
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y

@@ -22,6 +22,7 @@ library
     ansi-wl-pprint,
     bimap >= 0.2,
     bifunctors >= 5,
+    bv-sized >= 1.0.0,
     bytestring,
     deriving-compat >= 0.5,
     containers >= 0.5.0.0,
@@ -38,10 +39,9 @@ library
     lens,
     mtl,
     panic >= 0.3,
-    parameterized-utils >= 1.0.8 && < 2.2,
+    parameterized-utils >= 2.1 && < 2.2,
     prettyprinter,
     process,
-    QuickCheck >= 2.14 && < 2.15,
     scientific,
     temporary >= 1.2,
     template-haskell,
@@ -135,6 +135,11 @@ library
     What4.Utils.StringLiteral
     What4.Utils.Word16String
 
+    Test.Verification
+
+  other-modules:
+    What4.Expr.App
+
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
   ghc-prof-options: -O2 -fprof-auto-top
   if impl(ghc >= 8.6)
@@ -149,6 +154,7 @@ test-suite expr-builder-smtlib2
 
   build-depends:
     base,
+    bv-sized,
     bytestring,
     containers,
     data-binary-ieee754,
@@ -172,6 +178,7 @@ test-suite exprs_tests
     GenWhat4Expr
 
   build-depends: base
+               , bv-sized
                , hedgehog >= 1.0.2
                , parameterized-utils
                , tasty >= 0.10
@@ -192,6 +199,7 @@ test-suite iteexprs_tests
     GenWhat4Expr
 
   build-depends: base
+               , bv-sized
                , hedgehog >= 1.0.2
                , parameterized-utils
                , tasty >= 0.10
@@ -205,16 +213,36 @@ test-suite bvdomain_tests
   type: exitcode-stdio-1.0
   default-language: Haskell2010
 
-  hs-source-dirs: test
+  hs-source-dirs: test, test/QC
   main-is: BVDomTests.hs
 
-  other-modules:
+  other-modules:  VerifyBindings
 
   build-depends: base
                , parameterized-utils
                , tasty >= 0.10
                , tasty-quickcheck >= 0.10
-               , QuickCheck
+               , QuickCheck >= 2.12
+               , transformers
+               , what4
+
+  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+
+test-suite bvdomain_tests_hh
+  type: exitcode-stdio-1.0
+  default-language: Haskell2010
+
+  hs-source-dirs: test, test/HH
+  main-is: BVDomTests.hs
+
+  other-modules:  VerifyBindings
+
+  build-depends: base
+               , parameterized-utils
+               , tasty >= 0.10
+               , tasty-hedgehog
+               , hedgehog >= 1.0.2
+               , transformers
                , what4
 
   ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns

@@ -17,6 +17,7 @@ import Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
+import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
 import qualified Data.Binary.IEEE754 as IEEE754
 import           Data.Foldable
@@ -67,7 +68,7 @@ withSym :: FloatModeRepr fm -> (forall t . SimpleExprBuilder t (Flags fm) -> IO 
 withSym floatMode pred_gen = withIONonceGenerator $ \gen ->
   pred_gen =<< newExprBuilder floatMode State gen
 
-withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t (Yices.Connection t) -> IO ()) -> IO ()
+withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO ()) -> IO ()
 withYices action = withSym FloatRealRepr $ \sym ->
   do extendConfig Yices.yicesOptions (getConfiguration sym)
      bracket
@@ -252,8 +253,8 @@ testFloatSat0 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   p1 <- floatEq sym y e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    (@?=) (toInteger $ IEEE754.floatToWord 2.5) =<< groundEval x
-    y_val <- IEEE754.wordToFloat . fromInteger <$> groundEval y
+    (@?=) (BV.word32 $ IEEE754.floatToWord 2.5) =<< groundEval x
+    y_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval y
     assertBool ("expected y = +infinity, actual y = " ++ show y_val) $
       isInfinite y_val && 0 < y_val
 
@@ -267,7 +268,7 @@ testFloatSat1 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   p1 <- floatLe sym x e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    x_val <- IEEE754.wordToFloat . fromInteger <$> groundEval x
+    x_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval x
     assertBool ("expected x in [0.5, 1.5], actual x = " ++ show x_val) $
       0.5 <= x_val && x_val <= 1.5
 
@@ -334,9 +335,9 @@ testBVSelectShl :: TestTree
 testBVSelectShl = testCase "select shl simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvLit sym (knownNat @64) 0
+    e0 <- bvLit sym (knownNat @64) (BV.zero knownNat)
     e1 <- bvConcat sym e0 x
-    e2 <- bvShl sym e1 =<< bvLit sym knownRepr 64
+    e2 <- bvShl sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e3 <- bvSelect sym (knownNat @64) (knownNat @64) e2
     e3 @?= x
 
@@ -344,10 +345,23 @@ testBVSelectLshr :: TestTree
 testBVSelectLshr = testCase "select lshr simplification" $
   withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) 0
-    e1 <- bvLshr sym e0 =<< bvLit sym knownRepr 64
+    e0 <- bvConcat sym x =<< bvLit sym (knownNat @64) (BV.zero knownNat)
+    e1 <- bvLshr sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 64)
     e2 <- bvSelect sym (knownNat @0) (knownNat @64) e1
     e2 @?= x
+
+testBVOrShlZext :: TestTree
+testBVOrShlZext = testCase "bv or-shl-zext -> concat simplification" $
+  withSym FloatIEEERepr $ \sym -> do
+    x  <- freshConstant sym (userSymbol' "x") (BaseBVRepr $ knownNat @8)
+    y  <- freshConstant sym (userSymbol' "y") (BaseBVRepr $ knownNat @8)
+    e0 <- bvZext sym (knownNat @16) x
+    e1 <- bvShl sym e0 =<< bvLit sym knownRepr (BV.mkBV knownNat 8)
+    e2 <- bvZext sym (knownNat @16) y
+    e3 <- bvOrBits sym e1 e2
+    show e3 @?= "bvConcat cx@0:bv cy@1:bv"
+    e4 <- bvOrBits sym e2 e1
+    show e4 @?= show e3
 
 testUninterpretedFunctionScope :: TestTree
 testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
@@ -367,7 +381,7 @@ testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
 
 testBVIteNesting :: TestTree
 testBVIteNesting = testCase "nested bitvector ites" $ withZ3 $ \sym s -> do
-  bv0 <- bvLit sym (knownNat @32) 0
+  bv0 <- bvLit sym (knownNat @32) (BV.zero knownNat)
   let setSymBit bv idx = do
         c1 <- freshConstant sym (userSymbol' ("c1_" ++ show idx)) knownRepr
         c2 <- freshConstant sym (userSymbol' ("c2_" ++ show idx)) knownRepr
@@ -389,11 +403,11 @@ testRotate1 :: TestTree
 testRotate1 = testCase "rotate test1" $ withOnlineZ3 $ \sym s -> do
   bv <- freshConstant sym (userSymbol' "bv") (BaseBVRepr (knownNat @32))
 
-  bv1 <- bvRol sym bv =<< bvLit sym knownNat 8
-  bv2 <- bvRol sym bv1 =<< bvLit sym knownNat 16
-  bv3 <- bvRol sym bv2 =<< bvLit sym knownNat 8
-  bv4 <- bvRor sym bv2 =<< bvLit sym knownNat 24
-  bv5 <- bvRor sym bv2 =<< bvLit sym knownNat 28
+  bv1 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 8)
+  bv2 <- bvRol sym bv1 =<< bvLit sym knownNat (BV.mkBV knownNat 16)
+  bv3 <- bvRol sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 8)
+  bv4 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 24)
+  bv5 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 28)
 
   res <- checkSatisfiable s "test" =<< notPred sym =<< bvEq sym bv bv3
   isUnsat res @? "unsat1"
@@ -411,7 +425,7 @@ testRotate2 = testCase "rotate test2" $ withOnlineZ3 $ \sym s -> do
 
   bv1 <- bvRol sym bv amt
   bv2 <- bvRor sym bv1 amt
-  bv3 <- bvRol sym bv =<< bvLit sym knownNat 20
+  bv3 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 20)
 
   bv == bv2 @? "syntactic equality"
 
@@ -428,7 +442,7 @@ testRotate3 = testCase "rotate test3" $ withOnlineZ3 $ \sym s -> do
 
   bv1 <- bvRol sym bv amt
   bv2 <- bvRor sym bv1 amt
-  bv3 <- bvRol sym bv =<< bvLit sym knownNat 3
+  bv3 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 3)
 
   -- Note, because 7 is not a power of two, this simplification doesn't quite
   -- work out... it would probably be significant work to make it do so.
@@ -476,8 +490,76 @@ testBoundVarAsFree = testCase "boundvarasfree" $ withOnlineZ3 $ \sym s -> do
   expectFailure $ checkSatisfiable s "test" px
   expectFailure $ checkSatisfiable s "test" py
 
+
+roundingTest ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+roundingTest sym solver =
+  do r <- freshConstant sym (userSymbol' "r") BaseRealRepr
+
+     let runErrTest nm op errOp =
+           do diff <- realAbs sym =<< realSub sym r =<< integerToReal sym =<< op sym r
+              p'   <- notPred sym =<< errOp diff
+              res  <- checkSatisfiable solver nm p'
+              isUnsat res @? nm
+
+     runErrTest "floor"   realFloor (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "ceiling" realCeil  (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "trunc"   realTrunc (\diff -> realLt sym diff =<< realLit sym 1)
+     runErrTest "rna"     realRound (\diff -> realLe sym diff =<< realLit sym 0.5)
+     runErrTest "rne"     realRoundEven (\diff -> realLe sym diff =<< realLit sym 0.5)
+
+     -- floor test
+     do ri <- integerToReal sym =<< realFloor sym r
+        p  <- realLe sym ri r
+
+        res <- checkSatisfiable solver "floorTest" =<< notPred sym p
+        isUnsat res @? "floorTest"
+
+     -- ceiling test
+     do ri <- integerToReal sym =<< realCeil sym r
+        p  <- realLe sym r ri
+
+        res <- checkSatisfiable solver "ceilingTest" =<< notPred sym p
+        isUnsat res @? "ceilingTest"
+
+     -- truncate test
+     do ri <- integerToReal sym =<< realTrunc sym r
+        rabs  <- realAbs sym r
+        riabs <- realAbs sym ri
+        p  <- realLe sym riabs rabs
+
+        res <- checkSatisfiable solver "truncateTest" =<< notPred sym p
+        isUnsat res @? "truncateTest"
+
+     -- round away test
+     do ri <- integerToReal sym =<< realRound sym r
+        diff <- realAbs sym =<< realSub sym r ri
+        ptie <- realEq sym diff =<< realLit sym 0.5
+        rabs <- realAbs sym r
+        iabs <- realAbs sym ri
+        plarge <- realGt sym iabs rabs
+
+        res <- checkSatisfiable solver "rnaTest" =<<
+                  andPred sym ptie =<< notPred sym plarge
+        isUnsat res @? "rnaTest"
+
+     -- round-to-even test
+     do i <- realRoundEven sym r
+        ri <- integerToReal sym i
+        diff <- realAbs sym =<< realSub sym r ri
+        ptie <- realEq sym diff =<< realLit sym 0.5
+        ieven <- intDivisible sym i 2
+
+        res <- checkSatisfiable solver "rneTest" =<<
+                 andPred sym ptie =<< notPred sym ieven
+        isUnsat res @? "rneTest"
+
+
 zeroTupleTest ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -501,7 +583,7 @@ zeroTupleTest sym solver =
        isUnsat res2 @? "unsat"
 
 oneTupleTest ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -526,7 +608,7 @@ oneTupleTest sym solver =
 
 
 pairTest ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -544,7 +626,7 @@ pairTest sym solver =
        isSat res2 @? "neg sat"
 
 stringTest1 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -584,7 +666,7 @@ stringTest1 sym solver =
 
 
 stringTest2 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -626,7 +708,7 @@ stringTest2 sym solver =
        _ -> fail "expected satisfable model"
 
 stringTest3 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -675,7 +757,7 @@ stringTest3 sym solver =
 
 
 stringTest4 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -715,7 +797,7 @@ stringTest4 sym solver =
        _ -> fail "expected satisfable model"
 
 stringTest5 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -750,7 +832,7 @@ stringTest5 sym solver =
 
 
 forallTest ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -775,7 +857,7 @@ forallTest sym solver =
          _ -> fail "expected satisfible model"
 
 binderTupleTest1 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -787,7 +869,7 @@ binderTupleTest1 sym solver =
     isSat res  @? "sat"
 
 binderTupleTest2 ::
-  OnlineSolver t solver =>
+  OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
@@ -823,6 +905,16 @@ testSolverVersion = testCase "test solver version bounds" $
                     , _vRel = [] }
     checkSolverVersion' (Map.singleton "Z3" v) Map.empty proc >> return ()
 
+testBVDomainArithScale :: TestTree
+testBVDomainArithScale = testCase "bv domain arith scale" $
+  withSym FloatIEEERepr $ \sym -> do
+    x  <- freshConstant sym (userSymbol' "x") (BaseBVRepr $ knownNat @8)
+    e0 <- bvZext sym (knownNat @16) x
+    e1 <- bvNeg sym e0
+    e2 <- bvSub sym e1 =<< bvLit sym knownRepr (BV.mkBV knownNat 1)
+    e3 <- bvUgt sym e2 =<< bvLit sym knownRepr (BV.mkBV knownNat 256)
+    e3 @?= truePred sym
+
 main :: IO ()
 main = defaultMain $ testGroup "Tests"
   [ testInterpretedFloatReal
@@ -841,6 +933,7 @@ main = defaultMain $ testGroup "Tests"
   , testFloatCastNoSimplification
   , testBVSelectShl
   , testBVSelectLshr
+  , testBVOrShlZext
   , testUninterpretedFunctionScope
   , testBVIteNesting
   , testRotate1
@@ -850,6 +943,7 @@ main = defaultMain $ testGroup "Tests"
   , testBoundVarAsFree
   , testSolverInfo
   , testSolverVersion
+  , testBVDomainArithScale
 
   , testCase "Yices 0-tuple" $ withYices zeroTupleTest
   , testCase "Yices 1-tuple" $ withYices oneTupleTest
@@ -876,7 +970,10 @@ main = defaultMain $ testGroup "Tests"
 
   , testCase "CVC4 string1" $ withCVC4 stringTest1
   , testCase "CVC4 string2" $ withCVC4 stringTest2
-  , testCase "CVC4 string3" $ withCVC4 stringTest3
+
+  -- TODO, reenable this test, or a similar one, once the following is fixed
+  -- https://github.com/GaloisInc/what4/issues/56
+  -- , testCase "CVC4 string3" $ withCVC4 stringTest3
   , testCase "CVC4 string4" $ withCVC4 stringTest4
   , testCase "CVC4 string5" $ withCVC4 stringTest5
 
@@ -885,4 +982,8 @@ main = defaultMain $ testGroup "Tests"
 
   , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
   , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
+
+  , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
+  , testCase "Yices rounding" $ withYices roundingTest
+  , testCase "CVC4 rounding" $ withCVC4 roundingTest
   ]

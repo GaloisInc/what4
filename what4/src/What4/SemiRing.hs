@@ -74,12 +74,11 @@ module What4.SemiRing
   ) where
 
 import GHC.TypeNats
-import Data.Bits
+import qualified Data.BitVector.Sized as BV
 import Data.Kind
 import Data.Hashable
 import Data.Parameterized.Classes
 import Data.Parameterized.TH.GADT
-import Data.Parameterized.NatRepr
 import Numeric.Natural
 
 import What4.BaseTypes
@@ -144,7 +143,7 @@ type family Coefficient (sr :: SemiRing) :: Type where
   Coefficient SemiRingNat        = Natural
   Coefficient SemiRingInteger    = Integer
   Coefficient SemiRingReal       = Rational
-  Coefficient (SemiRingBV fv w)  = Integer
+  Coefficient (SemiRingBV fv w)  = BV.BV w
 
 -- | The 'Occurrence' family counts how many times a term occurs in a
 --   product. For most semirings, this is just a natural number
@@ -216,29 +215,29 @@ zero :: SemiRingRepr sr -> Coefficient sr
 zero SemiRingNatRepr          = 0 :: Natural
 zero SemiRingIntegerRepr      = 0 :: Integer
 zero SemiRingRealRepr         = 0 :: Rational
-zero (SemiRingBVRepr BVArithRepr _) = 0 :: Integer
-zero (SemiRingBVRepr BVBitsRepr _)  = 0 :: Integer
+zero (SemiRingBVRepr BVArithRepr w) = BV.zero w
+zero (SemiRingBVRepr BVBitsRepr w)  = BV.zero w
 
 one :: SemiRingRepr sr -> Coefficient sr
 one SemiRingNatRepr              = 1 :: Natural
 one SemiRingIntegerRepr          = 1 :: Integer
 one SemiRingRealRepr             = 1 :: Rational
-one (SemiRingBVRepr BVArithRepr _) = 1 :: Integer
-one (SemiRingBVRepr BVBitsRepr w)  = maxUnsigned w :: Integer
+one (SemiRingBVRepr BVArithRepr w) = BV.mkBV w 1
+one (SemiRingBVRepr BVBitsRepr w)  = BV.maxUnsigned w
 
 add :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Coefficient sr
 add SemiRingNatRepr          = (+)
 add SemiRingIntegerRepr      = (+)
 add SemiRingRealRepr         = (+)
-add (SemiRingBVRepr BVArithRepr w) = \x y -> toUnsigned w (x + y)
-add (SemiRingBVRepr BVBitsRepr _)  = xor
+add (SemiRingBVRepr BVArithRepr w) = BV.add w
+add (SemiRingBVRepr BVBitsRepr _)  = BV.xor
 
 mul :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Coefficient sr
 mul SemiRingNatRepr          = (*)
 mul SemiRingIntegerRepr      = (*)
 mul SemiRingRealRepr         = (*)
-mul (SemiRingBVRepr BVArithRepr w) = \x y -> toUnsigned w (x * y)
-mul (SemiRingBVRepr BVBitsRepr _)  = (.&.)
+mul (SemiRingBVRepr BVArithRepr w) = BV.mul w
+mul (SemiRingBVRepr BVBitsRepr _)  = BV.and
 
 eq :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Bool
 eq SemiRingNatRepr          = (==)

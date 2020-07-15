@@ -107,6 +107,7 @@ import           Numeric.Natural
 
 import           GHC.TypeNats
 
+import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some(Some(..))
 
@@ -136,13 +137,13 @@ instance Show (SWord sym) where
 bvAsSignedInteger :: forall sym. IsExprBuilder sym => SWord sym -> Maybe Integer
 bvAsSignedInteger ZBV = Just 0
 bvAsSignedInteger (DBV (bv :: SymBV sym w)) =
-  W.asSignedBV bv
+  BV.asSigned (W.bvWidth bv) <$> W.asBV bv
 
 -- | Return the unsigned value if this is a constant bitvector
 bvAsUnsignedInteger :: forall sym. IsExprBuilder sym => SWord sym -> Maybe Integer
 bvAsUnsignedInteger ZBV = Just 0
 bvAsUnsignedInteger (DBV (bv :: SymBV sym w)) =
-  W.asUnsignedBV bv
+  BV.asUnsigned <$> W.asBV bv
 
 
 unsignedBVBounds :: forall sym. IsExprBuilder sym => SWord sym -> Maybe (Integer, Integer)
@@ -194,7 +195,7 @@ bvLit _ w _
 bvLit sym w dat
   | Just (Some rw) <- someNat w
   , Just LeqProof <- isPosNat rw
-  = DBV <$> W.bvLit sym rw dat
+  = DBV <$> W.bvLit sym rw (BV.mkBV rw dat)
   | otherwise
   = panic "bvLit" ["size of bitvector is < 0 or >= maxInt", show w]
 
@@ -362,7 +363,8 @@ w_bvLg2 sym x = go 0
     size :: Integer
     size = intValue w
     lit :: Integer -> IO (SymBV sym w)
-    lit n = W.bvLit sym w n
+    -- BGS: This change could lead to some inefficency
+    lit n = W.bvLit sym w (BV.mkBV w n)
     go :: Integer -> IO (SymBV sym w)
     go i | i < size = do
            x' <- lit (2 ^ i)
@@ -673,7 +675,7 @@ reduceShift wop sym (DBV x) (DBV y) =
     -- Truncation is OK because the value will always fit after
     -- clamping.
     NatLT _diff ->
-      do wx <- W.bvLit sym (W.bvWidth y) (intValue (W.bvWidth x))
+      do wx <- W.bvLit sym (W.bvWidth y) (BV.mkBV (W.bvWidth y) (intValue (W.bvWidth x)))
          y' <- W.bvTrunc sym (W.bvWidth x) =<< bvMax sym y wx
          DBV <$> wop sym x y'
 
@@ -698,7 +700,7 @@ reduceRotate wop sym (DBV x) (DBV y) =
     -- Truncation is OK because the value will always
     -- fit after modulo reduction
     NatLT _diff ->
-      do wx <- W.bvLit sym (W.bvWidth y) (intValue (W.bvWidth x))
+      do wx <- W.bvLit sym (W.bvWidth y) (BV.mkBV (W.bvWidth y) (intValue (W.bvWidth x)))
          y' <- W.bvTrunc sym (W.bvWidth x) =<< W.bvUrem sym y wx
          DBV <$> wop sym x y'
 

@@ -22,6 +22,7 @@ module What4.Utils.BVDomain.Arith
   , member
   , pmember
   , interval
+  , size
   -- * Projection functions
   , asSingleton
   , ubounds
@@ -79,6 +80,8 @@ module What4.Utils.BVDomain.Arith
   , correct_add
   , correct_neg
   , correct_mul
+  , correct_scale
+  , correct_scale_eq
   , correct_udiv
   , correct_urem
   , correct_sdivRange
@@ -104,7 +107,7 @@ import           GHC.Stack
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
-import           Test.QuickCheck (Property, property, (==>), Gen, chooseInteger)
+import           Test.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 --------------------------------------------------------------------------------
 -- BVDomain definition
@@ -122,6 +125,15 @@ data Domain (w :: Nat)
   -- satisfy the invariants @0 <= l < 2^w@ and @0 <= d < 2^w@. The
   -- first argument caches the value @2^w-1@.
   deriving Show
+
+sameDomain :: Domain w -> Domain w -> Bool
+sameDomain (BVDAny _) (BVDAny _) = True
+sameDomain (BVDInterval _ x w) (BVDInterval _ x' w') = x == x' && w == w'
+sameDomain _ _ = False
+
+size :: Domain w -> Integer
+size (BVDAny mask)        = mask + 1
+size (BVDInterval _ _ sz) = sz + 1
 
 member :: Domain w -> Integer -> Bool
 member (BVDAny _) _ = True
@@ -308,13 +320,13 @@ union a b =
         BVDInterval mask bl bw ->
           interval mask cl (ch - cl)
           where
-            size = mask + 1
+            sz = mask + 1
             ac = 2 * al + aw -- twice the average value of a
             bc = 2 * bl + bw -- twice the average value of b
             -- If the averages are 2^(w-1) or more apart,
             -- then shift the lower interval up by 2^w.
-            al' = if ac + mask < bc then al + size else al
-            bl' = if bc + mask < ac then bl + size else bl
+            al' = if ac + mask < bc then al + sz else al
+            bl' = if bc + mask < ac then bl + sz else bl
             ah' = al' + aw
             bh' = bl' + bw
             cl = min al' bl'
@@ -403,13 +415,13 @@ shl w a b
   | otherwise = interval mask lo (hi - lo)
     where
       mask = bvdMask a
-      size = mask + 1
+      sz = mask + 1
       (bl, bh) = ubounds b
       bl' = clamp w bl
       bh' = clamp w bh
       -- compute bounds for c = 2^b
-      cl = if (mask `shiftR` bl' == 0) then size else bit bl'
-      ch = if (mask `shiftR` bh' == 0) then size else bit bh'
+      cl = if (mask `shiftR` bl' == 0) then sz else bit bl'
+      ch = if (mask `shiftR` bh' == 0) then sz else bit bh'
       (lo, hi) = mulRange (zbounds a) (cl, ch)
 
 lshr :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
@@ -464,7 +476,7 @@ scale k a
       BVDAny _ -> a
       BVDInterval mask al aw
         | k >= 0 -> interval mask (k * al) (k * aw)
-        | otherwise -> interval mask (k * ah) (k * aw)
+        | otherwise -> interval mask (k * ah) (abs k * aw)
         where ah = al + aw
 
 mul :: (1 <= w) => Domain w -> Domain w -> Domain w
@@ -714,6 +726,16 @@ correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
 
 correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
+correct_scale :: (1 <= n) => NatRepr n -> Integer -> (Domain n, Integer) -> Property
+correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
+  where
+  k' = toSigned n k
+
+correct_scale_eq :: (1 <= n) => NatRepr n -> Integer -> Domain n -> Property
+correct_scale_eq n k a = property $ sameDomain (scale k' a) (mul (singleton n k) a)
+  where
+  k' = toSigned n k
 
 correct_udiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_udiv n (a,x) (b,y) = member a x' ==> member b y' ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')

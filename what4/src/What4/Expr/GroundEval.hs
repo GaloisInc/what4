@@ -18,6 +18,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module What4.Expr.GroundEval
@@ -41,11 +42,10 @@ module What4.Expr.GroundEval
 import Control.Monad.Fail( MonadFail )
 #endif
 
-import           Control.Exception
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
-import           Data.Bits
+import qualified Data.BitVector.Sized as BV
 import           Data.List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as Map
@@ -66,7 +66,7 @@ import qualified What4.Expr.StringSeq as SSeq
 import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.UnaryBV as UnaryBV
 
-import           What4.Utils.Arithmetic ( roundAway, clz, ctz, rotateLeft, rotateRight )
+import           What4.Utils.Arithmetic ( roundAway )
 import           What4.Utils.Complex
 import           What4.Utils.StringLiteral
 
@@ -76,8 +76,8 @@ type family GroundValue (tp :: BaseType) where
   GroundValue BaseNatType           = Natural
   GroundValue BaseIntegerType       = Integer
   GroundValue BaseRealType          = Rational
-  GroundValue (BaseBVType w)        = Integer
-  GroundValue (BaseFloatType fpp)   = Integer
+  GroundValue (BaseBVType w)        = BV.BV w
+  GroundValue (BaseFloatType fpp)   = BV.BV (FloatPrecisionBits fpp)
   GroundValue BaseComplexType       = Complex Rational
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
@@ -129,14 +129,14 @@ defaultValueForType tp =
   case tp of
     BaseBoolRepr    -> False
     BaseNatRepr     -> 0
-    BaseBVRepr _    -> 0
+    BaseBVRepr w    -> BV.zero w
     BaseIntegerRepr -> 0
     BaseRealRepr    -> 0
     BaseComplexRepr -> 0 :+ 0
     BaseStringRepr si -> stringLitEmpty si
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
-    BaseFloatRepr _ -> 0
+    BaseFloatRepr (FloatingPointPrecisionRepr eb sb) -> BV.zero (addNat eb sb)
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -263,12 +263,11 @@ evalGroundApp f0 a0 = do
           foldl' (&&) <$> pol t <*> mapM pol ts
 
     RealIsInteger x -> (\xv -> denominator xv == 1) <$> f x
-    BVTestBit i x -> assert (i <= fromIntegral (maxBound :: Int)) $
-        (`testBit` (fromIntegral i)) <$> f x
-    BVSlt x y -> (<) <$> (toSigned w <$> f x)
-                     <*> (toSigned w <$> f y)
+    BVTestBit i x -> 
+        BV.testBit' i <$> f x
+    BVSlt x y -> BV.slt w <$> f x <*> f y
       where w = bvWidth x
-    BVUlt x y -> (<) <$> f x <*> f y
+    BVUlt x y -> BV.ult <$> f x <*> f y
 
     NatDiv x y -> g <$> f x <*> f y
       where g _ 0 = 0
@@ -309,12 +308,12 @@ evalGroundApp f0 a0 = do
            where smul sm e = (sm *) <$> f e
         SR.SemiRingBVRepr SR.BVArithRepr w -> WSum.evalM sadd smul pure s
            where
-           smul sm e = toUnsigned w . (sm *) <$> f e
-           sadd x y  = pure (toUnsigned w (x + y))
+           smul sm e = BV.mul w sm <$> f e
+           sadd x y  = pure (BV.add w x y)
         SR.SemiRingBVRepr SR.BVBitsRepr _w -> WSum.evalM sadd smul pure s
            where
-           smul sm e = (sm .&.) <$> f e
-           sadd x y  = pure (x `xor` y)
+           smul sm e = BV.and sm <$> f e
+           sadd x y  = pure (BV.xor x y)
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -322,9 +321,9 @@ evalGroundApp f0 a0 = do
         SR.SemiRingIntegerRepr -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingRealRepr    -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
-          fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (toUnsigned w (x*y))) f pd
+          fromMaybe (BV.one w) <$> WSum.prodEvalM (\x y -> pure (BV.mul w x y)) f pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
-          fromMaybe (maxUnsigned w) <$> WSum.prodEvalM (\x y -> pure (x .&. y)) f pd
+          fromMaybe (BV.maxUnsigned w) <$> WSum.prodEvalM (\x y -> pure (BV.and x y)) f pd
 
     RealDiv x y -> do
       xv <- f x
@@ -356,55 +355,49 @@ evalGroundApp f0 a0 = do
     ------------------------------------------------------------------------
     -- Bitvector Operations
 
-    BVOrBits _w bs -> foldl' (.|.) 0 <$> traverse f (bvOrToList bs)
-    BVUnaryTerm u -> do
-      UnaryBV.evaluate f u
-    BVConcat w x y -> cat <$> f x <*> f y
-      where w2 = bvWidth y
-            cat a b = toUnsigned w $ a `shiftL` (fromIntegral (natValue w2)) .|. b
-    BVSelect idx n x -> sel <$> f x
-      where sel a = toUnsigned n (a `shiftR` shft)
-            shft = fromIntegral (natValue (bvWidth x) - natValue idx - natValue n)
-    BVUdiv w x y -> toUnsigned w <$> (myDiv <$> f x <*> f y)
-      where myDiv _ 0 = 0
-            myDiv u v = u `div` v
-    BVUrem w x y -> toUnsigned w <$> (myRem <$> f x <*> f y)
-      where myRem u 0 = u
-            myRem u v = u `rem` v
-    BVSdiv w x y -> toUnsigned w <$> (myDiv <$> f x <*> f y)
-      where myDiv _ 0 = 0
-            myDiv u v = toSigned w u `div` toSigned w v
-    BVSrem w x y -> toUnsigned w <$> (myRem <$> f x <*> f y)
-      where myRem u 0 = u
-            myRem u v = toSigned w u `rem` toSigned w v
-    BVShl  w x y -> toUnsigned w <$> (shiftL <$> f x <*> (fromInteger <$> f y))
-    BVLshr w x y -> lift $
-      toUnsigned w <$> (shiftR <$> f0 x <*> (fromInteger <$> f0 y))
-    BVAshr w x y -> lift $
-      toUnsigned w <$> (shiftR <$> (toSigned w <$> f0 x) <*> (fromInteger <$> f0 y))
+    BVOrBits w bs -> foldl' BV.or (BV.zero w) <$> traverse f (bvOrToList bs)
+    BVUnaryTerm u ->
+      BV.mkBV (UnaryBV.width u) <$> UnaryBV.evaluate f u
+    BVConcat _w x y -> BV.concat (bvWidth x) (bvWidth y) <$> f x <*> f y
+    BVSelect idx n x -> BV.select idx n <$> f x
+    BVUdiv w x y -> myDiv <$> f x <*> f y
+      where myDiv _ (BV.BV 0) = BV.zero w
+            myDiv u v = BV.uquot u v
+    BVUrem _w x y -> myRem <$> f x <*> f y
+      where myRem u (BV.BV 0) = u
+            myRem u v = BV.urem u v
+    BVSdiv w x y -> myDiv <$> f x <*> f y
+      where myDiv _ (BV.BV 0) = BV.zero w
+            myDiv u v = BV.sdiv w u v
+    BVSrem w x y -> myRem <$> f x <*> f y
+      where myRem u (BV.BV 0) = u
+            myRem u v = BV.srem w u v
+    BVShl  w x y  -> BV.shl w  <$> f x <*> (BV.asNatural <$> f y)
+    BVLshr w x y -> BV.lshr w <$> f x <*> (BV.asNatural <$> f y)
+    BVAshr w x y  -> BV.ashr w <$> f x <*> (BV.asNatural <$> f y)
+    BVRol w x y -> BV.rotateL w <$> f x <*> (BV.asNatural <$> f y)
+    BVRor w x y -> BV.rotateR w <$> f x <*> (BV.asNatural <$> f y)
 
-    BVRol w x y -> lift $ (rotateLeft w <$> f0 x <*> f0 y)
-    BVRor w x y -> lift $ (rotateRight w <$> f0 x <*> f0 y)
-
-    BVZext _ x -> lift $ f0 x
-    BVSext w x -> lift $ do
+    BVZext w x -> BV.zext w <$> f x
+    -- BGS: This check can be proven to GHC
+    BVSext w x ->
       case isPosNat w of
-        Just LeqProof -> (toUnsigned w . toSigned (bvWidth x)) <$> f0 x
+        Just LeqProof -> BV.sext (bvWidth x) w <$> f x
         Nothing -> error "BVSext given bad width"
 
     BVFill w p ->
       do b <- f p
-         return $! if b then maxUnsigned w else 0
+         return $! if b then BV.maxUnsigned w else BV.zero w
 
     BVPopcount _w x ->
-      toInteger . popCount <$> f x
+      BV.popCount <$> f x
     BVCountLeadingZeros w x ->
-      clz w <$> f x
+      BV.clz w <$> f x
     BVCountTrailingZeros w x ->
-      ctz w <$> f x
+      BV.ctz w <$> f x
 
     ------------------------------------------------------------------------
-    -- Bitvector Operations
+    -- Floating point Operations
     FloatPZero{}      -> MaybeT $ return Nothing
     FloatNZero{}      -> MaybeT $ return Nothing
     FloatNaN{}        -> MaybeT $ return Nothing
@@ -499,18 +492,19 @@ evalGroundApp f0 a0 = do
 
     NatToInteger x -> toInteger <$> f x
     IntegerToReal x -> toRational <$> f x
-    BVToNat x      -> fromInteger <$> f x
-    BVToInteger x  -> f x
-    SBVToInteger x -> toSigned (bvWidth x) <$> f x
+    BVToNat x      -> BV.asNatural <$> f x
+    BVToInteger x  -> BV.asUnsigned <$> f x
+    SBVToInteger x -> BV.asSigned (bvWidth x) <$> f x
 
     RoundReal x -> roundAway <$> f x
+    RoundEvenReal x -> round <$> f x
     FloorReal x -> floor <$> f x
     CeilReal  x -> ceiling <$> f x
 
     RealToInteger x -> floor <$> f x
 
     IntegerToNat x -> fromInteger . max 0 <$> f x
-    IntegerToBV x w -> toUnsigned w <$> f x
+    IntegerToBV x w -> BV.mkBV w <$> f x
 
     ------------------------------------------------------------------------
     -- Complex operations.

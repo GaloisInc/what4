@@ -35,7 +35,7 @@ module What4.Protocol.Online
   ) where
 
 import           Control.Exception
-                   ( SomeException(..), catch, catchJust, tryJust, displayException )
+                   ( SomeException(..), catchJust, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
 import           Control.Monad.Catch ( MonadMask, bracket_, onException )
@@ -62,16 +62,21 @@ import           What4.Utils.Process (filterAsync)
 -- | This class provides an API for starting and shutting down
 --   connections to various different solvers that support
 --   online interaction modes.
-class SMTReadWriter solver => OnlineSolver scope solver where
+class SMTReadWriter solver => OnlineSolver solver where
   -- | Start a new solver process attached to the given `ExprBuilder`.
-  startSolverProcess    :: ProblemFeatures -> Maybe Handle -> ExprBuilder scope st fs -> IO (SolverProcess scope solver)
+  startSolverProcess :: forall scope st fs.
+    ProblemFeatures ->
+    Maybe Handle ->
+    ExprBuilder scope st fs ->
+    IO (SolverProcess scope solver)
 
   -- | Shut down a solver process.  The process will be asked to shut down in
   --   a "polite" way, e.g., by sending an `(exit)` message, or by closing
   --   the process's `stdin`.  Use `killProcess` instead to shutdown a process
   --   via a signal.
-  shutdownSolverProcess :: SolverProcess scope solver -> IO (ExitCode, LazyText.Text)
-
+  shutdownSolverProcess :: forall scope.
+    SolverProcess scope solver ->
+    IO (ExitCode, LazyText.Text)
 
 -- | This datatype describes how a solver will behave following an error.
 data ErrorBehavior
@@ -225,7 +230,7 @@ inNewFrame p action = inNewFrameWithVars p [] action
 
 -- | Perform an action in the scope of a solver assumption frame, where the given
 -- bound variables are considered free within that frame.
-inNewFrameWithVars :: (MonadIO m, MonadMask m, SMTReadWriter solver) 
+inNewFrameWithVars :: (MonadIO m, MonadMask m, SMTReadWriter solver)
                    => SolverProcess scope solver
                    -> [Some (ExprBoundVar scope)]
                    -> m a
@@ -358,9 +363,11 @@ getSatResult yp = do
     Right ok -> return ok
 
     Left (SomeException e) ->
-       do txt <- readAllLines err_reader
-          -- Interrupt process; suppress any exceptions that occur.
-          catch (terminateProcess ph) (\(_ :: IOError) -> return ())
+       do -- Interrupt process
+          terminateProcess ph
+
+          txt <- readAllLines err_reader
+
           -- Wait for process to end
           ec <- waitForProcess ph
           let ec_code = case ec of
