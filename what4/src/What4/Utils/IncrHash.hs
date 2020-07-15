@@ -1,6 +1,6 @@
 {-|
 Module      : What4.Utils.IncrHash
-Copyright   : (c) Galois Inc, 2019
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : rdockins@galois.com
 

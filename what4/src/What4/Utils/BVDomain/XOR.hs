@@ -1,10 +1,10 @@
 {-|
 Module      : What4.Utils.BVDomain.XOR
-Copyright   : (c) Galois Inc, 2019
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : huffman@galois.com
 
-Provides an implementation of bitvecotr abstract domains
+Provides an implementation of bitvector abstract domains
 optimized for performing XOR operations.
 -}
 
@@ -73,12 +73,15 @@ proper w (BVDXor mask val u) =
   bitle u mask &&
   bitle u val
 
+-- | Test if the given integer value is a member of the abstract domain
 member :: Domain w -> Integer -> Bool
 member (BVDXor mask hi unknown) x = hi == (x .&. mask) .|. unknown
 
+-- | Return the bitvector mask value from this domain
 bvdMask :: Domain w -> Integer
 bvdMask (BVDXor mask _ _) = mask
 
+-- | Construct a domain from bitwise lower and upper bounds
 range :: NatRepr w -> Integer -> Integer -> Domain w
 range w lo hi = interval mask lo' hi'
   where
@@ -90,6 +93,7 @@ range w lo hi = interval mask lo' hi'
 interval :: Integer -> Integer -> Integer -> Domain w
 interval mask lo hi = BVDXor mask hi (Bits.xor lo hi)
 
+-- | Bitwise lower and upper bounds
 bitbounds :: Domain w -> (Integer, Integer)
 bitbounds (BVDXor _ hi u) = (Bits.xor u hi, hi)
 
@@ -97,6 +101,8 @@ bitbounds (BVDXor _ hi u) = (Bits.xor u hi, hi)
 asSingleton :: Domain w -> Maybe Integer
 asSingleton (BVDXor _ hi u) = if u == 0 then Just hi else Nothing
 
+-- | Random generator for domain values.  We always generate
+--   nonempty domains values.
 genDomain :: NatRepr w -> Gen (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
@@ -104,6 +110,12 @@ genDomain w =
      u   <- chooseInteger (0, mask)
      pure $ BVDXor mask (val .|. u) u
 
+-- This generator goes to some pains to try
+-- to generate a good statistical distribution
+-- of the values in the domain.  It only choses
+-- random bits for the "unknown" values of
+-- the domain, then stripes them out among
+-- the unknown bit positions.
 genElement :: Domain w -> Gen Integer
 genElement (BVDXor _mask v u) =
    do x <- chooseInteger (0, bit bs - 1)
@@ -119,13 +131,15 @@ genElement (BVDXor _mask v u) =
        stripe val' (x `shiftR` 1) (i+1)
    | otherwise = stripe val x (i+1)
 
+-- | Generate a random nonempty domain and an element
+--   contained in that domain.
 genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
   do a <- genDomain w
      x <- genElement a
      pure (a,x)
 
-
+-- | Return a domain containing just the given value
 singleton :: NatRepr w -> Integer -> Domain w
 singleton w x = BVDXor mask (x .&. mask) 0
   where

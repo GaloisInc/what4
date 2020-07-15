@@ -1,11 +1,24 @@
 {-|
 Module      : What4.Utils.BVDomain
-Copyright   : (c) Galois Inc, 2019
+Description : Abstract domains for bitvectors
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : huffman@galois.com
 
-Provides an interval-based implementation of bitvector abstract
-domains.
+Provides an implementation of abstract domains for bitvectors.
+This abstract domain has essentially two modes: arithmetic
+and bitvector modes. The arithmetic mode is a fairly straightforward
+interval domain, albeit one that is carefully implemented to deal
+properly with intervals that "cross zero", as is relatively common
+when using 2's complement signed representations. The bitwise
+mode tracks the values of individual bits independently in a
+3-valued logic (true, false or unknown).  The abstract domain
+transitions between the two modes when necessary, but attempts
+to retain as much precision as possible.
+
+The operations of these domains are formalized in the companion
+Cryptol files found together in this package under the \"doc\"
+directory, and their soundness properties stated and established.
 -}
 
 {-# LANGUAGE DataKinds #-}
@@ -221,6 +234,7 @@ data BVDomain (w :: Nat)
   | BVDBitwise !(B.Domain w)
   deriving Show
 
+-- | Return the bitvector mask value from this domain
 bvdMask :: BVDomain w -> Integer
 bvdMask x =
   case x of
@@ -232,14 +246,17 @@ proper :: NatRepr w -> BVDomain w -> Bool
 proper w (BVDArith a) = A.proper w a
 proper w (BVDBitwise b) = B.proper w b
 
+-- | Test if the given integer value is a member of the abstract domain
 member :: BVDomain w -> Integer -> Bool
 member (BVDArith a) x = A.member a x
 member (BVDBitwise a) x = B.member a x
 
+-- | Compute how many concrete elements are in the abstract domain
 size :: BVDomain w -> Integer
 size (BVDArith a)   = A.size a
 size (BVDBitwise b) = B.size b
 
+-- | Generate a random nonempty domain
 genDomain :: NatRepr w -> Gen (BVDomain w)
 genDomain w =
   do b <- chooseBool
@@ -248,10 +265,14 @@ genDomain w =
      else
        BVDBitwise <$> B.genDomain w
 
+-- | Generate a random element from a domain, which
+--   is assumed to be nonempty
 genElement :: BVDomain w -> Gen Integer
 genElement (BVDArith a) = A.genElement a
 genElement (BVDBitwise b) = B.genElement b
 
+-- | Generate a random nonempty domain and an element
+--   contained in that domain.
 genPair :: NatRepr w -> Gen (BVDomain w, Integer)
 genPair w =
   do a <- genDomain w
@@ -285,7 +306,7 @@ bitwiseRoundAbove bvmask x lomask = upperbits .|. lowerbits
 {- |
  Precondition: @lomask <= x <= himask@ and @lomask .|. himask == himask@.
  Find the (arithmetically) smallest @z@ above @x@ which is bitwise between
- @lomask@ and @himask@.  In otherwords, find the smallest @z@ such that
+ @lomask@ and @himask@.  In other words, find the smallest @z@ such that
  @x <= z@ and @lomask .|. z = z@ and @z .|. himask == himask@.
 -}
 bitwiseRoundBetween ::
@@ -297,7 +318,7 @@ bitwiseRoundBetween ::
 bitwiseRoundBetween bvmask x lomask himask = final
   -- read these steps bottom up...
   where
-  -- Finally mask out the low bits and only set those requried by the lomask
+  -- Finally mask out the low bits and only set those required by the lomask
   final = (upper .&. (lobits `Bits.xor` bvmask)) .|. lomask
 
   -- add the correcting bit and mask out any extraneous bits set in
@@ -312,7 +333,7 @@ bitwiseRoundBetween bvmask x lomask himask = final
   -- isolate just the highest incorrect bit
   highbit = rmask `Bits.xor` lobits
 
-  -- a mask for all the bits to the right of the higest incorrect ibt
+  -- a mask for all the bits to the right of the highest incorrect bit
   lobits = rmask `shiftR` 1
 
   -- set all the bits to the right of the highest incorrect bit
@@ -362,7 +383,7 @@ mixedCandidates a b =
  (lomask,himask) = B.bitbounds b
 
 -- | Return a list of "candidate" overlap elements.  If two domains
---   overlap, then they will definintely share one of the given
+--   overlap, then they will definitely share one of the given
 --   values.
 overlapCandidates :: BVDomain w -> BVDomain w -> [Integer]
 overlapCandidates (BVDArith a)   (BVDBitwise b) = mixedCandidates a b

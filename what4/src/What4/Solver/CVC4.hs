@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Solver.CVC4
 -- Description : Solver adapter code for CVC4
--- Copyright   : (c) Galois, Inc 2015
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Rob Dockins <rdockins@galois.com>
 -- Stability   : provisional

@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.LabeledPred
 -- Description      : Predicates with some metadata (a tag or label).
--- Copyright        : (c) Galois, Inc 2019
+-- Copyright        : (c) Galois, Inc 2019-2020
 -- License          : BSD3
 -- Maintainer       : Langston Barrett <langston@galois.com>
 -- Stability        : provisional

@@ -1,8 +1,9 @@
 {-|
-Module     : What4.Expr.MATLAB
-Copyright  : (c) Galois, Inc, 2016
-License    : BSD3
-Maintainer : Joe Hendrix <jhendrix@galois.com>
+Module      : What4.Expr.MATLAB
+Description : Low-level support for MATLAB-style arithmetic operations
+Copyright   : (c) Galois, Inc, 2016-2020
+License     : BSD3
+Maintainer  : Joe Hendrix <jhendrix@galois.com>
 
 This module provides an interface that a symbolic backend should
 implement to support MATLAB intrinsics.

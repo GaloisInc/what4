@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Utils.Arithmetic
 -- Description      : Utility functions for computing arithmetic
--- Copyright        : (c) Galois, Inc 2015
+-- Copyright        : (c) Galois, Inc 2015-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional

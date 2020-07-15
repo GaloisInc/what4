@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Solver.SimpleBackend.Simplify
-Copyright   : (c) Galois, Inc 2016
+Description : Simplification procedure for distributing operations through if/then/else
+Copyright   : (c) Galois, Inc 2016-2020
 License     : BSD3
 Maintainer  : Joe Hendrix <jhendrix@galois.com>
 

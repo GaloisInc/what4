@@ -1,6 +1,7 @@
 {-
 Module           : What4.Protocol.SExp
-Copyright        : (c) Galois, Inc 2014
+Description      : Simple datatypes for representing S-Expressions
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 

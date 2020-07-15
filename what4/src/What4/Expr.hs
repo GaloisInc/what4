@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr
-Copyright   : (c) Galois, Inc 2015-2018
+Description : Commonly-used reexports from the expression representation
+Copyright   : (c) Galois, Inc 2015-2020
 License     : BSD3
 Maintainer  : Rob Dockins <rdockins@galois.com>
 

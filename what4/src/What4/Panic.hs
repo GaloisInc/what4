@@ -7,7 +7,13 @@ import qualified Panic
 
 data What4 = What4
 
-panic :: HasCallStack => String -> [String] -> a
+-- | `panic` represents an error condition that should only
+--   arise due to a programming error. It will exit the program
+--   and print a message asking users to open a ticket.
+panic :: HasCallStack =>
+  String {- ^ Short name of where the error occured -} ->
+  [String] {- ^ More detailed description of the error  -} ->
+  a
 panic = Panic.panic What4
 
 instance PanicComponent What4 where

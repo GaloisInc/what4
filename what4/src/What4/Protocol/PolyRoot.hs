@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Protocol.PolyRoot
-Copyright   : (c) Galois Inc, 2016
+Description : Representation for algebraic reals
+Copyright   : (c) Galois Inc, 2016-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 

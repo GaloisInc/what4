@@ -1,6 +1,6 @@
 {-|
 Module           : What4.Utils.OnlyNatRepr
-Copyright        : (c) Galois
+Copyright        : (c) Galois, Inc. 2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 

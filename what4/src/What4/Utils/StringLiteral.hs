@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Utils.StringLiteral
 -- Description      : Utility definitions for strings
--- Copyright        : (c) Galois, Inc 2019
+-- Copyright        : (c) Galois, Inc 2019-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional

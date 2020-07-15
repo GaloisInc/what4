@@ -1,6 +1,7 @@
 {-|
 Module           : What4.WordMap
-Copyright        : (c) Galois, Inc 2014-2018
+Description      : Datastructure for mapping bitvectors to values
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Rob Dockins <rdockins@galois.com>
 -}

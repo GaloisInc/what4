@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr.Builder
-Copyright   : (c) Galois Inc, 2015-2016
+Description : Main definitions of the What4 expression representation
+Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 

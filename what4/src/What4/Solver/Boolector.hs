@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Solver.Boolector
 -- Description      : Interface for running Boolector
--- Copyright        : (c) Galois, Inc 2014
+-- Copyright        : (c) Galois, Inc 2014-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional

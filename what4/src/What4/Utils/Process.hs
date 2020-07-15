@@ -1,6 +1,6 @@
 {-
 Module           : What4.Utils.Process
-Copyright        : (c) Galois, Inc 2014-2016
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Rob Dockins <rdockins@galois.com>
 

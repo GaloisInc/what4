@@ -2,7 +2,7 @@
 -- |
 -- module           : What4.Solver.DReal
 -- Description      : Interface for running dReal
--- Copyright        : (c) Galois, Inc 2014
+-- Copyright        : (c) Galois, Inc 2014-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional

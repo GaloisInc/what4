@@ -110,10 +110,12 @@ proper w (BVBitInterval mask lo hi) =
   bitle hi mask &&
   bitle lo hi
 
+-- | Test if the given integer value is a member of the abstract domain
 member :: Domain w -> Integer -> Bool
 member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
   where x' = x .&. mask
 
+-- | Compute how many concrete elements are in the abstract domain
 size :: Domain w -> Integer
 size (BVBitInterval _ lo hi)
   | bitle lo hi = Bits.bit p
@@ -125,6 +127,7 @@ size (BVBitInterval _ lo hi)
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
 
+-- | Return the bitvector mask value from this domain
 bvdMask :: Domain w -> Integer
 bvdMask (BVBitInterval mask _ _) = mask
 
@@ -168,7 +171,8 @@ genElement (BVBitInterval mask lo hi) =
      pure ((x .&. u) .|. lo)
 -}
 
-
+-- | Generate a random nonempty domain and an element
+--   contained in that domain.
 genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
   do a <- genDomain w
@@ -179,6 +183,7 @@ genPair w =
 interval :: Integer -> Integer -> Integer -> Domain w
 interval mask lo hi = BVBitInterval mask lo hi
 
+-- | Construct a domain from bitwise lower and upper bounds
 range :: NatRepr w -> Integer -> Integer -> Domain w
 range w lo hi = BVBitInterval (maxUnsigned w) lo' hi'
   where
@@ -186,6 +191,7 @@ range w lo hi = BVBitInterval (maxUnsigned w) lo' hi'
   hi'  = hi .&. mask
   mask = maxUnsigned w
 
+-- | Bitwise lower and upper bounds
 bitbounds :: Domain w -> (Integer, Integer)
 bitbounds (BVBitInterval _ lo hi) = (lo, hi)
 
@@ -205,6 +211,7 @@ singleton w x = BVBitInterval mask x' x'
   x' = x .&. mask
   mask = maxUnsigned w
 
+-- | Bitwise domain containing every bitvector value
 any :: NatRepr w -> Domain w
 any w = BVBitInterval mask 0 mask
   where

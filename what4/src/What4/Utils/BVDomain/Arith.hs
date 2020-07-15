@@ -1,6 +1,6 @@
 {-|
 Module      : What4.Utils.BVDomain.Arith
-Copyright   : (c) Galois Inc, 2019
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : huffman@galois.com
 
@@ -131,10 +131,12 @@ sameDomain (BVDAny _) (BVDAny _) = True
 sameDomain (BVDInterval _ x w) (BVDInterval _ x' w') = x == x' && w == w'
 sameDomain _ _ = False
 
+-- | Compute how many concrete elements are in the abstract domain
 size :: Domain w -> Integer
 size (BVDAny mask)        = mask + 1
 size (BVDInterval _ _ sz) = sz + 1
 
+-- | Test if the given integer value is a member of the abstract domain
 member :: Domain w -> Integer -> Bool
 member (BVDAny _) _ = True
 member (BVDInterval mask lo sz) x = ((x' - lo) .&. mask) <= sz
@@ -149,6 +151,7 @@ proper w (BVDInterval mask lo sz) =
   sz .|. mask == mask &&
   sz < mask
 
+-- | Return the bitvector mask value from this domain
 bvdMask :: Domain w -> Integer
 bvdMask x =
   case x of
@@ -163,12 +166,15 @@ genDomain w =
      sz <- chooseInteger (0, mask)
      pure $! interval mask lo sz
 
+-- | Generate a random element from a domain
 genElement :: Domain w -> Gen Integer
 genElement (BVDAny mask) = chooseInteger (0, mask)
 genElement (BVDInterval mask lo sz) =
    do x <- chooseInteger (0, sz)
       pure ((x+lo) .&. mask)
 
+-- | Generate a random domain and an element
+--   contained in that domain.
 genPair :: NatRepr w -> Gen (Domain w, Integer)
 genPair w =
   do a <- genDomain w

@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Expr.GroundEval
 -- Description : Computing ground values for expressions from solver assignments
--- Copyright   : (c) Galois, Inc 2016
+-- Copyright   : (c) Galois, Inc 2016-2020
 -- License     : BSD3
 -- Maintainer  : Joe Hendrix <jhendrix@galois.com>
 -- Stability   : provisional

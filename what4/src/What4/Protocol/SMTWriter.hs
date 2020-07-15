@@ -1,6 +1,7 @@
 {- |
 Module      : What4.Protocol.SMTWriter
-Copyright   : (c) Galois, Inc 2014-16.
+Description : Infrastructure for rendering What4 expressions in the language of SMT solvers
+Copyright   : (c) Galois, Inc 2014-2020.
 License     : BSD3
 Maintainer  : Joe Hendrix <jhendrix@galois.com>
 

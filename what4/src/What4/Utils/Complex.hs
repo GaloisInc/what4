@@ -3,7 +3,7 @@
 -- Module           : What4.Utils.Complex
 -- Description      : Provides a complex representation that is more generic
 --                    than Data.Complex.
--- Copyright        : (c) Galois, Inc 2014
+-- Copyright        : (c) Galois, Inc 2014-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional
