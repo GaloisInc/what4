@@ -13,13 +13,16 @@ ABC.
 module What4.Protocol.VerilogWriter.AST
   where
 
+import qualified Data.BitVector.Sized as BV
 import qualified Data.Map as Map
 import           Control.Monad.Except
 import           Control.Monad.State (MonadState(), StateT(..), get, put, modify)
 
 import qualified What4.BaseTypes as WT
 import           What4.Expr.Builder
+import           Data.Parameterized.Classes (OrderingF(..), compareF)
 import           Data.Parameterized.Some (Some(..))
+import           Data.Parameterized.Pair
 import           GHC.TypeNats ( type (<=) )
 
 type Identifier = String
@@ -46,9 +49,6 @@ data Binop (inTp :: WT.BaseType) (outTp :: WT.BaseType) where
   BVShiftL :: Binop (WT.BaseBVType w) (WT.BaseBVType w)
   BVShiftR :: Binop (WT.BaseBVType w) (WT.BaseBVType w)
   BVShiftRA :: Binop (WT.BaseBVType w) (WT.BaseBVType w)
-
-
-
 
 binopType ::
   Binop inTp outTp ->
@@ -122,8 +122,8 @@ data Exp (tp :: WT.BaseType) where
   IExp :: IExp tp -> Exp tp
   Binop :: Binop inTp outTp -> IExp inTp -> IExp inTp -> Exp outTp
   Unop :: Unop tp -> IExp tp -> Exp tp
-  BVRotateL :: WT.NatRepr w -> IExp tp -> Integer -> Exp tp
-  BVRotateR :: WT.NatRepr w -> IExp tp -> Integer -> Exp tp
+  BVRotateL :: WT.NatRepr w -> IExp tp -> BV.BV w -> Exp tp
+  BVRotateR :: WT.NatRepr w -> IExp tp -> BV.BV w -> Exp tp
   Mux :: IExp WT.BaseBoolType -> IExp tp -> IExp tp -> Exp tp
   Bit :: IExp (WT.BaseBVType w)
       -> Integer
@@ -137,7 +137,7 @@ data Exp (tp :: WT.BaseType) where
           => WT.NatRepr w -> [Some IExp] -> Exp (WT.BaseBVType w)
   BVLit   :: (1 <= w)
           => WT.NatRepr w -- the width
-          -> Integer -- the value
+          -> BV.BV w -- the value
           -> Exp (WT.BaseBVType w)
   BoolLit :: Bool -> Exp WT.BaseBoolType
 
@@ -178,25 +178,39 @@ scalMult ::
   1 <= w =>
   WT.NatRepr w ->
   Binop (WT.BaseBVType w) (WT.BaseBVType w) ->
-  Integer ->
+  BV.BV w ->
   IExp (WT.BaseBVType w) ->
   VerilogM sym n (IExp (WT.BaseBVType w))
 scalMult w op n e = do
   n' <- litBV w n
   binop op n' e
 
+data BVConst = BVConst (Pair WT.NatRepr BV.BV)
+  deriving (Eq)
+
+instance Ord BVConst where
+  compare (BVConst cx) (BVConst cy) =
+    viewPair (\wx x -> viewPair (\wy y ->
+      case compareF wx wy of
+        LTF -> LT
+        EQF | BV.ult x y -> LT
+        EQF | BV.ult y x -> GT
+        EQF -> EQ
+        GTF -> GT
+    ) cy) cx
+
 litBV ::
   (1 <= w) =>
   WT.NatRepr w ->
-  Integer ->
+  BV.BV w ->
   VerilogM sym n (IExp (WT.BaseBVType w))
 litBV w i = do
   cache <- vsBVCache <$> get
-  case Map.lookup (Some w, i) cache of
+  case Map.lookup (BVConst (Pair w i)) cache of
     Just x -> return (Ident (WT.BaseBVRepr w) x)
     Nothing -> do
       x@(Ident _ name) <- abcLet (BVLit w i)
-      modify $ \s -> s { vsBVCache = Map.insert (Some w, i) name (vsBVCache s) }
+      modify $ \s -> s { vsBVCache = Map.insert (BVConst (Pair w i)) name (vsBVCache s) }
       return x
 
 litBool :: Bool -> VerilogM sym n (IExp WT.BaseBoolType)
@@ -208,9 +222,6 @@ litBool b = do
       x@(Ident _ name) <- abcLet (BoolLit b)
       modify $ \s -> s { vsBoolCache = Map.insert b name (vsBoolCache s) }
       return x
-
-maxBV :: WT.NatRepr w -> Integer
-maxBV w = 2^(WT.intValue w) - 1
 
 unop :: Unop tp -> IExp tp -> VerilogM sym n (IExp tp)
 unop op e = abcLet (Unop op e)
@@ -260,7 +271,7 @@ data ModuleState sym n =
                 , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)] -- In reverse order
                 , vsFreshIdent :: Int
                 , vsExpCache :: IdxCache n IExp
-                , vsBVCache :: Map.Map (Some WT.NatRepr, Integer) Identifier
+                , vsBVCache :: Map.Map BVConst Identifier
                 , vsBoolCache :: Map.Map Bool Identifier
                 , vsSym :: sym
                 }

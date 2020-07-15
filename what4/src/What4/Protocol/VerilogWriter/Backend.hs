@@ -17,6 +17,7 @@ module What4.Protocol.VerilogWriter.Backend
 import           Control.Monad (mapM, foldM)
 import           Control.Monad.State (get)
 import           Control.Monad.Except
+import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty ( NonEmpty(..) )
 
 import           Data.Parameterized.Context
@@ -103,7 +104,7 @@ nonceAppExprVerilogExpr nae =
 -- the same name, but it may be the case that some pre-defined uninterpreted
 -- functions in What4 should be transformed into other operations in verilog. OR
 -- maybe symbolic functions should be turned into module calls?
-mkVerilogFn :: ExprSymFn t args ret -> String
+mkVerilogFn :: ExprSymFn t (Expr t) args ret -> String
 mkVerilogFn f = show (symFnName f)
 
 buildSimplifiedBVSlt ::
@@ -135,7 +136,7 @@ buildSimplifiedBVZext sym r xe =
       let n = r `subNat` w in
       case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
         (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-          zeros <- bvLit sym n 0
+          zeros <- bvLit sym n (BV.zero n)
           bvConcat sym zeros xe
         _ -> error "unreachable"
     _ -> error "unreachable"
@@ -153,15 +154,14 @@ buildSimplifiedBVSext sym r xe =
       let n = r `subNat` w in
       case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
         (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-          zeros <- bvLit sym n 0
-          ones <- bvLit sym n (maxUnsigned n)
+          zeros <- bvLit sym n (BV.zero n)
+          ones <- bvLit sym n (BV.maxUnsigned n)
           sgn <- testBitBV sym (natValue w - 1) xe
           ext <- bvIte sym sgn ones zeros
           bvConcat sym ext xe
         _ -> error "unreachable"
     _ -> error "unreachable"
   where w = bvWidth xe
-
 
 boolMapToExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
@@ -226,11 +226,11 @@ appVerilogExpr app =
     SemiRingProd p
       | SR.SemiRingBVRepr SR.BVArithRepr w <- WS.prodRepr p ->
         WS.prodEvalM (binop BVMul) exprToVerilogExpr p >>= \case
-          Nothing -> litBV w 1
+          Nothing -> litBV w (BV.mkBV w 1)
           Just e  -> return e
       | SR.SemiRingBVRepr SR.BVBitsRepr w <- WS.prodRepr p ->
         WS.prodEvalM (binop BVAnd) exprToVerilogExpr p >>= \case
-          Nothing -> litBV w (maxBV w)
+          Nothing -> litBV w (BV.maxUnsigned w)
           Just e  -> return e
     SemiRingProd _ -> doNotSupportError "semiring operations on non-bitvectors"
     -- SemiRingLe only accounts for Nats, Integers, and Reals, not bitvectors
@@ -260,16 +260,12 @@ appVerilogExpr app =
 
     RealExp _ -> doNotSupportError "real numbers"
     RealLog _ -> doNotSupportError "real numbers"
+    RoundEvenReal _ -> doNotSupportError "real numbers"
 
     -- Bitvector operations
     BVTestBit i e -> do v <- exprToVerilogExpr e
                         bit v (fromIntegral i)
     BVSlt e1 e2 ->
-      {-
-      do sym <- vsSym <$> get
-         e' <- liftIO $ buildSimplifiedBVSlt sym x y
-         exprToVerilogExpr e'
-      -}
       do e1' <- signed =<< exprToVerilogExpr e1
          e2' <- signed =<< exprToVerilogExpr e2
          binop Lt e1' e2'
@@ -281,9 +277,9 @@ appVerilogExpr app =
     BVOrBits w bs ->
       do exprs <- mapM exprToVerilogExpr (bvOrToList bs)
          case exprs of
-           [] -> litBV w 0
+           [] -> litBV w (BV.zero w)
            e:es -> foldM (binop BVOr) e es
-    BVUnaryTerm ubv -> UBV.sym_evaluate (litBV w) ite' ubv
+    BVUnaryTerm ubv -> UBV.sym_evaluate (\i -> litBV w (BV.mkBV w i)) ite' ubv
       where
         w = UBV.width ubv
         ite' e e1 e0 = do e' <- exprToVerilogExpr e
@@ -295,8 +291,8 @@ appVerilogExpr app =
     BVSelect start len bv -> do e <- exprToVerilogExpr bv
                                 bitSelect e start len
     BVFill len b -> do e <- exprToVerilogExpr b
-                       e1 <- litBV len (maxBV len)
-                       e2 <- litBV len 0
+                       e1 <- litBV len (BV.maxUnsigned len)
+                       e2 <- litBV len (BV.zero len)
                        mux e e1 e2
     BVUdiv _   bv1 bv2 ->
       do bv1' <- exprToVerilogExpr bv1
@@ -326,13 +322,13 @@ appVerilogExpr app =
     BVRol  w   bv1 bv2 ->
       do e1 <- exprToVerilogExpr bv1
          case bv2 of
-           SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= WT.intValue w ->
+           SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= BV.mkBV w (intValue w) ->
              abcLet (BVRotateL w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
     BVRor  w   bv1 bv2 ->
       do e1 <- exprToVerilogExpr bv1
          case bv2 of
-           SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= WT.intValue w ->
+           SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= BV.mkBV w (intValue w) ->
              abcLet (BVRotateR w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
     BVZext w e -> do

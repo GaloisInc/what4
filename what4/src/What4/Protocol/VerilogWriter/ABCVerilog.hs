@@ -12,13 +12,14 @@ Export Verilog in the particular syntax ABC supports.
 
 module What4.Protocol.VerilogWriter.ABCVerilog where
 
+import Data.BitVector.Sized
 import Data.Parameterized.NatRepr
 import Data.Parameterized.Some
+import Data.String
 import Data.Text.Prettyprint.Doc
 import What4.BaseTypes
 import What4.Protocol.VerilogWriter.AST
 import Prelude hiding ((<$>))
-import Numeric (showHex)
 
 moduleDoc :: Module sym n -> Doc () -> Doc ()
 moduleDoc (Module ms) name =
@@ -74,26 +75,29 @@ binopDoc :: Binop inTp outTp -> Doc ()
 binopDoc = pretty . showBinop
 
 -- | Show non-negative Integral numbers in base 16.
-hexDoc :: Integer -> Integer -> Doc ()
-hexDoc _ n = pretty $ showHex n ""
+hexDoc :: NatRepr w -> BV w -> Doc ()
+hexDoc w n = fromString $ ppHex w n
+
+decDoc :: NatRepr w -> BV w -> Doc ()
+decDoc w n = fromString $ ppDec w n
 
 iexpDoc :: IExp tp -> Doc ()
 iexpDoc (Ident _ name) = identDoc name
+
+-- NB: special pretty-printer because ABC has a hack to detect this specific syntax
+rotateDoc :: String -> String -> NatRepr w -> IExp tp -> BV w -> Doc ()
+rotateDoc op1 op2 wr@(intValue -> w) e n =
+  parens (v <+> fromString op1 <+> nd) <+> "|" <+>
+  parens (v <+> fromString op2 <+> parens (pretty w <+> "-" <+> nd))
+    where v = iexpDoc e
+          nd = decDoc wr n
 
 expDoc :: Exp tp -> Doc ()
 expDoc (IExp e) = iexpDoc e
 expDoc (Binop op l r) = iexpDoc l <+> binopDoc op <+> iexpDoc r
 expDoc (Unop op e) = unopDoc op <+> iexpDoc e
--- NB: special pretty-printer because ABC has a hack to detect this specific syntax
-expDoc (BVRotateL (intValue -> w) e n) =
-  parens (v <+> "<<" <+> pretty n) <+> "|" <+>
-  parens (v <+> ">>" <+> parens (pretty w <+> "-" <+> pretty n))
-    where v = iexpDoc e
--- NB: special pretty-printer because ABC has a hack to detect this specific syntax
-expDoc (BVRotateR (intValue -> w) e n) =
-  parens (v <+> ">>" <+> pretty n) <+> "|" <+>
-  parens (v <+> "<<" <+> parens (pretty w <+> "-" <+> pretty n))
-    where v = iexpDoc e
+expDoc (BVRotateL wr e n) = rotateDoc "<<" ">>" wr e n
+expDoc (BVRotateR wr e n) = rotateDoc ">>" "<<" wr e n
 expDoc (Mux c t e) = iexpDoc c <+> "?" <+> iexpDoc t <+> colon <+> iexpDoc e
 expDoc (Bit e i) =
   iexpDoc e <> lbracket <> pretty i <> rbracket
@@ -104,7 +108,6 @@ expDoc (BitSelect e (intValue -> start) (intValue -> len)) =
             <> pretty start
             <> rbracket
 expDoc (Concat _ es) = encloseSep lbrace rbrace comma (map (viewSome iexpDoc) es)
-expDoc (BVLit w n) = pretty w' <> "'h" <> hexDoc w' n
-  where w' = intValue w
+expDoc (BVLit w n) = pretty (intValue w) <> "'h" <> hexDoc w n
 expDoc (BoolLit True) = "1'b1"
 expDoc (BoolLit False) = "1'b0"
