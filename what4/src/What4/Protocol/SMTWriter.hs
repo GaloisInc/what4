@@ -57,6 +57,7 @@ module What4.Protocol.SMTWriter
               , supportQuantifiers
               , supportedFeatures
               , connHandle
+              , connInputHandle
               , smtWriterName
               )
   , connState
@@ -130,7 +131,7 @@ import           Data.Word
 
 import           Numeric.Natural
 import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
-import           System.IO.Streams (OutputStream)
+import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
@@ -593,6 +594,11 @@ data WriterConn t (h :: Type) =
                -- ^ Name of writer for error reporting purposes.
              , connHandle :: !(OutputStream Text)
                -- ^ Handle to write to
+
+             , connInputHandle :: !(InputStream Text)
+               -- ^ Handle to read responses from.  Note! May be a trivial stream
+               --   if we are e.g., writing directly to a file.
+
              , supportFunctionDefs :: !Bool
                -- ^ Indicates if the writer can define constants or functions in terms
                -- of an expression.
@@ -672,6 +678,7 @@ popEntryStack c = do
    (_:r) -> writeIORef (entryStack c) r
 
 newWriterConn :: OutputStream Text
+              -> InputStream Text
               -> AcknowledgementAction t cs
               -- ^ An action to consume solver acknowledgement responses
               -> String
@@ -683,12 +690,13 @@ newWriterConn :: OutputStream Text
               -- canonical name (if any).
               -> cs -- ^ State information specific to the type of connection
               -> IO (WriterConn t cs)
-newWriterConn h ack solver_name features bindings cs = do
+newWriterConn h in_h ack solver_name features bindings cs = do
   entry <- newStackEntry
   stk_ref <- newIORef [entry]
   r <- newIORef emptyState
   return $! WriterConn { smtWriterName = solver_name
                        , connHandle    = h
+                       , connInputHandle = in_h
                        , supportFunctionDefs      = False
                        , supportFunctionArguments = False
                        , supportQuantifiers       = False

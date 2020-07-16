@@ -75,6 +75,8 @@ module What4.Protocol.SMTLib2
     -- * Re-exports
   , SMTWriter.WriterConn
   , SMTWriter.assume
+  , SMTWriter.supportedFeatures
+  , SMTWriter.nullAcknowledgementAction
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -550,6 +552,7 @@ instance SupportTermOps Term where
 
 newWriter :: a
           -> Streams.OutputStream Text
+          -> Streams.InputStream Text
           -> AcknowledgementAction t (Writer a)
              -- ^ Action to run for consuming acknowledgement messages
           -> String
@@ -564,13 +567,13 @@ newWriter :: a
           -> B.SymbolVarBimap t
              -- ^ Variable bindings for names.
           -> IO (WriterConn t (Writer a))
-newWriter _ h ack solver_name permitDefineFun arithOption quantSupport bindings = do
+newWriter _ h in_h ack solver_name permitDefineFun arithOption quantSupport bindings = do
   r <- newIORef Set.empty
   let initWriter =
         Writer
         { declaredTuples = r
         }
-  conn <- newWriterConn h ack solver_name arithOption bindings initWriter
+  conn <- newWriterConn h in_h ack solver_name arithOption bindings initWriter
   return $! conn { supportFunctionDefs = permitDefineFun
                  , supportQuantifiers = quantSupport
                  }
@@ -912,9 +915,9 @@ instance Show SMTLib2Exception where
 
 instance Exception SMTLib2Exception
 
-smtAckResult :: Streams.InputStream Text -> AcknowledgementAction t (Writer a)
-smtAckResult resp = AckAction $ \_conn cmd ->
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) resp)
+smtAckResult :: AcknowledgementAction t (Writer a)
+smtAckResult = AckAction $ \conn cmd ->
+  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) (connInputHandle conn))
      case mb of
        Right (SAtom "success") -> return ()
        Right (SAtom "unsupported") -> throw (SMTLib2Unsupported cmd)
@@ -965,9 +968,10 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
        ProblemFeatures ->
        B.ExprBuilder t st fs ->
        Streams.OutputStream Text ->
+       Streams.InputStream Text ->
        IO (WriterConn t (Writer a))
-  newDefaultWriter solver ack feats sym h =
-    newWriter solver h ack (show solver) True feats True
+  newDefaultWriter solver ack feats sym h in_h =
+    newWriter solver h in_h ack (show solver) True feats True
       =<< B.getSymbolVarBimap sym
 
   -- | Run the solver in a session.
@@ -991,7 +995,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
           demuxProcessHandles in_h out_h err_h
             (fmap (\x -> ("; ", x)) $ logHandle logData)
 
-        writer <- newDefaultWriter solver ack feats sym in_stream
+        writer <- newDefaultWriter solver ack feats sym in_stream out_stream
         let s = Session
               { sessionWriter   = writer
               , sessionResponse = out_stream
@@ -1056,7 +1060,8 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
 writeDefaultSMT2 a nm feat sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-  c <- newWriter a str nullAcknowledgementAction nm True feat True bindings
+  null_in <- Streams.nullInput
+  c <- newWriter a str null_in nullAcknowledgementAction nm True feat True bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
   writeCheckSat c
@@ -1065,7 +1070,7 @@ writeDefaultSMT2 a nm feat sym h ps = do
 startSolver
   :: SMTLib2GenericSolver a
   => a
-  -> (Streams.InputStream Text -> AcknowledgementAction t (Writer a))
+  -> AcknowledgementAction t (Writer a)
         -- ^ Action for acknowledging command responses
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
   -> ProblemFeatures
@@ -1082,7 +1087,7 @@ startSolver solver ack setup feats auxOutput sym = do
        (fmap (\x -> ("; ", x)) auxOutput)
 
   -- Create writer
-  writer <- newDefaultWriter solver (ack out_stream) feats sym in_stream
+  writer <- newDefaultWriter solver ack feats sym in_stream out_stream
 
   -- Set solver logic and solver-specific options
   setup writer

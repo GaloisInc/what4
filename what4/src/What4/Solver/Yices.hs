@@ -431,12 +431,13 @@ resetUnitType conn =
 
 newConnection ::
   Streams.OutputStream Text ->
+  Streams.InputStream Text ->
   (IORef (Maybe Int) -> AcknowledgementAction t Connection) ->
   ProblemFeatures {- ^ Indicates the problem features to support. -} ->
   Integer ->
   B.SymbolVarBimap t ->
   IO (WriterConn t Connection)
-newConnection stream ack reqFeatures timeout bindings = do
+newConnection stream in_stream ack reqFeatures timeout bindings = do
   let efSolver = reqFeatures `hasProblemFeature` useExistForall
   let nlSolver = reqFeatures `hasProblemFeature` useNonlinearArithmetic
   let features | efSolver  = useLinearArithmetic
@@ -458,7 +459,7 @@ newConnection stream ack reqFeatures timeout bindings = do
                      , yicesTimeout = timeout
                      , yicesUnitDeclared = unitRef
                      }
-  conn <- newWriterConn stream (ack earlyUnsatRef) nm features' bindings c
+  conn <- newWriterConn stream in_stream (ack earlyUnsatRef) nm features' bindings c
   return $! conn { supportFunctionDefs = True
                  , supportFunctionArguments = True
                  , supportQuantifiers = efSolver
@@ -640,10 +641,9 @@ yicesShutdownSolver p =
 
 
 yicesAck ::
-  Streams.InputStream Text ->
   IORef (Maybe Int) ->
   AcknowledgementAction s Connection
-yicesAck resp earlyUnsatRef = AckAction $ \conn cmdf ->
+yicesAck earlyUnsatRef = AckAction $ \conn cmdf ->
   do isEarlyUnsat <- readIORef earlyUnsatRef
      let cmd = cmdf (connState conn)
          earlyUnsatSafe = cmdEarlyUnsatSafe cmd
@@ -651,7 +651,7 @@ yicesAck resp earlyUnsatRef = AckAction $ \conn cmdf ->
      if isJust isEarlyUnsat && not earlyUnsatSafe
      then return ()
      else do
-       x <- getAckResponse resp
+       x <- getAckResponse (connInputHandle conn)
        case x of
          Nothing ->
            return ()
@@ -694,7 +694,7 @@ yicesStartSolver features auxOutput sym = do -- FIXME
 
   in_stream' <- Streams.atEndOfOutput (hClose in_h) in_stream
 
-  conn <- newConnection in_stream' (yicesAck out_stream) features goalTimeout B.emptySymbolVarBimap
+  conn <- newConnection in_stream' out_stream yicesAck features goalTimeout B.emptySymbolVarBimap
 
   setYicesParams conn cfg
 
@@ -1093,7 +1093,8 @@ writeYicesFile sym path p = do
     bindings <- B.getSymbolVarBimap sym
 
     str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-    c <- newConnection str (const nullAcknowledgementAction) features 0 bindings
+    in_str <- Streams.nullInput
+    c <- newConnection str in_str (const nullAcknowledgementAction) features 0 bindings
     setYicesParams c cfg
     assume c p
     if efSolver then
@@ -1142,7 +1143,7 @@ runYicesInOverride sym logData conditions resultFn = do
       -- Create new connection for sending commands to yices.
       bindings <- B.getSymbolVarBimap sym
 
-      c <- newConnection in_stream (const nullAcknowledgementAction) features 0 bindings
+      c <- newConnection in_stream out_stream (const nullAcknowledgementAction) features 0 bindings
       -- Write yices parameters.
       setYicesParams c cfg
       -- Assert condition
