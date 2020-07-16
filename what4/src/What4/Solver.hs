@@ -20,11 +20,14 @@ module What4.Solver
   , LogData(..)
   , logCallback
   , defaultLogData
+  , smokeTest
+  , module What4.SatResult
 
     -- * Boolector
   , boolectorAdapter
   , boolectorPath
   , runBoolectorInOverride
+  , withBoolector
 
     -- * CVC4
   , cvc4Adapter
@@ -66,3 +69,4 @@ import           What4.Solver.DReal
 import           What4.Solver.STP
 import           What4.Solver.Yices
 import           What4.Solver.Z3
+import           What4.SatResult
