@@ -312,6 +312,9 @@ class HasAbsValue e => IsExpr e where
 
   asAffineVar :: e tp -> Maybe (ConcreteVal tp, e tp, ConcreteVal tp)
 
+  -- | Does the expression reference a Bound Variable (@BoundVar@)?
+  isBoundVar :: e tp -> Bool
+
   -- | Return the string value if this is a constant string
   asString :: e (BaseStringType si) -> Maybe (StringLiteral si)
   asString _ = Nothing
@@ -2383,12 +2386,16 @@ data UnfoldPolicy
    | UnfoldConcrete
       -- ^ The function will be unfolded into its definition only if all the provided
       --   arguments are concrete.
+   | UnfoldBoundVars
+      -- ^ The function will be unfolded into its definition only if
+      --   all the provided arguments are BoundVarExpr.
  deriving (Eq, Ord, Show)
 
 shouldUnfold :: IsExpr e => UnfoldPolicy -> Ctx.Assignment e args -> Bool
 shouldUnfold AlwaysUnfold _ = True
 shouldUnfold NeverUnfold _ = False
 shouldUnfold UnfoldConcrete args = allFC baseIsConcrete args
+shouldUnfold UnfoldBoundVars args = allFC isBoundVar args
 
 -- | This extends the interface for building expressions with operations
 --   for creating new symbolic constants and functions.

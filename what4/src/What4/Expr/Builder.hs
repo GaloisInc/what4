@@ -414,6 +414,9 @@ instance IsExpr (Expr t) where
         Just (ConcreteBV w a, x, ConcreteBV w b)
     _ -> Nothing
 
+  isBoundVar (BoundVarExpr _) = True
+  isBoundVar _ = False
+
   asString (StringExpr x _) = Just x
   asString _ = Nothing
 
