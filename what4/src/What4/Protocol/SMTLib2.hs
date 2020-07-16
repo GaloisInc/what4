@@ -681,7 +681,9 @@ writeGetValue w l = addCommandNoAck w $ SMT2.getValue l
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
 parseBoolSolverValue (SAtom "false") = return False
-parseBoolSolverValue s = fail $ "Could not parse solver value: " ++ show s
+parseBoolSolverValue s =
+  do v <- parseBvSolverValue (knownNat @1) s
+     return (if v == BV.zero knownNat then False else True)
 
 parseRealSolverValue :: MonadFail m => SExp -> m Rational
 parseRealSolverValue (SAtom v) | Just (r,"") <- readDecimal (Text.unpack v) =
