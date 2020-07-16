@@ -34,7 +34,6 @@ import           What4.Expr.GroundEval
 import           What4.Solver.Adapter
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
-import           What4.Protocol.SMTWriter
 import           What4.Utils.Process
 
 data STP = STP deriving Show
@@ -75,16 +74,18 @@ instance SMT2.SMTLib2Tweaks STP where
 instance SMT2.SMTLib2GenericSolver STP where
   defaultSolverPath _ = findSolverPath stpPath . getConfiguration
 
-  defaultSolverArgs _ _ = return []
+  defaultSolverArgs _ _ = return ["--SMTLIB2"]
 
   defaultFeatures _ = useIntegerArithmetic
 
   setDefaultLogicAndOptions writer = do
+    SMT2.setProduceModels writer True
+
     -- Tell STP to use all supported logics
     SMT2.setLogic writer SMT2.qf_bv
 
-  newDefaultWriter solver ack feats sym h =
-    SMT2.newWriter solver h ack (show solver) True feats False
+  newDefaultWriter solver ack feats sym h in_h =
+    SMT2.newWriter solver h in_h ack (show solver) True feats False
       =<< getSymbolVarBimap sym
 
 runSTPInOverride
@@ -93,7 +94,7 @@ runSTPInOverride
   -> [BoolExpr t]
   -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
   -> IO a
-runSTPInOverride = SMT2.runSolverInOverride STP nullAcknowledgementAction (SMT2.defaultFeatures STP)
+runSTPInOverride = SMT2.runSolverInOverride STP SMT2.nullAcknowledgementAction (SMT2.defaultFeatures STP)
 
 -- | Run STP in a session. STP will be configured to produce models, buth
 -- otherwise left with the default configuration.
@@ -105,9 +106,21 @@ withSTP
   -> (SMT2.Session t STP -> IO a)
     -- ^ Action to run
   -> IO a
-withSTP = SMT2.withSolver STP nullAcknowledgementAction (SMT2.defaultFeatures STP)
+withSTP = SMT2.withSolver STP SMT2.nullAcknowledgementAction (SMT2.defaultFeatures STP)
+
+setInteractiveLogicAndOptions ::
+  SMT2.SMTLib2Tweaks a =>
+  SMT2.WriterConn t (SMT2.Writer a) ->
+  IO ()
+setInteractiveLogicAndOptions writer = do
+    -- Tell STP to acknowledge successful commands
+    SMT2.setOption writer "print-success"  "true"
+    -- Tell STP to produce models
+    SMT2.setOption writer "produce-models" "true"
+    -- Tell STP to make declaraions global, so they are not removed by 'pop' commands
+    SMT2.setOption writer "global-declarations" "true"
 
 instance OnlineSolver (SMT2.Writer STP) where
   startSolverProcess =
-    SMT2.startSolver STP (\_ -> nullAcknowledgementAction) SMT2.setDefaultLogicAndOptions
+    SMT2.startSolver STP SMT2.smtAckResult SMT2.setDefaultLogicAndOptions
   shutdownSolverProcess = SMT2.shutdownSolver STP
