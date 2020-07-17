@@ -23,6 +23,7 @@ module What4.Solver.Boolector
   , boolectorAdapter
   , runBoolectorInOverride
   , withBoolector
+  , boolectorFeatures
   ) where
 
 import           Control.Monad

@@ -72,6 +72,7 @@ module What4.Protocol.SMTLib2
   , ppSolverVersionError
   , checkSolverVersion
   , checkSolverVersion'
+  , queryErrorBehavior
     -- * Re-exports
   , SMTWriter.WriterConn
   , SMTWriter.assume
@@ -601,6 +602,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
   pushCommand _  = SMT2.push 1
   popCommand _   = SMT2.pop 1
   resetCommand _ = SMT2.resetAssertions
+  popManyCommands _ n = [SMT2.pop (toInteger n)]
 
   checkCommands _ = [SMT2.checkSat]
   checkWithAssumptionsCommands _ nms = [SMT2.checkSatWithAssumptions nms]
@@ -962,6 +964,12 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
 
   defaultFeatures :: a -> ProblemFeatures
 
+  getErrorBehavior :: a -> WriterConn t (Writer a) -> Streams.InputStream Text -> IO ErrorBehavior
+  getErrorBehavior _ _ _ = return ImmediateExit
+
+  supportsResetAssertions :: a -> Bool
+  supportsResetAssertions _ = False
+
   setDefaultLogicAndOptions :: WriterConn t (Writer a) -> IO()
 
   newDefaultWriter
@@ -1095,24 +1103,27 @@ startSolver solver ack setup feats auxOutput sym = do
   setup writer
 
   -- Query the solver for it's error behavior
-  errBeh <- queryErrorBehavior writer out_stream
+  errBeh <- getErrorBehavior solver writer out_stream
 
   earlyUnsatRef <- newIORef Nothing
 
-  return $! SolverProcess
-    { solverConn     = writer
-    , solverCleanupCallback = cleanupProcess hdls
-    , solverStdin    = in_stream
-    , solverStderr   = err_reader
-    , solverHandle   = ph
-    , solverErrorBehavior = errBeh
-    , solverResponse = out_stream
-    , solverEvalFuns = smtEvalFuns writer out_stream
-    , solverLogFn    = I.logSolverEvent sym
-    , solverName     = show solver
-    , solverEarlyUnsat = earlyUnsatRef
-    }
+  -- push an initial frame for solvers that don't support reset
+  unless (supportsResetAssertions solver) (addCommand writer (SMT2.push 1))
 
+  return $! SolverProcess
+            { solverConn     = writer
+            , solverCleanupCallback = cleanupProcess hdls
+            , solverStdin    = in_stream
+            , solverStderr   = err_reader
+            , solverHandle   = ph
+            , solverErrorBehavior = errBeh
+            , solverResponse = out_stream
+            , solverEvalFuns = smtEvalFuns writer out_stream
+            , solverLogFn    = I.logSolverEvent sym
+            , solverName     = show solver
+            , solverEarlyUnsat = earlyUnsatRef
+            , solverSupportsResetAssertions = supportsResetAssertions solver
+            }
 
 shutdownSolver
   :: SMTLib2GenericSolver a => a -> SolverProcess t (Writer a) -> IO (Exit.ExitCode, Lazy.Text)

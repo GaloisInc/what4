@@ -63,6 +63,7 @@ module What4.Protocol.SMTWriter
   , connState
   , newWriterConn
   , resetEntryStack
+  , popEntryStackToTop
   , entryStackHeight
   , pushEntryStack
   , popEntryStack
@@ -112,6 +113,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
+import           Data.List (last)
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Maybe
 import           Data.Parameterized.Classes (ShowF(..))
@@ -654,6 +656,21 @@ resetEntryStack c = do
   entry <- newStackEntry
   writeIORef (entryStack c) [entry]
 
+
+-- | Pop all but the topmost stack entry.
+--   Return the number of entries on the stack prior
+--   to popping.
+popEntryStackToTop :: WriterConn t h -> IO Int
+popEntryStackToTop c = do
+  stk <- readIORef (entryStack c)
+  if null stk then
+    do entry <- newStackEntry
+       writeIORef (entryStack c) [entry]
+       return 0
+  else
+    do writeIORef (entryStack c) [last stk]
+       return (length stk)
+
 -- | Return the number of pushed stack frames.  Note, this is one
 --   fewer than the number of entries in the stack beacuse the
 --   base entry is the top-level context that is not in the scope
@@ -805,6 +822,10 @@ class (SupportTermOps (Term h)) => SMTWriter h where
 
   -- | Pop 1 existing scope
   popCommand    :: f h -> Command h
+
+  -- | Pop several scopes.
+  popManyCommands :: f h -> Int -> [Command h]
+  popManyCommands w n = replicate n (popCommand w)
 
   -- | Reset the solver state, forgetting all pushed frames and assertions
   resetCommand  :: f h -> Command h

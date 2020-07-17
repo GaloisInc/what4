@@ -14,7 +14,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 module What4.Solver.DReal
-  ( DReal
+  ( DReal(..)
   , DRealBindings
   , ExprRangeBindings
   , getAvgBindings

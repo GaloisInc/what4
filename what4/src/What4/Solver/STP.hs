@@ -17,10 +17,12 @@ module What4.Solver.STP
   , stpAdapter
   , stpPath
   , stpOptions
+  , stpFeatures
   , runSTPInOverride
   , withSTP
   ) where
 
+import           Data.Bits
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
@@ -76,17 +78,18 @@ instance SMT2.SMTLib2GenericSolver STP where
 
   defaultSolverArgs _ _ = return ["--SMTLIB2"]
 
-  defaultFeatures _ = useIntegerArithmetic
+  defaultFeatures _ = stpFeatures
 
   setDefaultLogicAndOptions writer = do
     SMT2.setProduceModels writer True
-
-    -- Tell STP to use all supported logics
     SMT2.setLogic writer SMT2.qf_bv
 
   newDefaultWriter solver ack feats sym h in_h =
     SMT2.newWriter solver h in_h ack (show solver) True feats False
       =<< getSymbolVarBimap sym
+
+stpFeatures :: ProblemFeatures
+stpFeatures = useIntegerArithmetic .|. useBitvectors
 
 runSTPInOverride
   :: ExprBuilder t st fs
@@ -117,10 +120,11 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setOption writer "print-success"  "true"
     -- Tell STP to produce models
     SMT2.setOption writer "produce-models" "true"
+
     -- Tell STP to make declaraions global, so they are not removed by 'pop' commands
-    SMT2.setOption writer "global-declarations" "true"
+-- TODO, add this command once https://github.com/stp/stp/issues/365 is closed
+--    SMT2.setOption writer "global-declarations" "true"
 
 instance OnlineSolver (SMT2.Writer STP) where
-  startSolverProcess =
-    SMT2.startSolver STP SMT2.smtAckResult SMT2.setDefaultLogicAndOptions
+  startSolverProcess = SMT2.startSolver STP SMT2.smtAckResult setInteractiveLogicAndOptions
   shutdownSolverProcess = SMT2.shutdownSolver STP

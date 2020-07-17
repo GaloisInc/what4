@@ -157,7 +157,11 @@ instance SMT2.SMTLib2GenericSolver CVC4 where
                       _ -> []
     return $ ["--lang", "smt2", "--incremental", "--strings-exp"] ++ extraOpts
 
+  getErrorBehavior _ = SMT2.queryErrorBehavior
+
   defaultFeatures _ = cvc4Features
+
+  supportsResetAssertions _ = True
 
   setDefaultLogicAndOptions writer = do
     -- Tell CVC4 to use all supported logics.

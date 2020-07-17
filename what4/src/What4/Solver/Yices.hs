@@ -709,6 +709,7 @@ yicesStartSolver features auxOutput sym = do -- FIXME
                           , solverLogFn = logSolverEvent sym
                           , solverName = "Yices"
                           , solverEarlyUnsat = yicesEarlyUnsat (connState conn)
+                          , solverSupportsResetAssertions = True
                           }
 
 ------------------------------------------------------------------------
@@ -1166,6 +1167,7 @@ runYicesInOverride sym logData conditions resultFn = do
                              , solverName = "Yices"
                              , solverLogFn = logSolverEvent sym
                              , solverEarlyUnsat = yicesEarlyUnsat (connState c)
+                             , solverSupportsResetAssertions = True
                              }
       sat_result <- getSatResult yp
       logSolverEvent sym
