@@ -220,3 +220,26 @@ The key modules to look at when interacting with a solver are:
 * `What4.Solver` (solver-specific implementations of `What4.Protocol.SMTLib2`)
 * `What4.Solver.*`
 * `What4.SatResult` and `What4.Expr.GroundEval` (for analyzing solver output)
+
+## Known working solver verions
+
+What4 has been tested and is known to work with the following solver versions.
+
+Nearby versions may also work; however, subtle changes in solver behavior from
+version to version sometimes happen and can cause unexpected results, especially
+for the more experimental logics that have not been standardized. If you
+encounter such a situation, please open a ticket, as our goal is to work correctly
+on as wide a collection of solvers as is reasonable.
+
+- Z3 versions 4.8.7 and 4.8.8
+- Yices 2.6.1 and 2.6.2
+- CVC4 1.7 and 1.8
+- Boolector 3.2.1
+- STP 2.3.3
+    (However, note https://github.com/stp/stp/issues/363, which prevents
+    effective retrieval of model values.  This should be resolved by the next release)
+- dReal v4.20.04.1
+
+Note that the integration with Z3, Yices and CVC4 has undergone significantly
+more testing than the other solvers.
+
