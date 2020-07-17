@@ -173,6 +173,15 @@ library
   if impl(ghc >= 8.6)
     default-extensions: NoStarIsType
 
+executable quickstart
+  main-is: doc/QuickStart.hs
+  default-language: Haskell2010
+
+  build-depends:
+    base,
+    parameterized-utils,
+    what4
+
 test-suite adapter-test
   type: exitcode-stdio-1.0
   default-language: Haskell2010
@@ -236,8 +245,6 @@ test-suite online-solver-test
     what4
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-
-
 
 test-suite expr-builder-smtlib2
   type: exitcode-stdio-1.0
