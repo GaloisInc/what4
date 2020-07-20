@@ -21,6 +21,7 @@ module What4.Solver.Z3
   , z3Path
   , z3Timeout
   , z3Options
+  , z3Features
   , runZ3InOverride
   , withZ3
   , writeZ3SMT2File
@@ -141,7 +142,11 @@ instance SMT2.SMTLib2GenericSolver Z3 where
                       _ -> []
     return $ ["-smt2", "-in"] ++ extraOpts
 
+  getErrorBehavior _ = SMT2.queryErrorBehavior
+
   defaultFeatures _ = z3Features
+
+  supportsResetAssertions _ = True
 
   setDefaultLogicAndOptions writer = do
     -- Tell Z3 to produce models.

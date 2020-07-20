@@ -72,9 +72,12 @@ module What4.Protocol.SMTLib2
   , ppSolverVersionError
   , checkSolverVersion
   , checkSolverVersion'
+  , queryErrorBehavior
     -- * Re-exports
   , SMTWriter.WriterConn
   , SMTWriter.assume
+  , SMTWriter.supportedFeatures
+  , SMTWriter.nullAcknowledgementAction
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -550,6 +553,10 @@ instance SupportTermOps Term where
 
 newWriter :: a
           -> Streams.OutputStream Text
+             -- ^ Stream to write queries onto
+          -> Streams.InputStream Text
+              -- ^ Input stream to read responses from
+              --   (may be the @nullInput@ stream if no responses are expected)
           -> AcknowledgementAction t (Writer a)
              -- ^ Action to run for consuming acknowledgement messages
           -> String
@@ -558,19 +565,19 @@ newWriter :: a
              -- ^ Flag indicating if it is permitted to use
              -- "define-fun" when generating SMTLIB
           -> ProblemFeatures
-             -- ^ Indicates what level of arithmetic is supported by solver.
+             -- ^ Indicates what features are supported by the solver
           -> Bool
              -- ^ Indicates if quantifiers are supported.
           -> B.SymbolVarBimap t
              -- ^ Variable bindings for names.
           -> IO (WriterConn t (Writer a))
-newWriter _ h ack solver_name permitDefineFun arithOption quantSupport bindings = do
+newWriter _ h in_h ack solver_name permitDefineFun arithOption quantSupport bindings = do
   r <- newIORef Set.empty
   let initWriter =
         Writer
         { declaredTuples = r
         }
-  conn <- newWriterConn h ack solver_name arithOption bindings initWriter
+  conn <- newWriterConn h in_h ack solver_name arithOption bindings initWriter
   return $! conn { supportFunctionDefs = permitDefineFun
                  , supportQuantifiers = quantSupport
                  }
@@ -598,6 +605,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
   pushCommand _  = SMT2.push 1
   popCommand _   = SMT2.pop 1
   resetCommand _ = SMT2.resetAssertions
+  popManyCommands _ n = [SMT2.pop (toInteger n)]
 
   checkCommands _ = [SMT2.checkSat]
   checkWithAssumptionsCommands _ nms = [SMT2.checkSatWithAssumptions nms]
@@ -678,7 +686,9 @@ writeGetValue w l = addCommandNoAck w $ SMT2.getValue l
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
 parseBoolSolverValue (SAtom "false") = return False
-parseBoolSolverValue s = fail $ "Could not parse solver value: " ++ show s
+parseBoolSolverValue s =
+  do v <- parseBvSolverValue (knownNat @1) s
+     return (if v == BV.zero knownNat then False else True)
 
 parseRealSolverValue :: MonadFail m => SExp -> m Rational
 parseRealSolverValue (SAtom v) | Just (r,"") <- readDecimal (Text.unpack v) =
@@ -912,9 +922,9 @@ instance Show SMTLib2Exception where
 
 instance Exception SMTLib2Exception
 
-smtAckResult :: Streams.InputStream Text -> AcknowledgementAction t (Writer a)
-smtAckResult resp = AckAction $ \_conn cmd ->
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) resp)
+smtAckResult :: AcknowledgementAction t (Writer a)
+smtAckResult = AckAction $ \conn cmd ->
+  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) (connInputHandle conn))
      case mb of
        Right (SAtom "success") -> return ()
        Right (SAtom "unsupported") -> throw (SMTLib2Unsupported cmd)
@@ -957,6 +967,12 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
 
   defaultFeatures :: a -> ProblemFeatures
 
+  getErrorBehavior :: a -> WriterConn t (Writer a) -> Streams.InputStream Text -> IO ErrorBehavior
+  getErrorBehavior _ _ _ = return ImmediateExit
+
+  supportsResetAssertions :: a -> Bool
+  supportsResetAssertions _ = False
+
   setDefaultLogicAndOptions :: WriterConn t (Writer a) -> IO()
 
   newDefaultWriter
@@ -965,9 +981,10 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
        ProblemFeatures ->
        B.ExprBuilder t st fs ->
        Streams.OutputStream Text ->
+       Streams.InputStream Text ->
        IO (WriterConn t (Writer a))
-  newDefaultWriter solver ack feats sym h =
-    newWriter solver h ack (show solver) True feats True
+  newDefaultWriter solver ack feats sym h in_h =
+    newWriter solver h in_h ack (show solver) True feats True
       =<< B.getSymbolVarBimap sym
 
   -- | Run the solver in a session.
@@ -991,7 +1008,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
           demuxProcessHandles in_h out_h err_h
             (fmap (\x -> ("; ", x)) $ logHandle logData)
 
-        writer <- newDefaultWriter solver ack feats sym in_stream
+        writer <- newDefaultWriter solver ack feats sym in_stream out_stream
         let s = Session
               { sessionWriter   = writer
               , sessionResponse = out_stream
@@ -1056,7 +1073,8 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
 writeDefaultSMT2 a nm feat sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-  c <- newWriter a str nullAcknowledgementAction nm True feat True bindings
+  null_in <- Streams.nullInput
+  c <- newWriter a str null_in nullAcknowledgementAction nm True feat True bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
   writeCheckSat c
@@ -1065,7 +1083,7 @@ writeDefaultSMT2 a nm feat sym h ps = do
 startSolver
   :: SMTLib2GenericSolver a
   => a
-  -> (Streams.InputStream Text -> AcknowledgementAction t (Writer a))
+  -> AcknowledgementAction t (Writer a)
         -- ^ Action for acknowledging command responses
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
   -> ProblemFeatures
@@ -1082,30 +1100,33 @@ startSolver solver ack setup feats auxOutput sym = do
        (fmap (\x -> ("; ", x)) auxOutput)
 
   -- Create writer
-  writer <- newDefaultWriter solver (ack out_stream) feats sym in_stream
+  writer <- newDefaultWriter solver ack feats sym in_stream out_stream
 
   -- Set solver logic and solver-specific options
   setup writer
 
   -- Query the solver for it's error behavior
-  errBeh <- queryErrorBehavior writer out_stream
+  errBeh <- getErrorBehavior solver writer out_stream
 
   earlyUnsatRef <- newIORef Nothing
 
-  return $! SolverProcess
-    { solverConn     = writer
-    , solverCleanupCallback = cleanupProcess hdls
-    , solverStdin    = in_stream
-    , solverStderr   = err_reader
-    , solverHandle   = ph
-    , solverErrorBehavior = errBeh
-    , solverResponse = out_stream
-    , solverEvalFuns = smtEvalFuns writer out_stream
-    , solverLogFn    = I.logSolverEvent sym
-    , solverName     = show solver
-    , solverEarlyUnsat = earlyUnsatRef
-    }
+  -- push an initial frame for solvers that don't support reset
+  unless (supportsResetAssertions solver) (addCommand writer (SMT2.push 1))
 
+  return $! SolverProcess
+            { solverConn     = writer
+            , solverCleanupCallback = cleanupProcess hdls
+            , solverStdin    = in_stream
+            , solverStderr   = err_reader
+            , solverHandle   = ph
+            , solverErrorBehavior = errBeh
+            , solverResponse = out_stream
+            , solverEvalFuns = smtEvalFuns writer out_stream
+            , solverLogFn    = I.logSolverEvent sym
+            , solverName     = show solver
+            , solverEarlyUnsat = earlyUnsatRef
+            , solverSupportsResetAssertions = supportsResetAssertions solver
+            }
 
 shutdownSolver
   :: SMTLib2GenericSolver a => a -> SolverProcess t (Writer a) -> IO (Exit.ExitCode, Lazy.Text)

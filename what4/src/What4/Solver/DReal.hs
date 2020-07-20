@@ -14,7 +14,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 module What4.Solver.DReal
-  ( DReal
+  ( DReal(..)
   , DRealBindings
   , ExprRangeBindings
   , getAvgBindings
@@ -31,23 +31,19 @@ import           Control.Exception
 import           Control.Lens(folded)
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8 hiding (try)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
-import           Data.Char hiding (isSpace)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Text.Encoding ( decodeUtf8 )
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as Text
 import qualified Data.Text.Lazy.Builder as Builder
 import           Numeric
-import           System.Directory (doesFileExist)
 import           System.Exit
-import           System.FilePath
 import           System.IO
 import           System.IO.Error
 import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec as Streams
-import           System.IO.Temp
 import           System.Process
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -109,8 +105,9 @@ writeDRealSMT2File
    -> IO ()
 writeDRealSMT2File sym h ps = do
   bindings <- getSymbolVarBimap sym
-  in_str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-  c <- SMT2.newWriter DReal in_str SMTWriter.nullAcknowledgementAction "dReal"
+  out_str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
+  in_str <- Streams.nullInput
+  c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction "dReal"
           False useComputableReals False bindings
   SMT2.setProduceModels c True
   SMT2.setLogic c (SMT2.Logic "QF_NRA")
@@ -118,25 +115,24 @@ writeDRealSMT2File sym h ps = do
   SMT2.writeCheckSat c
   SMT2.writeExit c
 
-type DRealBindings = Map Text (Maybe Rational, Maybe Rational)
-
-parseDRealModel
-   :: Handle
-   -> IO DRealBindings
-parseDRealModel h = do
-   str <- BS.hGetContents h
-   let ls = drop 1 $ UTF8.lines str
-   Map.fromList <$> mapM parseDRealBinding ls
+type DRealBindings = Map Text (Either Bool (Maybe Rational, Maybe Rational))
 
 getAvgBindings :: SMT2.WriterConn t (SMT2.Writer DReal)
                -> DRealBindings
                -> IO (GroundEvalFn t)
 getAvgBindings c m = do
-  let evalBool _ = fail "dReal does not support Boolean vars"
+  let evalBool tm =
+        case Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m of
+          Just (Right _) -> fail "Expected Boolean variable"
+          Just (Left b) -> return b
+          Nothing -> return False
       evalBV _ _ = fail "dReal does not support bitvectors."
       evalStr _ = fail "dReal does not support strings."
       evalReal tm = do
-        return $ maybe 0 drealAvgBinding $ Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m
+        case Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m of
+          Just (Right vs) -> return (drealAvgBinding vs)
+          Just (Left _) -> fail "Expected Real variable"
+          Nothing -> return 0
       evalFloat _ _ = fail "dReal does not support floats."
   let evalFns = SMTWriter.SMTEvalFunctions { SMTWriter.smtEvalBool = evalBool
                                            , SMTWriter.smtEvalBV = evalBV
@@ -152,12 +148,20 @@ getMaybeEval :: ((Maybe Rational, Maybe Rational) -> Maybe Rational)
              -> DRealBindings
              -> IO (RealExpr t -> IO (Maybe Rational))
 getMaybeEval proj c m = do
-  let evalBool _ = fail "dReal does not return Boolean value"
+  let evalBool tm =
+        case Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m of
+          Just (Right _) -> fail "expected boolean term"
+          Just (Left b) -> return b
+          Nothing -> fail "unbound boolean variable"
       evalBV _ _ = fail "dReal does not return Bitvector values."
       evalStr _ = fail "dReal does not return string values."
       evalReal tm = do
-        case proj =<< Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m of
-          Just v -> return v
+        case Map.lookup (Builder.toLazyText (SMT2.renderTerm tm)) m of
+          Just (Right v) ->
+            case proj v of
+              Just x  -> return x
+              Nothing -> throwIO (userError "unbound")
+          Just (Left _) -> fail "expected real variable"
           Nothing -> throwIO (userError "unbound")
       evalFloat _ _ = fail "dReal does not support floats."
   let evalFns = SMTWriter.SMTEvalFunctions { SMTWriter.smtEvalBool = evalBool
@@ -188,13 +192,24 @@ drealAvgBinding (Nothing, Just r)  = r
 drealAvgBinding (Just r, Nothing)  = r
 drealAvgBinding (Just r1, Just r2) = (r1+r2)/2
 
-parseDRealBinding :: UTF8.ByteString -> IO (Text, (Maybe Rational, Maybe Rational))
-parseDRealBinding str =
- case parseOnly dRealBinding str of
-   Left e -> fail $ unlines ["unable to parse dReal model output line:", "  "++UTF8.toString str, e]
-   Right (x,lo,hi) -> return (Text.pack (UTF8.toString x), (lo,hi))
+dRealResponse :: Parser (SatResult [(Text, Either Bool (Maybe Rational, Maybe Rational))] ())
+dRealResponse =
+  msum
+  [ do _ <- string "unsat"
+       return (Unsat ())
 
-dRealBinding :: Parser (UTF8.ByteString, Maybe Rational, Maybe Rational)
+  , do _ <- string "unknown"
+       return Unknown
+
+  , do _ <- string "delta-sat"
+       _ <- takeTill (\c -> c == '\n' || c == '\r')
+       endOfLine
+       bs <- many' dRealBinding
+       endOfInput
+       return (Sat bs)
+  ]
+
+dRealBinding :: Parser (Text, Either Bool (Maybe Rational, Maybe Rational))
 dRealBinding = do
     skipSpace
 
@@ -204,20 +219,29 @@ dRealBinding = do
     _ <- char ':'
     skipSpace
 
-    lo <- dRealLoBound
+    val <- msum
+      [ do _ <- string "False"
+           skipSpace
+           return (Left False)
 
-    skipSpace
-    _ <- char ','
-    skipSpace
+      , do _ <- string "True"
+           skipSpace
+           return (Left True)
 
-    hi <- dRealHiBound
+      , do lo <- dRealLoBound
 
-    skipSpace
-    _ <- option ' ' (char ';')
-    skipSpace
-    endOfInput
+           skipSpace
+           _ <- char ','
+           skipSpace
 
-    return (nm,lo,hi)
+           hi <- dRealHiBound
+
+           skipSpace
+           _ <- option ' ' (char ';')
+           skipSpace
+           return (Right (lo,hi))
+      ]
+    return (Text.fromStrict (decodeUtf8 nm),val)
 
 dRealLoBound :: Parser (Maybe Rational)
 dRealLoBound = choice
@@ -242,12 +266,6 @@ dRealHiBound = choice
    ]
 
 
--- | Read next contiguous sequence or numbers or letters.
-parseNextWord :: Parser String
-parseNextWord = do
-  skipSpace
-  UTF8.toString <$> takeWhile1 (\c -> isAlphaNum c || c == '-')
-
 runDRealInOverride
    :: ExprBuilder t st fs
    -> LogData
@@ -262,8 +280,7 @@ runDRealInOverride sym logData ps modelFn = do
     { satQuerySolverName = "dReal"
     , satQueryReason = logReason logData
     }
-  withSystemTempDirectory "dReal.tmp" $ \tmpdir ->
-      withProcessHandles solver_path ["--model", "--in", "--format", "smt2"] (Just tmpdir) $ \(in_h, out_h, err_h, ph) -> do
+  withProcessHandles solver_path ["--model", "--in", "--format", "smt2"] Nothing $ \(in_h, out_h, err_h, ph) -> do
 
       -- Log stderr to output.
       err_stream <- Streams.handleToInputStream err_h
@@ -274,14 +291,16 @@ runDRealInOverride sym logData ps modelFn = do
       -- dReal does not support (define-fun ...)
       bindings <- getSymbolVarBimap sym
 
-      in_str  <-
+      out_str  <-
         case logHandle logData of
           Nothing -> Streams.encodeUtf8 =<< Streams.handleToOutputStream in_h
           Just aux_h ->
             do aux_str <- Streams.handleToOutputStream aux_h
                Streams.encodeUtf8 =<< teeOutputStream aux_str =<< Streams.handleToOutputStream in_h
 
-      c <- SMT2.newWriter DReal in_str SMTWriter.nullAcknowledgementAction "dReal"
+      in_str <- Streams.nullInput
+
+      c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction "dReal"
              False useComputableReals False bindings
 
       -- Set the dReal default logic
@@ -299,26 +318,14 @@ runDRealInOverride sym logData ps modelFn = do
 
       logCallbackVerbose logData 2 "Parsing result from solver"
 
-      msat_result <- try $ Streams.parseFromStream parseNextWord out_stream
-
-      -- dReal currently just dumps its model information into "output.model" in its
-      -- working directory, so that is where we look for it
-      let modelfile = tmpdir </> "output.model"
+      msat_result <- try $ Streams.parseFromStream dRealResponse out_stream
 
       res <-
         case msat_result of
-          Left Streams.ParseException{} -> fail "Could not parse sat result."
-          Right "unsat" -> return (Unsat ())
-          Right "delta-sat" -> do
-              ex <- doesFileExist modelfile
-              m <- if ex
-                      then withFile modelfile ReadMode parseDRealModel
-                      -- if the model file does not exist, treat it as an empty file
-                      -- containing no bindings
-                      else return Map.empty
-              return (Sat (c, m))
-          Right sat_result -> do
-            fail $ unlines ["Could not interpret result from solver:", sat_result]
+          Left ex@Streams.ParseException{} -> fail $ unlines ["Could not parse dReal result.", displayException ex]
+          Right (Unsat ()) -> pure (Unsat ())
+          Right Unknown    -> pure Unknown
+          Right (Sat bs)   -> pure (Sat (c, Map.fromList bs))
 
       r <- modelFn res
 
