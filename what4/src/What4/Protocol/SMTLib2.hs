@@ -553,7 +553,10 @@ instance SupportTermOps Term where
 
 newWriter :: a
           -> Streams.OutputStream Text
+             -- ^ Stream to write queries onto
           -> Streams.InputStream Text
+              -- ^ Input stream to read responses from
+              --   (may be the @nullInput@ stream if no responses are expected)
           -> AcknowledgementAction t (Writer a)
              -- ^ Action to run for consuming acknowledgement messages
           -> String
@@ -562,7 +565,7 @@ newWriter :: a
              -- ^ Flag indicating if it is permitted to use
              -- "define-fun" when generating SMTLIB
           -> ProblemFeatures
-             -- ^ Indicates what level of arithmetic is supported by solver.
+             -- ^ Indicates what features are supported by the solver
           -> Bool
              -- ^ Indicates if quantifiers are supported.
           -> B.SymbolVarBimap t

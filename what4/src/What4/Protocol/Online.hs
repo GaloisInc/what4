@@ -134,7 +134,7 @@ data SolverProcess scope solver = SolverProcess
 
   , solverSupportsResetAssertions :: Bool
     -- ^ Some solvers do not have support for the SMTLib2.6 operation
-    --   (reset-assertions), or an equvalant.
+    --   (reset-assertions), or an equivalent.
     --   For these solvers, we instead make sure to
     --   always have at least one assertion frame pushed, and pop all
     --   outstanding frames (and push a new top-level one) as a way

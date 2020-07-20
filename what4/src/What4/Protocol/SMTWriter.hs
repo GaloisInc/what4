@@ -598,8 +598,11 @@ data WriterConn t (h :: Type) =
                -- ^ Handle to write to
 
              , connInputHandle :: !(InputStream Text)
-               -- ^ Handle to read responses from.  Note! May be a trivial stream
-               --   if we are e.g., writing directly to a file.
+               -- ^ Handle to read responses from.  In some contexts, there
+               --   are no responses expected (e.g., if we are writing a problem
+               --   directly to a file); in these cases, the input stream might
+               --   be the trivial stream @nullInput@, which just immediately
+               --   returns EOF.
 
              , supportFunctionDefs :: !Bool
                -- ^ Indicates if the writer can define constants or functions in terms
@@ -695,7 +698,10 @@ popEntryStack c = do
    (_:r) -> writeIORef (entryStack c) r
 
 newWriterConn :: OutputStream Text
+              -- ^ Stream to write queries onto
               -> InputStream Text
+              -- ^ Input stream to read responses from
+              --   (may be the @nullInput@ stream if no responses are expected)
               -> AcknowledgementAction t cs
               -- ^ An action to consume solver acknowledgement responses
               -> String
