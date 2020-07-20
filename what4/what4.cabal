@@ -1,19 +1,37 @@
 Name:          what4
-Version:       0.4.2
+Version:       1.0
 Author:        Galois Inc.
 Maintainer:    jhendrix@galois.com, rdockins@galois.com
 Copyright:     (c) Galois, Inc 2014-2020
 License:       BSD3
 License-file:  LICENSE
 Build-type:    Simple
-Cabal-version: >= 1.10
-Category:      Language
-Synopsis:      What4 provides solver-agnostic representations for symbolic values
+Cabal-version: 1.18
+Homepage:      https://github.com/GaloisInc/what4
+Bug-reports:   https://github.com/GaloisInc/what4/issues
+Tested-with:   GHC==8.6.5, GHC==8.8.3, GHC==8.10.1
+Category:      Formal Methods, Theorem Provers, Symbolic Computation, SMT
+Synopsis:      Solver-agnostic symbolic values support for issuing queries
 Description:
   What4 is a generic library for representing values as symbolic formulae which may
   contain references to symbolic values, representing unknown variables.
   It provides support for communicating with a variety of SAT and SMT solvers,
-  including Z3, CVC4, Yices, STP, and dReal.
+  including Z3, CVC4, Yices, Boolector, STP, and dReal.
+
+  The data representation types make heavy use of GADT-style type indices
+  to ensure type-correct manipulation of symbolic values.
+Extra-doc-files:
+  README.md
+  CHANGES.md
+  doc/README.md
+  doc/bvdomain.cry
+  doc/arithdomain.cry
+  doc/bitsdomain.cry
+  doc/xordomain.cry
+
+source-repository head
+  type: git
+  location: https://github.com/GaloisInc/what4
 
 flag solverTests
   description: extra tests that require all the solvers to be installed
