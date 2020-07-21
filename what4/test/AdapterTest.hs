@@ -11,9 +11,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 
-import Control.Exception (displayException)
+import Control.Exception ( displayException, try, SomeException )
 import Control.Lens (folded)
-import Control.Monad ( forM )
+import Control.Monad ( forM, void )
+import Data.Char ( toLower )
+import System.Exit ( ExitCode(..) )
+import System.Process ( readProcessWithExitCode )
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -140,11 +143,34 @@ mkQuickstartTest adpt = testCase (solver_adapter_name adpt) $
            Unknown -> fail "Solver returned UNKNOWN"
            Sat _   -> fail "Should be a unique model!"
 
+
+getSolverVersion :: String -> IO String
+getSolverVersion solver = do
+  try (readProcessWithExitCode (toLower <$> solver) ["--version"] "") >>= \case
+    Right (r,o,e) ->
+      if r == ExitSuccess
+      then let ol = lines o in
+             return $ if null ol then (solver <> " v??") else head ol
+      else return $ solver <> " version error: " <> show r <> " /;/ " <> e
+    Left (err :: SomeException) -> return $ solver <> " invocation error: " <> show err
+
+
+reportSolverVersions :: IO ()
+reportSolverVersions = do putStrLn "SOLVER VERSIONS::"
+                          void $ mapM rep allAdapters
+  where rep a = let s = solver_adapter_name a in disp s =<< getSolverVersion s
+        disp s v = putStrLn $ "  Solver " <> s <> " == " <> v
+
+
 main :: IO ()
-main = defaultMain $ testGroup "AdapterTests"
-  [ testGroup "SmokeTest" $ map mkSmokeTest allAdapters
-  , testGroup "QuickStart" $ map mkQuickstartTest allAdapters
-  , testGroup "nonlinear reals" $ map nonlinearRealTest
+main = do
+  reportSolverVersions
+  defaultMain $
+    localOption (mkTimeout (10 * 1000 * 1000)) $
+    testGroup "AdapterTests"
+    [ testGroup "SmokeTest" $ map mkSmokeTest allAdapters
+    , testGroup "QuickStart" $ map mkQuickstartTest allAdapters
+    , testGroup "nonlinear reals" $ map nonlinearRealTest
       -- NB: nonlinear arith expected to fail for STP and Boolector
       [ cvc4Adapter, z3Adapter, yicesAdapter, drealAdapter ]
-  ]
+    ]
