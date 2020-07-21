@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ExplicitForAll #-}
@@ -37,7 +38,9 @@ allAdapters =
   , z3Adapter
   , boolectorAdapter
   , stpAdapter
+#ifdef TEST_DREAL
   , drealAdapter
+#endif
   ]
 
 withSym :: SolverAdapter State -> (forall t . ExprBuilder t State (Flags FloatUninterpreted) -> IO a) -> IO a
@@ -172,5 +175,9 @@ main = do
     , testGroup "QuickStart" $ map mkQuickstartTest allAdapters
     , testGroup "nonlinear reals" $ map nonlinearRealTest
       -- NB: nonlinear arith expected to fail for STP and Boolector
-      [ cvc4Adapter, z3Adapter, yicesAdapter, drealAdapter ]
+      [ cvc4Adapter, z3Adapter, yicesAdapter
+#ifdef TEST_DREAL
+      , drealAdapter
+#endif
+      ]
     ]

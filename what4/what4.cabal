@@ -20,6 +20,11 @@ flag extraTests
   manual: True
   default: False
 
+flag dRealTestDisable
+  description: when running solver tests, include testing against dReal (ignored unless -fextraTests)
+  manual: True
+  default: False
+
 library
   build-depends:
     base >= 4.8 && < 5,
@@ -154,6 +159,8 @@ test-suite adapter-test
 
   if flag(extraTests)
     buildable: True
+    if ! flag(dRealTestDisable)
+      cpp-options: -DTEST_DREAL
   else
     buildable: False
 
