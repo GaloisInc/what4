@@ -38,10 +38,15 @@ allAdapters =
   , z3Adapter
   , boolectorAdapter
   , stpAdapter
+  ] <> drealAdpt
+
+drealAdpt :: [SolverAdapter State]
 #ifdef TEST_DREAL
-  , drealAdapter
+drealAdpt = [drealAdapter]
+#else
+drealAdpt = []
 #endif
-  ]
+
 
 withSym :: SolverAdapter State -> (forall t . ExprBuilder t State (Flags FloatUninterpreted) -> IO a) -> IO a
 withSym adpt pred_gen = withIONonceGenerator $ \gen ->
@@ -175,9 +180,5 @@ main = do
     , testGroup "QuickStart" $ map mkQuickstartTest allAdapters
     , testGroup "nonlinear reals" $ map nonlinearRealTest
       -- NB: nonlinear arith expected to fail for STP and Boolector
-      [ cvc4Adapter, z3Adapter, yicesAdapter
-#ifdef TEST_DREAL
-      , drealAdapter
-#endif
-      ]
+      ([ cvc4Adapter, z3Adapter, yicesAdapter ] <> drealAdpt)
     ]
