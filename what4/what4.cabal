@@ -15,13 +15,13 @@ Description:
   It provides support for communicating with a variety of SAT and SMT solvers,
   including Z3, CVC4, Yices, STP, and dReal.
 
-flag extraTests
+flag solverTests
   description: extra tests that require all the solvers to be installed
   manual: True
   default: False
 
 flag dRealTestDisable
-  description: when running solver tests, include testing against dReal (ignored unless -fextraTests)
+  description: when running solver tests, include testing against dReal (ignored unless -fsolverTests)
   manual: True
   default: False
 
@@ -157,7 +157,7 @@ test-suite adapter-test
   hs-source-dirs: test
   main-is: AdapterTest.hs
 
-  if flag(extraTests)
+  if flag(solverTests)
     buildable: True
     if ! flag(dRealTestDisable)
       cpp-options: -DTEST_DREAL
@@ -188,7 +188,7 @@ test-suite online-solver-test
   hs-source-dirs: test
   main-is: OnlineSolverTest.hs
 
-  if flag(extraTests)
+  if flag(solverTests)
     buildable: True
   else
     buildable: False
