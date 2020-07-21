@@ -192,3 +192,28 @@ checkModel sym f es = do
           BaseBoolRepr -> show v
           _ -> "<..>"
 ```
+
+If we compile this code and run it, we get the following output:
+
+```
+Satisfiable, with model:
+  p := False
+  q := False
+  r := True
+Unsatisfiable.
+```
+
+## Where to go next
+
+The key modules to look at when modeling a problem with What4 are:
+
+* `What4.BaseTypes` (the datatypes What4 understands)
+* `What4.Interface` (the functions What4 uses to build symbolic expressions)
+* `What4.Expr.Builder` (the implementation of the functions in `What4.Interface`)
+
+The key modules to look at when interacting with a solver are:
+
+* `What4.Protocol.SMTLib2` (the functions to interact with a solver backend)
+* `What4.Solver` (solver-specific implementations of `What4.Protocol.SMTLib2`)
+* `What4.Solver.*`
+* `What4.SatResult` and `What4.Expr.GroundEval` (for analyzing solver output)
