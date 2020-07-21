@@ -12,8 +12,11 @@
 {-# LANGUAGE TypeApplications #-}
 
 import Control.Lens (folded)
-import Control.Monad ( forM )
+import Control.Monad ( forM, void )
+import Data.Char ( toLower )
 import Data.Proxy
+import System.Exit ( ExitCode(..) )
+import System.Process ( readProcessWithExitCode )
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -187,9 +190,29 @@ mkQuickstartTestAlt (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = te
        Sat _   -> fail "Should be a unique model!"
 
 
+getSolverVersion :: String -> IO String
+getSolverVersion solver = do
+  (r,o,e) <- readProcessWithExitCode (toLower <$> solver) ["--version"] ""
+  if r == ExitSuccess
+    then let ol = lines o in
+           return $ if null ol then (solver <> " v??") else head ol
+    else return $ solver <> " version error: " <> show r <> " /;/ " <> e
+
+
+reportSolverVersions :: IO ()
+reportSolverVersions = do putStrLn "SOLVER VERSIONS::"
+                          void $ mapM rep allOnlineSolvers
+  where rep (s,_,_,_) = disp s =<< getSolverVersion s
+        disp s v = putStrLn $ "  Solver " <> s <> " == " <> v
+
+
 main :: IO ()
-main = defaultMain $ testGroup "OnlineSolverTests"
-  [ testGroup "SmokeTest" $ map mkSmokeTest allOnlineSolvers
-  , testGroup "QuickStart" $ map mkQuickstartTest allOnlineSolvers
-  , testGroup "QuickStart Alternate" $ map mkQuickstartTestAlt allOnlineSolvers
-  ]
+main = do
+  reportSolverVersions
+  defaultMain $
+    localOption (mkTimeout (10 * 1000 * 1000)) $
+    testGroup "OnlineSolverTests"
+    [ testGroup "SmokeTest" $ map mkSmokeTest allOnlineSolvers
+    , testGroup "QuickStart" $ map mkQuickstartTest allOnlineSolvers
+    , testGroup "QuickStart Alternate" $ map mkQuickstartTestAlt allOnlineSolvers
+    ]
