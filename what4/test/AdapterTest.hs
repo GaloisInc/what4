@@ -37,7 +37,9 @@ allAdapters =
   , yicesAdapter
   , z3Adapter
   , boolectorAdapter
+#ifdef TEST_STP
   , stpAdapter
+#endif
   ] <> drealAdpt
 
 drealAdpt :: [SolverAdapter State]

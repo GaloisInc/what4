@@ -21,7 +21,12 @@ flag solverTests
   default: False
 
 flag dRealTestDisable
-  description: when running solver tests, include testing against dReal (ignored unless -fsolverTests)
+  description: when running solver tests, disable testing using dReal (ignored unless -fsolverTests)
+  manual: True
+  default: False
+
+flag STPTestDisable
+  description: when running solver tests, disable testing using STP (ignored unless -fsolverTests)
   manual: True
   default: False
 
@@ -161,6 +166,8 @@ test-suite adapter-test
     buildable: True
     if ! flag(dRealTestDisable)
       cpp-options: -DTEST_DREAL
+    if ! flag(STPTestDisable)
+      cpp-options: -DTEST_STP
   else
     buildable: False
 
@@ -190,6 +197,8 @@ test-suite online-solver-test
 
   if flag(solverTests)
     buildable: True
+    if ! flag(STPTestDisable)
+      cpp-options: -DTEST_STP
   else
     buildable: False
 
