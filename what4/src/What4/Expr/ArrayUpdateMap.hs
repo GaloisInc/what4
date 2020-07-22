@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr.ArrayUpdateMap
-Copyright   : (c) Galois Inc, 2019
+Description : Datastructure for representing a sequence of updates to an SMT array
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : rdockins@galois.com
 -}

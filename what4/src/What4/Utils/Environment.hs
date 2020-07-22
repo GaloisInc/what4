@@ -4,7 +4,7 @@
 -- Description      : Provides functions for finding an executable, and
 --                    expanding a path with referenced to environment
 --                    variables.
--- Copyright        : (c) Galois, Inc 2013
+-- Copyright        : (c) Galois, Inc 2013-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional

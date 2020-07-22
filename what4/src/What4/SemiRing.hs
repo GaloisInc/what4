@@ -1,10 +1,9 @@
 {-|
 Module      : What4.SemiRing
-Copyright   : (c) Galois Inc, 2019
+Description : Definitions related to semiring structures over base types.
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : rdockins@galois.com
-
-Definitions related to semiring structures over base types.
 
 The algebraic assumptions we make about our semirings are that:
 

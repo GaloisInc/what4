@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Solver.STP
 -- Description : Solver adapter code for STP
--- Copyright   : (c) Galois, Inc 2015
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Joe Hendrix <rdockins@galois.com>
 -- Stability   : provisional

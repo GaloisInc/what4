@@ -1,6 +1,7 @@
 ------------------------------------------------------------------------
 -- |
 -- Module      : What4.SWord
+-- Description : Dynamically-sized bitvector values
 -- Copyright   : Galois, Inc. 2018-2020
 -- License     : BSD3
 -- Maintainer  : rdockins@galois.com

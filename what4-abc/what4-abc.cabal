@@ -2,7 +2,7 @@ Name:          what4-abc
 Version:       0.1
 Author:        Galois Inc.
 Maintainer:    jhendrix@galois.com
-Copyright:     (c) Galois, Inc 2014-2018
+Copyright:     (c) Galois, Inc 2014-2020
 License:       BSD3
 License-file:  LICENSE
 Build-type:    Simple
@@ -41,4 +41,4 @@ library
     What4.Solver.ABC
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  ghc-prof-options: -O2 -fprof-auto-top
+  ghc-prof-options: -fprof-auto-top

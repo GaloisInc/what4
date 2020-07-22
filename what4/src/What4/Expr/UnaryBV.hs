@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr.UnaryBV
-Copyright   : (c) Galois, Inc 2015-2016
+Description : A "unary" bitvector representation
+Copyright   : (c) Galois, Inc 2015-2020
 License     : BSD3
 Maintainer  : Joe Hendrix <jhendrix@galois.com>
 

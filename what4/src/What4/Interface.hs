@@ -1,6 +1,7 @@
 {-|
 Module           : What4.Interface
-Copyright        : (c) Galois, Inc 2014-2018
+Description      : Main interface for constructing What4 formulae
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 

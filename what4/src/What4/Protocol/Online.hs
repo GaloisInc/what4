@@ -1,6 +1,7 @@
 {- |
 Module      : What4.Protocol.Online
-Copyright   : (c) Galois, Inc 2018
+Description : Online solver interactions
+Copyright   : (c) Galois, Inc 2018-2020
 License     : BSD3
 Maintainer  : Rob Dockins <rdockins@galois.com>
 

@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Expr.AppTheory
 -- Description : Identifying the solver theory required by a core expression
--- Copyright   : (c) Galois, Inc 2016
+-- Copyright   : (c) Galois, Inc 2016-2020
 -- License     : BSD3
 -- Maintainer  : Joe Hendrix <jhendrix@galois.com>
 -- Stability   : provisional

@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Solver.Yices
 -- Description : Solver adapter code for Yices
--- Copyright   : (c) Galois, Inc 2015-2016
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Rob Dockins <rdockins@galois.com>
 -- Stability   : provisional

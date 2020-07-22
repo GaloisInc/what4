@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.SatResult
 -- Description : Simple datastructure for capturing the result of a SAT/SMT query
--- Copyright   : (c) Galois, Inc 2015
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Joe Hendrix <jhendrix@galois.com>
 -- Stability   : provisional

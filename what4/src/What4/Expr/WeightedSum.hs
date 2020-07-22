@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr.WeightedSum
-Copyright   : (c) Galois Inc, 2015-2016
+Description : Representations for weighted sums and products in semirings
+Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 

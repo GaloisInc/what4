@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Concrete
 -- Description      : Concrete values of base types
--- Copyright        : (c) Galois, Inc 2018
+-- Copyright        : (c) Galois, Inc 2018-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional

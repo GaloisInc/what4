@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Solver
-Copyright   : (c) Galois, Inc 2015-2018
+Description : Reexports for working with solvers
+Copyright   : (c) Galois, Inc 2015-2020
 License     : BSD3
 Maintainer  : Rob Dockins <rdockins@galois.com>
 

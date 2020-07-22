@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.ProgramLoc
 -- Description      : Datatype for handling program locations
--- Copyright        : (c) Galois, Inc 2014
+-- Copyright        : (c) Galois, Inc 2014-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional

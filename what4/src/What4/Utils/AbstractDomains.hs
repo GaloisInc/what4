@@ -1,9 +1,17 @@
 {-|
-Copyright   : (c) Galois Inc, 2015-2016
+Module      : What4.Utils.AbstractDomains
+Description : Abstract domains for term simplification
+Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 
 This module declares a set of abstract domains used by the solver.
+These are mostly interval domains on numeric types.
+
+Since these abstract domains are baked directly into the term
+representation, we want to get as much bang-for-buck as possible.
+Thus, we prioritize compact representations and simple algorithms over
+precision.
 -}
 
 {-# LANGUAGE CPP #-}

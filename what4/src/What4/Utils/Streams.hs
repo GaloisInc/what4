@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Utils.Streams
 -- Description      : IO stream utilities
--- Copyright        : (c) Galois, Inc 2013-2014
+-- Copyright        : (c) Galois, Inc 2013-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional
