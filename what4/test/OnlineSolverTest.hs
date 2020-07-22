@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ExplicitForAll #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 
+import Control.Exception ( try, SomeException )
 import Control.Lens (folded)
 import Control.Monad ( forM, void )
 import Data.Char ( toLower )
@@ -41,7 +43,9 @@ allOnlineSolvers =
   , ("CVC4",  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options)
   , ("Yices", AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions)
   , ("Boolector", AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions)
+#ifdef TEST_STP
   , ("STP", AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions)
+#endif
   ]
 
 mkSmokeTest :: (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc]) -> TestTree
@@ -191,12 +195,14 @@ mkQuickstartTestAlt (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = te
 
 
 getSolverVersion :: String -> IO String
-getSolverVersion solver = do
-  (r,o,e) <- readProcessWithExitCode (toLower <$> solver) ["--version"] ""
-  if r == ExitSuccess
-    then let ol = lines o in
-           return $ if null ol then (solver <> " v??") else head ol
-    else return $ solver <> " version error: " <> show r <> " /;/ " <> e
+getSolverVersion solver =
+  try (readProcessWithExitCode (toLower <$> solver) ["--version"] "") >>= \case
+    Right (r,o,e) ->
+      if r == ExitSuccess
+      then let ol = lines o in
+             return $ if null ol then (solver <> " v??") else head ol
+      else return $ solver <> " version error: " <> show r <> " /;/ " <> e
+    Left (err :: SomeException) -> return $ solver <> " invocation error: " <> show err
 
 
 reportSolverVersions :: IO ()
