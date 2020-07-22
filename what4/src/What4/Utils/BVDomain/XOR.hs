@@ -102,7 +102,7 @@ asSingleton :: Domain w -> Maybe Integer
 asSingleton (BVDXor _ hi u) = if u == 0 then Just hi else Nothing
 
 -- | Random generator for domain values.  We always generate
---   nonempty domains values.
+--   nonempty domain values.
 genDomain :: NatRepr w -> Gen (Domain w)
 genDomain w =
   do let mask = maxUnsigned w

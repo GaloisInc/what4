@@ -6,5 +6,5 @@ project, but has found use cases that are independent of its original
 purpose as the representation language for the Crucible symbolic
 simulator, and has thus been split out into a separate repository.
 
-For an overview of What4 and how to use it, check out the
+For an overview of What4 and how to use it, please see the
 package-level [README](what4/README.md).

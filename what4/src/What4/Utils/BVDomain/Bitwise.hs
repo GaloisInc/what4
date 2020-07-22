@@ -132,7 +132,7 @@ bvdMask :: Domain w -> Integer
 bvdMask (BVBitInterval mask _ _) = mask
 
 -- | Random generator for domain values.  We always generate
---   nonempty domains values.
+--   nonempty domain values.
 genDomain :: NatRepr w -> Gen (Domain w)
 genDomain w =
   do let mask = maxUnsigned w
