@@ -131,6 +131,7 @@ library
     What4.Solver.Boolector
     What4.Solver.CVC4
     What4.Solver.DReal
+    What4.Solver.ExternalABC
     What4.Solver.STP
     What4.Solver.Yices
     What4.Solver.Z3
