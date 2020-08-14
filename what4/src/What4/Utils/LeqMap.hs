@@ -1,6 +1,6 @@
 {-|
 Module           : What4.Utils.LeqMap
-Copyright        : (c) Galois, Inc 2015-2016
+Copyright        : (c) Galois, Inc 2015-2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 

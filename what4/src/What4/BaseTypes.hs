@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.BaseTypes
 -- Description      : This module exports the types used in solver expressions.
--- Copyright        : (c) Galois, Inc 2014-2016
+-- Copyright        : (c) Galois, Inc 2014-2020
 -- License          : BSD3
 -- Maintainer       : Joe Hendrix <jhendrix@galois.com>
 -- Stability        : provisional

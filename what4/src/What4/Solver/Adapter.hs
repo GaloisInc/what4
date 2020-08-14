@@ -3,7 +3,7 @@
 -- Module           : What4.Solver.Adapter
 -- Description      : Defines the low-level interface between a particular
 --                    solver and the SimpleBuilder family of backends.
--- Copyright        : (c) Galois, Inc 2015
+-- Copyright        : (c) Galois, Inc 2015-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional
@@ -42,6 +42,8 @@ import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 
 
+-- | The main interface for interacting with a solver in an "offline" fashion,
+--   which means that a new solver process is started for each query.
 data SolverAdapter st =
   SolverAdapter
   { solver_adapter_name :: !String
@@ -69,6 +71,11 @@ data SolverAdapter st =
   , solver_adapter_write_smt2 :: !(forall t fs . ExprBuilder t st fs -> Handle -> [BoolExpr t] -> IO ())
   }
 
+-- | A collection of operations for producing output from solvers.
+--   Solvers can produce messages at varying verbosity levels that
+--   might be appropriate for user output by using the `logCallbackVerbose`
+--   operation.  If a `logHandle` is provided, the entire interaction
+--   sequence with the solver will be mirrored into that handle.
 data LogData = LogData { logCallbackVerbose :: Int -> String -> IO ()
                        -- ^ takes a verbosity and a message to log
                        , logVerbosity :: Int
@@ -125,6 +132,8 @@ solverAdapterOptions xs@(def:_) =
                  (Just (PP.text "Indicates which solver to use for check-sat queries"))
                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
 
+-- | Test the ability to interact with a solver by peforming a check-sat query
+--   on a trivially unsatisfiable problem.
 smokeTest :: ExprBuilder t st fs -> SolverAdapter st -> IO (Maybe X.SomeException)
 smokeTest sym adpt = test `X.catch` (pure . Just)
   where

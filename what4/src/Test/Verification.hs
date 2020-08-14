@@ -2,8 +2,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 
-{-
+{- |
 Module      : Test.Verification
+Description : Testing abstraction layer
 Copyright   : (c) Galois Inc, 2020
 License     : BSD3
 Maintainer  : kquick@galois.com
@@ -23,7 +24,7 @@ extended testing.
 The actual tests should be written using only the functions exported
 in the testing exports section of this module.  Note that only the set
 of functions needed for What4 is defined by this testing abstraction;
-if additional testing functions are needed, the GenV context should be
+if additional testing functions are needed, the GenEnv context should be
 extended to add an adaptation entry and the function should be defined
 here for use by the tests.
 
@@ -62,8 +63,8 @@ For example, to bind to QuickCheck, specify:
 module Test.Verification
   (
     -- * Testing definitions
-    --
-    -- These definitions should be used by the tests themselves.  Most
+
+    -- | These definitions should be used by the tests themselves.  Most
     -- of these parallel a corresponding function in QuickCheck or
     -- Hedgehog, so the adaptation is minimal.
     assuming
@@ -74,10 +75,11 @@ module Test.Verification
   , chooseInteger
   , Gen
   , getSize
+  , Verifiable(..)
 
     -- * Test concretization
-    --
-    -- Used by test implementation functions to map from this
+
+    -- | Used by test implementation functions to map from this
     -- Verification abstraction to the actual test mechanism
     -- (e.g. QuickCheck, HedgeHog, etc.)
   , Property(..)

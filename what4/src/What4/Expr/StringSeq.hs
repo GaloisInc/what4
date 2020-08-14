@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Expr.StringSeq
-Copyright   : (c) Galois Inc, 2019
+Description : Datastructure for sequences of appended strings
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : rdockins@galois.com
 

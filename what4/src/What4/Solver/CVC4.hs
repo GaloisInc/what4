@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Solver.CVC4
 -- Description : Solver adapter code for CVC4
--- Copyright   : (c) Galois, Inc 2015
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Rob Dockins <rdockins@galois.com>
 -- Stability   : provisional
@@ -129,8 +129,9 @@ writeMultiAsmpCVC4SMT2File
    -> IO ()
 writeMultiAsmpCVC4SMT2File sym h ps = do
   bindings <- getSymbolVarBimap sym
-  in_str  <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
-  c <- SMT2.newWriter CVC4 in_str nullAcknowledgementAction "CVC4"
+  out_str  <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
+  in_str <- Streams.nullInput
+  c <- SMT2.newWriter CVC4 out_str in_str nullAcknowledgementAction "CVC4"
          True cvc4Features True bindings
   SMT2.setLogic c SMT2.allSupported
   SMT2.setProduceModels c True
@@ -156,7 +157,11 @@ instance SMT2.SMTLib2GenericSolver CVC4 where
                       _ -> []
     return $ ["--lang", "smt2", "--incremental", "--strings-exp"] ++ extraOpts
 
+  getErrorBehavior _ = SMT2.queryErrorBehavior
+
   defaultFeatures _ = cvc4Features
+
+  supportsResetAssertions _ = True
 
   setDefaultLogicAndOptions writer = do
     -- Tell CVC4 to use all supported logics.

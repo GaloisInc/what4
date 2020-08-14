@@ -1,5 +1,7 @@
 {-|
-Copyright   : (c) Galois Inc, 2015
+Module      : What4.Symbol
+Description : Datatype for representing names that can be communicated to solvers
+Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 

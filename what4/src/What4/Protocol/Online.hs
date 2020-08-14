@@ -1,6 +1,7 @@
 {- |
 Module      : What4.Protocol.Online
-Copyright   : (c) Galois, Inc 2018
+Description : Online solver interactions
+Copyright   : (c) Galois, Inc 2018-2020
 License     : BSD3
 Maintainer  : Rob Dockins <rdockins@galois.com>
 
@@ -8,12 +9,14 @@ This module defines an API for interacting with
 solvers that support online interaction modes.
 
 -}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module What4.Protocol.Online
   ( OnlineSolver(..)
+  , AnOnlineSolver(..)
   , SolverProcess(..)
   , ErrorBehavior(..)
   , killSolver
@@ -41,6 +44,7 @@ import           Control.Monad (void, forM, forM_)
 import           Control.Monad.Catch ( MonadMask, bracket_, onException )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.Parameterized.Some
+import           Data.Proxy
 import           Data.IORef
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
@@ -58,6 +62,11 @@ import           What4.Protocol.SMTWriter
 import           What4.SatResult
 import           What4.Utils.HandleReader
 import           What4.Utils.Process (filterAsync)
+
+
+-- | Simple data-type encapsulating some implementation
+--   of an online solver.
+data AnOnlineSolver = forall s. OnlineSolver s => AnOnlineSolver (Proxy s)
 
 -- | This class provides an API for starting and shutting down
 --   connections to various different solvers that support
@@ -123,6 +132,14 @@ data SolverProcess scope solver = SolverProcess
     --   be performed to return to a potentially satisfiable state.
     --   A @Just 0@ state indicates the special case that the top-level context
     --   is unsatisfiable, and must be \"reset\".
+
+  , solverSupportsResetAssertions :: Bool
+    -- ^ Some solvers do not have support for the SMTLib2.6 operation
+    --   (reset-assertions), or an equivalent.
+    --   For these solvers, we instead make sure to
+    --   always have at least one assertion frame pushed, and pop all
+    --   outstanding frames (and push a new top-level one) as a way
+    --   to mimic the reset behavior.
   }
 
 
@@ -178,13 +195,19 @@ checkSatisfiableWithModel proc rsn p k =
 --------------------------------------------------------------------------------
 -- Basic solver interaction.
 
+-- | Pop all assumption frames and remove all top-level
+--   asserts from the global scope.  Forget all declarations
+--   except those in scope at the top level.
 reset :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
 reset p =
   do let c = solverConn p
-     resetEntryStack c
-     resetDeclaredStructs c
+     n <- popEntryStackToTop c
      writeIORef (solverEarlyUnsat p) Nothing
-     addCommand c (resetCommand c)
+     if solverSupportsResetAssertions p then
+       addCommand c (resetCommand c)
+     else
+       do mapM_ (addCommand c) (popManyCommands c n)
+          addCommand c (pushCommand c)
 
 -- | Push a new solver assumption frame.
 push :: SMTReadWriter solver => SolverProcess scope solver -> IO ()

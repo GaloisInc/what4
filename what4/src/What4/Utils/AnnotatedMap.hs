@@ -1,6 +1,7 @@
 {-|
 Module      : What4.Utils.AnnotatedMap
-Copyright   : (c) Galois Inc, 2019
+Description : A finite map data structure with monoidal annotations
+Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : huffman@galois.com
 

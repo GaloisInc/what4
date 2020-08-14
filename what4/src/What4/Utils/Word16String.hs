@@ -2,7 +2,7 @@
 -- |
 -- Module           : What4.Utils.Word16String
 -- Description      : Utility definitions for wide (2-byte) strings
--- Copyright        : (c) Galois, Inc 2019
+-- Copyright        : (c) Galois, Inc 2019-2020
 -- License          : BSD3
 -- Maintainer       : Rob Dockins <rdockins@galois.com>
 -- Stability        : provisional
@@ -11,6 +11,7 @@
 module What4.Utils.Word16String
 ( Word16String
 , fromLEByteString
+, toLEByteString
 , empty
 , singleton
 , null
@@ -87,14 +88,26 @@ showsWord16String (Word16String xs0) tl = '"' : go (BS.unpack xs0)
   c = toEnum (fromIntegral x)
 
 
+-- | Generate a @Word16String@ from a bytestring
+--   where the 16bit words are encoded as two bytes
+--   in little-endian order.
+--
+--   PRECONDITION: the input bytestring must 
+--   have a length which is a multiple of 2.
 fromLEByteString :: ByteString -> Word16String
 fromLEByteString xs
   | BS.length xs `mod` 2 == 0 = Word16String xs
   | otherwise = error "fromLEByteString: bytestring must have even length"
 
+-- | Return the underlying little endian bytestring.
+toLEByteString :: Word16String -> ByteString
+toLEByteString (Word16String xs) = xs
+
+-- | Return the empty string
 empty :: Word16String
 empty = Word16String BS.empty
 
+-- | Compute the string containing just the given character
 singleton :: Word16 -> Word16String
 singleton c = Word16String (BS.pack [ lo , hi ])
  where
@@ -102,9 +115,12 @@ singleton c = Word16String (BS.pack [ lo , hi ])
  lo = fromIntegral (c .&. 0xFF)
  hi = fromIntegral (c `shiftR` 8)
 
+-- | Test if the given string is empty
 null :: Word16String -> Bool
 null (Word16String xs) = BS.null xs
 
+-- | Retrive the @n@th character of the string.
+--   Out of bounds accesses will cause an error.
 index :: Word16String -> Int -> Word16
 index (Word16String xs) i = (hi `shiftL` 8) .|. lo
  where

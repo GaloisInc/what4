@@ -1,6 +1,7 @@
 {- |
 Module      : What4.Protocol.SMTWriter
-Copyright   : (c) Galois, Inc 2014-16.
+Description : Infrastructure for rendering What4 expressions in the language of SMT solvers
+Copyright   : (c) Galois, Inc 2014-2020.
 License     : BSD3
 Maintainer  : Joe Hendrix <jhendrix@galois.com>
 
@@ -57,11 +58,13 @@ module What4.Protocol.SMTWriter
               , supportQuantifiers
               , supportedFeatures
               , connHandle
+              , connInputHandle
               , smtWriterName
               )
   , connState
   , newWriterConn
   , resetEntryStack
+  , popEntryStackToTop
   , entryStackHeight
   , pushEntryStack
   , popEntryStack
@@ -111,6 +114,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
+import           Data.List (last)
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Maybe
 import           Data.Parameterized.Classes (ShowF(..))
@@ -130,7 +134,7 @@ import           Data.Word
 
 import           Numeric.Natural
 import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
-import           System.IO.Streams (OutputStream)
+import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
@@ -593,6 +597,14 @@ data WriterConn t (h :: Type) =
                -- ^ Name of writer for error reporting purposes.
              , connHandle :: !(OutputStream Text)
                -- ^ Handle to write to
+
+             , connInputHandle :: !(InputStream Text)
+               -- ^ Handle to read responses from.  In some contexts, there
+               --   are no responses expected (e.g., if we are writing a problem
+               --   directly to a file); in these cases, the input stream might
+               --   be the trivial stream @nullInput@, which just immediately
+               --   returns EOF.
+
              , supportFunctionDefs :: !Bool
                -- ^ Indicates if the writer can define constants or functions in terms
                -- of an expression.
@@ -648,6 +660,21 @@ resetEntryStack c = do
   entry <- newStackEntry
   writeIORef (entryStack c) [entry]
 
+
+-- | Pop all but the topmost stack entry.
+--   Return the number of entries on the stack prior
+--   to popping.
+popEntryStackToTop :: WriterConn t h -> IO Int
+popEntryStackToTop c = do
+  stk <- readIORef (entryStack c)
+  if null stk then
+    do entry <- newStackEntry
+       writeIORef (entryStack c) [entry]
+       return 0
+  else
+    do writeIORef (entryStack c) [last stk]
+       return (length stk)
+
 -- | Return the number of pushed stack frames.  Note, this is one
 --   fewer than the number of entries in the stack beacuse the
 --   base entry is the top-level context that is not in the scope
@@ -672,6 +699,10 @@ popEntryStack c = do
    (_:r) -> writeIORef (entryStack c) r
 
 newWriterConn :: OutputStream Text
+              -- ^ Stream to write queries onto
+              -> InputStream Text
+              -- ^ Input stream to read responses from
+              --   (may be the @nullInput@ stream if no responses are expected)
               -> AcknowledgementAction t cs
               -- ^ An action to consume solver acknowledgement responses
               -> String
@@ -683,12 +714,13 @@ newWriterConn :: OutputStream Text
               -- canonical name (if any).
               -> cs -- ^ State information specific to the type of connection
               -> IO (WriterConn t cs)
-newWriterConn h ack solver_name features bindings cs = do
+newWriterConn h in_h ack solver_name features bindings cs = do
   entry <- newStackEntry
   stk_ref <- newIORef [entry]
   r <- newIORef emptyState
   return $! WriterConn { smtWriterName = solver_name
                        , connHandle    = h
+                       , connInputHandle = in_h
                        , supportFunctionDefs      = False
                        , supportFunctionArguments = False
                        , supportQuantifiers       = False
@@ -797,6 +829,10 @@ class (SupportTermOps (Term h)) => SMTWriter h where
 
   -- | Pop 1 existing scope
   popCommand    :: f h -> Command h
+
+  -- | Pop several scopes.
+  popManyCommands :: f h -> Int -> [Command h]
+  popManyCommands w n = replicate n (popCommand w)
 
   -- | Reset the solver state, forgetting all pushed frames and assertions
   resetCommand  :: f h -> Command h

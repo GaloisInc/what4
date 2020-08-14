@@ -2,7 +2,7 @@
 -- |
 -- Module      : What4.Solver.Z3
 -- Description : Solver adapter code for Z3
--- Copyright   : (c) Galois, Inc 2015
+-- Copyright   : (c) Galois, Inc 2015-2020
 -- License     : BSD3
 -- Maintainer  : Rob Dockins <rdockins@galois.com>
 -- Stability   : provisional
@@ -21,6 +21,7 @@ module What4.Solver.Z3
   , z3Path
   , z3Timeout
   , z3Options
+  , z3Features
   , runZ3InOverride
   , withZ3
   , writeZ3SMT2File
@@ -141,7 +142,11 @@ instance SMT2.SMTLib2GenericSolver Z3 where
                       _ -> []
     return $ ["-smt2", "-in"] ++ extraOpts
 
+  getErrorBehavior _ = SMT2.queryErrorBehavior
+
   defaultFeatures _ = z3Features
+
+  supportsResetAssertions _ = True
 
   setDefaultLogicAndOptions writer = do
     -- Tell Z3 to produce models.
@@ -165,7 +170,7 @@ runZ3InOverride = SMT2.runSolverInOverride Z3 nullAcknowledgementAction z3Featur
 withZ3
   :: ExprBuilder t st fs
   -> FilePath
-    -- ^ Path to CVC4 executable
+    -- ^ Path to Z3 executable
   -> LogData
   -> (SMT2.Session t Z3 -> IO a)
     -- ^ Action to run

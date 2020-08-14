@@ -1,6 +1,7 @@
 {-
 Module           : What4.Utils.ReadDecimal
-Copyright        : (c) Galois, Inc 2014
+Description      : Parsing for decimal values
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 

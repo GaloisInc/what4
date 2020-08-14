@@ -1,7 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-|
 Module           : What4.Solver.Partial
-Copyright        : (c) Galois, Inc 2014-2016
+Description      : Representation of partial values
+Copyright        : (c) Galois, Inc 2014-2020
 License          : BSD3
 Maintainer       : Langston Barrett <langston@galois.com>
 
