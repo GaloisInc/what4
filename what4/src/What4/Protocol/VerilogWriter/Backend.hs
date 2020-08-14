@@ -107,62 +107,6 @@ nonceAppExprVerilogExpr nae =
 mkVerilogFn :: ExprSymFn t (Expr t) args ret -> String
 mkVerilogFn f = show (symFnName f)
 
-buildSimplifiedBVSlt ::
-  (1 <= w, IsExprBuilder sym) =>
-  sym ->
-  SymBV sym w ->
-  SymBV sym w ->
-  IO (Pred sym)
-buildSimplifiedBVSlt sym x y = do
-  let w = bvWidth x
-  cmp <- bvUlt sym x y
-  xsgn <- testBitBV sym (natValue w - 1) x
-  ysgn <- testBitBV sym (natValue w - 1) y
-  ysgn' <- notPred sym ysgn
-  negPos <- andPred sym xsgn ysgn'
-  eqSgn <- eqPred sym xsgn ysgn
-  eqSignCmp <- andPred sym eqSgn cmp
-  orPred sym negPos eqSignCmp
-
-buildSimplifiedBVZext ::
-  (1 <= w, w+1 <= r, 1 <= r, IsExprBuilder sym) =>
-  sym ->
-  NatRepr r ->
-  SymBV sym w ->
-  IO (SymBV sym r)
-buildSimplifiedBVZext sym r xe =
-  case testLeq w r of
-    Just prf1 -> withLeqProof prf1 $
-      let n = r `subNat` w in
-      case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
-        (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-          zeros <- bvLit sym n (BV.zero n)
-          bvConcat sym zeros xe
-        _ -> error "unreachable"
-    _ -> error "unreachable"
-  where w = bvWidth xe
-
-buildSimplifiedBVSext ::
-  (1 <= w, w+1 <= r, 1 <= r, IsExprBuilder sym) =>
-  sym ->
-  NatRepr r ->
-  SymBV sym w ->
-  IO (SymBV sym r)
-buildSimplifiedBVSext sym r xe =
-  case testLeq w r of
-    Just prf1 -> withLeqProof prf1 $
-      let n = r `subNat` w in
-      case (testEquality (n `addNat` w) r, testLeq (knownNat :: NatRepr 1) n) of
-        (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-          zeros <- bvLit sym n (BV.zero n)
-          ones <- bvLit sym n (BV.maxUnsigned n)
-          sgn <- testBitBV sym (natValue w - 1) xe
-          ext <- bvIte sym sgn ones zeros
-          bvConcat sym ext xe
-        _ -> error "unreachable"
-    _ -> error "unreachable"
-  where w = bvWidth xe
-
 boolMapToExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   Bool ->
@@ -332,13 +276,32 @@ appVerilogExpr app =
              abcLet (BVRotateR w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
     BVZext w e -> do
-      sym <- vsSym <$> get
-      e' <- liftIO $ buildSimplifiedBVZext sym w e
-      exprToVerilogExpr e'
+      case testLeq ew w of
+        Just prf1 -> withLeqProof prf1 $
+          let n = w `subNat` ew in
+          case (testEquality (n `addNat` ew) w, testLeq (knownNat :: NatRepr 1) n) of
+            (Just Refl, Just prf2) -> withLeqProof prf2 $ do
+              e' <- exprToVerilogExpr e
+              zeros <- litBV n (BV.zero n)
+              concat2 w zeros e'
+            _ -> error "unreachable"
+        _ -> error "unreachable"
+      where ew = bvWidth e
     BVSext w e -> do
-      sym <- vsSym <$> get
-      e' <- liftIO $ buildSimplifiedBVSext sym w e
-      exprToVerilogExpr e'
+      case testLeq ew w of
+        Just prf1 -> withLeqProof prf1 $
+          let n = w `subNat` ew in
+          case (testEquality (n `addNat` ew) w,testLeq (knownNat :: NatRepr 1) n) of
+            (Just Refl, Just prf2) -> withLeqProof prf2 $ do
+              e' <- exprToVerilogExpr e
+              zeros <- litBV n (BV.zero n)
+              ones <- litBV n (BV.maxUnsigned n)
+              sgn <- bit e' (fromIntegral (natValue w) - 1)
+              ext <- mux sgn ones zeros
+              concat2 w ext e'
+            _ -> error "unreachable"
+        _ -> error "unreachable"
+      where ew = bvWidth e
     BVPopcount _ _ ->
       doNotSupportError "bit vector population count" -- TODO
     BVCountTrailingZeros _ _ ->
