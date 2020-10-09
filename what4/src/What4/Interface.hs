@@ -2294,7 +2294,7 @@ bvSplitVector :: forall sym n w. (IsExprBuilder sym, 1 <= w, 1 <= n)
               -> SymBV sym (n * w)
               -> IO (Vector.Vector n (SymBV sym w))
 bvSplitVector sym n w x =
-  coerce $ Vector.splitWithA @IO LittleEndian bvSelect' n w (MkSymBV' @sym x)
+  coerce $ Vector.splitWithA @IO BigEndian bvSelect' n w (MkSymBV' @sym x)
   where
     bvSelect' :: forall i. (i + w <= n * w)
               => NatRepr (n * w)

@@ -915,6 +915,20 @@ testBVDomainArithScale = testCase "bv domain arith scale" $
     e3 <- bvUgt sym e2 =<< bvLit sym knownRepr (BV.mkBV knownNat 256)
     e3 @?= truePred sym
 
+testBVSwap :: TestTree
+testBVSwap = testCase "test bvSwap" $
+  withSym FloatIEEERepr $ \sym -> do
+    e0 <- bvSwap sym (knownNat @2) =<< bvLit sym knownRepr (BV.mkBV knownNat 1)
+    e1 <- bvLit sym knownRepr (BV.mkBV knownNat 256)
+    e0 @?= e1
+
+testBVBitreverse :: TestTree
+testBVBitreverse = testCase "test bvBitreverse" $
+  withSym FloatIEEERepr $ \sym -> do
+    e0 <- bvBitreverse sym =<< bvLit sym (knownNat @8) (BV.mkBV knownNat 1)
+    e1 <- bvLit sym knownRepr (BV.mkBV knownNat 128)
+    e0 @?= e1
+
 main :: IO ()
 main = defaultMain $ testGroup "Tests"
   [ testInterpretedFloatReal
@@ -944,6 +958,8 @@ main = defaultMain $ testGroup "Tests"
   , testSolverInfo
   , testSolverVersion
   , testBVDomainArithScale
+  , testBVSwap
+  , testBVBitreverse
 
   , testCase "Yices 0-tuple" $ withYices zeroTupleTest
   , testCase "Yices 1-tuple" $ withYices oneTupleTest
