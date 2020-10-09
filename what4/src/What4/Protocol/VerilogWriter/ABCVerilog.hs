@@ -19,6 +19,7 @@ import Data.String
 import Data.Text.Prettyprint.Doc
 import What4.BaseTypes
 import What4.Protocol.VerilogWriter.AST
+import Numeric (showHex)
 import Prelude hiding ((<$>))
 
 moduleDoc :: Module sym n -> Doc () -> Doc ()
@@ -75,8 +76,8 @@ binopDoc :: Binop inTp outTp -> Doc ()
 binopDoc = pretty . showBinop
 
 -- | Show non-negative Integral numbers in base 16.
-hexDoc :: NatRepr w -> BV w -> Doc ()
-hexDoc w n = fromString $ ppHex w n
+hexDoc :: BV w -> Doc ()
+hexDoc n = fromString $ showHex (asUnsigned n) ""
 
 decDoc :: NatRepr w -> BV w -> Doc ()
 decDoc w n = fromString $ ppDec w n
@@ -108,6 +109,6 @@ expDoc (BitSelect e (intValue -> start) (intValue -> len)) =
             <> pretty start
             <> rbracket
 expDoc (Concat _ es) = encloseSep lbrace rbrace comma (map (viewSome iexpDoc) es)
-expDoc (BVLit w n) = pretty (intValue w) <> "'h" <> hexDoc w n
+expDoc (BVLit w n) = pretty (intValue w) <> "'h" <> hexDoc n
 expDoc (BoolLit True) = "1'b1"
 expDoc (BoolLit False) = "1'b0"
