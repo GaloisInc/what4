@@ -24,6 +24,14 @@ module What4.Solver
   , smokeTest
   , module What4.SatResult
 
+    -- * ABC (external, via SMT-Lib2)
+  , ExternalABC(..)
+  , externalABCAdapter
+  , abcPath
+  , abcOptions
+  , runExternalABCInOverride
+  , writeABCSMT2File
+
     -- * Boolector
   , Boolector(..)
   , boolectorAdapter
@@ -82,6 +90,7 @@ import           What4.Solver.Adapter
 import           What4.Solver.Boolector
 import           What4.Solver.CVC4
 import           What4.Solver.DReal
+import           What4.Solver.ExternalABC
 import           What4.Solver.STP
 import           What4.Solver.Yices
 import           What4.Solver.Z3
