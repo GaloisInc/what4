@@ -78,7 +78,7 @@ library
     temporary >= 1.2,
     template-haskell,
     text >= 1.1,
-    th-abstraction >=0.1 && <0.4,
+    th-abstraction >=0.1 && <0.5,
     transformers >= 0.4,
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
