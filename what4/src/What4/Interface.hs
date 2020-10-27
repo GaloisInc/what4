@@ -622,8 +622,9 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   zero" nor "round toward -inf" definitions.
   --
   --   Some useful theorems that are true of this division/modulus pair:
-  --    * @mod x y == mod x (- y) == mod x (abs y)@
-  --    * @div x (-y) == -(div x y)@
+  --
+  --   * @mod x y == mod x (- y) == mod x (abs y)@
+  --   * @div x (-y) == -(div x y)@
   intDiv :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
 
   -- | @intMod x y@ computes the integer modulus of @x@ by @y@.  See 'intDiv' for
