@@ -141,6 +141,9 @@ module What4.Interface
     -- ** Indexing
   , muxRange
 
+    -- * Exceptions
+  , InvalidRange(..)
+
     -- * Reexports
   , module Data.Parameterized.NatRepr
   , module What4.BaseTypes
@@ -159,7 +162,7 @@ module What4.Interface
 import Control.Monad.Fail( MonadFail )
 #endif
 
-import           Control.Exception (assert)
+import           Control.Exception (assert, Exception)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -2391,6 +2394,26 @@ shouldUnfold AlwaysUnfold _ = True
 shouldUnfold NeverUnfold _ = False
 shouldUnfold UnfoldConcrete args = allFC baseIsConcrete args
 
+
+-- | This exception is thrown if the user requests to make a bounded variable,
+--   but gives incoherent or out-of-range bounds.
+data InvalidRange where
+  InvalidRange ::
+    BaseTypeRepr bt ->
+    Maybe (ConcreteValue bt) ->
+    Maybe (ConcreteValue bt) ->
+    InvalidRange
+
+instance Exception InvalidRange
+instance Show InvalidRange where
+  show (InvalidRange bt mlo mhi) =
+    case bt of
+      BaseNatRepr     -> unwords ["invalid natural range", show mlo, show mhi]
+      BaseIntegerRepr -> unwords ["invalid integer range", show mlo, show mhi]
+      BaseRealRepr    -> unwords ["invalid real range", show mlo, show mhi]
+      BaseBVRepr w    -> unwords ["invalid bitvector range", show w ++ "-bit", show mlo, show mhi]
+      _               -> unwords ["invalid range for type", show bt]
+
 -- | This extends the interface for building expressions with operations
 --   for creating new symbolic constants and functions.
 class ( IsExprBuilder sym
@@ -2407,25 +2430,57 @@ class ( IsExprBuilder sym
   -- | Create a fresh latch variable.
   freshLatch    :: sym -> SolverSymbol -> BaseTypeRepr tp -> IO (SymExpr sym tp)
 
-  -- | Create a fresh bitvector value with optional upper and lower bounds (which bound the
-  --   unsigned value of the bitvector).
-  freshBoundedBV :: (1 <= w) => sym -> SolverSymbol -> NatRepr w -> Maybe Natural -> Maybe Natural -> IO (SymBV sym w)
+  -- | Create a fresh bitvector value with optional lower and upper bounds (which bound the
+  --   unsigned value of the bitvector). If provided, the bounds are inclusive.
+  --   If inconsistent or out-of-range bounds are given, an @InvalidRange@ exception will be thrown.
+  freshBoundedBV :: (1 <= w) =>
+    sym ->
+    SolverSymbol ->
+    NatRepr w ->
+    Maybe Natural {- ^ lower bound -} ->
+    Maybe Natural {- ^ upper bound -} ->
+    IO (SymBV sym w)
 
-  -- | Create a fresh bitvector value with optional upper and lower bounds (which bound the
-  --   signed value of the bitvector)
-  freshBoundedSBV :: (1 <= w) => sym -> SolverSymbol -> NatRepr w -> Maybe Integer -> Maybe Integer -> IO (SymBV sym w)
+  -- | Create a fresh bitvector value with optional lower and upper bounds (which bound the
+  --   signed value of the bitvector).  If provided, the bounds are inclusive.
+  --   If inconsistent or out-of-range bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedSBV :: (1 <= w) =>
+    sym ->
+    SolverSymbol ->
+    NatRepr w ->
+    Maybe Integer {- ^ lower bound -} ->
+    Maybe Integer {- ^ upper bound -} ->
+    IO (SymBV sym w)
 
-  -- | Create a fresh natural number constant with optional upper and lower bounds.
+  -- | Create a fresh natural number constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedNat :: sym -> SolverSymbol -> Maybe Natural -> Maybe Natural -> IO (SymNat sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedNat ::
+    sym ->
+    SolverSymbol ->
+    Maybe Natural {- ^ lower bound -} ->
+    Maybe Natural {- ^ upper bound -} ->
+    IO (SymNat sym)
 
-  -- | Create a fresh integer constant with optional upper and lower bounds.
+  -- | Create a fresh integer constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedInt :: sym -> SolverSymbol -> Maybe Integer -> Maybe Integer -> IO (SymInteger sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedInt ::
+    sym ->
+    SolverSymbol ->
+    Maybe Integer {- ^ lower bound -} ->
+    Maybe Integer {- ^ upper bound -} ->
+    IO (SymInteger sym)
 
-  -- | Create a fresh real constant with optional upper and lower bounds.
+  -- | Create a fresh real constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedReal :: sym -> SolverSymbol -> Maybe Rational -> Maybe Rational -> IO (SymReal sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedReal ::
+    sym ->
+    SolverSymbol ->
+    Maybe Rational {- ^ lower bound -} ->
+    Maybe Rational {- ^ upper bound -} ->
+    IO (SymReal sym)
 
 
   ----------------------------------------------------------------------

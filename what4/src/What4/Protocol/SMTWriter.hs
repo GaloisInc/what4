@@ -114,7 +114,6 @@ import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
-import           Data.List (last)
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Maybe
 import           Data.Parameterized.Classes (ShowF(..))
