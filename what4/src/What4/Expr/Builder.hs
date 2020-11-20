@@ -4497,47 +4497,63 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
 
   freshBoundedBV sym nm w Nothing Nothing = freshConstant sym nm (BaseBVRepr w)
   freshBoundedBV sym nm w mlo mhi =
-    do v <- sbMakeBoundVar sym nm (BaseBVRepr w) UninterpVarKind (Just $! (BVD.range w lo hi))
+    do unless boundsOK (Ex.throwIO (InvalidRange (BaseBVRepr w) (fmap toInteger mlo) (fmap toInteger mhi)))
+       v <- sbMakeBoundVar sym nm (BaseBVRepr w) UninterpVarKind (Just $! (BVD.range w lo hi))
        updateVarBinding sym nm (VarSymbolBinding v)
        return $! BoundVarExpr v
    where
+   boundsOK = lo <= hi && minUnsigned w <= lo && hi <= maxUnsigned w
    lo = maybe (minUnsigned w) toInteger mlo
    hi = maybe (maxUnsigned w) toInteger mhi
 
   freshBoundedSBV sym nm w Nothing Nothing = freshConstant sym nm (BaseBVRepr w)
   freshBoundedSBV sym nm w mlo mhi =
-    do v <- sbMakeBoundVar sym nm (BaseBVRepr w) UninterpVarKind (Just $! (BVD.range w lo hi))
+    do unless boundsOK (Ex.throwIO (InvalidRange (BaseBVRepr w) mlo mhi))
+       v <- sbMakeBoundVar sym nm (BaseBVRepr w) UninterpVarKind (Just $! (BVD.range w lo hi))
        updateVarBinding sym nm (VarSymbolBinding v)
        return $! BoundVarExpr v
    where
+   boundsOK = lo <= hi && minSigned w <= lo && hi <= maxSigned w
    lo = fromMaybe (minSigned w) mlo
    hi = fromMaybe (maxSigned w) mhi
 
   freshBoundedInt sym nm mlo mhi =
-    do v <- sbMakeBoundVar sym nm BaseIntegerRepr UninterpVarKind (absVal mlo mhi)
+    do unless (boundsOK mlo mhi) (Ex.throwIO (InvalidRange BaseIntegerRepr mlo mhi))
+       v <- sbMakeBoundVar sym nm BaseIntegerRepr UninterpVarKind (absVal mlo mhi)
        updateVarBinding sym nm (VarSymbolBinding v)
        return $! BoundVarExpr v
    where
+   boundsOK (Just lo) (Just hi) = lo <= hi
+   boundsOK _ _ = True
+
    absVal Nothing Nothing = Nothing
    absVal (Just lo) Nothing = Just $! MultiRange (Inclusive lo) Unbounded
    absVal Nothing (Just hi) = Just $! MultiRange Unbounded (Inclusive hi)
    absVal (Just lo) (Just hi) = Just $! MultiRange (Inclusive lo) (Inclusive hi)
 
   freshBoundedReal sym nm mlo mhi =
-    do v <- sbMakeBoundVar sym nm BaseRealRepr UninterpVarKind (absVal mlo mhi)
+    do unless (boundsOK mlo mhi) (Ex.throwIO (InvalidRange BaseRealRepr mlo mhi))
+       v <- sbMakeBoundVar sym nm BaseRealRepr UninterpVarKind (absVal mlo mhi)
        updateVarBinding sym nm (VarSymbolBinding v)
        return $! BoundVarExpr v
    where
+   boundsOK (Just lo) (Just hi) = lo <= hi
+   boundsOK _ _ = True
+
    absVal Nothing Nothing = Nothing
    absVal (Just lo) Nothing = Just $! RAV (MultiRange (Inclusive lo) Unbounded) Nothing
    absVal Nothing (Just hi) = Just $! RAV (MultiRange Unbounded (Inclusive hi)) Nothing
    absVal (Just lo) (Just hi) = Just $! RAV (MultiRange (Inclusive lo) (Inclusive hi)) Nothing
 
   freshBoundedNat sym nm mlo mhi =
-    do v <- sbMakeBoundVar sym nm BaseNatRepr UninterpVarKind (absVal mlo mhi)
+    do unless (boundsOK mlo mhi) (Ex.throwIO (InvalidRange BaseNatRepr mlo mhi))
+       v <- sbMakeBoundVar sym nm BaseNatRepr UninterpVarKind (absVal mlo mhi)
        updateVarBinding sym nm (VarSymbolBinding v)
        return $! BoundVarExpr v
    where
+   boundsOK (Just lo) (Just hi) = lo <= hi
+   boundsOK _ _ = True
+
    absVal Nothing Nothing = Nothing
    absVal (Just lo) Nothing = Just $! natRange lo Unbounded
    absVal Nothing (Just hi) = Just $! natRange 0 (Inclusive hi)

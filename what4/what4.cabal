@@ -79,12 +79,12 @@ library
     temporary >= 1.2,
     template-haskell,
     text >= 1.1,
-    th-abstraction >=0.1 && <0.4,
+    th-abstraction >=0.1 && <0.5,
     transformers >= 0.4,
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
     vector >= 0.12.1,
-    versions >= 3.5.2,
+    versions >= 3.5.2 && < 4.0,
     zenc >= 0.1.0 && < 0.2.0,
     ghc-prim >= 0.5.2
 
