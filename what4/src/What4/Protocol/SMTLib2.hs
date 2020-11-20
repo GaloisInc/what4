@@ -702,10 +702,11 @@ parseRealSolverValue s = fail $ "Could not parse solver value: " ++ show s
 
 parseBvSolverValue :: MonadFail m => NatRepr w -> SExp -> m (BV.BV w)
 parseBvSolverValue w s
-  | Pair w' bv <- parseBVLitHelper s = case w' `testEquality` w of
-      Just Refl -> return bv
-      Nothing -> fail $ "Solver value parsed with width " ++
-                 show w' ++ ", but should have width " ++ show w
+  | Pair w' bv <- parseBVLitHelper s = case w' `compareNat` w of
+      NatLT zw -> return (BV.zext (addNat w' (addNat zw knownNat)) bv)
+      NatEQ -> return bv
+      NatGT _ -> fail $ "Solver value parsed with width " ++
+               show w' ++ ", but should have width " ++ show w
 
 natBV :: Natural
       -- ^ width
