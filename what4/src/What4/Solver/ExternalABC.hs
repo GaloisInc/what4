@@ -76,6 +76,8 @@ indexCtor il = SMT2.smtlib2StructCtor @ExternalABC il
 instance SMT2.SMTLib2Tweaks ExternalABC where
   smtlib2tweaks = ExternalABC
 
+  smtlib2exitCommand = Nothing
+
   smtlib2arrayType il r = SMT2.arraySort (indexType il) r
 
   smtlib2arrayConstant = Just $ \idx rtp v ->

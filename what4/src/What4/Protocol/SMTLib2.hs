@@ -257,6 +257,9 @@ unescapeText = go mempty
 class Show a => SMTLib2Tweaks a where
   smtlib2tweaks :: a
 
+  smtlib2exitCommand :: Maybe SMT2.Command
+  smtlib2exitCommand = Just SMT2.exit
+
   -- | Return a representation of the type associated with a (multi-dimensional) symbolic
   -- array.
   --
@@ -662,7 +665,7 @@ writeCheckSat :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
 writeCheckSat w = addCommandNoAck w SMT2.checkSat
 
 writeExit :: forall a t. SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
-writeExit w = addCommand w SMT2.exit
+writeExit w = mapM_ (addCommand w) (smtlib2exitCommand @a)
 
 setLogic :: SMTLib2Tweaks a => WriterConn t (Writer a) -> SMT2.Logic -> IO ()
 setLogic w l = addCommand w $ SMT2.setLogic l
