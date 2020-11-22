@@ -208,8 +208,7 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -868,44 +867,44 @@ instance Pretty (Expr t tp) where
 
 
 -- | @AppPPExpr@ represents a an application, and it may be let bound.
-data AppPPExpr
+data AppPPExpr ann
    = APE { apeIndex :: !PPIndex
          , apeLoc :: !ProgramLoc
          , apeName :: !Text
-         , apeExprs :: ![PPExpr]
+         , apeExprs :: ![PPExpr ann]
          , apeLength :: !Int
            -- ^ Length of AppPPExpr not including parenthesis.
          }
 
-data PPExpr
-   = FixedPPExpr !Doc ![Doc] !Int
+data PPExpr ann
+   = FixedPPExpr !(Doc ann) ![Doc ann] !Int
      -- ^ A fixed doc with length.
-   | AppPPExpr !AppPPExpr
+   | AppPPExpr !(AppPPExpr ann)
      -- ^ A doc that can be let bound.
 
 -- | Pretty print a AppPPExpr
-apeDoc :: AppPPExpr -> (Doc, [Doc])
-apeDoc a = (text (Text.unpack (apeName a)), ppExprDoc True <$> apeExprs a)
+apeDoc :: AppPPExpr ann -> (Doc ann, [Doc ann])
+apeDoc a = (pretty (apeName a), ppExprDoc True <$> apeExprs a)
 
-textPPExpr :: Text -> PPExpr
-textPPExpr t = FixedPPExpr (text (Text.unpack t)) [] (Text.length t)
+textPPExpr :: Text -> PPExpr ann
+textPPExpr t = FixedPPExpr (pretty t) [] (Text.length t)
 
-stringPPExpr :: String -> PPExpr
-stringPPExpr t = FixedPPExpr (text t) [] (length t)
+stringPPExpr :: String -> PPExpr ann
+stringPPExpr t = FixedPPExpr (pretty t) [] (length t)
 
 -- | Get length of Expr including parens.
-ppExprLength :: PPExpr -> Int
+ppExprLength :: PPExpr ann -> Int
 ppExprLength (FixedPPExpr _ [] n) = n
 ppExprLength (FixedPPExpr _ _ n) = n + 2
 ppExprLength (AppPPExpr a) = apeLength a + 2
 
-parenIf :: Bool -> Doc -> [Doc] -> Doc
+parenIf :: Bool -> Doc ann -> [Doc ann] -> Doc ann
 parenIf _ h [] = h
 parenIf False h l = hsep (h:l)
 parenIf True h l = parens (hsep (h:l))
 
 -- | Pretty print PPExpr
-ppExprDoc :: Bool -> PPExpr -> Doc
+ppExprDoc :: Bool -> PPExpr ann -> Doc ann
 ppExprDoc b (FixedPPExpr d a _) = parenIf b d a
 ppExprDoc b (AppPPExpr a) = uncurry (parenIf b) (apeDoc a)
 
@@ -920,28 +919,29 @@ defaultPPExprOpts =
             }
 
 -- | Pretty print an 'Expr' using let bindings to create the term.
-ppExpr :: Expr t tp -> Doc
+ppExpr :: Expr t tp -> Doc ann
 ppExpr e
      | Prelude.null bindings = ppExprDoc False r
      | otherwise =
-         text "let" <+> align (vcat bindings) PP.<$>
-         text " in" <+> align (ppExprDoc False r)
+       vsep
+       [ text "let" <+> align (vcat bindings)
+       , text " in" <+> align (ppExprDoc False r) ]
   where (bindings,r) = runST (ppExpr' e defaultPPExprOpts)
 
 instance ShowF (Expr t)
 
 -- | Pretty print the top part of an element.
-ppExprTop :: Expr t tp -> Doc
+ppExprTop :: Expr t tp -> Doc ann
 ppExprTop e = ppExprDoc False r
   where (_,r) = runST (ppExpr' e defaultPPExprOpts)
 
 -- | Contains the elements before, the index, doc, and width and
 -- the elements after.
-type SplitPPExprList = Maybe ([PPExpr], AppPPExpr, [PPExpr])
+type SplitPPExprList ann = Maybe ([PPExpr ann], AppPPExpr ann, [PPExpr ann])
 
-findExprToRemove :: [PPExpr] -> SplitPPExprList
+findExprToRemove :: [PPExpr ann] -> SplitPPExprList ann
 findExprToRemove exprs0 = go [] exprs0 Nothing
-  where go :: [PPExpr] -> [PPExpr] -> SplitPPExprList -> SplitPPExprList
+  where go :: [PPExpr ann] -> [PPExpr ann] -> SplitPPExprList ann -> SplitPPExprList ann
         go _ [] mr = mr
         go prev (e@FixedPPExpr{} : exprs) mr = do
           go (e:prev) exprs mr
@@ -951,7 +951,7 @@ findExprToRemove exprs0 = go [] exprs0 Nothing
           go (AppPPExpr a:prev) exprs (Just (reverse prev, a, exprs))
 
 
-ppExpr' :: forall t tp s . Expr t tp -> PPExprOpts -> ST s ([Doc], PPExpr)
+ppExpr' :: forall t tp s ann. Expr t tp -> PPExprOpts -> ST s ([Doc ann], PPExpr ann)
 ppExpr' e0 o = do
   let max_width = ppExpr_maxWidth o
   let use_decimal = ppExpr_useDecimal o
@@ -966,11 +966,11 @@ ppExpr' e0 o = do
 
   bindingsRef <- newSTRef Seq.empty
 
-  visited <- H.new :: ST s (H.HashTable s PPIndex PPExpr)
+  visited <- H.new :: ST s (H.HashTable s PPIndex (PPExpr ann))
   visited_fns <- H.new :: ST s (H.HashTable s Word64 Text)
 
   let -- Add a binding to the list of bindings
-      addBinding :: AppPPExpr -> ST s PPExpr
+      addBinding :: AppPPExpr ann -> ST s (PPExpr ann)
       addBinding a = do
         let idx = apeIndex a
         cnt <- Seq.length <$> readSTRef bindingsRef
@@ -983,8 +983,9 @@ ppExpr' e0 o = do
                    ExprPPIndex e -> "v" ++ show e
                    RatPPIndex _ -> "r" ++ show cnt
         let lhs = parenIf False (text nm) (text <$> args)
-        let doc = text "--" <+> pretty (plSourceLoc (apeLoc a)) <$$>
-                  lhs <+> text "=" <+> uncurry (parenIf False) (apeDoc a)
+        let doc = vcat
+                  [ text "--" <+> pretty (plSourceLoc (apeLoc a))
+                  , lhs <+> text "=" <+> uncurry (parenIf False) (apeDoc a) ]
         modifySTRef' bindingsRef (Seq.|> doc)
         let len = length nm + sum ((\arg_s -> length arg_s + 1) <$> args)
         let nm_expr = FixedPPExpr (text nm) (map text args) len
@@ -992,8 +993,8 @@ ppExpr' e0 o = do
         return nm_expr
 
   let fixLength :: Int
-                -> [PPExpr]
-                -> ST s ([PPExpr], Int)
+                -> [PPExpr ann]
+                -> ST s ([PPExpr ann], Int)
       fixLength cur_width exprs
         | cur_width > max_width
         , Just (prev_e, a, next_e) <- findExprToRemove exprs = do
@@ -1004,7 +1005,7 @@ ppExpr' e0 o = do
         return $! (exprs, cur_width)
 
   -- Pretty print an argument.
-  let renderArg :: PrettyArg (Expr t) -> ST s PPExpr
+  let renderArg :: PrettyArg (Expr t) -> ST s (PPExpr ann)
       renderArg (PrettyArg e) = getBindings e
       renderArg (PrettyText txt) = return (textPPExpr txt)
       renderArg (PrettyFunc nm args) =
@@ -1018,7 +1019,7 @@ ppExpr' e0 o = do
                 -> ProgramLoc
                 -> Text
                 -> [PrettyArg (Expr t)]
-                -> ST s AppPPExpr
+                -> ST s (AppPPExpr ann)
       renderApp idx loc nm args = Ex.assert (not (Prelude.null args)) $ do
         exprs0 <- traverse renderArg args
         -- Get width not including parenthesis of outer app.
@@ -1034,7 +1035,7 @@ ppExpr' e0 o = do
       cacheResult :: PPIndex
                   -> ProgramLoc
                   -> PrettyApp (Expr t)
-                  -> ST s PPExpr
+                  -> ST s (PPExpr ann)
       cacheResult _ _ (nm,[]) = do
         return (textPPExpr nm)
       cacheResult idx loc (nm,args) = do
@@ -1073,7 +1074,7 @@ ppExpr' e0 o = do
 
       -- Collect definitions for all applications that occur multiple times
       -- in term.
-      getBindings :: Expr t u -> ST s PPExpr
+      getBindings :: Expr t u -> ST s (PPExpr ann)
       getBindings (SemiRingLiteral sr x l) =
         case sr of
           SR.SemiRingNatRepr ->
@@ -4696,3 +4697,6 @@ mkFreshUninterpFnApp sym str_fn_name args ret_type = do
   let arg_types = fmapFC exprType args
   fn <- freshTotalUninterpFn sym fn_name arg_types ret_type
   applySymFn sym fn args
+
+text :: String -> Doc ann
+text = pretty

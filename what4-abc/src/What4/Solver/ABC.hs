@@ -70,11 +70,11 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Foreign.C.Types
 import           Numeric.Natural
+import           Prettyprinter
 import           System.Directory
 import           System.IO
 import qualified System.IO.Streams as Streams
 import           System.Process
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -108,7 +108,7 @@ abcQbfIterations = configOption BaseIntegerRepr "abc.qbf_max_iterations"
 abcOptions :: [ConfigDesc]
 abcOptions =
   [ opt abcQbfIterations (ConcreteInteger (toInteger (maxBound :: CInt)))
-    (text "Max number of iterations to run ABC's QBF solver")
+    ("Max number of iterations to run ABC's QBF solver" :: T.Text)
   ]
 
 abcAdapter :: SolverAdapter st
@@ -132,7 +132,7 @@ satCommand = configOption knownRepr "sat_command"
 genericSatOptions :: [ConfigDesc]
 genericSatOptions =
   [ opt satCommand (ConcreteString "glucose $1")
-    (text "Generic SAT solving command to run")
+    ("Generic SAT solving command to run" :: T.Text)
   ]
 
 genericSatAdapter :: SolverAdapter st
@@ -249,16 +249,20 @@ eval' ntk e = do
 
 failAt :: ProgramLoc -> String -> IO a
 failAt l msg = fail $ show $
-   text msg <$$>
-   text "From term created at" <+> pretty (plSourceLoc l)
+  vcat
+  [ text msg
+  , text "From term created at" <+> pretty (plSourceLoc l)
+  ]
 
 failTerm :: Expr t tp -> String -> IO a
 failTerm e nm = do
   fail $ show $
-    text "The" <+> text nm <+> text "created at"
+    vcat
+    [ text "The" <+> text nm <+> text "created at"
          <+> pretty (plSourceLoc (exprLoc e))
-         <+> text "is not supported by ABC:" <$$>
-    indent 2 (ppExpr e)
+         <+> text "is not supported by ABC:"
+    , indent 2 (ppExpr e)
+    ]
 
 bitblastPred :: Network t s -> NonceAppExpr t tp -> IO (NameType s tp)
 bitblastPred h e = do
@@ -731,8 +735,10 @@ checkSupportedByAbc vars = do
   let errors = Fold.toList (vars^.varErrors)
   -- Check no errors where reported in result.
   when (not (null errors)) $ do
-    fail $ show $ text "This formula is not supported by abc:" <$$>
-                  indent 2 (vcat errors)
+    fail $ show $ vcat
+      [ text "This formula is not supported by abc:"
+      , indent 2 (vcat errors)
+      ]
 
 checkNoLatches :: MonadFail m => CollectedVarInfo t -> m ()
 checkNoLatches vars = do
@@ -1039,3 +1045,6 @@ getInputCount ntk = GIA.inputCount (gia ntk)
 -- | Return number of outputs so far in network.
 getOutputCount :: Network t s -> IO Int
 getOutputCount ntk = length <$> readIORef (revOutputs ntk)
+
+text :: String -> Doc ann
+text = pretty

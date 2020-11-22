@@ -52,7 +52,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Numeric as N
 import           Numeric.Natural
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Classes
@@ -148,26 +148,30 @@ instance OrdF ConcreteVal where
 instance Ord (ConcreteVal tp) where
   compare x y = toOrdering (compareF x y)
 
+-- | Pretty-print a rational number.
+ppRational :: Rational -> PP.Doc ann
+ppRational x = PP.pretty (show x)
+
 -- | Pretty-print a concrete value
-ppConcrete :: ConcreteVal tp -> PP.Doc
+ppConcrete :: ConcreteVal tp -> PP.Doc ann
 ppConcrete = \case
-  ConcreteBool x -> PP.text (show x)
-  ConcreteNat x -> PP.text (show x)
-  ConcreteInteger x -> PP.text (show x)
-  ConcreteReal x -> PP.text (show x)
-  ConcreteString x -> PP.text (show x)
-  ConcreteBV w x -> PP.text ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
-  ConcreteComplex (r :+ i) -> PP.text "complex(" PP.<> PP.text (show r) PP.<> PP.text ", " PP.<> PP.text (show i) PP.<> PP.text ")"
-  ConcreteStruct xs -> PP.text "struct(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.text ")"
-  ConcreteArray _ def xs0 -> go (Map.toAscList xs0) (PP.text "constArray(" PP.<> ppConcrete def PP.<> PP.text ")")
+  ConcreteBool x -> PP.pretty x
+  ConcreteNat x -> PP.pretty x
+  ConcreteInteger x -> PP.pretty x
+  ConcreteReal x -> ppRational x
+  ConcreteString x -> PP.pretty (show x)
+  ConcreteBV w x -> PP.pretty ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
+  ConcreteComplex (r :+ i) -> PP.pretty "complex(" PP.<> ppRational r PP.<> PP.pretty ", " PP.<> ppRational i PP.<> PP.pretty ")"
+  ConcreteStruct xs -> PP.pretty "struct(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.pretty ")"
+  ConcreteArray _ def xs0 -> go (Map.toAscList xs0) (PP.pretty "constArray(" PP.<> ppConcrete def PP.<> PP.pretty ")")
     where
     go  [] doc = doc
     go ((i,x):xs) doc = ppUpd i x (go xs doc)
 
     ppUpd i x doc =
-       PP.text "update(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete i))
+       PP.pretty "update(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete i))
                          PP.<> PP.comma
                          PP.<> ppConcrete x
                          PP.<> PP.comma
                          PP.<> doc
-                         PP.<> PP.text ")"
+                         PP.<> PP.pretty ")"

@@ -29,7 +29,7 @@ import           Data.IORef
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import           System.IO
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 
 import           What4.BaseTypes
@@ -129,7 +129,7 @@ solverAdapterOptions xs@(def:_) =
  vals ref = Map.fromList (map (f ref) xs)
  sty ref = mkOpt defaultSolverAdapter
                  (listOptSty (vals ref))
-                 (Just (PP.text "Indicates which solver to use for check-sat queries"))
+                 (Just (PP.pretty "Indicates which solver to use for check-sat queries"))
                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
 
 -- | Test the ability to interact with a solver by peforming a check-sat query

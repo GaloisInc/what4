@@ -132,7 +132,7 @@ import qualified Data.Text.Lazy as Lazy
 import           Data.Word
 
 import           Numeric.Natural
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
+import           Prettyprinter hiding (Unbounded)
 import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
@@ -1484,9 +1484,11 @@ sbvIntTerm w0 x0 = sumExpr (signed_offset : go w0 x0 (natValue w0 - 2))
 unsupportedTerm  :: MonadFail m => Expr t tp -> m a
 unsupportedTerm e =
   fail $ show $
-    text "Cannot generate solver output for term generated at"
-      <+> pretty (plSourceLoc (exprLoc e)) <> text ":" <$$>
-    indent 2 (pretty e)
+  vcat
+  [ text "Cannot generate solver output for term generated at"
+      <+> pretty (plSourceLoc (exprLoc e)) <> text ":"
+  , indent 2 (pretty e)
+  ]
 
 -- | Checks whether a variable is supported.
 --
@@ -1575,22 +1577,24 @@ checkArgumentTypes conn types = do
 -- | This generates an error message from a solver and a type error.
 --
 -- It issed for error reporting
-type SMTSource = String -> BaseTypeError -> Doc
+type SMTSource ann = String -> BaseTypeError -> Doc ann
 
-ppBaseTypeError :: BaseTypeError -> Doc
+ppBaseTypeError :: BaseTypeError -> Doc ann
 ppBaseTypeError ComplexTypeUnsupported = text "complex values"
 ppBaseTypeError ArrayUnsupported = text "arrays encoded as a functions"
 ppBaseTypeError (StringTypeUnsupported (Some si)) = text ("string values " ++ show si)
 
-eltSource :: Expr t tp -> SMTSource
+eltSource :: Expr t tp -> SMTSource ann
 eltSource e solver_name cause =
-  text solver_name <+>
-  text "does not support" <+> ppBaseTypeError cause <>
-  text ", and cannot interpret the term generated at" <+>
-  pretty (plSourceLoc (exprLoc e)) <> text ":" <$$>
-  indent 2 (pretty e) <> text "."
+  vcat
+  [ text solver_name <+>
+    text "does not support" <+> ppBaseTypeError cause <>
+    text ", and cannot interpret the term generated at" <+>
+    pretty (plSourceLoc (exprLoc e)) <> text ":"
+  , indent 2 (pretty e) <> text "."
+  ]
 
-fnSource :: SolverSymbol -> ProgramLoc -> SMTSource
+fnSource :: SolverSymbol -> ProgramLoc -> SMTSource ann
 fnSource fn_name loc solver_name cause =
   text solver_name <+>
   text "does not support" <+> ppBaseTypeError cause <>
@@ -1603,7 +1607,7 @@ fnSource fn_name loc solver_name cause =
 -- returned by functions.
 evalFirstClassTypeRepr :: MonadFail m
                        => WriterConn t h
-                       -> SMTSource
+                       -> SMTSource ann
                        -> BaseTypeRepr tp
                        -> m (TypeMap tp)
 evalFirstClassTypeRepr conn src base_tp =
@@ -1895,10 +1899,13 @@ appSMTExpr ae = do
          let ytp = smtExprType ye
 
          let checkArrayType z (FnArrayTypeMap{}) = do
-               fail $ show $ text (smtWriterName conn) <+>
-                 text "does not support checking equality for the array generated at"
-                 <+> pretty (plSourceLoc (exprLoc z)) <> text ":" <$$>
-                 indent 2 (pretty z)
+               fail $ show $
+                 vcat
+                 [ text (smtWriterName conn) <+>
+                   text "does not support checking equality for the array generated at"
+                   <+> pretty (plSourceLoc (exprLoc z)) <> text ":"
+                 , indent 2 (pretty z)
+                 ]
              checkArrayType _ _ = return ()
 
          checkArrayType x xtp
@@ -3059,3 +3066,6 @@ smtExprGroundEvalFn conn smtFns = do
 
 
   return $ GroundEvalFn cachedEval
+
+text :: String -> Doc ann
+text = pretty

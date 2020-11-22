@@ -84,7 +84,7 @@ import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TH.GADT
 import           GHC.TypeNats as TypeNats
-import           Text.PrettyPrint.ANSI.Leijen
+import           Prettyprinter
 
 --------------------------------------------------------------------------------
 -- KnownCtx
@@ -290,19 +290,19 @@ instance Hashable (StringInfoRepr si) where
   hashWithSalt = $(structuralHashWithSalt [t|StringInfoRepr|] [])
 
 instance Pretty (BaseTypeRepr bt) where
-  pretty = text . show
+  pretty = pretty . show
 instance Show (BaseTypeRepr bt) where
   showsPrec = $(structuralShowsPrec [t|BaseTypeRepr|])
 instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
-  pretty = text . show
+  pretty = pretty . show
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
 instance ShowF FloatPrecisionRepr
 
 instance Pretty (StringInfoRepr si) where
-  pretty = text . show
+  pretty = pretty . show
 instance Show (StringInfoRepr si) where
   showsPrec = $(structuralShowsPrec [t|StringInfoRepr|])
 instance ShowF StringInfoRepr

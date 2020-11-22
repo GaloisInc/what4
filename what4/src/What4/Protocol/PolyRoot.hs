@@ -32,7 +32,7 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 
 import qualified Data.Vector as V
-import           Text.PrettyPrint.ANSI.Leijen as PP hiding ((<$>))
+import           Prettyprinter as PP
 
 atto_angle :: Atto.Parser a -> Atto.Parser a
 atto_angle p = Atto.char '<' *> p <* Atto.char '>'
@@ -47,19 +47,19 @@ newtype SingPoly coef = SingPoly (V.Vector coef)
 instance (Ord coef, Num coef, Pretty coef) => Pretty (SingPoly coef) where
   pretty (SingPoly v) =
     case V.findIndex (/= 0) v of
-      Nothing -> text "0"
+      Nothing -> pretty "0"
       Just j -> go (V.length v - 1)
         where ppc c | c < 0 = parens (pretty c)
                     | otherwise = pretty c
 
-              ppi 1 = text "*x"
-              ppi i = text "*x^" <> pretty i
+              ppi 1 = pretty "*x"
+              ppi i = pretty "*x^" <> pretty i
 
               go 0 = ppc (v V.! 0)
               go i | seq i False = error "pretty SingPoly"
                    | i == j = ppc (v V.! i) <> ppi i
                    | v V.! i == 0 = go (i-1)
-                   | otherwise = ppc (v V.! i) <> ppi i <+> text "+" <+> go (i-1)
+                   | otherwise = ppc (v V.! i) <> ppi i <+> pretty "+" <+> go (i-1)
 
 fromList :: [c] -> SingPoly c
 fromList = SingPoly . V.fromList

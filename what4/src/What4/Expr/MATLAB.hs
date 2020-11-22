@@ -45,7 +45,7 @@ import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
 import           Data.Parameterized.TH.GADT
 import           Data.Parameterized.TraversableFC
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+import           Prettyprinter
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -664,71 +664,74 @@ matlabSolverReturnType f =
     CplxCosFn            -> knownRepr
     CplxTanFn            -> knownRepr
 
-ppMatlabSolverFn :: IsExpr f => MatlabSolverFn f a r -> Doc
+ppMatlabSolverFn :: IsExpr f => MatlabSolverFn f a r -> Doc ann
 ppMatlabSolverFn f =
   case f of
-    BoolOrFn             -> text "bool_or"
-    IsIntegerFn          -> text "is_integer"
-    NatLeFn              -> text "nat_le"
-    IntLeFn              -> text "int_le"
-    BVToNatFn w          -> parens $ text "bv_to_nat" <+> text (show w)
-    SBVToIntegerFn w     -> parens $ text "sbv_to_int" <+> text (show w)
-    NatToIntegerFn       -> text "nat_to_integer"
-    IntegerToNatFn       -> text "integer_to_nat"
-    IntegerToRealFn      -> text "integer_to_real"
-    RealToIntegerFn      -> text "real_to_integer"
-    PredToIntegerFn      -> text "pred_to_integer"
-    NatSeqFn  b i        -> parens $ text "nat_seq"  <+> printSymExpr b <+> printSymExpr i
-    RealSeqFn b i        -> parens $ text "real_seq" <+> printSymExpr b <+> printSymExpr i
+    BoolOrFn             -> pretty "bool_or"
+    IsIntegerFn          -> pretty "is_integer"
+    NatLeFn              -> pretty "nat_le"
+    IntLeFn              -> pretty "int_le"
+    BVToNatFn w          -> parens $ pretty "bv_to_nat" <+> ppNatRepr w
+    SBVToIntegerFn w     -> parens $ pretty "sbv_to_int" <+> ppNatRepr w
+    NatToIntegerFn       -> pretty "nat_to_integer"
+    IntegerToNatFn       -> pretty "integer_to_nat"
+    IntegerToRealFn      -> pretty "integer_to_real"
+    RealToIntegerFn      -> pretty "real_to_integer"
+    PredToIntegerFn      -> pretty "pred_to_integer"
+    NatSeqFn  b i        -> parens $ pretty "nat_seq"  <+> printSymExpr b <+> printSymExpr i
+    RealSeqFn b i        -> parens $ pretty "real_seq" <+> printSymExpr b <+> printSymExpr i
     IndicesInRange _ bnds ->
-      parens (text "indices_in_range" <+> sep (toListFC printSymExpr bnds))
-    IsEqFn{}             -> text "is_eq"
+      parens (pretty "indices_in_range" <+> sep (toListFC printSymExpr bnds))
+    IsEqFn{}             -> pretty "is_eq"
 
-    BVIsNonZeroFn w      -> parens $ text "bv_is_nonzero" <+> text (show w)
-    ClampedIntNegFn w    -> parens $ text "clamped_int_neg" <+> text (show w)
-    ClampedIntAbsFn w    -> parens $ text "clamped_neg_abs" <+> text (show w)
-    ClampedIntAddFn w    -> parens $ text "clamped_int_add" <+> text (show w)
-    ClampedIntSubFn w    -> parens $ text "clamped_int_sub" <+> text (show w)
-    ClampedIntMulFn w    -> parens $ text "clamped_int_mul" <+> text (show w)
-    ClampedUIntAddFn w   -> parens $ text "clamped_uint_add" <+> text (show w)
-    ClampedUIntSubFn w   -> parens $ text "clamped_uint_sub" <+> text (show w)
-    ClampedUIntMulFn w   -> parens $ text "clamped_uint_mul" <+> text (show w)
+    BVIsNonZeroFn w      -> parens $ pretty "bv_is_nonzero" <+> ppNatRepr w
+    ClampedIntNegFn w    -> parens $ pretty "clamped_int_neg" <+> ppNatRepr w
+    ClampedIntAbsFn w    -> parens $ pretty "clamped_neg_abs" <+> ppNatRepr w
+    ClampedIntAddFn w    -> parens $ pretty "clamped_int_add" <+> ppNatRepr w
+    ClampedIntSubFn w    -> parens $ pretty "clamped_int_sub" <+> ppNatRepr w
+    ClampedIntMulFn w    -> parens $ pretty "clamped_int_mul" <+> ppNatRepr w
+    ClampedUIntAddFn w   -> parens $ pretty "clamped_uint_add" <+> ppNatRepr w
+    ClampedUIntSubFn w   -> parens $ pretty "clamped_uint_sub" <+> ppNatRepr w
+    ClampedUIntMulFn w   -> parens $ pretty "clamped_uint_mul" <+> ppNatRepr w
 
-    IntSetWidthFn i o    -> parens $ text "int_set_width"  <+> text (show i) <+> text (show o)
-    UIntSetWidthFn i o   -> parens $ text "uint_set_width" <+> text (show i) <+> text (show o)
-    UIntToIntFn i o      -> parens $ text "uint_to_int"  <+> text (show i) <+> text (show o)
-    IntToUIntFn i o      -> parens $ text "int_to_uint"  <+> text (show i) <+> text (show o)
+    IntSetWidthFn i o    -> parens $ pretty "int_set_width"  <+> pretty (show i) <+> pretty (show o)
+    UIntSetWidthFn i o   -> parens $ pretty "uint_set_width" <+> pretty (show i) <+> pretty (show o)
+    UIntToIntFn i o      -> parens $ pretty "uint_to_int"  <+> pretty (show i) <+> pretty (show o)
+    IntToUIntFn i o      -> parens $ pretty "int_to_uint"  <+> pretty (show i) <+> pretty (show o)
 
-    RealCosFn            -> text "real_cos"
-    RealSinFn            -> text "real_sin"
-    RealIsNonZeroFn      -> text "real_is_nonzero"
+    RealCosFn            -> pretty "real_cos"
+    RealSinFn            -> pretty "real_sin"
+    RealIsNonZeroFn      -> pretty "real_is_nonzero"
 
-    RealToSBVFn w        -> parens $ text "real_to_sbv" <+> text (show w)
-    RealToUBVFn w        -> parens $ text "real_to_sbv" <+> text (show w)
-    PredToBVFn  w        -> parens $ text "pred_to_bv"  <+> text (show w)
+    RealToSBVFn w        -> parens $ pretty "real_to_sbv" <+> ppNatRepr w
+    RealToUBVFn w        -> parens $ pretty "real_to_sbv" <+> ppNatRepr w
+    PredToBVFn  w        -> parens $ pretty "pred_to_bv"  <+> ppNatRepr w
 
-    CplxIsNonZeroFn      -> text "cplx_is_nonzero"
-    CplxIsRealFn         -> text "cplx_is_real"
-    RealToComplexFn      -> text "real_to_complex"
-    RealPartOfCplxFn     -> text "real_part_of_complex"
-    ImagPartOfCplxFn     -> text "imag_part_of_complex"
+    CplxIsNonZeroFn      -> pretty "cplx_is_nonzero"
+    CplxIsRealFn         -> pretty "cplx_is_real"
+    RealToComplexFn      -> pretty "real_to_complex"
+    RealPartOfCplxFn     -> pretty "real_part_of_complex"
+    ImagPartOfCplxFn     -> pretty "imag_part_of_complex"
 
-    CplxNegFn            -> text "cplx_neg"
-    CplxAddFn            -> text "cplx_add"
-    CplxSubFn            -> text "cplx_sub"
-    CplxMulFn            -> text "cplx_mul"
+    CplxNegFn            -> pretty "cplx_neg"
+    CplxAddFn            -> pretty "cplx_add"
+    CplxSubFn            -> pretty "cplx_sub"
+    CplxMulFn            -> pretty "cplx_mul"
 
-    CplxRoundFn          -> text "cplx_round"
-    CplxFloorFn          -> text "cplx_floor"
-    CplxCeilFn           -> text "cplx_ceil"
-    CplxMagFn            -> text "cplx_mag"
-    CplxSqrtFn           -> text "cplx_sqrt"
-    CplxExpFn            -> text "cplx_exp"
-    CplxLogFn            -> text "cplx_log"
-    CplxLogBaseFn b      -> parens $ text "cplx_log_base" <+> text (show b)
-    CplxSinFn            -> text "cplx_sin"
-    CplxCosFn            -> text "cplx_cos"
-    CplxTanFn            -> text "cplx_tan"
+    CplxRoundFn          -> pretty "cplx_round"
+    CplxFloorFn          -> pretty "cplx_floor"
+    CplxCeilFn           -> pretty "cplx_ceil"
+    CplxMagFn            -> pretty "cplx_mag"
+    CplxSqrtFn           -> pretty "cplx_sqrt"
+    CplxExpFn            -> pretty "cplx_exp"
+    CplxLogFn            -> pretty "cplx_log"
+    CplxLogBaseFn b      -> parens $ pretty "cplx_log_base" <+> pretty (show b)
+    CplxSinFn            -> pretty "cplx_sin"
+    CplxCosFn            -> pretty "cplx_cos"
+    CplxTanFn            -> pretty "cplx_tan"
+
+ppNatRepr :: NatRepr w -> Doc ann
+ppNatRepr w = pretty (show w)
 
 -- | Test 'MatlabSolverFn' values for equality.
 testSolverFnEq :: TestEquality f

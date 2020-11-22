@@ -99,7 +99,7 @@ import           System.Exit
 import           System.IO
 import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec.Text as Streams
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 import           What4.BaseTypes
 import           What4.Config
@@ -935,22 +935,22 @@ yicesOptions =
   [ mkOpt
       yicesPath
       executablePathOptSty
-      (Just (PP.text "Yices executable path"))
+      (Just "Yices executable path")
       (Just (ConcreteString "yices"))
   , mkOpt
       yicesEnableMCSat
       boolOptSty
-      (Just (PP.text "Enable the Yices MCSAT solving engine"))
+      (Just "Enable the Yices MCSAT solving engine")
       (Just (ConcreteBool False))
   , mkOpt
       yicesEnableInteractive
       boolOptSty
-      (Just (PP.text "Enable Yices interactive mode (needed to support timeouts)"))
+      (Just "Enable Yices interactive mode (needed to support timeouts)")
       (Just (ConcreteBool False))
   , mkOpt
       yicesGoalTimeout
       integerOptSty
-      (Just (PP.text "Set a per-goal timeout"))
+      (Just "Set a per-goal timeout")
       (Just (ConcreteInteger 0))
   ]
   ++ yicesInternalOptions
@@ -1073,8 +1073,8 @@ checkSupportedByYices p = do
   -- Check no errors where reported in result.
   let errors = toList (varInfo^.varErrors)
   when (not (null errors)) $ do
-    fail $ show $ PP.text "This formula is not supported by yices:" PP.<$$>
-           PP.indent 2 (PP.vcat errors)
+    fail $ show $
+      PP.vcat ["This formula is not supported by yices:", PP.indent 2 (PP.vcat errors)]
 
   return $! varInfo^.problemFeatures
 

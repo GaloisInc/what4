@@ -121,7 +121,7 @@ import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec.Text as Streams
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 import           Prelude hiding (writeFile)
 
@@ -1167,14 +1167,17 @@ solverMaxVersions = []
 data SolverVersionCheckError =
   UnparseableVersion Versions.ParsingError
 
-ppSolverVersionCheckError :: SolverVersionCheckError -> PP.Doc
-ppSolverVersionCheckError =
-  (PP.text "Unexpected error while checking solver version: " PP.<$$>) .
-  \case
-    UnparseableVersion parseErr -> PP.cat $ map PP.text
-      [ "Couldn't parse solver version number: "
-      , show parseErr
-      ]
+ppSolverVersionCheckError :: SolverVersionCheckError -> PP.Doc ann
+ppSolverVersionCheckError err =
+  PP.vsep
+  [ "Unexpected error while checking solver version:"
+  , case err of
+      UnparseableVersion parseErr ->
+        PP.hsep $ map PP.pretty
+        [ "Couldn't parse solver version number:"
+        , show parseErr
+        ]
+  ]
 
 data SolverVersionError =
   SolverVersionError
@@ -1184,9 +1187,10 @@ data SolverVersionError =
   }
   deriving (Eq, Ord)
 
-ppSolverVersionError :: SolverVersionError -> PP.Doc
-ppSolverVersionError err = PP.vcat $ map PP.text
-  [ "Solver did not meet version bound restrictions: "
+ppSolverVersionError :: SolverVersionError -> PP.Doc ann
+ppSolverVersionError err =
+  PP.vsep $ map PP.pretty
+  [ "Solver did not meet version bound restrictions:"
   , "Lower bound (inclusive): " ++ na (show <$> vMin err)
   , "Upper bound (non-inclusive): " ++ na (show <$> vMax err)
   , "Actual version: " ++ show (vActual err)

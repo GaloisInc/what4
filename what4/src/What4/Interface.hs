@@ -183,7 +183,7 @@ import           Data.Ratio
 import           Data.Scientific (Scientific)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import           Text.PrettyPrint.ANSI.Leijen (Doc)
+import           Prettyprinter (Doc)
 
 import           What4.BaseTypes
 import           What4.Config
@@ -348,7 +348,7 @@ class HasAbsValue e => IsExpr e where
       BaseBVRepr w -> w
 
   -- | Print a sym expression for debugging or display purposes.
-  printSymExpr :: e tp -> Doc
+  printSymExpr :: e tp -> Doc ann
 
 
 newtype ArrayResultWrapper f idx tp =

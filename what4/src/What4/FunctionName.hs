@@ -21,7 +21,7 @@ module What4.FunctionName
 import           Data.Hashable
 import           Data.String
 import qualified Data.Text as Text
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 ------------------------------------------------------------------------
 -- FunctionName
@@ -38,7 +38,7 @@ instance Show FunctionName where
   show (FunctionName nm) = Text.unpack nm
 
 instance PP.Pretty FunctionName where
-  pretty (FunctionName nm) = PP.text (Text.unpack nm)
+  pretty (FunctionName nm) = PP.pretty nm
 
 -- | Name of function for starting simulator.
 startFunctionName :: FunctionName

@@ -55,7 +55,7 @@ import           Data.Ratio (numerator, denominator)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Numeric.Natural
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -1380,12 +1380,12 @@ ppNonceApp ppFn a0 = do
       where resolve f_nm = prettyApp "apply" (f_nm : toListFC exprPrettyArg a)
 
 instance ShowF e => Pretty (App e u) where
-  pretty a = text (Text.unpack nm) <+> sep (ppArg <$> args)
+  pretty a = pretty nm <+> sep (ppArg <$> args)
     where (nm, args) = ppApp' a
-          ppArg :: PrettyArg e -> Doc
-          ppArg (PrettyArg e) = text (showF e)
-          ppArg (PrettyText txt) = text (Text.unpack txt)
-          ppArg (PrettyFunc fnm fargs) = parens (text (Text.unpack fnm) <+> sep (ppArg <$> fargs))
+          ppArg :: PrettyArg e -> Doc ann
+          ppArg (PrettyArg e) = pretty (showF e)
+          ppArg (PrettyText txt) = pretty txt
+          ppArg (PrettyFunc fnm fargs) = parens (pretty fnm <+> sep (ppArg <$> fargs))
 
 instance ShowF e => Show (App e u) where
   show = show . pretty

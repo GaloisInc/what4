@@ -50,7 +50,7 @@ import Data.Parameterized.TH.GADT
 import Data.Ratio
 import Data.Word ( Word16, Word64 )
 import GHC.TypeNats
-import Text.PrettyPrint.ANSI.Leijen
+import Prettyprinter
 
 import What4.BaseTypes
 import What4.Interface
@@ -97,7 +97,7 @@ instance Hashable (FloatInfoRepr fi) where
   hashWithSalt = $(structuralHashWithSalt [t|FloatInfoRepr|] [])
 
 instance Pretty (FloatInfoRepr fi) where
-  pretty = text . show
+  pretty = pretty . show
 instance Show (FloatInfoRepr fi) where
   showsPrec = $(structuralShowsPrec [t|FloatInfoRepr|])
 instance ShowF FloatInfoRepr

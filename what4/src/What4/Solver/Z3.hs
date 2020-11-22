@@ -31,7 +31,6 @@ import           Control.Monad ( when )
 import           Data.Bits
 import           Data.String
 import           System.IO
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -63,12 +62,12 @@ z3Options =
   [ mkOpt
       z3Path
       executablePathOptSty
-      (Just (PP.text "Z3 executable path"))
+      (Just "Z3 executable path")
       (Just (ConcreteString "z3"))
   , mkOpt
       z3Timeout
       integerOptSty
-      (Just (PP.text "Per-check timeout in milliseconds (zero is none)"))
+      (Just "Per-check timeout in milliseconds (zero is none)")
       (Just (ConcreteInteger 0))
   ]
 

@@ -38,7 +38,7 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Word
 import           Numeric (showHex)
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified Prettyprinter as PP
 
 import           What4.FunctionName
 
@@ -73,23 +73,23 @@ startOfFile path = sourcePos path 1 0
 
 instance PP.Pretty Position where
   pretty (SourcePos path l c) =
-    PP.text (Text.unpack path)
-      PP.<> PP.colon PP.<> PP.int l
-      PP.<> PP.colon PP.<> PP.int c
+    PP.pretty path
+      PP.<> PP.colon PP.<> PP.pretty l
+      PP.<> PP.colon PP.<> PP.pretty c
   pretty (BinaryPos path addr) =
-    PP.text (Text.unpack path) PP.<> PP.colon PP.<>
-      PP.text "0x" PP.<> PP.text (showHex addr "")
-  pretty (OtherPos txt) = PP.text (Text.unpack txt)
-  pretty InternalPos = PP.text "internal"
+    PP.pretty path PP.<> PP.colon PP.<>
+      PP.pretty "0x" PP.<> PP.pretty (showHex addr "")
+  pretty (OtherPos txt) = PP.pretty txt
+  pretty InternalPos = PP.pretty "internal"
 
-ppNoFileName :: Position -> PP.Doc
+ppNoFileName :: Position -> PP.Doc ann
 ppNoFileName (SourcePos _ l c) =
-  PP.int l PP.<> PP.colon PP.<> PP.int c
+  PP.pretty l PP.<> PP.colon PP.<> PP.pretty c
 ppNoFileName (BinaryPos _ addr) =
-  PP.text (showHex addr "")
+  PP.pretty (showHex addr "")
 ppNoFileName (OtherPos msg) =
-  PP.text (Text.unpack msg)
-ppNoFileName InternalPos = PP.text "internal"
+  PP.pretty msg
+ppNoFileName InternalPos = PP.pretty "internal"
 
 ------------------------------------------------------------------------
 -- Posd
