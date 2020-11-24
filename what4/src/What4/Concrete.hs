@@ -150,7 +150,7 @@ instance Ord (ConcreteVal tp) where
 
 -- | Pretty-print a rational number.
 ppRational :: Rational -> PP.Doc ann
-ppRational x = PP.pretty (show x)
+ppRational = PP.viaShow
 
 -- | Pretty-print a concrete value
 ppConcrete :: ConcreteVal tp -> PP.Doc ann
@@ -159,7 +159,7 @@ ppConcrete = \case
   ConcreteNat x -> PP.pretty x
   ConcreteInteger x -> PP.pretty x
   ConcreteReal x -> ppRational x
-  ConcreteString x -> PP.pretty (show x)
+  ConcreteString x -> PP.viaShow x
   ConcreteBV w x -> PP.pretty ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
   ConcreteComplex (r :+ i) -> PP.pretty "complex(" PP.<> ppRational r PP.<> PP.pretty ", " PP.<> ppRational i PP.<> PP.pretty ")"
   ConcreteStruct xs -> PP.pretty "struct(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.pretty ")"

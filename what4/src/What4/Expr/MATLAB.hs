@@ -694,10 +694,10 @@ ppMatlabSolverFn f =
     ClampedUIntSubFn w   -> parens $ pretty "clamped_uint_sub" <+> ppNatRepr w
     ClampedUIntMulFn w   -> parens $ pretty "clamped_uint_mul" <+> ppNatRepr w
 
-    IntSetWidthFn i o    -> parens $ pretty "int_set_width"  <+> pretty (show i) <+> pretty (show o)
-    UIntSetWidthFn i o   -> parens $ pretty "uint_set_width" <+> pretty (show i) <+> pretty (show o)
-    UIntToIntFn i o      -> parens $ pretty "uint_to_int"  <+> pretty (show i) <+> pretty (show o)
-    IntToUIntFn i o      -> parens $ pretty "int_to_uint"  <+> pretty (show i) <+> pretty (show o)
+    IntSetWidthFn i o    -> parens $ pretty "int_set_width"  <+> ppNatRepr i <+> ppNatRepr o
+    UIntSetWidthFn i o   -> parens $ pretty "uint_set_width" <+> ppNatRepr i <+> ppNatRepr o
+    UIntToIntFn i o      -> parens $ pretty "uint_to_int"  <+> ppNatRepr i <+> ppNatRepr o
+    IntToUIntFn i o      -> parens $ pretty "int_to_uint"  <+> ppNatRepr i <+> ppNatRepr o
 
     RealCosFn            -> pretty "real_cos"
     RealSinFn            -> pretty "real_sin"
@@ -725,13 +725,13 @@ ppMatlabSolverFn f =
     CplxSqrtFn           -> pretty "cplx_sqrt"
     CplxExpFn            -> pretty "cplx_exp"
     CplxLogFn            -> pretty "cplx_log"
-    CplxLogBaseFn b      -> parens $ pretty "cplx_log_base" <+> pretty (show b)
+    CplxLogBaseFn b      -> parens $ pretty "cplx_log_base" <+> pretty b
     CplxSinFn            -> pretty "cplx_sin"
     CplxCosFn            -> pretty "cplx_cos"
     CplxTanFn            -> pretty "cplx_tan"
 
 ppNatRepr :: NatRepr w -> Doc ann
-ppNatRepr w = pretty (show w)
+ppNatRepr = viaShow
 
 -- | Test 'MatlabSolverFn' values for equality.
 testSolverFnEq :: TestEquality f

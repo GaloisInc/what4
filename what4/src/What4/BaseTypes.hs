@@ -290,19 +290,19 @@ instance Hashable (StringInfoRepr si) where
   hashWithSalt = $(structuralHashWithSalt [t|StringInfoRepr|] [])
 
 instance Pretty (BaseTypeRepr bt) where
-  pretty = pretty . show
+  pretty = viaShow
 instance Show (BaseTypeRepr bt) where
   showsPrec = $(structuralShowsPrec [t|BaseTypeRepr|])
 instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
-  pretty = pretty . show
+  pretty = viaShow
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
 instance ShowF FloatPrecisionRepr
 
 instance Pretty (StringInfoRepr si) where
-  pretty = pretty . show
+  pretty = viaShow
 instance Show (StringInfoRepr si) where
   showsPrec = $(structuralShowsPrec [t|StringInfoRepr|])
 instance ShowF StringInfoRepr

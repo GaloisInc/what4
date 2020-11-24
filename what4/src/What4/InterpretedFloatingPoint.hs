@@ -97,7 +97,7 @@ instance Hashable (FloatInfoRepr fi) where
   hashWithSalt = $(structuralHashWithSalt [t|FloatInfoRepr|] [])
 
 instance Pretty (FloatInfoRepr fi) where
-  pretty = pretty . show
+  pretty = viaShow
 instance Show (FloatInfoRepr fi) where
   showsPrec = $(structuralShowsPrec [t|FloatInfoRepr|])
 instance ShowF FloatInfoRepr
