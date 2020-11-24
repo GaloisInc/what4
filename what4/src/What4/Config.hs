@@ -172,6 +172,7 @@ import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import           Data.Void
 import           Numeric.Natural
 import           System.IO ( Handle, hPutStr )
 import           System.IO.Error ( ioeGetErrorString )
@@ -253,8 +254,8 @@ configOptionType (ConfigOption tp _) = tp
 --   attempting to alter the option setting.
 data OptionSetResult =
   OptionSetResult
-  { optionSetError    :: !(Maybe (Doc ()))
-  , optionSetWarnings :: !(Seq (Doc ()))
+  { optionSetError    :: !(Maybe (Doc Void))
+  , optionSetWarnings :: !(Seq (Doc Void))
   }
 
 instance Semigroup OptionSetResult where
@@ -272,11 +273,11 @@ optOK :: OptionSetResult
 optOK = OptionSetResult{ optionSetError = Nothing, optionSetWarnings = mempty }
 
 -- | Reject the new option value with an error message.
-optErr :: Doc () -> OptionSetResult
+optErr :: Doc Void -> OptionSetResult
 optErr x = OptionSetResult{ optionSetError = Just x, optionSetWarnings = mempty }
 
 -- | Accept the given option value, but report a warning message.
-optWarn :: Doc () -> OptionSetResult
+optWarn :: Doc Void -> OptionSetResult
 optWarn x = OptionSetResult{ optionSetError = Nothing, optionSetWarnings = Seq.singleton x }
 
 
@@ -312,7 +313,7 @@ data OptionStyle (tp :: BaseType) =
     -- If the validation fails, the operation should return a result
     -- describing why validation failed. Optionally, warnings may also be returned.
 
-  , opt_help :: Doc ()
+  , opt_help :: Doc Void
     -- ^ Documentation for the option to be displayed in the event a user asks for information
     --   about this option.  This message should contain information relevant to all options in this
     --   style (e.g., its type and range of expected values), not necessarily
@@ -341,7 +342,7 @@ set_opt_onset :: (Maybe (ConcreteVal tp) -> ConcreteVal tp -> IO OptionSetResult
 set_opt_onset f s = s { opt_onset = f }
 
 -- | Update the @opt_help@ field.
-set_opt_help :: Doc ()
+set_opt_help :: Doc Void
              -> OptionStyle tp
              -> OptionStyle tp
 set_opt_help v s = s { opt_help = v }
@@ -505,12 +506,12 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 --   an @OptionStyle@ describing the sort of option it is, and an optional
 --   help message describing the semantics of this option.
 data ConfigDesc where
-  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc ()) -> ConfigDesc
+  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
 
 -- | The most general method for construcing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> OptionStyle tp      -- ^ Define the style of this option
-      -> Maybe (Doc ())      -- ^ Help text
+      -> Maybe (Doc Void)    -- ^ Help text
       -> Maybe (ConcreteVal tp) -- ^ A default value for this option
       -> ConfigDesc
 mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h
@@ -577,7 +578,7 @@ data ConfigLeaf where
   ConfigLeaf ::
     !(OptionStyle tp)              {- Style for this option -} ->
     IORef (Maybe (ConcreteVal tp)) {- State of the option -} ->
-    Maybe (Doc ())                 {- Help text for the option -} ->
+    Maybe (Doc Void)               {- Help text for the option -} ->
     ConfigLeaf
 
 -- | Main configuration data type.  It is organized as a trie based on the
@@ -715,7 +716,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
 
   -- | Set the value of an option.  Return any generated warnings.
   --   Throw an exception if a validation error occurs.
-  setOpt :: OptionSetting tp -> a -> IO [Doc ()]
+  setOpt :: OptionSetting tp -> a -> IO [Doc Void]
   setOpt x v = trySetOpt x v >>= checkOptSetResult
 
   -- | Get the current value of an option.  Throw an exception
@@ -726,7 +727,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
 
 -- | Throw an exception if the given @OptionSetResult@ indidcates
 --   an error.  Otherwise, return any generated warnings.
-checkOptSetResult :: OptionSetResult -> IO [Doc ()]
+checkOptSetResult :: OptionSetResult -> IO [Doc Void]
 checkOptSetResult res =
   case optionSetError res of
     Just msg -> fail (show msg)
@@ -835,14 +836,14 @@ ppSetting nm v = fill 30 (pretty (Text.intercalate "." nm)
                            <> maybe mempty (\x -> text " = " <> ppConcrete x) v
                          )
 
-ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc ()) -> Doc ()
+ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc Void) -> Doc Void
 ppOption nm sty x help =
   vcat
   [ group $ fillCat [ppSetting nm x, indent 2 (opt_help sty)]
   , maybe mempty (indent 2) help
   ]
 
-ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc ())
+ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc Void)
 ppConfigLeaf nm (ConfigLeaf sty ref help) =
   do x <- readIORef ref
      return $ ppOption nm sty x help
@@ -854,11 +855,11 @@ ppConfigLeaf nm (ConfigLeaf sty ref help) =
 configHelp ::
   Text ->
   Config ->
-  IO [Doc ()]
+  IO [Doc Void]
 configHelp prefix (Config cfg) =
   do m <- readIORef cfg
      let ps = Text.splitOn "." prefix
-         f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc ())) IO ConfigLeaf
+         f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
                         tell (Seq.singleton d)
                         return leaf
