@@ -363,27 +363,27 @@ data Bound r = Exclusive r
 boolOptSty :: OptionStyle BaseBoolType
 boolOptSty = OptionStyle BaseBoolRepr
                         (\_ _ -> return optOK)
-                        (text "Boolean")
+                        "Boolean"
                         Nothing
 
 -- | Standard option style for real-valued configuration options
 realOptSty :: OptionStyle BaseRealType
 realOptSty = OptionStyle BaseRealRepr
                   (\_ _ -> return optOK)
-                  (text "ℝ")
+                  "ℝ"
                   Nothing
 
 -- | Standard option style for integral-valued configuration options
 integerOptSty :: OptionStyle BaseIntegerType
 integerOptSty = OptionStyle BaseIntegerRepr
                   (\_ _ -> return optOK)
-                  (text "ℤ")
+                  "ℤ"
                   Nothing
 
 stringOptSty :: OptionStyle (BaseStringType Unicode)
 stringOptSty = OptionStyle (BaseStringRepr UnicodeRepr)
                   (\_ _ -> return optOK)
-                  (text "string")
+                  "string"
                   Nothing
 
 checkBound :: Ord a => Bound a -> Bound a -> a -> Bool
@@ -397,26 +397,26 @@ checkBound lo hi a = checkLo lo a && checkHi a hi
        checkHi x (Exclusive y) = x <  y
 
 docInterval :: Show a => Bound a -> Bound a -> Doc ann
-docInterval lo hi = docLo lo <> text ", " <> docHi hi
- where docLo Unbounded      = text "(-∞"
-       docLo (Exclusive r)  = text "(" <> text (show r)
-       docLo (Inclusive r)  = text "[" <> text (show r)
+docInterval lo hi = docLo lo <> ", " <> docHi hi
+ where docLo Unbounded      = "(-∞"
+       docLo (Exclusive r)  = "(" <> viaShow r
+       docLo (Inclusive r)  = "[" <> viaShow r
 
-       docHi Unbounded      = text "+∞)"
-       docHi (Exclusive r)  = text (show r) <> text ")"
-       docHi (Inclusive r)  = text (show r) <> text "]"
+       docHi Unbounded      = "+∞)"
+       docHi (Exclusive r)  = viaShow r <> ")"
+       docHi (Inclusive r)  = viaShow r <> "]"
 
 
 -- | Option style for real-valued options with upper and lower bounds
 realWithRangeOptSty :: Bound Rational -> Bound Rational -> OptionStyle BaseRealType
 realWithRangeOptSty lo hi = realOptSty & set_opt_onset vf
                                        & set_opt_help help
-  where help = text "ℝ ∈" <+> docInterval lo hi
+  where help = "ℝ ∈" <+> docInterval lo hi
         vf :: Maybe (ConcreteVal BaseRealType) -> ConcreteVal BaseRealType -> IO OptionSetResult
         vf _ (ConcreteReal x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                    text (show x) <+> text "out of range, expected real value in "
+                                 prettyRational x <+> "out of range, expected real value in "
                                                   <+> docInterval lo hi
 
 -- | Option style for real-valued options with a lower bound
@@ -431,13 +431,13 @@ realWithMaxOptSty hi = realWithRangeOptSty Unbounded hi
 integerWithRangeOptSty :: Bound Integer -> Bound Integer -> OptionStyle BaseIntegerType
 integerWithRangeOptSty lo hi = integerOptSty & set_opt_onset vf
                                               & set_opt_help help
-  where help = text "ℤ ∈" <+> docInterval lo hi
+  where help = "ℤ ∈" <+> docInterval lo hi
         vf :: Maybe (ConcreteVal BaseIntegerType) -> ConcreteVal BaseIntegerType -> IO OptionSetResult
         vf _ (ConcreteInteger x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                    text (show x) <+> text "out of range, expected integer value in "
-                                                  <+> docInterval lo hi
+                                 pretty x <+> "out of range, expected integer value in "
+                                          <+> docInterval lo hi
 
 -- | Option style for integer-valued options with a lower bound
 integerWithMinOptSty :: Bound Integer -> OptionStyle BaseIntegerType
@@ -451,15 +451,15 @@ integerWithMaxOptSty hi = integerWithRangeOptSty Unbounded hi
 enumOptSty :: Set Text -> OptionStyle (BaseStringType Unicode)
 enumOptSty elts = stringOptSty & set_opt_onset vf
                                & set_opt_help help
-  where help = group (text "one of: " <+> align (sep $ map (dquotes . pretty) $ Set.toList elts))
+  where help = group ("one of: " <+> align (sep $ map (dquotes . pretty) $ Set.toList elts))
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
         vf _ (ConcreteString (UnicodeLiteral x))
          | x `Set.member` elts = return optOK
          | otherwise = return $ optErr $
-                            text "invalid setting" <+> text (show x) <+>
-                            text ", expected one of:" <+>
+                            "invalid setting" <+> dquotes (pretty x) <+>
+                            ", expected one of:" <+>
                             align (sep (map pretty $ Set.toList elts))
 
 -- | A configuration syle for options that must be one of a fixed set of text values.
@@ -470,15 +470,15 @@ listOptSty
   -> OptionStyle (BaseStringType Unicode)
 listOptSty values =  stringOptSty & set_opt_onset vf
                                   & set_opt_help help
-  where help = group (text "one of: " <+> align (sep $ map (dquotes . pretty . fst) $ Map.toList values))
+  where help = group ("one of: " <+> align (sep $ map (dquotes . pretty . fst) $ Map.toList values))
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
         vf _ (ConcreteString (UnicodeLiteral x)) =
          fromMaybe
           (return $ optErr $
-            text "invalid setting" <+> text (show x) <+>
-            text ", expected one of:" <+>
+            "invalid setting" <+> dquotes (pretty x) <+>
+            ", expected one of:" <+>
             align (sep (map (pretty . fst) $ Map.toList values)))
           (Map.lookup x values)
 
@@ -490,7 +490,7 @@ listOptSty values =  stringOptSty & set_opt_onset vf
 executablePathOptSty :: OptionStyle (BaseStringType Unicode)
 executablePathOptSty = stringOptSty & set_opt_onset vf
                                     & set_opt_help help
-  where help = text "<path>"
+  where help = "<path>"
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
@@ -498,7 +498,7 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
                  do me <- try (Env.findExecutable (Text.unpack x))
                     case me of
                        Right{} -> return $ optOK
-                       Left e  -> return $ optWarn $ text $ ioeGetErrorString e
+                       Left e  -> return $ optWarn $ pretty $ ioeGetErrorString e
 
 
 -- | A @ConfigDesc@ describes a configuration option before it is installed into
@@ -833,7 +833,7 @@ getConfigValues prefix (Config cfg) =
 
 ppSetting :: [Text] -> Maybe (ConcreteVal tp) -> Doc ann
 ppSetting nm v = fill 30 (pretty (Text.intercalate "." nm)
-                           <> maybe mempty (\x -> text " = " <> ppConcrete x) v
+                           <> maybe mempty (\x -> " = " <> ppConcrete x) v
                          )
 
 ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc Void) -> Doc Void
@@ -865,5 +865,5 @@ configHelp prefix (Config cfg) =
                         return leaf
      toList <$> (execWriterT (traverseSubtree ps f m))
 
-text :: String -> Doc ann
-text = pretty
+prettyRational :: Rational -> Doc ann
+prettyRational = viaShow

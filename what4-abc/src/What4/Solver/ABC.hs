@@ -250,17 +250,17 @@ eval' ntk e = do
 failAt :: ProgramLoc -> String -> IO a
 failAt l msg = fail $ show $
   vcat
-  [ text msg
-  , text "From term created at" <+> pretty (plSourceLoc l)
+  [ pretty msg
+  , "From term created at" <+> pretty (plSourceLoc l)
   ]
 
 failTerm :: Expr t tp -> String -> IO a
 failTerm e nm = do
   fail $ show $
     vcat
-    [ text "The" <+> text nm <+> text "created at"
+    [ "The" <+> pretty nm <+> "created at"
          <+> pretty (plSourceLoc (exprLoc e))
-         <+> text "is not supported by ABC:"
+         <+> "is not supported by ABC:"
     , indent 2 (ppExpr e)
     ]
 
@@ -736,7 +736,7 @@ checkSupportedByAbc vars = do
   -- Check no errors where reported in result.
   when (not (null errors)) $ do
     fail $ show $ vcat
-      [ text "This formula is not supported by abc:"
+      [ "This formula is not supported by abc:"
       , indent 2 (vcat errors)
       ]
 
@@ -1045,6 +1045,3 @@ getInputCount ntk = GIA.inputCount (gia ntk)
 -- | Return number of outputs so far in network.
 getOutputCount :: Network t s -> IO Int
 getOutputCount ntk = length <$> readIORef (revOutputs ntk)
-
-text :: String -> Doc ann
-text = pretty

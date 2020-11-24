@@ -924,8 +924,8 @@ ppExpr e
      | Prelude.null bindings = ppExprDoc False r
      | otherwise =
        vsep
-       [ text "let" <+> align (vcat bindings)
-       , text " in" <+> align (ppExprDoc False r) ]
+       [ "let" <+> align (vcat bindings)
+       , " in" <+> align (ppExprDoc False r) ]
   where (bindings,r) = runST (ppExpr' e defaultPPExprOpts)
 
 instance ShowF (Expr t)
@@ -976,19 +976,20 @@ ppExpr' e0 o = do
         cnt <- Seq.length <$> readSTRef bindingsRef
 
         vars <- fromMaybe Set.empty <$> H.lookup bvars idx
+        -- TODO: avoid intermediate String from 'ppBoundVar'
         let args :: [String]
             args = viewSome ppBoundVar <$> Set.toList vars
 
         let nm = case idx of
                    ExprPPIndex e -> "v" ++ show e
                    RatPPIndex _ -> "r" ++ show cnt
-        let lhs = parenIf False (text nm) (text <$> args)
+        let lhs = parenIf False (pretty nm) (pretty <$> args)
         let doc = vcat
-                  [ text "--" <+> pretty (plSourceLoc (apeLoc a))
-                  , lhs <+> text "=" <+> uncurry (parenIf False) (apeDoc a) ]
+                  [ "--" <+> pretty (plSourceLoc (apeLoc a))
+                  , lhs <+> "=" <+> uncurry (parenIf False) (apeDoc a) ]
         modifySTRef' bindingsRef (Seq.|> doc)
         let len = length nm + sum ((\arg_s -> length arg_s + 1) <$> args)
-        let nm_expr = FixedPPExpr (text nm) (map text args) len
+        let nm_expr = FixedPPExpr (pretty nm) (map pretty args) len
         H.insert visited idx $! nm_expr
         return nm_expr
 
@@ -1013,7 +1014,7 @@ ppExpr' e0 o = do
            let total_width = Text.length nm + sum ((\e -> 1 + ppExprLength e) <$> exprs0)
            (exprs1, cur_width) <- fixLength total_width exprs0
            let exprs = map (ppExprDoc True) exprs1
-           return (FixedPPExpr (text (Text.unpack nm)) exprs cur_width)
+           return (FixedPPExpr (pretty nm) exprs cur_width)
 
       renderApp :: PPIndex
                 -> ProgramLoc
@@ -1058,14 +1059,15 @@ ppExpr' e0 o = do
           Nothing -> do
             case symFnInfo f of
               UninterpFnInfo{} -> do
-                let def_doc = text (show f) <+> text "=" <+> text "??"
+                let def_doc = viaShow f <+> "=" <+> "??"
                 modifySTRef' bindingsRef (Seq.|> def_doc)
               DefinedFnInfo vars rhs _ -> do
-                let pp_vars = toListFC (text . ppBoundVar) vars
-                let def_doc = text (show f) <+> hsep pp_vars <+> text "=" <+> ppExpr rhs
+                -- TODO: avoid intermediate String from 'ppBoundVar'
+                let pp_vars = toListFC (pretty . ppBoundVar) vars
+                let def_doc = viaShow f <+> hsep pp_vars <+> "=" <+> ppExpr rhs
                 modifySTRef' bindingsRef (Seq.|> def_doc)
               MatlabSolverFnInfo fn_id _ _ -> do
-                let def_doc = text (show f) <+> text "=" <+> ppMatlabSolverFn fn_id
+                let def_doc = viaShow f <+> "=" <+> ppMatlabSolverFn fn_id
                 modifySTRef' bindingsRef (Seq.|> def_doc)
 
             let d = Text.pack (show f)
@@ -1374,7 +1376,7 @@ unaryThresholdOption = CFG.configOption BaseIntegerRepr "backend.unary_threshold
 unaryThresholdDesc :: CFG.ConfigDesc
 unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInteger 0))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Maximum number of values in unary bitvector encoding.")
+        help = Just "Maximum number of values in unary bitvector encoding."
 
 ------------------------------------------------------------------------
 -- Configuration option for controlling how many disjoint ranges
@@ -1389,7 +1391,7 @@ bvdomainRangeLimitOption = CFG.configOption BaseIntegerRepr "backend.bvdomain_ra
 bvdomainRangeLimitDesc :: CFG.ConfigDesc
 bvdomainRangeLimitDesc = CFG.mkOpt bvdomainRangeLimitOption sty help (Just (ConcreteInteger 2))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Maximum number of ranges in bitvector domains.")
+        help = Just "Maximum number of ranges in bitvector domains."
 
 ------------------------------------------------------------------------
 -- Cache start size
@@ -1405,7 +1407,7 @@ cacheStartSizeOption = CFG.configOption BaseIntegerRepr "backend.cache_start_siz
 cacheStartSizeDesc :: CFG.ConfigDesc
 cacheStartSizeDesc = CFG.mkOpt cacheStartSizeOption sty help (Just (ConcreteInteger 100000))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Starting size for element cache")
+        help = Just "Starting size for element cache"
 
 ------------------------------------------------------------------------
 -- Cache terms
@@ -1446,7 +1448,7 @@ cacheOptDesc gen storageRef szSetting =
   CFG.mkOpt
     cacheTerms
     (cacheOptStyle gen storageRef szSetting)
-    (Just (text "Use hash-consing during term construction"))
+    (Just "Use hash-consing during term construction")
     (Just (ConcreteBool False))
 
 
@@ -4697,6 +4699,3 @@ mkFreshUninterpFnApp sym str_fn_name args ret_type = do
   let arg_types = fmapFC exprType args
   fn <- freshTotalUninterpFn sym fn_name arg_types ret_type
   applySymFn sym fn args
-
-text :: String -> Doc ann
-text = pretty
