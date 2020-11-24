@@ -1173,9 +1173,9 @@ ppSolverVersionCheckError err =
   [ "Unexpected error while checking solver version:"
   , case err of
       UnparseableVersion parseErr ->
-        PP.hsep $ map PP.pretty
+        PP.hsep
         [ "Couldn't parse solver version number:"
-        , show parseErr
+        , PP.viaShow parseErr
         ]
   ]
 
@@ -1189,13 +1189,13 @@ data SolverVersionError =
 
 ppSolverVersionError :: SolverVersionError -> PP.Doc ann
 ppSolverVersionError err =
-  PP.vsep $ map PP.pretty
+  PP.vsep
   [ "Solver did not meet version bound restrictions:"
-  , "Lower bound (inclusive): " ++ na (show <$> vMin err)
-  , "Upper bound (non-inclusive): " ++ na (show <$> vMax err)
-  , "Actual version: " ++ show (vActual err)
+  , "Lower bound (inclusive):" PP.<+> na (vMin err)
+  , "Upper bound (non-inclusive):" PP.<+> na (vMax err)
+  , "Actual version:" PP.<+> PP.viaShow (vActual err)
   ]
-  where na (Just s) = s
+  where na (Just s) = PP.viaShow s
         na Nothing  = "n/a"
 
 -- | Get the result of a version query
