@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 {-|
 Module      : IteExprs test
@@ -22,6 +23,7 @@ import           Control.Monad.IO.Class ( liftIO )
 import qualified Data.BitVector.Sized as BV
 import           Data.List ( isInfixOf )
 import           Data.Parameterized.Nonce
+import qualified Data.Parameterized.Context as Ctx
 import           GenWhat4Expr
 import           Hedgehog
 import qualified Hedgehog.Internal.Gen as IGen
@@ -109,6 +111,20 @@ calcBVIte itc =
             Else -> BV.mkBV w 8293
   return (asConcrete i, ConcreteBV w e, desc itc, show c)
 
+-- | Create an ITE whose type is Struct and return the concrete value, the
+-- expected value, and the string description
+calcStructIte :: ITETestCond -> CalcReturn (BaseStructType (Ctx.EmptyCtx Ctx.::> BaseBoolType))
+calcStructIte itc =
+  withTestSolver $ \sym -> do
+  l <- mkStruct sym (Ctx.Empty Ctx.:> truePred sym)
+  r <- mkStruct sym (Ctx.Empty Ctx.:> falsePred sym)
+  c <- cond itc sym
+  i <- baseTypeIte sym c l r
+  let e = case expect itc of
+            Then -> Ctx.Empty Ctx.:> ConcreteBool True
+            Else -> Ctx.Empty Ctx.:> ConcreteBool False
+  return (asConcrete i, ConcreteStruct e, desc itc, show c)
+
 -- | Given a function that returns a condition, generate ITE's of
 -- various types and ensure that the ITE's all choose the same arm to
 -- execute.
@@ -134,6 +150,11 @@ checkIte itc =
        case i of
          Just v -> v @?= e
          Nothing -> assertBool ("no concrete ITE BV16 result for " <> what) False
+  , testCase ("concrete Struct " <> what) $
+    do (i,e,_,_) <- calcStructIte  itc
+       case i of
+         Just v -> v @?= e
+         Nothing -> assertBool ("no concrete ITE Struct result for " <> what) False
   ]
 
 
@@ -289,6 +310,7 @@ testConcretePredProps = testGroup "generated concrete predicates" $
     tt "bool" calcBoolIte
   , tt "nat" calcNatIte
   , tt "bv16" calcBVIte
+  , tt "struct" calcStructIte
   ]
 
 ----------------------------------------------------------------------

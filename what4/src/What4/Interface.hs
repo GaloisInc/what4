@@ -2800,9 +2800,8 @@ asConcrete x =
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
     BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
-    BaseStructRepr _ -> Nothing -- FIXME?
+    BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
     BaseArrayRepr _ _ -> Nothing -- FIXME?
-
 
 -- | Create a literal symbolic value from a concrete value.
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
