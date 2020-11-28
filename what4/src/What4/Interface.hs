@@ -808,10 +808,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | returns true if the given bitvector is non-zero.
   bvIsNonzero :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNonzero sym x = do
-     let w = bvWidth x
-     zro <- bvLit sym w (BV.zero w)
-     notPred sym  =<< bvEq sym x zro
 
   -- | Left shift.  The shift amount is treated as an unsigned value.
   bvShl :: (1 <= w) => sym ->
