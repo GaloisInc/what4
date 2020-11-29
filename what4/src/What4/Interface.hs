@@ -2801,7 +2801,12 @@ asConcrete x =
     BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
     BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
-    BaseArrayRepr _ _ -> Nothing -- FIXME?
+    BaseArrayRepr idx _tp -> do
+      def <- asConstantArray x
+      c_def <- asConcrete def
+      -- TODO: what about cases where there are updates to the array?
+      -- Passing Map.empty is probably wrong.
+      pure (ConcreteArray idx c_def Map.empty)
 
 -- | Create a literal symbolic value from a concrete value.
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
