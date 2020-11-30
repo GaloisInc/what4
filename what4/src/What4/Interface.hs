@@ -608,7 +608,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   @div@ and @mod@ are the unique Euclidean division operations satisfying the
   --   following for all @y /= 0@:
   --
-  --   * @x * (div x y) + (mod x y) == x@
+  --   * @y * (div x y) + (mod x y) == x@
   --   * @ 0 <= mod x y < abs y@
   --
   --   The value of @intDiv x y@ is undefined when @y = 0@.
