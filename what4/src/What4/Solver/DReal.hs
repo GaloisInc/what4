@@ -45,7 +45,6 @@ import           System.IO.Error
 import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec as Streams
 import           System.Process
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Config
@@ -73,7 +72,7 @@ drealOptions =
   [ mkOpt
       drealPath
       executablePathOptSty
-      (Just (PP.text "Path to dReal executable"))
+      (Just "Path to dReal executable")
       (Just (ConcreteString "dreal"))
   ]
 

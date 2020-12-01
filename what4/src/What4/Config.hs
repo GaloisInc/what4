@@ -172,11 +172,12 @@ import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import           Data.Void
 import           Numeric.Natural
 import           System.IO ( Handle, hPutStr )
 import           System.IO.Error ( ioeGetErrorString )
 
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
+import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -253,8 +254,8 @@ configOptionType (ConfigOption tp _) = tp
 --   attempting to alter the option setting.
 data OptionSetResult =
   OptionSetResult
-  { optionSetError    :: !(Maybe Doc)
-  , optionSetWarnings :: !(Seq Doc)
+  { optionSetError    :: !(Maybe (Doc Void))
+  , optionSetWarnings :: !(Seq (Doc Void))
   }
 
 instance Semigroup OptionSetResult where
@@ -272,11 +273,11 @@ optOK :: OptionSetResult
 optOK = OptionSetResult{ optionSetError = Nothing, optionSetWarnings = mempty }
 
 -- | Reject the new option value with an error message.
-optErr :: Doc -> OptionSetResult
+optErr :: Doc Void -> OptionSetResult
 optErr x = OptionSetResult{ optionSetError = Just x, optionSetWarnings = mempty }
 
 -- | Accept the given option value, but report a warning message.
-optWarn :: Doc -> OptionSetResult
+optWarn :: Doc Void -> OptionSetResult
 optWarn x = OptionSetResult{ optionSetError = Nothing, optionSetWarnings = Seq.singleton x }
 
 
@@ -312,7 +313,7 @@ data OptionStyle (tp :: BaseType) =
     -- If the validation fails, the operation should return a result
     -- describing why validation failed. Optionally, warnings may also be returned.
 
-  , opt_help :: Doc
+  , opt_help :: Doc Void
     -- ^ Documentation for the option to be displayed in the event a user asks for information
     --   about this option.  This message should contain information relevant to all options in this
     --   style (e.g., its type and range of expected values), not necessarily
@@ -330,7 +331,7 @@ defaultOpt tp =
   OptionStyle
   { opt_type = tp
   , opt_onset = \_ _ -> return mempty
-  , opt_help = empty
+  , opt_help = mempty
   , opt_default_value = Nothing
   }
 
@@ -341,7 +342,7 @@ set_opt_onset :: (Maybe (ConcreteVal tp) -> ConcreteVal tp -> IO OptionSetResult
 set_opt_onset f s = s { opt_onset = f }
 
 -- | Update the @opt_help@ field.
-set_opt_help :: Doc
+set_opt_help :: Doc Void
              -> OptionStyle tp
              -> OptionStyle tp
 set_opt_help v s = s { opt_help = v }
@@ -362,27 +363,27 @@ data Bound r = Exclusive r
 boolOptSty :: OptionStyle BaseBoolType
 boolOptSty = OptionStyle BaseBoolRepr
                         (\_ _ -> return optOK)
-                        (text "Boolean")
+                        "Boolean"
                         Nothing
 
 -- | Standard option style for real-valued configuration options
 realOptSty :: OptionStyle BaseRealType
 realOptSty = OptionStyle BaseRealRepr
                   (\_ _ -> return optOK)
-                  (text "ℝ")
+                  "ℝ"
                   Nothing
 
 -- | Standard option style for integral-valued configuration options
 integerOptSty :: OptionStyle BaseIntegerType
 integerOptSty = OptionStyle BaseIntegerRepr
                   (\_ _ -> return optOK)
-                  (text "ℤ")
+                  "ℤ"
                   Nothing
 
 stringOptSty :: OptionStyle (BaseStringType Unicode)
 stringOptSty = OptionStyle (BaseStringRepr UnicodeRepr)
                   (\_ _ -> return optOK)
-                  (text "string")
+                  "string"
                   Nothing
 
 checkBound :: Ord a => Bound a -> Bound a -> a -> Bool
@@ -395,27 +396,27 @@ checkBound lo hi a = checkLo lo a && checkHi a hi
        checkHi x (Inclusive y) = x <= y
        checkHi x (Exclusive y) = x <  y
 
-docInterval :: Show a => Bound a -> Bound a -> Doc
-docInterval lo hi = docLo lo <> text ", " <> docHi hi
- where docLo Unbounded      = text "(-∞"
-       docLo (Exclusive r)  = text "(" <> text (show r)
-       docLo (Inclusive r)  = text "[" <> text (show r)
+docInterval :: Show a => Bound a -> Bound a -> Doc ann
+docInterval lo hi = docLo lo <> ", " <> docHi hi
+ where docLo Unbounded      = "(-∞"
+       docLo (Exclusive r)  = "(" <> viaShow r
+       docLo (Inclusive r)  = "[" <> viaShow r
 
-       docHi Unbounded      = text "+∞)"
-       docHi (Exclusive r)  = text (show r) <> text ")"
-       docHi (Inclusive r)  = text (show r) <> text "]"
+       docHi Unbounded      = "+∞)"
+       docHi (Exclusive r)  = viaShow r <> ")"
+       docHi (Inclusive r)  = viaShow r <> "]"
 
 
 -- | Option style for real-valued options with upper and lower bounds
 realWithRangeOptSty :: Bound Rational -> Bound Rational -> OptionStyle BaseRealType
 realWithRangeOptSty lo hi = realOptSty & set_opt_onset vf
                                        & set_opt_help help
-  where help = text "ℝ ∈" <+> docInterval lo hi
+  where help = "ℝ ∈" <+> docInterval lo hi
         vf :: Maybe (ConcreteVal BaseRealType) -> ConcreteVal BaseRealType -> IO OptionSetResult
         vf _ (ConcreteReal x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                    text (show x) <+> text "out of range, expected real value in "
+                                 prettyRational x <+> "out of range, expected real value in "
                                                   <+> docInterval lo hi
 
 -- | Option style for real-valued options with a lower bound
@@ -430,13 +431,13 @@ realWithMaxOptSty hi = realWithRangeOptSty Unbounded hi
 integerWithRangeOptSty :: Bound Integer -> Bound Integer -> OptionStyle BaseIntegerType
 integerWithRangeOptSty lo hi = integerOptSty & set_opt_onset vf
                                               & set_opt_help help
-  where help = text "ℤ ∈" <+> docInterval lo hi
+  where help = "ℤ ∈" <+> docInterval lo hi
         vf :: Maybe (ConcreteVal BaseIntegerType) -> ConcreteVal BaseIntegerType -> IO OptionSetResult
         vf _ (ConcreteInteger x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                    text (show x) <+> text "out of range, expected integer value in "
-                                                  <+> docInterval lo hi
+                                 pretty x <+> "out of range, expected integer value in "
+                                          <+> docInterval lo hi
 
 -- | Option style for integer-valued options with a lower bound
 integerWithMinOptSty :: Bound Integer -> OptionStyle BaseIntegerType
@@ -450,16 +451,16 @@ integerWithMaxOptSty hi = integerWithRangeOptSty Unbounded hi
 enumOptSty :: Set Text -> OptionStyle (BaseStringType Unicode)
 enumOptSty elts = stringOptSty & set_opt_onset vf
                                & set_opt_help help
-  where help = group (text "one of: " <+> align (sep $ map (dquotes . text . Text.unpack) $ Set.toList elts))
+  where help = group ("one of: " <+> align (sep $ map (dquotes . pretty) $ Set.toList elts))
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
         vf _ (ConcreteString (UnicodeLiteral x))
          | x `Set.member` elts = return optOK
          | otherwise = return $ optErr $
-                            text "invalid setting" <+> text (show x) <+>
-                            text ", expected one of:" <+>
-                            align (sep (map (text . Text.unpack) $ Set.toList elts))
+                            "invalid setting" <+> dquotes (pretty x) <+>
+                            ", expected one of:" <+>
+                            align (sep (map pretty $ Set.toList elts))
 
 -- | A configuration syle for options that must be one of a fixed set of text values.
 --   Associated with each string is a validation/callback action that will be run
@@ -469,16 +470,16 @@ listOptSty
   -> OptionStyle (BaseStringType Unicode)
 listOptSty values =  stringOptSty & set_opt_onset vf
                                   & set_opt_help help
-  where help = group (text "one of: " <+> align (sep $ map (dquotes . text . Text.unpack . fst) $ Map.toList values))
+  where help = group ("one of: " <+> align (sep $ map (dquotes . pretty . fst) $ Map.toList values))
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
         vf _ (ConcreteString (UnicodeLiteral x)) =
          fromMaybe
           (return $ optErr $
-            text "invalid setting" <+> text (show x) <+>
-            text ", expected one of:" <+>
-            align (sep (map (text . Text.unpack . fst) $ Map.toList values)))
+            "invalid setting" <+> dquotes (pretty x) <+>
+            ", expected one of:" <+>
+            align (sep (map (pretty . fst) $ Map.toList values)))
           (Map.lookup x values)
 
 
@@ -489,7 +490,7 @@ listOptSty values =  stringOptSty & set_opt_onset vf
 executablePathOptSty :: OptionStyle (BaseStringType Unicode)
 executablePathOptSty = stringOptSty & set_opt_onset vf
                                     & set_opt_help help
-  where help = text "<path>"
+  where help = "<path>"
         vf :: Maybe (ConcreteVal (BaseStringType Unicode))
            -> ConcreteVal (BaseStringType Unicode)
            -> IO OptionSetResult
@@ -497,7 +498,7 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
                  do me <- try (Env.findExecutable (Text.unpack x))
                     case me of
                        Right{} -> return $ optOK
-                       Left e  -> return $ optWarn $ text $ ioeGetErrorString e
+                       Left e  -> return $ optWarn $ pretty $ ioeGetErrorString e
 
 
 -- | A @ConfigDesc@ describes a configuration option before it is installed into
@@ -505,12 +506,12 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 --   an @OptionStyle@ describing the sort of option it is, and an optional
 --   help message describing the semantics of this option.
 data ConfigDesc where
-  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe Doc -> ConfigDesc
+  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
 
 -- | The most general method for construcing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> OptionStyle tp      -- ^ Define the style of this option
-      -> Maybe Doc           -- ^ Help text
+      -> Maybe (Doc Void)    -- ^ Help text
       -> Maybe (ConcreteVal tp) -- ^ A default value for this option
       -> ConfigDesc
 mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h
@@ -577,7 +578,7 @@ data ConfigLeaf where
   ConfigLeaf ::
     !(OptionStyle tp)              {- Style for this option -} ->
     IORef (Maybe (ConcreteVal tp)) {- State of the option -} ->
-    Maybe Doc                      {- Help text for the option -} ->
+    Maybe (Doc Void)               {- Help text for the option -} ->
     ConfigLeaf
 
 -- | Main configuration data type.  It is organized as a trie based on the
@@ -689,7 +690,7 @@ builtInOpts :: Integer -> [ConfigDesc]
 builtInOpts initialVerbosity =
   [ opt verbosity
         (ConcreteInteger initialVerbosity)
-        (text "Verbosity of the simulator: higher values produce more detailed informational and debugging output.")
+        ("Verbosity of the simulator: higher values produce more detailed informational and debugging output." :: Text)
   ]
 
 -- | Return an operation that will consult the current value of the
@@ -715,7 +716,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
 
   -- | Set the value of an option.  Return any generated warnings.
   --   Throw an exception if a validation error occurs.
-  setOpt :: OptionSetting tp -> a -> IO [Doc]
+  setOpt :: OptionSetting tp -> a -> IO [Doc Void]
   setOpt x v = trySetOpt x v >>= checkOptSetResult
 
   -- | Get the current value of an option.  Throw an exception
@@ -726,7 +727,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
 
 -- | Throw an exception if the given @OptionSetResult@ indidcates
 --   an error.  Otherwise, return any generated warnings.
-checkOptSetResult :: OptionSetResult -> IO [Doc]
+checkOptSetResult :: OptionSetResult -> IO [Doc Void]
 checkOptSetResult res =
   case optionSetError res of
     Just msg -> fail (show msg)
@@ -830,16 +831,19 @@ getConfigValues prefix (Config cfg) =
      toList <$> execWriterT (traverseSubtree ps f m)
 
 
-ppSetting :: [Text] -> Maybe (ConcreteVal tp) -> Doc
-ppSetting nm v = fill 30 (text (Text.unpack (Text.intercalate "." nm))
-                           <> maybe empty (\x -> text " = " <> ppConcrete x) v
+ppSetting :: [Text] -> Maybe (ConcreteVal tp) -> Doc ann
+ppSetting nm v = fill 30 (pretty (Text.intercalate "." nm)
+                           <> maybe mempty (\x -> " = " <> ppConcrete x) v
                          )
 
-ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe Doc -> Doc
+ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc Void) -> Doc Void
 ppOption nm sty x help =
-   group (ppSetting nm x <//> indent 2 (opt_help sty)) <$$> maybe empty (indent 2) help
+  vcat
+  [ group $ fillCat [ppSetting nm x, indent 2 (opt_help sty)]
+  , maybe mempty (indent 2) help
+  ]
 
-ppConfigLeaf :: [Text] -> ConfigLeaf -> IO Doc
+ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc Void)
 ppConfigLeaf nm (ConfigLeaf sty ref help) =
   do x <- readIORef ref
      return $ ppOption nm sty x help
@@ -851,12 +855,15 @@ ppConfigLeaf nm (ConfigLeaf sty ref help) =
 configHelp ::
   Text ->
   Config ->
-  IO [Doc]
+  IO [Doc Void]
 configHelp prefix (Config cfg) =
   do m <- readIORef cfg
      let ps = Text.splitOn "." prefix
-         f :: [Text] -> ConfigLeaf -> WriterT (Seq Doc) IO ConfigLeaf
+         f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
                         tell (Seq.singleton d)
                         return leaf
      toList <$> (execWriterT (traverseSubtree ps f m))
+
+prettyRational :: Rational -> Doc ann
+prettyRational = viaShow

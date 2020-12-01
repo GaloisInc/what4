@@ -208,8 +208,7 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -868,44 +867,44 @@ instance Pretty (Expr t tp) where
 
 
 -- | @AppPPExpr@ represents a an application, and it may be let bound.
-data AppPPExpr
+data AppPPExpr ann
    = APE { apeIndex :: !PPIndex
          , apeLoc :: !ProgramLoc
          , apeName :: !Text
-         , apeExprs :: ![PPExpr]
+         , apeExprs :: ![PPExpr ann]
          , apeLength :: !Int
            -- ^ Length of AppPPExpr not including parenthesis.
          }
 
-data PPExpr
-   = FixedPPExpr !Doc ![Doc] !Int
+data PPExpr ann
+   = FixedPPExpr !(Doc ann) ![Doc ann] !Int
      -- ^ A fixed doc with length.
-   | AppPPExpr !AppPPExpr
+   | AppPPExpr !(AppPPExpr ann)
      -- ^ A doc that can be let bound.
 
 -- | Pretty print a AppPPExpr
-apeDoc :: AppPPExpr -> (Doc, [Doc])
-apeDoc a = (text (Text.unpack (apeName a)), ppExprDoc True <$> apeExprs a)
+apeDoc :: AppPPExpr ann -> (Doc ann, [Doc ann])
+apeDoc a = (pretty (apeName a), ppExprDoc True <$> apeExprs a)
 
-textPPExpr :: Text -> PPExpr
-textPPExpr t = FixedPPExpr (text (Text.unpack t)) [] (Text.length t)
+textPPExpr :: Text -> PPExpr ann
+textPPExpr t = FixedPPExpr (pretty t) [] (Text.length t)
 
-stringPPExpr :: String -> PPExpr
-stringPPExpr t = FixedPPExpr (text t) [] (length t)
+stringPPExpr :: String -> PPExpr ann
+stringPPExpr t = FixedPPExpr (pretty t) [] (length t)
 
 -- | Get length of Expr including parens.
-ppExprLength :: PPExpr -> Int
+ppExprLength :: PPExpr ann -> Int
 ppExprLength (FixedPPExpr _ [] n) = n
 ppExprLength (FixedPPExpr _ _ n) = n + 2
 ppExprLength (AppPPExpr a) = apeLength a + 2
 
-parenIf :: Bool -> Doc -> [Doc] -> Doc
+parenIf :: Bool -> Doc ann -> [Doc ann] -> Doc ann
 parenIf _ h [] = h
 parenIf False h l = hsep (h:l)
 parenIf True h l = parens (hsep (h:l))
 
 -- | Pretty print PPExpr
-ppExprDoc :: Bool -> PPExpr -> Doc
+ppExprDoc :: Bool -> PPExpr ann -> Doc ann
 ppExprDoc b (FixedPPExpr d a _) = parenIf b d a
 ppExprDoc b (AppPPExpr a) = uncurry (parenIf b) (apeDoc a)
 
@@ -920,28 +919,29 @@ defaultPPExprOpts =
             }
 
 -- | Pretty print an 'Expr' using let bindings to create the term.
-ppExpr :: Expr t tp -> Doc
+ppExpr :: Expr t tp -> Doc ann
 ppExpr e
      | Prelude.null bindings = ppExprDoc False r
      | otherwise =
-         text "let" <+> align (vcat bindings) PP.<$>
-         text " in" <+> align (ppExprDoc False r)
+       vsep
+       [ "let" <+> align (vcat bindings)
+       , " in" <+> align (ppExprDoc False r) ]
   where (bindings,r) = runST (ppExpr' e defaultPPExprOpts)
 
 instance ShowF (Expr t)
 
 -- | Pretty print the top part of an element.
-ppExprTop :: Expr t tp -> Doc
+ppExprTop :: Expr t tp -> Doc ann
 ppExprTop e = ppExprDoc False r
   where (_,r) = runST (ppExpr' e defaultPPExprOpts)
 
 -- | Contains the elements before, the index, doc, and width and
 -- the elements after.
-type SplitPPExprList = Maybe ([PPExpr], AppPPExpr, [PPExpr])
+type SplitPPExprList ann = Maybe ([PPExpr ann], AppPPExpr ann, [PPExpr ann])
 
-findExprToRemove :: [PPExpr] -> SplitPPExprList
+findExprToRemove :: [PPExpr ann] -> SplitPPExprList ann
 findExprToRemove exprs0 = go [] exprs0 Nothing
-  where go :: [PPExpr] -> [PPExpr] -> SplitPPExprList -> SplitPPExprList
+  where go :: [PPExpr ann] -> [PPExpr ann] -> SplitPPExprList ann -> SplitPPExprList ann
         go _ [] mr = mr
         go prev (e@FixedPPExpr{} : exprs) mr = do
           go (e:prev) exprs mr
@@ -951,7 +951,7 @@ findExprToRemove exprs0 = go [] exprs0 Nothing
           go (AppPPExpr a:prev) exprs (Just (reverse prev, a, exprs))
 
 
-ppExpr' :: forall t tp s . Expr t tp -> PPExprOpts -> ST s ([Doc], PPExpr)
+ppExpr' :: forall t tp s ann. Expr t tp -> PPExprOpts -> ST s ([Doc ann], PPExpr ann)
 ppExpr' e0 o = do
   let max_width = ppExpr_maxWidth o
   let use_decimal = ppExpr_useDecimal o
@@ -966,34 +966,36 @@ ppExpr' e0 o = do
 
   bindingsRef <- newSTRef Seq.empty
 
-  visited <- H.new :: ST s (H.HashTable s PPIndex PPExpr)
+  visited <- H.new :: ST s (H.HashTable s PPIndex (PPExpr ann))
   visited_fns <- H.new :: ST s (H.HashTable s Word64 Text)
 
   let -- Add a binding to the list of bindings
-      addBinding :: AppPPExpr -> ST s PPExpr
+      addBinding :: AppPPExpr ann -> ST s (PPExpr ann)
       addBinding a = do
         let idx = apeIndex a
         cnt <- Seq.length <$> readSTRef bindingsRef
 
         vars <- fromMaybe Set.empty <$> H.lookup bvars idx
+        -- TODO: avoid intermediate String from 'ppBoundVar'
         let args :: [String]
             args = viewSome ppBoundVar <$> Set.toList vars
 
         let nm = case idx of
                    ExprPPIndex e -> "v" ++ show e
                    RatPPIndex _ -> "r" ++ show cnt
-        let lhs = parenIf False (text nm) (text <$> args)
-        let doc = text "--" <+> pretty (plSourceLoc (apeLoc a)) <$$>
-                  lhs <+> text "=" <+> uncurry (parenIf False) (apeDoc a)
+        let lhs = parenIf False (pretty nm) (pretty <$> args)
+        let doc = vcat
+                  [ "--" <+> pretty (plSourceLoc (apeLoc a))
+                  , lhs <+> "=" <+> uncurry (parenIf False) (apeDoc a) ]
         modifySTRef' bindingsRef (Seq.|> doc)
         let len = length nm + sum ((\arg_s -> length arg_s + 1) <$> args)
-        let nm_expr = FixedPPExpr (text nm) (map text args) len
+        let nm_expr = FixedPPExpr (pretty nm) (map pretty args) len
         H.insert visited idx $! nm_expr
         return nm_expr
 
   let fixLength :: Int
-                -> [PPExpr]
-                -> ST s ([PPExpr], Int)
+                -> [PPExpr ann]
+                -> ST s ([PPExpr ann], Int)
       fixLength cur_width exprs
         | cur_width > max_width
         , Just (prev_e, a, next_e) <- findExprToRemove exprs = do
@@ -1004,7 +1006,7 @@ ppExpr' e0 o = do
         return $! (exprs, cur_width)
 
   -- Pretty print an argument.
-  let renderArg :: PrettyArg (Expr t) -> ST s PPExpr
+  let renderArg :: PrettyArg (Expr t) -> ST s (PPExpr ann)
       renderArg (PrettyArg e) = getBindings e
       renderArg (PrettyText txt) = return (textPPExpr txt)
       renderArg (PrettyFunc nm args) =
@@ -1012,13 +1014,13 @@ ppExpr' e0 o = do
            let total_width = Text.length nm + sum ((\e -> 1 + ppExprLength e) <$> exprs0)
            (exprs1, cur_width) <- fixLength total_width exprs0
            let exprs = map (ppExprDoc True) exprs1
-           return (FixedPPExpr (text (Text.unpack nm)) exprs cur_width)
+           return (FixedPPExpr (pretty nm) exprs cur_width)
 
       renderApp :: PPIndex
                 -> ProgramLoc
                 -> Text
                 -> [PrettyArg (Expr t)]
-                -> ST s AppPPExpr
+                -> ST s (AppPPExpr ann)
       renderApp idx loc nm args = Ex.assert (not (Prelude.null args)) $ do
         exprs0 <- traverse renderArg args
         -- Get width not including parenthesis of outer app.
@@ -1034,7 +1036,7 @@ ppExpr' e0 o = do
       cacheResult :: PPIndex
                   -> ProgramLoc
                   -> PrettyApp (Expr t)
-                  -> ST s PPExpr
+                  -> ST s (PPExpr ann)
       cacheResult _ _ (nm,[]) = do
         return (textPPExpr nm)
       cacheResult idx loc (nm,args) = do
@@ -1057,14 +1059,15 @@ ppExpr' e0 o = do
           Nothing -> do
             case symFnInfo f of
               UninterpFnInfo{} -> do
-                let def_doc = text (show f) <+> text "=" <+> text "??"
+                let def_doc = viaShow f <+> "=" <+> "??"
                 modifySTRef' bindingsRef (Seq.|> def_doc)
               DefinedFnInfo vars rhs _ -> do
-                let pp_vars = toListFC (text . ppBoundVar) vars
-                let def_doc = text (show f) <+> hsep pp_vars <+> text "=" <+> ppExpr rhs
+                -- TODO: avoid intermediate String from 'ppBoundVar'
+                let pp_vars = toListFC (pretty . ppBoundVar) vars
+                let def_doc = viaShow f <+> hsep pp_vars <+> "=" <+> ppExpr rhs
                 modifySTRef' bindingsRef (Seq.|> def_doc)
               MatlabSolverFnInfo fn_id _ _ -> do
-                let def_doc = text (show f) <+> text "=" <+> ppMatlabSolverFn fn_id
+                let def_doc = viaShow f <+> "=" <+> ppMatlabSolverFn fn_id
                 modifySTRef' bindingsRef (Seq.|> def_doc)
 
             let d = Text.pack (show f)
@@ -1073,7 +1076,7 @@ ppExpr' e0 o = do
 
       -- Collect definitions for all applications that occur multiple times
       -- in term.
-      getBindings :: Expr t u -> ST s PPExpr
+      getBindings :: Expr t u -> ST s (PPExpr ann)
       getBindings (SemiRingLiteral sr x l) =
         case sr of
           SR.SemiRingNatRepr ->
@@ -1373,7 +1376,7 @@ unaryThresholdOption = CFG.configOption BaseIntegerRepr "backend.unary_threshold
 unaryThresholdDesc :: CFG.ConfigDesc
 unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInteger 0))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Maximum number of values in unary bitvector encoding.")
+        help = Just "Maximum number of values in unary bitvector encoding."
 
 ------------------------------------------------------------------------
 -- Configuration option for controlling how many disjoint ranges
@@ -1388,7 +1391,7 @@ bvdomainRangeLimitOption = CFG.configOption BaseIntegerRepr "backend.bvdomain_ra
 bvdomainRangeLimitDesc :: CFG.ConfigDesc
 bvdomainRangeLimitDesc = CFG.mkOpt bvdomainRangeLimitOption sty help (Just (ConcreteInteger 2))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Maximum number of ranges in bitvector domains.")
+        help = Just "Maximum number of ranges in bitvector domains."
 
 ------------------------------------------------------------------------
 -- Cache start size
@@ -1404,7 +1407,7 @@ cacheStartSizeOption = CFG.configOption BaseIntegerRepr "backend.cache_start_siz
 cacheStartSizeDesc :: CFG.ConfigDesc
 cacheStartSizeDesc = CFG.mkOpt cacheStartSizeOption sty help (Just (ConcreteInteger 100000))
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just (text "Starting size for element cache")
+        help = Just "Starting size for element cache"
 
 ------------------------------------------------------------------------
 -- Cache terms
@@ -1445,7 +1448,7 @@ cacheOptDesc gen storageRef szSetting =
   CFG.mkOpt
     cacheTerms
     (cacheOptStyle gen storageRef szSetting)
-    (Just (text "Use hash-consing during term construction"))
+    (Just "Use hash-consing during term construction")
     (Just (ConcreteBool False))
 
 
