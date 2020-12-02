@@ -608,7 +608,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   @div@ and @mod@ are the unique Euclidean division operations satisfying the
   --   following for all @y /= 0@:
   --
-  --   * @x * (div x y) + (mod x y) == x@
+  --   * @y * (div x y) + (mod x y) == x@
   --   * @ 0 <= mod x y < abs y@
   --
   --   The value of @intDiv x y@ is undefined when @y = 0@.
@@ -808,10 +808,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | returns true if the given bitvector is non-zero.
   bvIsNonzero :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNonzero sym x = do
-     let w = bvWidth x
-     zro <- bvLit sym w (BV.zero w)
-     notPred sym  =<< bvEq sym x zro
 
   -- | Left shift.  The shift amount is treated as an unsigned value.
   bvShl :: (1 <= w) => sym ->
@@ -2804,9 +2800,13 @@ asConcrete x =
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
     BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
-    BaseStructRepr _ -> Nothing -- FIXME?
-    BaseArrayRepr _ _ -> Nothing -- FIXME?
-
+    BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
+    BaseArrayRepr idx _tp -> do
+      def <- asConstantArray x
+      c_def <- asConcrete def
+      -- TODO: what about cases where there are updates to the array?
+      -- Passing Map.empty is probably wrong.
+      pure (ConcreteArray idx c_def Map.empty)
 
 -- | Create a literal symbolic value from a concrete value.
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
