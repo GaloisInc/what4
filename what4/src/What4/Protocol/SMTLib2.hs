@@ -257,6 +257,9 @@ unescapeText = go mempty
 class Show a => SMTLib2Tweaks a where
   smtlib2tweaks :: a
 
+  smtlib2exitCommand :: Maybe SMT2.Command
+  smtlib2exitCommand = Just SMT2.exit
+
   -- | Return a representation of the type associated with a (multi-dimensional) symbolic
   -- array.
   --
@@ -662,7 +665,7 @@ writeCheckSat :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
 writeCheckSat w = addCommandNoAck w SMT2.checkSat
 
 writeExit :: forall a t. SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
-writeExit w = addCommand w SMT2.exit
+writeExit w = mapM_ (addCommand w) (smtlib2exitCommand @a)
 
 setLogic :: SMTLib2Tweaks a => WriterConn t (Writer a) -> SMT2.Logic -> IO ()
 setLogic w l = addCommand w $ SMT2.setLogic l
@@ -702,10 +705,11 @@ parseRealSolverValue s = fail $ "Could not parse solver value: " ++ show s
 
 parseBvSolverValue :: MonadFail m => NatRepr w -> SExp -> m (BV.BV w)
 parseBvSolverValue w s
-  | Pair w' bv <- parseBVLitHelper s = case w' `testEquality` w of
-      Just Refl -> return bv
-      Nothing -> fail $ "Solver value parsed with width " ++
-                 show w' ++ ", but should have width " ++ show w
+  | Pair w' bv <- parseBVLitHelper s = case w' `compareNat` w of
+      NatLT zw -> return (BV.zext (addNat w' (addNat zw knownNat)) bv)
+      NatEQ -> return bv
+      NatGT _ -> fail $ "Solver value parsed with width " ++
+               show w' ++ ", but should have width " ++ show w
 
 natBV :: Natural
       -- ^ width
