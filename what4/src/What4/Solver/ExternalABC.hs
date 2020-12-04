@@ -26,7 +26,6 @@ module What4.Solver.ExternalABC
   ) where
 
 import           System.IO
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -52,7 +51,7 @@ abcOptions =
   [ mkOpt
       abcPath
       executablePathOptSty
-      (Just (PP.text "ABC executable path"))
+      (Just "ABC executable path")
       (Just (ConcreteString "abc"))
   ]
 
