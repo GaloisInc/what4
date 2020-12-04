@@ -33,7 +33,6 @@ import           Data.Bits
 import           Data.String
 import           System.IO
 import qualified System.IO.Streams as Streams
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Config
@@ -72,12 +71,12 @@ cvc4Options :: [ConfigDesc]
 cvc4Options =
   [ mkOpt cvc4Path
           executablePathOptSty
-          (Just (PP.text "Path to CVC4 executable"))
+          (Just "Path to CVC4 executable")
           (Just (ConcreteString "cvc4"))
   , intWithRangeOpt cvc4RandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
   , mkOpt cvc4Timeout
           integerOptSty
-          (Just (PP.text "Per-check timeout in milliseconds (zero is none)"))
+          (Just "Per-check timeout in milliseconds (zero is none)")
           (Just (ConcreteInteger 0))
   ]
 

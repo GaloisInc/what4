@@ -782,7 +782,7 @@ stringTest4 sym solver =
 
      np <- notPred sym p
      lena <- stringLength sym a
-     fv <- natLit sym 5
+     fv <- natLit sym 10
      plen <- natLe sym fv lena
      q <- andPred sym np plen
 
@@ -791,7 +791,7 @@ stringTest4 sym solver =
           do alit <- fromChar8Lit <$> groundEval fn a
              ilit <- groundEval fn i
 
-             not (BS.isInfixOf bsx alit) @? "substring not found"
+             not (BS.isInfixOf bsx (BS.drop 5 alit)) @? "substring not found"
              ilit == (-1) @? "expected neg one"
 
        _ -> fail "expected satisfable model"

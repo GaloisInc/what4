@@ -23,7 +23,6 @@ module What4.Solver.STP
   ) where
 
 import           Data.Bits
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Config
@@ -55,7 +54,7 @@ stpOptions :: [ConfigDesc]
 stpOptions =
   [ mkOpt stpPath
           executablePathOptSty
-          (Just (PP.text "Path to STP executable."))
+          (Just "Path to STP executable.")
           (Just (ConcreteString "stp"))
   , intWithRangeOpt stpRandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
   ]

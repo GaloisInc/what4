@@ -52,7 +52,6 @@ library
   build-depends:
     base >= 4.8 && < 5,
     attoparsec >= 0.13,
-    ansi-wl-pprint >= 0.6.8,
     bimap >= 0.2,
     bifunctors >= 5,
     bv-sized >= 1.0.0,
@@ -73,18 +72,18 @@ library
     mtl >= 2.2.1,
     panic >= 0.3,
     parameterized-utils >= 2.1 && < 2.2,
-    prettyprinter,
+    prettyprinter >= 1.7.0,
     process >= 1.2,
     scientific >= 0.3.6,
     temporary >= 1.2,
     template-haskell,
     text >= 1.1,
-    th-abstraction >=0.1 && <0.4,
+    th-abstraction >=0.1 && <0.5,
     transformers >= 0.4,
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
     vector >= 0.12.1,
-    versions >= 3.5.2,
+    versions >= 3.5.2 && < 4.0,
     zenc >= 0.1.0 && < 0.2.0,
     ghc-prim >= 0.5.2
 
@@ -312,6 +311,7 @@ test-suite iteexprs_tests
                , tasty >= 0.10
                , tasty-hunit >= 0.9
                , tasty-hedgehog
+               , containers >= 0.5.0.0
                , what4
 
   ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns

@@ -48,12 +48,12 @@ import           Data.Proxy
 import           Data.IORef
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
+import           Prettyprinter
 import           System.Exit
 import           System.IO
 import qualified System.IO.Streams as Streams
 import           System.Process
                    (ProcessHandle, terminateProcess, waitForProcess)
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
 
 import           What4.Expr
 import           What4.Interface (SolverEvent(..))
@@ -361,7 +361,7 @@ getUnsatAssumptions :: SMTReadWriter solver => SolverProcess scope solver -> IO 
 getUnsatAssumptions proc =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useUnsatAssumptions) $
-       fail $ show $ text (smtWriterName conn) <+> text "is not configured to produce UNSAT assumption lists"
+       fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT assumption lists"
      addCommandNoAck conn (getUnsatAssumptionsCommand conn)
      smtUnsatAssumptionsResult conn (solverResponse proc)
 
@@ -372,7 +372,7 @@ getUnsatCore :: SMTReadWriter solver => SolverProcess scope solver -> IO [Text]
 getUnsatCore proc =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useUnsatCores) $
-       fail $ show $ text (smtWriterName conn) <+> text "is not configured to produce UNSAT cores"
+       fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT cores"
      addCommandNoAck conn (getUnsatCoreCommand conn)
      smtUnsatCoreResult conn (solverResponse proc)
 

@@ -120,7 +120,7 @@ module What4.Interface
     -- * SymEncoder
   , SymEncoder(..)
 
-    -- * Utilitity combinators
+    -- * Utility combinators
     -- ** Boolean operations
   , backendPred
   , andAllOf
@@ -141,6 +141,9 @@ module What4.Interface
     -- ** Indexing
   , muxRange
 
+    -- * Exceptions
+  , InvalidRange(..)
+
     -- * Reexports
   , module Data.Parameterized.NatRepr
   , module What4.BaseTypes
@@ -159,7 +162,7 @@ module What4.Interface
 import Control.Monad.Fail( MonadFail )
 #endif
 
-import           Control.Exception (assert)
+import           Control.Exception (assert, Exception)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -180,7 +183,7 @@ import           Data.Ratio
 import           Data.Scientific (Scientific)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
-import           Text.PrettyPrint.ANSI.Leijen (Doc)
+import           Prettyprinter (Doc)
 
 import           What4.BaseTypes
 import           What4.Config
@@ -198,6 +201,7 @@ import           What4.Utils.StringLiteral
 ------------------------------------------------------------------------
 -- SymExpr names
 
+-- | Symbolic boolean values, AKA predicates.
 type Pred sym = SymExpr sym BaseBoolType
 
 -- | Symbolic natural numbers.
@@ -311,12 +315,15 @@ class HasAbsValue e => IsExpr e where
   -- upper and lower bounds as integers
   signedBVBounds :: (1 <= w) => e (BaseBVType w) -> Maybe (Integer, Integer)
 
+  -- | If this expression syntactically represents an "affine" form, return its components.
+  --   When @asAffineVar x = Just (c,r,o)@, then we have @x == c*r + o@.
   asAffineVar :: e tp -> Maybe (ConcreteVal tp, e tp, ConcreteVal tp)
 
   -- | Return the string value if this is a constant string
   asString :: e (BaseStringType si) -> Maybe (StringLiteral si)
   asString _ = Nothing
 
+  -- | Return the representation of the string info for a string-typed term.
   stringInfo :: e (BaseStringType si) -> StringInfoRepr si
   stringInfo e =
     case exprType e of
@@ -341,7 +348,7 @@ class HasAbsValue e => IsExpr e where
       BaseBVRepr w -> w
 
   -- | Print a sym expression for debugging or display purposes.
-  printSymExpr :: e tp -> Doc
+  printSymExpr :: e tp -> Doc ann
 
 
 newtype ArrayResultWrapper f idx tp =
@@ -406,7 +413,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Get the currently-installed solver log listener, if one has been installed.
   getSolverLogListener :: sym -> IO (Maybe (SolverEvent -> IO ()))
 
-  -- | Provide the given even to the currently installed
+  -- | Provide the given event to the currently installed
   --   solver log listener, if any.
   logSolverEvent :: sym -> SolverEvent -> IO ()
 
@@ -469,7 +476,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   that can be used to maintain a connection with the given term.
   --   The 'SymAnnotation' is intended to be used as the key in a hash
   --   table or map to additional data can be maintained alongside the terms.
-  --   The returned 'SymExpr' has the same semantics as the arugmnent, but
+  --   The returned 'SymExpr' has the same semantics as the argument, but
   --   has embedded in it the 'SymAnnotation' value so that it can be used
   --   later during term traversals.
   --
@@ -598,10 +605,10 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | @intDiv x y@ computes the integer division of @x@ by @y@.  This division is
   --   interpreted the same way as the SMT-Lib integer theory, which states that
-  --   @div@ and @mod@ are the unique Eucledian division operations satisfying the
+  --   @div@ and @mod@ are the unique Euclidean division operations satisfying the
   --   following for all @y /= 0@:
   --
-  --   * @x * (div x y) + (mod x y) == x@
+  --   * @y * (div x y) + (mod x y) == x@
   --   * @ 0 <= mod x y < abs y@
   --
   --   The value of @intDiv x y@ is undefined when @y = 0@.
@@ -801,10 +808,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | returns true if the given bitvector is non-zero.
   bvIsNonzero :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNonzero sym x = do
-     let w = bvWidth x
-     zro <- bvLit sym w (BV.zero w)
-     notPred sym  =<< bvEq sym x zro
 
   -- | Left shift.  The shift amount is treated as an unsigned value.
   bvShl :: (1 <= w) => sym ->
@@ -1012,7 +1015,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
        return (ov, xy)
 
 
-  -- | Compute the carryless multiply of the two input bitvectors.
+  -- | Compute the carry-less multiply of the two input bitvectors.
   --   This operation is essentially the same as a standard multiply, except that
   --   the partial addends are simply XOR'd together instead of using a standard
   --   adder.  This operation is useful for computing on GF(2^n) polynomials.
@@ -1349,13 +1352,13 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Round a real number to an integer.
   --
   -- Numbers are rounded to the nearest integer, with rounding away from
-  -- zero when two integers are equi-distant (e.g., 1.5 rounds to 2).
+  -- zero when two integers are equidistant (e.g., 1.5 rounds to 2).
   realRound :: sym -> SymReal sym -> IO (SymInteger sym)
 
   -- | Round a real number to an integer.
   --
-  -- Numbers are rounded to the neareset integer, with rounding toward
-  -- even values when two integers are equi-distant (e.g., 2.5 rounds to 2).
+  -- Numbers are rounded to the nearest integer, with rounding toward
+  -- even values when two integers are equidistant (e.g., 2.5 rounds to 2).
   realRoundEven :: sym -> SymReal sym -> IO (SymInteger sym)
 
   -- | Round down to the nearest integer that is at most this value.
@@ -1375,6 +1378,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   whose value (signed or unsigned) is congruent to the input integer, modulo @2^w@.
   --
   --   This operation has the following properties:
+  --
   --   *  @bvToInteger (integerToBv x w) == mod x (2^w)@
   --   *  @bvToInteger (integerToBV x w) == x@     when @0 <= x < 2^w@.
   --   *  @sbvToInteger (integerToBV x w) == mod (x + 2^(w-1)) (2^w) - 2^(w-1)@
@@ -1405,7 +1409,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Convert a real number to an unsigned bitvector.
   --
   -- Numbers are rounded to the nearest representable number, with rounding away from
-  -- zero when two integers are equi-distant (e.g., 1.5 rounds to 2).
+  -- zero when two integers are equidistant (e.g., 1.5 rounds to 2).
   -- When the real is negative the result is zero.
   realToBV :: (1 <= w) => sym -> SymReal sym -> NatRepr w -> IO (SymBV sym w)
   realToBV sym r w = do
@@ -1415,7 +1419,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Convert a real number to a signed bitvector.
   --
   -- Numbers are rounded to the nearest representable number, with rounding away from
-  -- zero when two integers are equi-distant (e.g., 1.5 rounds to 2).
+  -- zero when two integers are equidistant (e.g., 1.5 rounds to 2).
   realToSBV  :: (1 <= w) => sym -> SymReal sym -> NatRepr w -> IO (SymBV sym w)
   realToSBV sym r w  = do
     i <- realRound sym r
@@ -1919,21 +1923,21 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Test if a floating-point value is (positive or negative) infinity.
   floatIsInf :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
-  -- | Test if a floaint-point value is (positive or negative) zero.
+  -- | Test if a floating-point value is (positive or negative) zero.
   floatIsZero :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
-  -- | Test if a floaint-point value is positive.  NOTE!
+  -- | Test if a floating-point value is positive.  NOTE!
   --   NaN is considered neither positive nor negative.
   floatIsPos :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
-  -- | Test if a floaint-point value is negative.  NOTE!
+  -- | Test if a floating-point value is negative.  NOTE!
   --   NaN is considered neither positive nor negative.
   floatIsNeg :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
-  -- | Test if a floaint-point value is subnormal.
+  -- | Test if a floating-point value is subnormal.
   floatIsSubnorm :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
-  -- | Test if a floaint-point value is normal.
+  -- | Test if a floating-point value is normal.
   floatIsNorm :: sym -> SymFloat sym fpp -> IO (Pred sym)
 
   -- | If-then-else on floating point numbers.
@@ -2271,7 +2275,9 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 -- apply this newtype.
 newtype SymBV' sym w = MkSymBV' (SymBV sym w)
 
--- | Join a @Vector@ of smaller bitvectors.
+-- | Join a @Vector@ of smaller bitvectors.  The vector is
+--   interpreted in big endian order; that is, with most
+--   significant bitvector first.
 bvJoinVector :: forall sym n w. (1 <= w, IsExprBuilder sym)
              => sym
              -> NatRepr w
@@ -2287,6 +2293,8 @@ bvJoinVector sym w =
         bvConcat' _ (MkSymBV' x) (MkSymBV' y) = MkSymBV' <$> bvConcat sym x y
 
 -- | Split a bitvector to a @Vector@ of smaller bitvectors.
+--   The returned vector is in big endian order; that is, with most
+--   significant bitvector first.
 bvSplitVector :: forall sym n w. (IsExprBuilder sym, 1 <= w, 1 <= n)
               => sym
               -> NatRepr n
@@ -2349,6 +2357,12 @@ indexLit :: IsExprBuilder sym => sym -> IndexLit idx -> IO (SymExpr sym idx)
 indexLit sym (NatIndexLit i)  = natLit sym i
 indexLit sym (BVIndexLit w v) = bvLit sym w v
 
+-- | A utility combinator for combining actions
+--   that build terms with if/then/else.
+--   If the given predicate is concretely true or
+--   false only the corresponding "then" or "else"
+--   action is run; otherwise both actions are run
+--   and combined with the given "ite" action.
 iteM :: IsExprBuilder sym
         => (sym -> Pred sym -> v -> v -> IO v)
         -> sym -> Pred sym -> IO v -> IO v -> IO v
@@ -2386,10 +2400,31 @@ data UnfoldPolicy
       --   arguments are concrete.
  deriving (Eq, Ord, Show)
 
+-- | Evaluates an @UnfoldPolicy@ on a collection of arguments.
 shouldUnfold :: IsExpr e => UnfoldPolicy -> Ctx.Assignment e args -> Bool
 shouldUnfold AlwaysUnfold _ = True
 shouldUnfold NeverUnfold _ = False
 shouldUnfold UnfoldConcrete args = allFC baseIsConcrete args
+
+
+-- | This exception is thrown if the user requests to make a bounded variable,
+--   but gives incoherent or out-of-range bounds.
+data InvalidRange where
+  InvalidRange ::
+    BaseTypeRepr bt ->
+    Maybe (ConcreteValue bt) ->
+    Maybe (ConcreteValue bt) ->
+    InvalidRange
+
+instance Exception InvalidRange
+instance Show InvalidRange where
+  show (InvalidRange bt mlo mhi) =
+    case bt of
+      BaseNatRepr     -> unwords ["invalid natural range", show mlo, show mhi]
+      BaseIntegerRepr -> unwords ["invalid integer range", show mlo, show mhi]
+      BaseRealRepr    -> unwords ["invalid real range", show mlo, show mhi]
+      BaseBVRepr w    -> unwords ["invalid bitvector range", show w ++ "-bit", show mlo, show mhi]
+      _               -> unwords ["invalid range for type", show bt]
 
 -- | This extends the interface for building expressions with operations
 --   for creating new symbolic constants and functions.
@@ -2407,25 +2442,57 @@ class ( IsExprBuilder sym
   -- | Create a fresh latch variable.
   freshLatch    :: sym -> SolverSymbol -> BaseTypeRepr tp -> IO (SymExpr sym tp)
 
-  -- | Create a fresh bitvector value with optional upper and lower bounds (which bound the
-  --   unsigned value of the bitvector).
-  freshBoundedBV :: (1 <= w) => sym -> SolverSymbol -> NatRepr w -> Maybe Natural -> Maybe Natural -> IO (SymBV sym w)
+  -- | Create a fresh bitvector value with optional lower and upper bounds (which bound the
+  --   unsigned value of the bitvector). If provided, the bounds are inclusive.
+  --   If inconsistent or out-of-range bounds are given, an @InvalidRange@ exception will be thrown.
+  freshBoundedBV :: (1 <= w) =>
+    sym ->
+    SolverSymbol ->
+    NatRepr w ->
+    Maybe Natural {- ^ lower bound -} ->
+    Maybe Natural {- ^ upper bound -} ->
+    IO (SymBV sym w)
 
-  -- | Create a fresh bitvector value with optional upper and lower bounds (which bound the
-  --   signed value of the bitvector)
-  freshBoundedSBV :: (1 <= w) => sym -> SolverSymbol -> NatRepr w -> Maybe Integer -> Maybe Integer -> IO (SymBV sym w)
+  -- | Create a fresh bitvector value with optional lower and upper bounds (which bound the
+  --   signed value of the bitvector).  If provided, the bounds are inclusive.
+  --   If inconsistent or out-of-range bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedSBV :: (1 <= w) =>
+    sym ->
+    SolverSymbol ->
+    NatRepr w ->
+    Maybe Integer {- ^ lower bound -} ->
+    Maybe Integer {- ^ upper bound -} ->
+    IO (SymBV sym w)
 
-  -- | Create a fresh natural number constant with optional upper and lower bounds.
+  -- | Create a fresh natural number constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedNat :: sym -> SolverSymbol -> Maybe Natural -> Maybe Natural -> IO (SymNat sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedNat ::
+    sym ->
+    SolverSymbol ->
+    Maybe Natural {- ^ lower bound -} ->
+    Maybe Natural {- ^ upper bound -} ->
+    IO (SymNat sym)
 
-  -- | Create a fresh integer constant with optional upper and lower bounds.
+  -- | Create a fresh integer constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedInt :: sym -> SolverSymbol -> Maybe Integer -> Maybe Integer -> IO (SymInteger sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedInt ::
+    sym ->
+    SolverSymbol ->
+    Maybe Integer {- ^ lower bound -} ->
+    Maybe Integer {- ^ upper bound -} ->
+    IO (SymInteger sym)
 
-  -- | Create a fresh real constant with optional upper and lower bounds.
+  -- | Create a fresh real constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
-  freshBoundedReal :: sym -> SolverSymbol -> Maybe Rational -> Maybe Rational -> IO (SymReal sym)
+  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+  freshBoundedReal ::
+    sym ->
+    SolverSymbol ->
+    Maybe Rational {- ^ lower bound -} ->
+    Maybe Rational {- ^ upper bound -} ->
+    IO (SymReal sym)
 
 
   ----------------------------------------------------------------------
@@ -2441,14 +2508,14 @@ class ( IsExprBuilder sym
   -- | Return an expression that references the bound variable.
   varExpr :: sym -> BoundVar sym tp -> SymExpr sym tp
 
-  -- | @forallPred sym v e@ returns an expression that repesents @forall v . e@.
+  -- | @forallPred sym v e@ returns an expression that represents @forall v . e@.
   -- Throws a user error if bound var has already been used in a quantifier.
   forallPred :: sym
              -> BoundVar sym tp
              -> Pred sym
              -> IO (Pred sym)
 
-  -- | @existsPred sym v e@ returns an expression that repesents @exists v . e@.
+  -- | @existsPred sym v e@ returns an expression that represents @exists v . e@.
   -- Throws a user error if bound var has already been used in a quantifier.
   existsPred :: sym
              -> BoundVar sym tp
@@ -2539,6 +2606,11 @@ baseIsConcrete x =
         Just x' -> baseIsConcrete x'
         Nothing -> False
 
+-- | Return some default value for each base type.
+--   For numeric types, this is 0; for booleans, false;
+--   for strings, the empty string.  Structs are
+--   filled with default values for every field,
+--   default arrays are constant arrays of default values.
 baseDefaultValue :: forall sym bt
                   . IsExprBuilder sym
                  => sym
@@ -2728,9 +2800,13 @@ asConcrete x =
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
     BaseBVRepr w    -> ConcreteBV w <$> asBV x
     BaseFloatRepr _ -> Nothing
-    BaseStructRepr _ -> Nothing -- FIXME?
-    BaseArrayRepr _ _ -> Nothing -- FIXME?
-
+    BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
+    BaseArrayRepr idx _tp -> do
+      def <- asConstantArray x
+      c_def <- asConcrete def
+      -- TODO: what about cases where there are updates to the array?
+      -- Passing Map.empty is probably wrong.
+      pure (ConcreteArray idx c_def Map.empty)
 
 -- | Create a literal symbolic value from a concrete value.
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)

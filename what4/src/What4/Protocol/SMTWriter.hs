@@ -114,7 +114,6 @@ import qualified Data.BitVector.Sized as BV
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
-import           Data.List (last)
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Maybe
 import           Data.Parameterized.Classes (ShowF(..))
@@ -133,7 +132,7 @@ import qualified Data.Text.Lazy as Lazy
 import           Data.Word
 
 import           Numeric.Natural
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), (<>))
+import           Prettyprinter hiding (Unbounded)
 import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
@@ -990,7 +989,7 @@ assumeFormula c p = addCommand c (assertCommand c p)
 assumeFormulaWithName :: SMTWriter h => WriterConn t h -> Term h -> Text -> IO ()
 assumeFormulaWithName conn p nm =
   do unless (supportedFeatures conn `hasProblemFeature` useUnsatCores) $
-       fail $ show $ text (smtWriterName conn) <+> text "is not configured to produce UNSAT cores"
+       fail $ show $ pretty (smtWriterName conn) <+> "is not configured to produce UNSAT cores"
      addCommand conn (assertNamedCommand conn p nm)
 
 assumeFormulaWithFreshName :: SMTWriter h => WriterConn t h -> Term h -> IO Text
@@ -1160,11 +1159,11 @@ getBaseSMT_Type v = do
   conn <- asks scConn
   let errMsg typename =
         show
-          $   text (show (bvarName v))
-          <+> text "is a"
-          <+> text typename
-          <+> text "variable, and we do not support this with"
-          <+> text (smtWriterName conn ++ ".")
+          $   viaShow (bvarName v)
+          <+> "is a"
+          <+> pretty typename
+          <+> "variable, and we do not support this with"
+          <+> pretty (smtWriterName conn ++ ".")
   case typeMap conn (bvarType v) of
     Left  (StringTypeUnsupported (Some si)) -> fail $ errMsg ("string " ++ show si)
     Left  ComplexTypeUnsupported -> fail $ errMsg "complex"
@@ -1485,9 +1484,11 @@ sbvIntTerm w0 x0 = sumExpr (signed_offset : go w0 x0 (natValue w0 - 2))
 unsupportedTerm  :: MonadFail m => Expr t tp -> m a
 unsupportedTerm e =
   fail $ show $
-    text "Cannot generate solver output for term generated at"
-      <+> pretty (plSourceLoc (exprLoc e)) <> text ":" <$$>
-    indent 2 (pretty e)
+  vcat
+  [ "Cannot generate solver output for term generated at"
+      <+> pretty (plSourceLoc (exprLoc e)) <> ":"
+  , indent 2 (pretty e)
+  ]
 
 -- | Checks whether a variable is supported.
 --
@@ -1509,9 +1510,9 @@ checkVarTypeSupport var = do
 theoryUnsupported :: MonadFail m => WriterConn t h -> String -> Expr t tp -> m a
 theoryUnsupported conn theory_name t =
   fail $ show $
-    text (smtWriterName conn) <+> text "does not support the" <+> text theory_name
-    <+> text "term generated at" <+> pretty (plSourceLoc (exprLoc t))
-    -- <> text ":" <$$> indent 2 (pretty t)
+    pretty (smtWriterName conn) <+> "does not support the" <+> pretty theory_name
+    <+> "term generated at" <+> pretty (plSourceLoc (exprLoc t))
+    -- <> ":" <$$> indent 2 (pretty t)
 
 
 checkIntegerSupport :: Expr t tp -> SMTCollector t h ()
@@ -1568,35 +1569,37 @@ checkArgumentTypes conn types = do
   forFC_ types $ \tp -> do
     case tp of
       FnArrayTypeMap{} | supportFunctionArguments conn == False -> do
-          fail $ show $ text (smtWriterName conn)
-             <+> text  "does not allow arrays encoded as functions to be function arguments."
+          fail $ show $ pretty (smtWriterName conn)
+             <+> "does not allow arrays encoded as functions to be function arguments."
       _ ->
         return ()
 
 -- | This generates an error message from a solver and a type error.
 --
 -- It issed for error reporting
-type SMTSource = String -> BaseTypeError -> Doc
+type SMTSource ann = String -> BaseTypeError -> Doc ann
 
-ppBaseTypeError :: BaseTypeError -> Doc
-ppBaseTypeError ComplexTypeUnsupported = text "complex values"
-ppBaseTypeError ArrayUnsupported = text "arrays encoded as a functions"
-ppBaseTypeError (StringTypeUnsupported (Some si)) = text ("string values " ++ show si)
+ppBaseTypeError :: BaseTypeError -> Doc ann
+ppBaseTypeError ComplexTypeUnsupported = "complex values"
+ppBaseTypeError ArrayUnsupported = "arrays encoded as a functions"
+ppBaseTypeError (StringTypeUnsupported (Some si)) = "string values" <+> viaShow si
 
-eltSource :: Expr t tp -> SMTSource
+eltSource :: Expr t tp -> SMTSource ann
 eltSource e solver_name cause =
-  text solver_name <+>
-  text "does not support" <+> ppBaseTypeError cause <>
-  text ", and cannot interpret the term generated at" <+>
-  pretty (plSourceLoc (exprLoc e)) <> text ":" <$$>
-  indent 2 (pretty e) <> text "."
+  vcat
+  [ pretty solver_name <+>
+    "does not support" <+> ppBaseTypeError cause <>
+    ", and cannot interpret the term generated at" <+>
+    pretty (plSourceLoc (exprLoc e)) <> ":"
+  , indent 2 (pretty e) <> "."
+  ]
 
-fnSource :: SolverSymbol -> ProgramLoc -> SMTSource
+fnSource :: SolverSymbol -> ProgramLoc -> SMTSource ann
 fnSource fn_name loc solver_name cause =
-  text solver_name <+>
-  text "does not support" <+> ppBaseTypeError cause <>
-  text ", and cannot interpret the function" <+> text (show fn_name) <+>
-  text "generated at" <+> pretty (plSourceLoc loc) <> text "."
+  pretty solver_name <+>
+  "does not support" <+> ppBaseTypeError cause <>
+  ", and cannot interpret the function" <+> viaShow fn_name <+>
+  "generated at" <+> pretty (plSourceLoc loc) <> "."
 
 -- | Evaluate a base type repr as a first class SMT type.
 --
@@ -1604,7 +1607,7 @@ fnSource fn_name loc solver_name cause =
 -- returned by functions.
 evalFirstClassTypeRepr :: MonadFail m
                        => WriterConn t h
-                       -> SMTSource
+                       -> SMTSource ann
                        -> BaseTypeRepr tp
                        -> m (TypeMap tp)
 evalFirstClassTypeRepr conn src base_tp =
@@ -1896,10 +1899,13 @@ appSMTExpr ae = do
          let ytp = smtExprType ye
 
          let checkArrayType z (FnArrayTypeMap{}) = do
-               fail $ show $ text (smtWriterName conn) <+>
-                 text "does not support checking equality for the array generated at"
-                 <+> pretty (plSourceLoc (exprLoc z)) <> text ":" <$$>
-                 indent 2 (pretty z)
+               fail $ show $
+                 vcat
+                 [ pretty (smtWriterName conn) <+>
+                   "does not support checking equality for the array generated at"
+                   <+> pretty (plSourceLoc (exprLoc z)) <> ":"
+                 , indent 2 (pretty z)
+                 ]
              checkArrayType _ _ = return ()
 
          checkArrayType x xtp
@@ -1913,10 +1919,10 @@ appSMTExpr ae = do
     BaseIte btp _ c x y -> do
       let errMsg typename =
            show
-             $   text "we do not support if/then/else expressions at type"
-             <+> text typename
-             <+> text "with solver"
-             <+> text (smtWriterName conn ++ ".")
+             $   "we do not support if/then/else expressions at type"
+             <+> pretty typename
+             <+> "with solver"
+             <+> pretty (smtWriterName conn) <> "."
       case typeMap conn btp of
         Left  (StringTypeUnsupported (Some si)) -> fail $ errMsg ("string " ++ show si)
         Left  ComplexTypeUnsupported -> fail $ errMsg "complex"
@@ -2554,8 +2560,8 @@ appSMTExpr ae = do
               -- Supporting arrays as functons requires that we can create
               -- function definitions.
               when (not (supportFunctionDefs conn)) $ do
-                fail $ show $ text (smtWriterName conn) <+>
-                  text "does not support arrays as functions."
+                fail $ show $ pretty (smtWriterName conn) <+>
+                  "does not support arrays as functions."
               -- Create names for index variables.
               args <- liftIO $ createTypeMapArgsForArray conn idx_types
               -- Get list of terms for arguments.
@@ -2590,8 +2596,8 @@ appSMTExpr ae = do
               constFn idx_smt_types (Some value_type) (asBase v)
         Nothing -> do
           when (not (supportFunctionDefs conn)) $ do
-            fail $ show $ text (smtWriterName conn) <+>
-              text "cannot encode constant arrays."
+            fail $ show $ pretty (smtWriterName conn) <+>
+              "cannot encode constant arrays."
           -- Constant functions use unnamed variables.
           let array_type = mkArray idx_types value_type
           -- Create names for index variables.

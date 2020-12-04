@@ -56,8 +56,9 @@ import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Void
 import           Data.Word
-import           Text.PrettyPrint.ANSI.Leijen
+import           Prettyprinter (Doc)
 
 import           What4.BaseTypes
 import           What4.Expr.AppTheory
@@ -96,7 +97,7 @@ data CollectedVarInfo t
                       , _forallQuantifiers :: !(QuantifierInfoMap t)
                       , _latches  :: !(Set (Some (ExprBoundVar t)))
                         -- | List of errors found during parsing.
-                      , _varErrors :: !(Seq Doc)
+                      , _varErrors :: !(Seq (Doc Void))
                       }
 
 -- | Describes types of functionality required by solver based on the problem.
@@ -121,7 +122,7 @@ forallQuantifiers = lens _forallQuantifiers (\s v -> s { _forallQuantifiers = v 
 latches :: Simple Lens (CollectedVarInfo t) (Set (Some (ExprBoundVar t)))
 latches = lens _latches (\s v -> s { _latches = v })
 
-varErrors :: Simple Lens (CollectedVarInfo t) (Seq Doc)
+varErrors :: Simple Lens (CollectedVarInfo t) (Seq (Doc Void))
 varErrors = lens _varErrors (\s v -> s { _varErrors = v })
 
 -- | Return variables needed to define element as a predicate

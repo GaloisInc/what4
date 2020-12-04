@@ -77,7 +77,7 @@ import qualified Data.Text as T
 import           Data.Traversable
 import           Data.Typeable
 import           System.IO (hPutStrLn, stderr)
-import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+import           Prettyprinter
 
 import qualified Data.Parameterized.HashTable as PH
 import           Data.Parameterized.Nonce
@@ -106,7 +106,7 @@ bltParams = configOption knownRepr "blt_params"
 bltOptions :: [ConfigDesc]
 bltOptions =
   [ opt         bltParams         (ConcreteString (UnicodeLiteral ""))
-    (text "Command-line parameters to send to BLT")
+    ("Command-line parameters to send to BLT" :: T.Text)
   ]
 
 bltAdapter :: SolverAdapter t
@@ -415,8 +415,10 @@ assume h (NonceAppExpr (nonceExprApp -> Annotation _ _ x)) =
   assume h x
 assume _ (NonceAppExpr e) =
   fail . show $
-    text "Unsupported term created at" <+> pretty (plSourceLoc l) <>
-    text ":" <$$> indent 2 (pretty (NonceAppExpr e))
+  vcat
+  [ "Unsupported term created at" <+> pretty (plSourceLoc l) <> ":"
+  , indent 2 (pretty (NonceAppExpr e))
+  ]
   where
   l = nonceExprLoc e
 assume h (BoolExpr b l)
@@ -447,9 +449,11 @@ assume h b@(AppExpr ba) =
         appLEq x' y'
       _ -> unsupported
   where
-  unsupported = fail $ show $
-        text "Unsupported term created at" <+> pretty (plSourceLoc l) <>
-        text ":" <$$> indent 2 (pretty b)
+  unsupported =
+    fail $ show $ vcat
+    [ "Unsupported term created at" <+> pretty (plSourceLoc l) <> ":"
+    , indent 2 (pretty b)
+    ]
   l = appExprLoc ba
   appLEq lhs rhs =
     let (lhs', rhs') = normalizeLEQ lhs rhs in

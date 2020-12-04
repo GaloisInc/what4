@@ -28,7 +28,6 @@ module What4.Solver.Boolector
 
 import           Control.Monad
 import           Data.Bits ( (.|.) )
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           What4.BaseTypes
 import           What4.Config
@@ -57,7 +56,7 @@ boolectorOptions =
   [ mkOpt
       boolectorPath
       executablePathOptSty
-      (Just (PP.text "Path to boolector executable"))
+      (Just "Path to boolector executable")
       (Just (ConcreteString "boolector"))
   ]
 
