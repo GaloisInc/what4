@@ -127,6 +127,20 @@ boolMapToExpr u du op es =
       ts' <- mapM pol ts
       foldM (binop op) t' ts'
 
+leqSubPos :: (1 <= m, 1 <= n, n+1 <= m) => NatRepr m -> NatRepr n -> LeqProof 1 (m - n)
+leqSubPos mr nr =
+  case (plusComm nr one, plusMinusCancel one nr) of
+    (Refl, Refl) ->
+      leqSub2 (leqProof (nr `addNat` one) mr) (leqProof nr nr)
+  where one = knownNat :: NatRepr 1
+
+leqSuccLeft :: (n + 1 <= m) => p m -> NatRepr n -> LeqProof n m
+leqSuccLeft mr nr =
+  case (plusComm nr one, addPrefixIsLeq nr one) of
+    (Refl, LeqProof) ->
+      leqTrans (addIsLeq nr one) (leqProof (nr `addNat` one) mr)
+  where one = knownNat :: NatRepr 1
+
 appExprVerilogExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   AppExpr n tp ->
@@ -275,32 +289,28 @@ appVerilogExpr app =
            SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= BV.mkBV w (intValue w) ->
              abcLet (BVRotateR w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
-    BVZext w e -> do
-      case testLeq ew w of
-        Just prf1 -> withLeqProof prf1 $
-          let n = w `subNat` ew in
-          case (testEquality (n `addNat` ew) w, testLeq (knownNat :: NatRepr 1) n) of
-            (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-              e' <- exprToVerilogExpr e
-              zeros <- litBV n (BV.zero n)
-              concat2 w zeros e'
-            _ -> error "unreachable"
-        _ -> error "unreachable"
+    BVZext w e ->
+      withLeqProof (leqSuccLeft w ew) $
+      withLeqProof (leqSubPos w ew) $
+      case minusPlusCancel w ew of
+        Refl ->
+          do e' <- exprToVerilogExpr e
+             let n = w `subNat` ew
+             zeros <- litBV n (BV.zero n)
+             concat2 w zeros e'
       where ew = bvWidth e
-    BVSext w e -> do
-      case testLeq ew w of
-        Just prf1 -> withLeqProof prf1 $
-          let n = w `subNat` ew in
-          case (testEquality (n `addNat` ew) w,testLeq (knownNat :: NatRepr 1) n) of
-            (Just Refl, Just prf2) -> withLeqProof prf2 $ do
-              e' <- exprToVerilogExpr e
-              zeros <- litBV n (BV.zero n)
-              ones <- litBV n (BV.maxUnsigned n)
-              sgn <- bit e' (fromIntegral (natValue w) - 1)
-              ext <- mux sgn ones zeros
-              concat2 w ext e'
-            _ -> error "unreachable"
-        _ -> error "unreachable"
+    BVSext w e ->
+      withLeqProof (leqSuccLeft w ew) $
+      withLeqProof (leqSubPos w ew) $
+      case minusPlusCancel w ew of
+        Refl ->
+          do e' <- exprToVerilogExpr e
+             let n = w `subNat` ew
+             zeros <- litBV n (BV.zero n)
+             ones <- litBV n (BV.maxUnsigned n)
+             sgn <- bit e' (fromIntegral (natValue w) - 1)
+             ext <- mux sgn ones zeros
+             concat2 w ext e'
       where ew = bvWidth e
     BVPopcount _ _ ->
       doNotSupportError "bit vector population count" -- TODO
