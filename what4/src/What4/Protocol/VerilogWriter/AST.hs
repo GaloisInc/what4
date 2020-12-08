@@ -323,9 +323,8 @@ addFreshInput ::
   Identifier ->
   VerilogM sym n Identifier
 addFreshInput tp base = do
-  st <- get
   name <- freshIdentifier base
-  put $ st { vsInputs = (Some tp, name) : vsInputs st }
+  modify $ \st -> st { vsInputs = (Some tp, name) : vsInputs st }
   return name
 
 addOutput ::
@@ -333,9 +332,8 @@ addOutput ::
   Identifier ->
   Exp tp ->
   VerilogM sym n ()
-addOutput tp name e = do
-  st <- get
-  put $ st { vsOutputs = (Some tp, False, name, Some e) : vsOutputs st }
+addOutput tp name e =
+  modify $ \st -> st { vsOutputs = (Some tp, False, name, Some e) : vsOutputs st }
 
 addWire ::
   WT.BaseTypeRepr tp ->
@@ -343,9 +341,8 @@ addWire ::
   Identifier ->
   Exp tp ->
   VerilogM sym n ()
-addWire tp isSigned name e = do
-  st <- get
-  put $ st { vsWires = (Some tp, isSigned, name, Some e) : vsWires st }
+addWire tp isSigned name e =
+  modify $ \st -> st { vsWires = (Some tp, isSigned, name, Some e) : vsWires st }
 
 -- | Returns true if an identifier is already in the list of inputs, outputs, or
 -- wires.

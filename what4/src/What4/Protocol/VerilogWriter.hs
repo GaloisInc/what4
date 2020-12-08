@@ -18,7 +18,7 @@ module What4.Protocol.VerilogWriter
   ) where
 
 import Control.Monad.Except
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import What4.Expr.Builder (Expr, SymExpr)
 import What4.Interface (IsExprBuilder)
 
@@ -26,7 +26,8 @@ import What4.Protocol.VerilogWriter.AST
 import What4.Protocol.VerilogWriter.ABCVerilog
 import What4.Protocol.VerilogWriter.Backend
 
--- | Convert the What4 epxression into a Verilog module of the name given
+-- | Convert the given What4 expression into a textual representation of
+-- a Verilog module of the given name.
 exprVerilog ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->
@@ -35,6 +36,9 @@ exprVerilog ::
   ExceptT String IO (Doc ())
 exprVerilog sym e name = fmap (\m -> moduleDoc m name) (exprToModule sym e)
 
+-- | Convert a statement of equality between the two given What4
+-- expressions into the textual representation of a Verilog module of
+-- the given name.
 eqVerilog ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->
@@ -44,6 +48,8 @@ eqVerilog ::
   ExceptT String IO (Doc ())
 eqVerilog sym x y name =  fmap (\m -> moduleDoc m name) (eqToModule sym x y)
 
+-- | Convert the given What4 expression into a Verilog module of the
+-- given name.
 exprToModule ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->
@@ -51,6 +57,8 @@ exprToModule ::
   ExceptT String IO (Module sym n)
 exprToModule sym e = mkModule sym $ exprToVerilogExpr e
 
+-- | Convert a statement of equality between the two given What4
+-- expressions into a Verilog module of the given name.
 eqToModule ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->

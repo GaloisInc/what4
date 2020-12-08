@@ -16,7 +16,7 @@ import Data.BitVector.Sized
 import Data.Parameterized.NatRepr
 import Data.Parameterized.Some
 import Data.String
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import What4.BaseTypes
 import What4.Protocol.VerilogWriter.AST
 import Numeric (showHex)
@@ -43,10 +43,7 @@ typeDoc ty _ BaseBoolRepr = ty
 typeDoc ty isSigned (BaseBVRepr w) =
   ty <+>
   (if isSigned then "signed " else mempty) <>
-  lbracket <>
-  pretty (intValue w - 1) <>
-  ":0" <>
-  rbracket
+  brackets (pretty (intValue w - 1) <> ":0")
 typeDoc _ _ _ = "<type error>"
 
 identDoc :: Identifier -> Doc ()
@@ -55,7 +52,7 @@ identDoc = pretty
 lhsDoc :: LHS -> Doc ()
 lhsDoc (LHS name) = identDoc name
 lhsDoc (LHSBit name idx) =
-  identDoc name <> lbracket <> pretty idx <> rbracket
+  identDoc name <> brackets (pretty idx)
 
 inputDoc :: (Some BaseTypeRepr, Identifier) -> Doc ()
 inputDoc (tp, name) =
@@ -101,13 +98,9 @@ expDoc (BVRotateL wr e n) = rotateDoc "<<" ">>" wr e n
 expDoc (BVRotateR wr e n) = rotateDoc ">>" "<<" wr e n
 expDoc (Mux c t e) = iexpDoc c <+> "?" <+> iexpDoc t <+> colon <+> iexpDoc e
 expDoc (Bit e i) =
-  iexpDoc e <> lbracket <> pretty i <> rbracket
+  iexpDoc e <> brackets (pretty i)
 expDoc (BitSelect e (intValue -> start) (intValue -> len)) =
-  iexpDoc e <> lbracket
-            <> pretty (start + (len - 1))
-            <> colon
-            <> pretty start
-            <> rbracket
+  iexpDoc e <> brackets (pretty (start + (len - 1)) <> colon <> pretty start)
 expDoc (Concat _ es) = encloseSep lbrace rbrace comma (map (viewSome iexpDoc) es)
 expDoc (BVLit w n) = pretty (intValue w) <> "'h" <> hexDoc n
 expDoc (BoolLit True) = "1'b1"
