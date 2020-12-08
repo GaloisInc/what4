@@ -106,17 +106,10 @@ showBinop Le       = "<="
 data IExp (tp :: WT.BaseType) where
   Ident   :: WT.BaseTypeRepr tp -> Identifier -> IExp tp
 
-
--- more literal show instance
-instance Show (IExp tp) where
-    show (Ident _ name) = name
-
-
 iexpType :: IExp tp -> WT.BaseTypeRepr tp
 iexpType (Ident tp _) = tp
 
 data LHS = LHS Identifier | LHSBit Identifier Integer
-  deriving Show
 
 data Exp (tp :: WT.BaseType) where
   IExp :: IExp tp -> Exp tp
@@ -343,18 +336,6 @@ addWire ::
   VerilogM sym n ()
 addWire tp isSigned name e =
   modify $ \st -> st { vsWires = (Some tp, isSigned, name, Some e) : vsWires st }
-
--- | Returns true if an identifier is already in the list of inputs, outputs, or
--- wires.
-isDeclared :: Identifier -> VerilogM sym n Bool
-isDeclared x = do
-    st <- get
-    return $ any ((==)x) (idents st)
-  where
-    idents st = (snd <$> vsInputs st) ++
-                (wireName <$> vsOutputs st) ++
-                (wireName <$> vsWires st)
-    wireName (_, _, n, _) = n
 
 freshIdentifier :: String -> VerilogM sym n Identifier
 freshIdentifier basename = do

@@ -65,16 +65,6 @@ exprToVerilogExpr e = do
           tp = bvarType x
           base = bvarIdentifier x
 
-eqToVerilogExpr ::
-  (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
-  Expr n tp ->
-  Expr n tp ->
-  VerilogM sym n (IExp WT.BaseBoolType)
-eqToVerilogExpr x y = do
-  x' <- exprToVerilogExpr x
-  y' <- exprToVerilogExpr y
-  binop Eq x' y'
-
 bvarIdentifier :: ExprBoundVar t tp -> Identifier
 bvarIdentifier x = show (bvarName x)
 
@@ -99,13 +89,6 @@ nonceAppExprVerilogExpr nae =
     -- TODO: implement uninterpreted functions as uninterpreted functions
     FnApp _ _ -> doNotSupportError "named function applications"
     Annotation _ _ e -> exprToVerilogExpr e
-
--- | As of now, all symbolic functions are just turned into verilog functions of
--- the same name, but it may be the case that some pre-defined uninterpreted
--- functions in What4 should be transformed into other operations in verilog. OR
--- maybe symbolic functions should be turned into module calls?
-mkVerilogFn :: ExprSymFn t (Expr t) args ret -> String
-mkVerilogFn f = show (symFnName f)
 
 boolMapToExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
