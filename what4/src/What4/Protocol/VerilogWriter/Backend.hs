@@ -11,6 +11,8 @@ Convert What4 expressions into the data types defined in the @What4.Protocol.Ver
   LambdaCase, FlexibleContexts, LambdaCase, OverloadedStrings #-}
 
 module What4.Protocol.VerilogWriter.Backend
+  ( exprToVerilogExpr
+  )
   where
 
 
@@ -40,7 +42,8 @@ doNotSupportError cstr = throwError $ doNotSupportMsg ++ cstr
 doNotSupportMsg :: String
 doNotSupportMsg = "the Verilog backend to What4 does not support "
 
--- | Convert What4 expresssions into verilog expressions
+-- | Convert a What4 expresssion into a Verilog expression and return a
+-- name for that expression's result.
 exprToVerilogExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   Expr n tp ->
@@ -264,13 +267,13 @@ appVerilogExpr app =
       do e1 <- exprToVerilogExpr bv1
          case bv2 of
            SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= BV.mkBV w (intValue w) ->
-             abcLet (BVRotateL w e1 n)
+             mkLet (BVRotateL w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
     BVRor  w   bv1 bv2 ->
       do e1 <- exprToVerilogExpr bv1
          case bv2 of
            SemiRingLiteral (SR.SemiRingBVRepr _ _) n _ | n <= BV.mkBV w (intValue w) ->
-             abcLet (BVRotateR w e1 n)
+             mkLet (BVRotateR w e1 n)
            _ -> doNotSupportError "non-constant bit rotations"
     BVZext w e ->
       withLeqProof (leqSuccLeft w ew) $

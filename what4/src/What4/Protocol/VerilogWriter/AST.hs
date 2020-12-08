@@ -4,8 +4,7 @@ Copyright        : (c) Galois, Inc 2020
 Maintainer       : Jennifer Paykin <jpaykin@galois.com>
 License          : BSD3
 
-Connecting the Crucible simple builder backend to Verilog that can be read by
-ABC.
+An intermediate AST to use for generating Verilog modules from What4 expressions.
 -}
 {-# LANGUAGE GADTs, GeneralizedNewtypeDeriving, ScopedTypeVariables,
   TypeApplications, PolyKinds, DataKinds, ExplicitNamespaces, TypeOperators #-}
@@ -27,6 +26,8 @@ import           GHC.TypeNats ( type (<=) )
 
 type Identifier = String
 
+-- | A type for Verilog binary operators that enforces well-typedness,
+-- including bitvector size constraints.
 data Binop (inTp :: WT.BaseType) (outTp :: WT.BaseType) where
   And :: Binop WT.BaseBoolType WT.BaseBoolType
   Or  :: Binop WT.BaseBoolType WT.BaseBoolType
@@ -74,10 +75,14 @@ binopType BVShiftL tp = tp
 binopType BVShiftR tp = tp
 binopType BVShiftRA tp = tp
 
+-- | A type for Verilog unary operators that enforces well-typedness.
 data Unop (tp :: WT.BaseType) where
   Not :: Unop WT.BaseBoolType
   BVNot :: Unop (WT.BaseBVType w)
 
+-- | A type for Verilog expression names that enforces well-typedness.
+-- This type exists essentially to pair a name and type to avoid needing
+-- to repeat them and ensure that all uses of the name are well-typed.
 data IExp (tp :: WT.BaseType) where
   Ident   :: WT.BaseTypeRepr tp -> Identifier -> IExp tp
 
@@ -86,6 +91,8 @@ iexpType (Ident tp _) = tp
 
 data LHS = LHS Identifier | LHSBit Identifier Integer
 
+-- | A type for Verilog expressions that enforces well-typedness,
+-- including bitvector size constraints.
 data Exp (tp :: WT.BaseType) where
   IExp :: IExp tp -> Exp tp
   Binop :: Binop inTp outTp -> IExp inTp -> IExp inTp -> Exp outTp
@@ -123,25 +130,34 @@ expType (BVLit w _) = WT.BaseBVRepr w
 expType (BoolLit _) = WT.BaseBoolRepr
 
 
-abcLet :: Exp tp -> VerilogM sym n (IExp tp)
-abcLet (IExp x) = return x
-abcLet e = do
+-- | Create a let binding, associating a name with an expression. In
+-- Verilog, this is a new "wire".
+mkLet :: Exp tp -> VerilogM sym n (IExp tp)
+mkLet (IExp x) = return x
+mkLet e = do
     let tp = expType e
     x <- addFreshWire tp False "x" e
     return (Ident tp x)
 
+-- | Indicate than an expression name is signed. This causes arithmetic
+-- operations involving this name to be interpreted as signed
+-- operations.
 signed :: IExp tp -> VerilogM sym n (IExp tp)
 signed e = do
     let tp = iexpType e
     x <- addFreshWire tp True "x" (IExp e)
     return (Ident tp x)
 
+-- | Apply a binary operation to two expressions and bind the result to
+-- a new, returned name.
 binop ::
   Binop inTp outTp ->
   IExp inTp -> IExp inTp ->
   VerilogM sym n (IExp outTp)
-binop op e1 e2 = abcLet (Binop op e1 e2)
+binop op e1 e2 = mkLet (Binop op e1 e2)
 
+-- | A special binary operation for scalar multiplication. This avoids
+-- the need to call `litBV` at every call site.
 scalMult ::
   1 <= w =>
   WT.NatRepr w ->
@@ -153,6 +169,9 @@ scalMult w op n e = do
   n' <- litBV w n
   binop op n' e
 
+-- | A wrapper around the BV type allowing it to be put into a map or
+-- set. We use this to make sure we generate only one instance of each
+-- distinct constant.
 data BVConst = BVConst (Pair WT.NatRepr BV.BV)
   deriving (Eq)
 
@@ -167,6 +186,7 @@ instance Ord BVConst where
         GTF -> GT
     ) cy) cx
 
+-- | Return the (possibly-cached) name for a literal bitvector value.
 litBV ::
   (1 <= w) =>
   WT.NatRepr w ->
@@ -177,54 +197,65 @@ litBV w i = do
   case Map.lookup (BVConst (Pair w i)) cache of
     Just x -> return (Ident (WT.BaseBVRepr w) x)
     Nothing -> do
-      x@(Ident _ name) <- abcLet (BVLit w i)
+      x@(Ident _ name) <- mkLet (BVLit w i)
       modify $ \s -> s { vsBVCache = Map.insert (BVConst (Pair w i)) name (vsBVCache s) }
       return x
 
+-- | Return the (possibly-cached) name for a literal Boolean value.
 litBool :: Bool -> VerilogM sym n (IExp WT.BaseBoolType)
 litBool b = do
   cache <- vsBoolCache <$> get
   case Map.lookup b cache of
     Just x -> return (Ident WT.BaseBoolRepr x)
     Nothing -> do
-      x@(Ident _ name) <- abcLet (BoolLit b)
+      x@(Ident _ name) <- mkLet (BoolLit b)
       modify $ \s -> s { vsBoolCache = Map.insert b name (vsBoolCache s) }
       return x
 
+-- | Apply a unary operation to an expression and bind the result to a
+-- new, returned name.
 unop :: Unop tp -> IExp tp -> VerilogM sym n (IExp tp)
-unop op e = abcLet (Unop op e)
+unop op e = mkLet (Unop op e)
 
+-- | Create a conditional, with the given condition, true, and false
+-- branches, and bind the result to a new, returned name.
 mux ::
   IExp WT.BaseBoolType ->
   IExp tp ->
   IExp tp ->
   VerilogM sym n (IExp tp)
-mux e e1 e2 = abcLet (Mux e e1 e2)
+mux e e1 e2 = mkLet (Mux e e1 e2)
 
+-- | Extract a single bit from a bit vector and bind the result to a
+-- new, returned name.
 bit ::
   IExp (WT.BaseBVType w) ->
-  Integer->
+  Integer ->
   VerilogM sym n (IExp WT.BaseBoolType)
-bit e i = abcLet (Bit e i)
+bit e i = mkLet (Bit e i)
 
+-- | Extract a range of bits from a bit vector and bind the result to a
+-- new, returned name. The two `NatRepr` values are the starting index
+-- and the number of bits to extract, respectively.
 bitSelect ::
   (1 WT.<= len, idx WT.+ len WT.<= w) =>
   IExp (WT.BaseBVType w) ->
   WT.NatRepr idx ->
   WT.NatRepr len ->
   VerilogM sym n (IExp (WT.BaseBVType len))
-bitSelect e start len = abcLet (BitSelect e start len)
+bitSelect e start len = mkLet (BitSelect e start len)
 
+-- | Concatenate two bit vectors and bind the result to a new, returned
+-- name.
 concat2 ::
   (w ~ (w1 WT.+ w2), 1 <= w) =>
   WT.NatRepr w ->
   IExp (WT.BaseBVType w1) ->
   IExp (WT.BaseBVType w2) ->
   VerilogM sym n (IExp (WT.BaseBVType w))
-concat2 w e1 e2 = abcLet (Concat w [Some e1, Some e2])
+concat2 w e1 e2 = mkLet (Concat w [Some e1, Some e2])
 
-
-type Range = (Int,Int)
+-- | A data type for items that may show up in a Verilog module.
 data Item where
   Input  :: WT.BaseTypeRepr tp -> Identifier -> Item
   Output :: WT.BaseTypeRepr tp -> Identifier -> Item
@@ -234,14 +265,25 @@ data Item where
 -- | Necessary monadic operations
 
 data ModuleState sym n =
-    ModuleState { vsInputs :: [(Some WT.BaseTypeRepr, Identifier)] -- In reverse order
-                , vsOutputs :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)] -- In reverse order
-                , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)] -- In reverse order
+    ModuleState { vsInputs :: [(Some WT.BaseTypeRepr, Identifier)]
+                -- ^ All module inputs, in reverse order.
+                , vsOutputs :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
+                -- ^ All module outputs, in reverse order. Includes the
+                -- type, signedness, name, and initializer of each.
+                , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
+                -- ^ All internal wires, in reverse order. Includes the
+                -- type, signedness, name, and initializer of each.
                 , vsFreshIdent :: Int
+                -- ^ A counter for generating fresh names.
                 , vsExpCache :: IdxCache n IExp
+                -- ^ An expression cache to preserve sharing present in
+                -- the What4 representation.
                 , vsBVCache :: Map.Map BVConst Identifier
+                -- ^ A cache of bit vector constants, to avoid duplicating constant declarations.
                 , vsBoolCache :: Map.Map Bool Identifier
+                -- ^ A cache of Boolean constants, to avoid duplicating constant declarations.
                 , vsSym :: sym
+                -- ^ The What4 symbolic backend to use with `vsBVCache`.
                 }
 
 newtype VerilogM sym n a =
@@ -257,6 +299,9 @@ newtype VerilogM sym n a =
 
 newtype Module sym n = Module (ModuleState sym n)
 
+-- | Create a Verilog module in the context of a given What4 symbolic
+-- backend and a monadic computation that returns an expression name
+-- that corresponds to the module's output.
 mkModule ::
   sym ->
   VerilogM sym n (IExp tp) ->
@@ -286,6 +331,8 @@ execVerilogM sym op =
      (_a,m) <- runVerilogM op s
      return m
 
+-- | Returns and records a fresh input with the given type and with a
+-- name constructed from the given base.
 addFreshInput ::
   WT.BaseTypeRepr tp ->
   Identifier ->
@@ -295,6 +342,8 @@ addFreshInput tp base = do
   modify $ \st -> st { vsInputs = (Some tp, name) : vsInputs st }
   return name
 
+-- | Add an output to the current Verilog module state, given a type, a
+-- name, and an initializer expression.
 addOutput ::
   WT.BaseTypeRepr tp ->
   Identifier ->
@@ -303,6 +352,8 @@ addOutput ::
 addOutput tp name e =
   modify $ \st -> st { vsOutputs = (Some tp, False, name, Some e) : vsOutputs st }
 
+-- | Add a new wire to the current Verilog module state, given a type, a
+-- signedness flag, a name, and an initializer expression.
 addWire ::
   WT.BaseTypeRepr tp ->
   Bool ->
@@ -312,6 +363,8 @@ addWire ::
 addWire tp isSigned name e =
   modify $ \st -> st { vsWires = (Some tp, isSigned, name, Some e) : vsWires st }
 
+-- | Create a fresh identifier by concatenating the given base with the
+-- current fresh identifier counter.
 freshIdentifier :: String -> VerilogM sym n Identifier
 freshIdentifier basename = do
   st <- get
@@ -319,6 +372,11 @@ freshIdentifier basename = do
   put $ st { vsFreshIdent = x+1 }
   return $ basename ++ "_" ++ show x
 
+
+-- | Add a new wire to the current Verilog module state, given a type, a
+-- signedness flag, the prefix of a name, and an initializer expression.
+-- The name prefix will be freshened by appending current value of the
+-- fresh variable counter.
 addFreshWire ::
   WT.BaseTypeRepr tp ->
   Bool ->
