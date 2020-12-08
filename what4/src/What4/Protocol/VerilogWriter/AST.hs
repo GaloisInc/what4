@@ -78,31 +78,6 @@ data Unop (tp :: WT.BaseType) where
   Not :: Unop WT.BaseBoolType
   BVNot :: Unop (WT.BaseBVType w)
 
-showUnop :: Unop tp -> String
-showUnop Not   = "!"
-showUnop BVNot = "~"
-
-showBinop :: Binop inTp outTp -> String
-showBinop And      = "&&"
-showBinop Or       = "||"
-showBinop Xor      = "^^"
-showBinop BVAnd    = "&"
-showBinop BVOr     = "|"
-showBinop BVXor    = "^"
-showBinop BVAdd    = "+"
-showBinop BVSub    = "-"
-showBinop BVMul    = "*"
-showBinop BVDiv    = "/"
-showBinop BVRem    = "%"
-showBinop BVPow    = "**"
-showBinop BVShiftL = "<<"
-showBinop BVShiftR = ">>"
-showBinop BVShiftRA = ">>>"
-showBinop Eq       = "=="
-showBinop Ne       = "!="
-showBinop Lt       = "<"
-showBinop Le       = "<="
-
 data IExp (tp :: WT.BaseType) where
   Ident   :: WT.BaseTypeRepr tp -> Identifier -> IExp tp
 

@@ -67,10 +67,29 @@ wireDoc ty (tp, isSigned, name, e) =
   semi
 
 unopDoc :: Unop tp -> Doc ()
-unopDoc = pretty . showUnop
+unopDoc Not   = "!"
+unopDoc BVNot = "~"
 
 binopDoc :: Binop inTp outTp -> Doc ()
-binopDoc = pretty . showBinop
+binopDoc And      = "&&"
+binopDoc Or       = "||"
+binopDoc Xor      = "^^"
+binopDoc BVAnd    = "&"
+binopDoc BVOr     = "|"
+binopDoc BVXor    = "^"
+binopDoc BVAdd    = "+"
+binopDoc BVSub    = "-"
+binopDoc BVMul    = "*"
+binopDoc BVDiv    = "/"
+binopDoc BVRem    = "%"
+binopDoc BVPow    = "**"
+binopDoc BVShiftL = "<<"
+binopDoc BVShiftR = ">>"
+binopDoc BVShiftRA = ">>>"
+binopDoc Eq       = "=="
+binopDoc Ne       = "!="
+binopDoc Lt       = "<"
+binopDoc Le       = "<="
 
 -- | Show non-negative Integral numbers in base 16.
 hexDoc :: BV w -> Doc ()
