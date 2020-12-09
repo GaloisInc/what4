@@ -14,7 +14,9 @@
 
 import Control.Exception ( displayException, try, SomeException )
 import Control.Lens (folded)
-import Control.Monad ( forM, void )
+import Control.Monad ( forM, unless, void )
+import Control.Monad.Except ( runExceptT )
+import Data.BitVector.Sized ( mkBV )
 import Data.Char ( toLower )
 import System.Exit ( ExitCode(..) )
 import System.Process ( readProcessWithExitCode )
@@ -28,6 +30,7 @@ import What4.Config
 import What4.Interface
 import What4.Expr
 import What4.Solver
+import What4.Protocol.VerilogWriter
 
 data State t = State
 
@@ -37,6 +40,7 @@ allAdapters =
   , yicesAdapter
   , z3Adapter
   , boolectorAdapter
+  , externalABCAdapter
 #ifdef TEST_STP
   , stpAdapter
 #endif
@@ -153,6 +157,37 @@ mkQuickstartTest adpt = testCase (solver_adapter_name adpt) $
            Unknown -> fail "Solver returned UNKNOWN"
            Sat _   -> fail "Should be a unique model!"
 
+verilogTest :: TestTree
+verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
+  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+     let w = knownNat @8
+     x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w)
+     one <- bvLit sym w (mkBV w 1)
+     add <- bvAdd sym x one
+     r <- notPred sym =<< bvEq sym x add
+     edoc <- runExceptT (exprVerilog sym r "f")
+     case edoc of
+       Left err -> fail $ "Failed to translate to Verilog: " ++ err
+       Right doc ->
+         unless (show doc ++ "\n" == refDoc) $
+           fail $ unlines [
+                     "Unexpected output from Verilog translation:"
+                    , show doc
+                    , "instead of"
+                    , refDoc
+                    ]
+  where
+    refDoc = unlines [
+               "module f(x_1, out_6);"
+             , "  input [7:0] x_1;"
+             , "  wire [7:0] x_0 = 8'h1;"
+             , "  wire [7:0] x_2 = x_0 * x_1;"
+             , "  wire [7:0] x_3 = x_0 + x_2;"
+             , "  wire x_4 = x_3 == x_1;"
+             , "  wire x_5 = ! x_4;"
+             , "  output out_6 = x_5;"
+             , "endmodule"
+             ]
 
 getSolverVersion :: String -> IO String
 getSolverVersion solver = do
@@ -183,4 +218,5 @@ main = do
     , testGroup "nonlinear reals" $ map nonlinearRealTest
       -- NB: nonlinear arith expected to fail for STP and Boolector
       ([ cvc4Adapter, z3Adapter, yicesAdapter ] <> drealAdpt)
+    , testGroup "Verilog" [verilogTest]
     ]

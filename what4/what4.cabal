@@ -210,6 +210,7 @@ test-suite adapter-test
     containers,
     data-binary-ieee754,
     lens,
+    mtl >= 2.2.1,
     parameterized-utils,
     process,
     tasty >= 0.10,
