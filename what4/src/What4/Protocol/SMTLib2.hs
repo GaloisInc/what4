@@ -703,13 +703,16 @@ parseRealSolverValue (SApp ["/", x , y]) = do
       <*> parseRealSolverValue y
 parseRealSolverValue s = fail $ "Could not parse solver value: " ++ show s
 
+-- | Parse a bitvector value returned by a solver. Most solvers give
+-- results of the right size, but ABC always gives hex results without
+-- leading zeros, so they may be larger or smaller than the actual size
+-- of the variable.
 parseBvSolverValue :: MonadFail m => NatRepr w -> SExp -> m (BV.BV w)
 parseBvSolverValue w s
   | Pair w' bv <- parseBVLitHelper s = case w' `compareNat` w of
       NatLT zw -> return (BV.zext (addNat w' (addNat zw knownNat)) bv)
       NatEQ -> return bv
-      NatGT _ -> fail $ "Solver value parsed with width " ++
-               show w' ++ ", but should have width " ++ show w
+      NatGT _ -> return (BV.trunc w bv)
 
 natBV :: Natural
       -- ^ width
