@@ -8,3 +8,9 @@ simulator, and has thus been split out into a separate repository.
 
 For an overview of What4 and how to use it, please see the
 package-level [README](what4/README.md).
+
+This material is based upon work supported by the Defense Advanced
+Research Projects Agency (DARPA) under Contract No. HR0011-19-C-0070.
+The views, opinions, and/or findings expressed are those of the
+author(s) and should not be interpreted as representing the official
+views or policies of the Department of Defense or the U.S. Government.

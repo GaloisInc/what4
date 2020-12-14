@@ -130,6 +130,7 @@ library
     What4.Solver.Boolector
     What4.Solver.CVC4
     What4.Solver.DReal
+    What4.Solver.ExternalABC
     What4.Solver.STP
     What4.Solver.Yices
     What4.Solver.Z3
@@ -142,6 +143,10 @@ library
     What4.Protocol.ReadDecimal
     What4.Protocol.SExp
     What4.Protocol.PolyRoot
+    What4.Protocol.VerilogWriter
+    What4.Protocol.VerilogWriter.AST
+    What4.Protocol.VerilogWriter.ABCVerilog
+    What4.Protocol.VerilogWriter.Backend
 
     What4.Utils.AbstractDomains
     What4.Utils.AnnotatedMap
@@ -205,6 +210,7 @@ test-suite adapter-test
     containers,
     data-binary-ieee754,
     lens,
+    mtl >= 2.2.1,
     parameterized-utils,
     process,
     tasty >= 0.10,
