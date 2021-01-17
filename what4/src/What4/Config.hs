@@ -194,7 +194,7 @@ import           What4.Utils.StringLiteral
 --   to statically-checkable failures (missing symbols and type-checking,
 --   respectively) by consistently using `ConfigOption` values.
 --
---   The following example indicates the suggested useage
+--   The following example indicates the suggested usage
 --
 -- @
 --   asdfFrob :: ConfigOption BaseRealType
@@ -658,7 +658,7 @@ insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p
 -- Config
 
 -- | The main configuration datatype.  It consists of an IORef
---   continaing the actual configuration data.
+--   containing the actual configuration data.
 newtype Config = Config (IORef ConfigMap)
 
 -- | Construct a new configuration from the given configuration
@@ -775,7 +775,7 @@ getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
              unless (isJust (optionSetError res)) (writeIORef ref (Just v))
              return res
       }
-    | otherwise = fail ("Type mismatch retriving option " ++ show o ++
+    | otherwise = fail ("Type mismatch retrieving option " ++ show o ++
                          "\nExpected: " ++ show tp ++ " but found " ++ show (opt_type sty))
 
 -- | Given a text name, produce an @OptionSetting@
