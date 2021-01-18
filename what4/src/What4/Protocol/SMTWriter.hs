@@ -130,6 +130,7 @@ import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder (decimal)
 import qualified Data.Text.Lazy as Lazy
 import           Data.Word
+import           LibBF (BigFloat)
 
 import           Numeric.Natural
 import           Prettyprinter hiding (Unbounded)
@@ -153,6 +154,7 @@ import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
+import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
 
 ------------------------------------------------------------------------
@@ -385,6 +387,7 @@ class Num v => SupportTermOps v where
   bvSumExpr w [] = bvTerm w (BV.zero w)
   bvSumExpr _ (h:r) = foldl bvAdd h r
 
+  floatTerm  :: FloatPrecisionRepr fpp -> BigFloat -> v
   floatPZero :: FloatPrecisionRepr fpp -> v
   floatNZero :: FloatPrecisionRepr fpp  -> v
   floatNaN   :: FloatPrecisionRepr fpp  -> v
@@ -1723,6 +1726,9 @@ mkExpr t@(SemiRingLiteral SR.SemiRingRealRepr r _) = do
 mkExpr t@(SemiRingLiteral (SR.SemiRingBVRepr _flv w) x _) = do
   checkBitvectorSupport t
   return $ SMTExpr (BVTypeMap w) $ bvTerm w x
+mkExpr t@(FloatExpr fpp f _) = do
+  checkFloatSupport t
+  return $ SMTExpr (FloatTypeMap fpp) $ floatTerm fpp f
 mkExpr t@(StringExpr l _) =
   case l of
     Char8Literal bs -> do
@@ -2995,7 +3001,8 @@ getSolverVal :: forall h t tp
 getSolverVal _ smtFns BoolTypeMap   tm = smtEvalBool smtFns tm
 getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns w tm
 getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
-getSolverVal _ smtFns (FloatTypeMap fpp) tm = smtEvalFloat smtFns fpp tm
+getSolverVal _ smtFns (FloatTypeMap fpp@(FloatingPointPrecisionRepr eb sb)) tm =
+  floatFromBits (intValue eb) (intValue sb) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
 getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
 getSolverVal _ smtFns NatTypeMap    tm = do
   r <- smtEvalReal smtFns tm

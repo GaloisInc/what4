@@ -183,6 +183,7 @@ import           Data.Ratio
 import           Data.Scientific (Scientific)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
+import           LibBF (BigFloat)
 import           Prettyprinter (Doc)
 
 import           What4.BaseTypes
@@ -1738,8 +1739,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   floatNInf :: sym -> FloatPrecisionRepr fpp -> IO (SymFloat sym fpp)
 
   -- | Create a floating point literal from a rational literal.
-  floatLit
+  --   The rational value will be rounded if necessary using the
+  --   "round to nearest even" rounding mode.
+  floatLitRational
     :: sym -> FloatPrecisionRepr fpp -> Rational -> IO (SymFloat sym fpp)
+  floatLitRational sym fpp x = realToFloat sym fpp RNE =<< realLit sym x
+
+  -- | Create a floating point literal from a @BigFloat@ value.
+  floatLit :: sym -> FloatPrecisionRepr fpp -> BigFloat -> IO (SymFloat sym fpp)
 
   -- | Negate a floating point number.
   floatNeg

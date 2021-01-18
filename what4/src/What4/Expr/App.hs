@@ -68,6 +68,8 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           LibBF (BigFloat)
+import qualified LibBF as BF
 import           Numeric.Natural
 import           Prettyprinter hiding (Unbounded)
 
@@ -143,6 +145,7 @@ data AppExpr t (tp :: BaseType)
 data Expr t (tp :: BaseType) where
   SemiRingLiteral :: !(SR.SemiRingRepr sr) -> !(SR.Coefficient sr) -> !ProgramLoc -> Expr t (SR.SemiRingBase sr)
   BoolExpr :: !Bool -> !ProgramLoc -> Expr t BaseBoolType
+  FloatExpr :: !(FloatPrecisionRepr fpp) -> !BigFloat -> !ProgramLoc -> Expr t (BaseFloatType fpp)
   StringExpr :: !(StringLiteral si) -> !ProgramLoc -> Expr t (BaseStringType si)
   -- Application
   AppExpr :: {-# UNPACK #-} !(AppExpr t tp) -> Expr t tp
@@ -166,6 +169,7 @@ asNonceApp _ = Nothing
 exprLoc :: Expr t tp -> ProgramLoc
 exprLoc (SemiRingLiteral _ _ l) = l
 exprLoc (BoolExpr _ l) = l
+exprLoc (FloatExpr _ _ l) = l
 exprLoc (StringExpr _ l) = l
 exprLoc (NonceAppExpr a)  = nonceExprLoc a
 exprLoc (AppExpr a)   = appExprLoc a
@@ -186,6 +190,7 @@ mkExpr n l a v = AppExpr $ AppExprCtor { appExprId  = n
 
 type BoolExpr t = Expr t BaseBoolType
 type NatExpr  t = Expr t BaseNatType
+type FloatExpr t fpp = Expr t (BaseFloatType fpp)
 type BVExpr t n = Expr t (BaseBVType n)
 type IntegerExpr t = Expr t BaseIntegerType
 type RealExpr t = Expr t BaseRealType
@@ -224,6 +229,7 @@ instance IsExpr (Expr t) where
 
   exprType (SemiRingLiteral sr _ _) = SR.semiRingBase sr
   exprType (BoolExpr _ _) = BaseBoolRepr
+  exprType (FloatExpr fpp _ _) = BaseFloatRepr fpp
   exprType (StringExpr s _) = BaseStringRepr (stringLiteralInfo s)
   exprType (NonceAppExpr e)  = nonceAppType (nonceExprApp e)
   exprType (AppExpr e) = appType (appExprApp e)
@@ -348,6 +354,7 @@ exprAbsValue (SemiRingLiteral sr x _) =
     SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
 
 exprAbsValue (StringExpr l _) = stringAbsSingle l
+exprAbsValue (FloatExpr _ _ _) = ()
 exprAbsValue (BoolExpr b _)   = Just b
 exprAbsValue (NonceAppExpr e) = nonceExprAbsValue e
 exprAbsValue (AppExpr e)      = appExprAbsValue e
@@ -390,6 +397,15 @@ compareExpr _ StringExpr{} = GTF
 compareExpr (BoolExpr x _) (BoolExpr y _) = fromOrdering (compare x y)
 compareExpr BoolExpr{} _ = LTF
 compareExpr _ BoolExpr{} = GTF
+
+compareExpr (FloatExpr rx x _) (FloatExpr ry y _) =
+   case compareF rx ry of
+     LTF -> LTF
+     EQF -> fromOrdering (BF.bfCompare x y) -- NB, don't use `compare`, which is IEEE754 comaprison
+     GTF -> GTF
+
+compareExpr FloatExpr{} _ = LTF
+compareExpr _ FloatExpr{} = GTF
 
 compareExpr (NonceAppExpr x) (NonceAppExpr y) = compareF x y
 compareExpr NonceAppExpr{} _ = LTF
@@ -452,10 +468,11 @@ instance Hashable (Expr t tp) where
       SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
       SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
 
-  hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (5::Int)) x
-  hashWithSalt s (AppExpr x)      = hashWithSalt (hashWithSalt s (6::Int)) (appExprId x)
-  hashWithSalt s (NonceAppExpr x) = hashWithSalt (hashWithSalt s (7::Int)) (nonceExprId x)
-  hashWithSalt s (BoundVarExpr x) = hashWithSalt (hashWithSalt s (8::Int)) x
+  hashWithSalt s (FloatExpr fr x _) = hashWithSalt (hashWithSaltF (hashWithSalt s (5::Int)) fr) x
+  hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (6::Int)) x
+  hashWithSalt s (AppExpr x)      = hashWithSalt (hashWithSalt s (7::Int)) (appExprId x)
+  hashWithSalt s (NonceAppExpr x) = hashWithSalt (hashWithSalt s (8::Int)) (nonceExprId x)
+  hashWithSalt s (BoundVarExpr x) = hashWithSalt (hashWithSalt s (9::Int)) x
 
 instance PH.HashableF (Expr t) where
   hashWithSaltF = hashWithSalt
@@ -787,6 +804,8 @@ ppExpr' e0 o = do
 
       getBindings (StringExpr x _) =
         return $ stringPPExpr $ (show x)
+      getBindings (FloatExpr _ f _) =
+        return $ stringPPExpr (show f)
       getBindings (BoolExpr b _) =
         return $ stringPPExpr (if b then "true" else "false")
       getBindings (NonceAppExpr e) =

@@ -293,6 +293,7 @@ instance SupportTermOps YicesTerm where
   floatNaN   _ = floatFail
   floatPInf  _ = floatFail
   floatNInf  _ = floatFail
+  floatTerm _ _ = floatFail
 
   floatNeg  _   = floatFail
   floatAbs  _   = floatFail

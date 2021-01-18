@@ -222,7 +222,7 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
   iFloatNInf :: sym -> FloatInfoRepr fi -> IO (SymInterpretedFloat sym fi)
 
   -- | Create a floating point literal from a rational literal.
-  iFloatLit
+  iFloatLitRational
     :: sym -> FloatInfoRepr fi -> Rational -> IO (SymInterpretedFloat sym fi)
 
   -- | Create a (single precision) floating point literal.

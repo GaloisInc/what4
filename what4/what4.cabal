@@ -73,6 +73,7 @@ library
     hashtables >= 1.2.3,
     io-streams >= 1.5,
     lens >= 4.18,
+    libBF >= 0.5.1 && < 0.6,
     mtl >= 2.2.1,
     panic >= 0.3,
     parameterized-utils >= 2.1 && < 2.2,
@@ -165,6 +166,7 @@ library
     What4.Utils.Environment
     What4.Utils.HandleReader
     What4.Utils.IncrHash
+    What4.Utils.FloatHelpers
     What4.Utils.LeqMap
     What4.Utils.MonadST
     What4.Utils.OnlyNatRepr

@@ -55,6 +55,8 @@ import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           Numeric.Natural
+import           LibBF (BigFloat)
+import qualified LibBF as BF
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -77,7 +79,7 @@ type family GroundValue (tp :: BaseType) where
   GroundValue BaseIntegerType       = Integer
   GroundValue BaseRealType          = Rational
   GroundValue (BaseBVType w)        = BV.BV w
-  GroundValue (BaseFloatType fpp)   = BV.BV (FloatPrecisionBits fpp)
+  GroundValue (BaseFloatType fpp)   = BigFloat
   GroundValue BaseComplexType       = Complex Rational
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
@@ -136,7 +138,7 @@ defaultValueForType tp =
     BaseStringRepr si -> stringLitEmpty si
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
-    BaseFloatRepr (FloatingPointPrecisionRepr eb sb) -> BV.zero (addNat eb sb)
+    BaseFloatRepr _fpp -> BF.bfPosZero
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -169,6 +171,7 @@ tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
 tryEvalGroundExpr _ (StringExpr x _) = return x
 tryEvalGroundExpr _ (BoolExpr b _) = return b
+tryEvalGroundExpr _ (FloatExpr _ f _) = return f
 tryEvalGroundExpr f (NonceAppExpr a0) = evalGroundNonceApp (lift . f) (nonceExprApp a0)
 tryEvalGroundExpr f (AppExpr a0)      = evalGroundApp f (appExprApp a0)
 tryEvalGroundExpr _ (BoundVarExpr v) =
@@ -397,7 +400,7 @@ evalGroundApp f0 a0 = do
       BV.ctz w <$> f x
 
     ------------------------------------------------------------------------
-    -- Floating point Operations
+    -- Floating point Operations (TODO!)
     FloatPZero{}      -> MaybeT $ return Nothing
     FloatNZero{}      -> MaybeT $ return Nothing
     FloatNaN{}        -> MaybeT $ return Nothing
@@ -427,7 +430,7 @@ evalGroundApp f0 a0 = do
     FloatIsNorm{}     -> MaybeT $ return Nothing
     FloatCast{}       -> MaybeT $ return Nothing
     FloatRound{}      -> MaybeT $ return Nothing
-    FloatFromBinary _ x -> f x
+    FloatFromBinary{} -> MaybeT $ return Nothing
     FloatToBinary{}   -> MaybeT $ return Nothing
     BVToFloat{}       -> MaybeT $ return Nothing
     SBVToFloat{}      -> MaybeT $ return Nothing

@@ -147,6 +147,7 @@ count_subterms' e0 =
     BoolExpr{} -> pure () 
     SemiRingLiteral{} -> pure ()
     StringExpr{} -> pure ()
+    FloatExpr{} -> pure ()
     AppExpr ae -> do
       is_new <- recordExpr (appExprId ae)
       when is_new $ do

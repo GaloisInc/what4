@@ -104,6 +104,7 @@ module What4.Expr.Builder
   , NatExpr
   , IntegerExpr
   , RealExpr
+  , FloatExpr
   , BVExpr
   , CplxExpr
   , StringExpr
@@ -207,6 +208,7 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio (numerator, denominator)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import qualified LibBF as BF
 import           Numeric.Natural
 
 import           What4.BaseTypes
@@ -254,7 +256,6 @@ cachedEval tbl k action = do
       seq r $ do
       stToIO $ PH.insert tbl k r
       return r
-
 
 ------------------------------------------------------------------------
 -- SymbolVarBimap
@@ -403,7 +404,6 @@ type instance SymExpr (ExprBuilder t st fs) = Expr t
 type instance BoundVar (ExprBuilder t st fs) = ExprBoundVar t
 type instance SymAnnotation (ExprBuilder t st fs) = Nonce t
 
-
 ------------------------------------------------------------------------
 -- | ExprAllocator provides an interface for creating expressions from
 -- an applications.
@@ -420,8 +420,6 @@ data ExprAllocator t
                              -> AbstractValue tp
                              -> IO (Expr t tp)
                   }
-
-
 
 
 ------------------------------------------------------------------------
@@ -530,6 +528,7 @@ lookupIdxValue :: MonadIO m => IdxCache t f -> Expr t tp -> m (Maybe (f tp))
 lookupIdxValue _ SemiRingLiteral{} = return Nothing
 lookupIdxValue _ StringExpr{} = return Nothing
 lookupIdxValue _ BoolExpr{} = return Nothing
+lookupIdxValue _ FloatExpr{} = return Nothing
 lookupIdxValue c (NonceAppExpr e) = lookupIdx c (nonceExprId e)
 lookupIdxValue c (AppExpr e)  = lookupIdx c (appExprId e)
 lookupIdxValue c (BoundVarExpr i) = lookupIdx c (bvarId i)
@@ -556,6 +555,7 @@ exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
 exprMaybeId StringExpr{} = Nothing
 exprMaybeId BoolExpr{} = Nothing
+exprMaybeId FloatExpr{} = Nothing
 exprMaybeId (NonceAppExpr e) = Just $! nonceExprId e
 exprMaybeId (AppExpr  e) = Just $! appExprId e
 exprMaybeId (BoundVarExpr e) = Just $! bvarId e
@@ -967,6 +967,7 @@ evalBoundVars' tbls sym e0 =
     SemiRingLiteral{} -> return e0
     StringExpr{} -> return e0
     BoolExpr{} -> return e0
+    FloatExpr{} -> return e0
     AppExpr ae -> cachedEval (exprTable tbls) e0 $ do
       let a = appExprApp ae
       a' <- traverseApp (evalBoundVars' tbls sym) a
@@ -3287,12 +3288,15 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   ----------------------------------------------------------------------
   -- IEEE-754 floating-point operations
+
+  floatLit sym fpp f =
+    do l <- curProgramLoc sym
+       return $! FloatExpr fpp f l
   floatPZero = floatIEEEArithCt FloatPZero
   floatNZero = floatIEEEArithCt FloatNZero
   floatNaN = floatIEEEArithCt FloatNaN
   floatPInf = floatIEEEArithCt FloatPInf
   floatNInf = floatIEEEArithCt FloatNInf
-  floatLit sym fpp x = realToFloat sym fpp RNE =<< realLit sym x
   floatNeg = floatIEEEArithUnOp FloatNeg
   floatAbs = floatIEEEArithUnOp FloatAbs
   floatSqrt = floatIEEEArithUnOpR FloatSqrt
@@ -3348,6 +3352,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatToBinary sym x = case exprType x of
     BaseFloatRepr fpp | LeqProof <- lemmaFloatPrecisionIsPos fpp ->
       sbMakeExpr sym $ FloatToBinary fpp x
+
   bvToFloat sym fpp r = sbMakeExpr sym . BVToFloat fpp r
   sbvToFloat sym fpp r = sbMakeExpr sym . SBVToFloat fpp r
   realToFloat sym fpp r = sbMakeExpr sym . RealToFloat fpp r
@@ -3478,7 +3483,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatNaN _ _ = fail "NaN cannot be represented as a real value."
   iFloatPInf _ _ = fail "+Infinity cannot be represented as a real value."
   iFloatNInf _ _ = fail "-Infinity cannot be represented as a real value."
-  iFloatLit sym _ = realLit sym
+  iFloatLitRational sym _ = realLit sym
   iFloatLitSingle sym = realLit sym . toRational
   iFloatLitDouble sym = realLit sym . toRational
   iFloatLitLongDouble sym x =
@@ -3566,7 +3571,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
     floatUninterpArithCt "uninterpreted_float_pinf" sym . iFloatBaseTypeRepr sym
   iFloatNInf sym =
     floatUninterpArithCt "uninterpreted_float_ninf" sym . iFloatBaseTypeRepr sym
-  iFloatLit sym fi x = iRealToFloat sym fi RNE =<< realLit sym x
+  iFloatLitRational sym fi x = iRealToFloat sym fi RNE =<< realLit sym x
   iFloatLitSingle sym x =
     iFloatFromBinary sym SingleFloatRepr
       =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
@@ -3722,7 +3727,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatNaN sym = floatNaN sym . floatInfoToPrecisionRepr
   iFloatPInf sym = floatPInf sym . floatInfoToPrecisionRepr
   iFloatNInf sym = floatNInf sym . floatInfoToPrecisionRepr
-  iFloatLit sym = floatLit sym . floatInfoToPrecisionRepr
+  iFloatLitRational sym = floatLitRational sym . floatInfoToPrecisionRepr
   iFloatLitSingle sym x =
     floatFromBinary sym knownRepr
       =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)

@@ -141,6 +141,7 @@ import qualified What4.Protocol.SMTLib2.Syntax as SMT2 hiding (Term)
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Protocol.SMTWriter hiding (assume, Term)
 import           What4.SatResult
+import           What4.Utils.FloatHelpers (floatToBits)
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
 import           What4.Utils.Versions
@@ -523,6 +524,12 @@ instance SupportTermOps Term where
   floatIsNeg      = un_app "fp.isNegative"
   floatIsSubnorm  = un_app "fp.isSubnormal"
   floatIsNorm     = un_app "fp.isNormal"
+
+  floatTerm fpp@(FloatingPointPrecisionRepr eb sb) bf =
+      un_app (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) (bvTerm w bv)
+    where
+      w = addNat eb sb
+      bv = BV.mkBV w (floatToBits (intValue eb) (intValue sb) bf)
 
   floatCast fpp r = un_app $ mkRoundingOp (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) r
   floatRound r = un_app $ mkRoundingOp "fp.roundToIntegral" r

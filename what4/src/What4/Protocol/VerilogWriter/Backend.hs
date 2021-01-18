@@ -58,6 +58,7 @@ exprToVerilogExpr e = do
         doNotSupportError "non-bit-vector literals"
       BoolExpr b _   -> litBool b
       StringExpr _ _ -> doNotSupportError "strings"
+      FloatExpr{} -> doNotSupportError "floating-point values"
       AppExpr app -> appExprVerilogExpr app
       NonceAppExpr n -> nonceAppExprVerilogExpr n
       BoundVarExpr x ->
