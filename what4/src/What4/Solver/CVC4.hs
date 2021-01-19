@@ -206,5 +206,10 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setLogic writer SMT2.allSupported
 
 instance OnlineSolver (SMT2.Writer CVC4) where
-  startSolverProcess = SMT2.startSolver CVC4 SMT2.smtAckResult setInteractiveLogicAndOptions
+  startSolverProcess feat mbIOh sym = do
+    sp <- SMT2.startSolver CVC4 SMT2.smtAckResult setInteractiveLogicAndOptions feat mbIOh sym
+    timeout <- SolverGoalTimeout <$>
+               (getOpt =<< getOptionSetting cvc4Timeout (getConfiguration sym))
+    return $ sp { solverGoalTimeout = timeout }
+
   shutdownSolverProcess = SMT2.shutdownSolver CVC4

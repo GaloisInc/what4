@@ -126,7 +126,7 @@ import GHC.Stack
 -- to a specific Yices process.
 data Connection = Connection
   { yicesEarlyUnsat :: IORef (Maybe Int)
-  , yicesTimeout :: Integer
+  , yicesTimeout :: SolverGoalTimeout
   , yicesUnitDeclared :: IORef Bool
   }
 
@@ -410,7 +410,7 @@ setParamCommand nm v _ = safeCmd $ app "set-param" [ Builder.fromText nm, v ]
 
 setTimeoutCommand :: Command Connection
 setTimeoutCommand conn = unsafeCmd $
-  app "set-timeout" [ Builder.fromString (show (yicesTimeout conn)) ]
+   app "set-timeout" [ Builder.fromString (show (getGoalTimeoutInSeconds $ yicesTimeout conn)) ]
 
 declareUnitTypeCommand :: Command Connection
 declareUnitTypeCommand _conn = safeCmd $
@@ -434,7 +434,7 @@ newConnection ::
   Streams.InputStream Text ->
   (IORef (Maybe Int) -> AcknowledgementAction t Connection) ->
   ProblemFeatures {- ^ Indicates the problem features to support. -} ->
-  Integer ->
+  SolverGoalTimeout ->
   B.SymbolVarBimap t ->
   IO (WriterConn t Connection)
 newConnection stream in_stream ack reqFeatures timeout bindings = do
@@ -676,8 +676,9 @@ yicesStartSolver features auxOutput sym = do -- FIXME
   yices_path <- findSolverPath yicesPath cfg
   enableMCSat <- getOpt =<< getOptionSetting yicesEnableMCSat cfg
   enableInteractive <- getOpt =<< getOptionSetting yicesEnableInteractive cfg
-  goalTimeout <- getOpt =<< getOptionSetting yicesGoalTimeout cfg
-  let modeFlag | enableInteractive || goalTimeout /= 0 = "--mode=interactive"
+  goalTimeout <- SolverGoalTimeout . (1000*) <$> (getOpt =<< getOptionSetting yicesGoalTimeout cfg)
+  let modeFlag | enableInteractive
+                 || (getGoalTimeoutInSeconds goalTimeout) /= 0 = "--mode=interactive"
                | otherwise = "--mode=push-pop"
       args = modeFlag : "--print-success" :
              if enableMCSat then ["--mcsat"] else []
@@ -710,6 +711,7 @@ yicesStartSolver features auxOutput sym = do -- FIXME
                           , solverName = "Yices"
                           , solverEarlyUnsat = yicesEarlyUnsat (connState conn)
                           , solverSupportsResetAssertions = True
+                          , solverGoalTimeout = goalTimeout
                           }
 
 ------------------------------------------------------------------------
@@ -1095,7 +1097,8 @@ writeYicesFile sym path p = do
 
     str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
     in_str <- Streams.nullInput
-    c <- newConnection str in_str (const nullAcknowledgementAction) features 0 bindings
+    let t = SolverGoalTimeout 0  -- no timeout needed; not doing actual solving
+    c <- newConnection str in_str (const nullAcknowledgementAction) features t bindings
     setYicesParams c cfg
     assume c p
     if efSolver then
@@ -1124,6 +1127,7 @@ runYicesInOverride sym logData conditions resultFn = do
     }
   features <- checkSupportedByYices condition
   enableMCSat <- getOpt =<< getOptionSetting yicesEnableMCSat cfg
+  goalTimeout <- SolverGoalTimeout <$> (getOpt =<< getOptionSetting yicesGoalTimeout cfg)
   let efSolver = features `hasProblemFeature` useExistForall
   let nlSolver = features `hasProblemFeature` useNonlinearArithmetic
   let args0 | efSolver  = ["--mode=ef"] -- ,"--print-success"]
@@ -1144,7 +1148,7 @@ runYicesInOverride sym logData conditions resultFn = do
       -- Create new connection for sending commands to yices.
       bindings <- B.getSymbolVarBimap sym
 
-      c <- newConnection in_stream out_stream (const nullAcknowledgementAction) features 0 bindings
+      c <- newConnection in_stream out_stream (const nullAcknowledgementAction) features goalTimeout bindings
       -- Write yices parameters.
       setYicesParams c cfg
       -- Assert condition
@@ -1168,6 +1172,7 @@ runYicesInOverride sym logData conditions resultFn = do
                              , solverLogFn = logSolverEvent sym
                              , solverEarlyUnsat = yicesEarlyUnsat (connState c)
                              , solverSupportsResetAssertions = True
+                             , solverGoalTimeout = goalTimeout
                              }
       sat_result <- getSatResult yp
       logSolverEvent sym

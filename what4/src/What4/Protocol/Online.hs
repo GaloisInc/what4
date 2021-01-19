@@ -18,6 +18,8 @@ module What4.Protocol.Online
   ( OnlineSolver(..)
   , AnOnlineSolver(..)
   , SolverProcess(..)
+  , SolverGoalTimeout(..)
+  , getGoalTimeoutInSeconds
   , ErrorBehavior(..)
   , killSolver
   , push
@@ -94,6 +96,24 @@ data ErrorBehavior
      -- ^ This indicates the solver will remain live and respond to further
      --   commmands following an error
 
+-- | The amount of time that a solver is allowed to attempt to satisfy
+-- any particular goal.
+--
+-- The timeout value may be retrieved with
+-- 'getGoalTimeoutInMilliSeconds' or 'getGoalTimeoutInSeconds'.
+newtype SolverGoalTimeout = SolverGoalTimeout { getGoalTimeoutInMilliSeconds :: Integer }
+
+-- | Get the SolverGoalTimeout raw numeric value in units of seconds.
+getGoalTimeoutInSeconds :: SolverGoalTimeout -> Integer
+getGoalTimeoutInSeconds sgt =
+  let msecs = getGoalTimeoutInMilliSeconds sgt
+      secs = msecs `div` 1000
+      -- 0 is a special "no-timeout" value, so if the supplied goal
+      -- timeout in milliseconds is less than one second, round up to
+      -- a full second.
+  in if msecs > 0 && secs == 0 then 1 else secs
+
+
 -- | A live connection to a running solver process.
 data SolverProcess scope solver = SolverProcess
   { solverConn  :: !(WriterConn scope solver)
@@ -140,6 +160,11 @@ data SolverProcess scope solver = SolverProcess
     --   always have at least one assertion frame pushed, and pop all
     --   outstanding frames (and push a new top-level one) as a way
     --   to mimic the reset behavior.
+
+  , solverGoalTimeout :: SolverGoalTimeout
+    -- ^ The amount of time (in seconds) that a solver should spend
+    -- trying to satisfy any particular goal before giving up.  A
+    -- value of zero indicates no time limit.
   }
 
 

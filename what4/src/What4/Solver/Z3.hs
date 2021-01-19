@@ -195,5 +195,10 @@ setInteractiveLogicAndOptions writer = do
       SMT2.setOption writer "produce-unsat-cores" "true"
 
 instance OnlineSolver (SMT2.Writer Z3) where
-  startSolverProcess = SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions
+  startSolverProcess feat mbIOh sym = do
+    sp <- SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions feat mbIOh sym
+    timeout <- SolverGoalTimeout <$>
+               (getOpt =<< getOptionSetting z3Timeout (getConfiguration sym))
+    return $ sp { solverGoalTimeout = timeout }
+
   shutdownSolverProcess = SMT2.shutdownSolver Z3
