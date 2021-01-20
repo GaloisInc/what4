@@ -363,3 +363,22 @@ test-suite bvdomain_tests_hh
                , what4
 
   ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+
+test-suite template_tests
+  type: exitcode-stdio-1.0
+  default-language: Haskell2010
+
+  hs-source-dirs: test
+  main-is : TestTemplate.hs
+
+  build-depends: base
+               , bv-sized
+               , libBF
+               , parameterized-utils
+               , tasty >= 0.10
+               , tasty-hedgehog
+               , hedgehog >= 1.0.2
+               , transformers
+               , what4
+
+  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns

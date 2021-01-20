@@ -46,6 +46,7 @@ module What4.Protocol.SMTLib2
   , getName
   , nameResult
   , setProduceModels
+  , smtLibEvalFuns
     -- * Logic
   , SMT2.Logic(..)
   , SMT2.qf_bv

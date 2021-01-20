@@ -49,8 +49,8 @@ floatFromRational e p r rat = fpCheckStatus
 
 
 -- | Convert a floating point number to a rational, if possible.
-floatToRational :: String -> BigFloat -> Maybe Rational
-floatToRational fun bf =
+floatToRational :: BigFloat -> Maybe Rational
+floatToRational bf =
   case bfToRep bf of
     BFNaN -> Nothing
     BFRep s num ->
@@ -64,9 +64,9 @@ floatToRational fun bf =
 
 
 -- | Convert a floating point number to an integer, if possible.
-floatToInteger :: String -> RoundMode -> BigFloat -> Maybe Integer
-floatToInteger fun r fp =
-  do rat <- floatToRational fun fp
+floatToInteger :: RoundMode -> BigFloat -> Maybe Integer
+floatToInteger r fp =
+  do rat <- floatToRational fp
      pure case r of
             NearEven -> round rat
             NearAway -> if rat > 0 then ceiling rat else floor rat

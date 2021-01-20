@@ -36,6 +36,7 @@ module What4.Expr.GroundEval
   , evalGroundApp
   , evalGroundNonceApp
   , defaultValueForType
+  , groundEq
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -218,21 +219,23 @@ mand = MAnd . Just
 coerceMAnd :: MAnd a -> MAnd b
 coerceMAnd (MAnd x) = MAnd x
 
-
-groundEq :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> MAnd z
-groundEq bt x y = case bt of
-  BaseBoolRepr    -> mand $ x == y
-  BaseRealRepr    -> mand $ x == y
-  BaseIntegerRepr -> mand $ x == y
-  BaseNatRepr     -> mand $ x == y
-  BaseBVRepr _    -> mand $ x == y
-  BaseFloatRepr _ -> mand $ x == y
-  BaseStringRepr _ -> mand $ x == y
-  BaseComplexRepr -> mand $ x == y
-  BaseStructRepr flds ->
-    coerceMAnd (Ctx.traverseWithIndex
-      (\i tp -> groundEq tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
-  BaseArrayRepr{} -> MAnd Nothing
+groundEq :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> Maybe Bool
+groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
+  where
+    f :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> MAnd z
+    f bt x y = case bt of
+      BaseBoolRepr     -> mand $ x == y
+      BaseRealRepr     -> mand $ x == y
+      BaseIntegerRepr  -> mand $ x == y
+      BaseNatRepr      -> mand $ x == y
+      BaseBVRepr _     -> mand $ x == y
+      BaseFloatRepr _  -> mand $ x == y
+      BaseStringRepr _ -> mand $ x == y
+      BaseComplexRepr  -> mand $ x == y
+      BaseStructRepr flds ->
+        coerceMAnd (Ctx.traverseWithIndex
+          (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
+      BaseArrayRepr{} -> MAnd Nothing
 
 -- | Helper function for evaluating @App@ expressions.
 --
@@ -248,7 +251,7 @@ evalGroundApp f0 a0 = do
     BaseEq bt x y ->
       do x' <- f x
          y' <- f y
-         MaybeT (return (unMAnd (groundEq bt x' y')))
+         MaybeT (return (groundEq bt x' y'))
 
     BaseIte _ _ x y z -> do
       xv <- f x
