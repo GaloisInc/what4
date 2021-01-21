@@ -222,7 +222,7 @@ The key modules to look at when interacting with a solver are:
 * `What4.SatResult` and `What4.Expr.GroundEval` (for analyzing solver output)
 
 Additional implementation and operational documentation can be found
-in the (doc/overview.md overview document)[doc/overview.md].
+in the [doc/overview.md overview document](doc/overview.md).
 
 ## Known working solver versions
 
