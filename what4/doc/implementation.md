@@ -50,9 +50,16 @@ corresponding set of pipes over which communications can occur.  The
 What4/Protocol code manages the connection, including initiating the
 creation of a solver subprocess as needed if the previous process exits.
 
+Interaction with most solvers uses the SMTLIB2 interface, which is a
+standard interface supported by many solvers which participate in the
+SMT benchmarking challenge.  Solvers may provide alternative
+interfaces as well.
+
+
 #### Signals (Ctrl-C)
 
-There is no explicit management of signals or `Ctrl-C` provided by What4.
+There is no explicit management of signals or `Ctrl-C` provided by
+What4.
 
 The normal system support for `Ctrl-C` is to generate a `SIGINT` signal
 (or `CTRL_C_EVENT/CTRL_BREAK_EVENT` on Windows) to all processes in
@@ -76,19 +83,29 @@ code is run, although this is still delivered to all foreground
 processes, so the expectation is that the solver processes will
 receive this and exit.
 
-##### Yices
+#### Yices
 
-Note that at the present time, the Yices solver is a notable exception
-to the above process and signal management.  The Yices solver is
-invoked with the `yices` command in order to take advantage of some of
-the specific features available in the resulting REPL mode; however,
-the `yices` REPL mode modifies `SIGINT` (`Ctrl-C`) to stop the current
-search and return to the REPL prompt and `SIGINT` is otherwise
-ignored.  [There is a `yices-smt2` executable providing SMT2
-functionality and standard `SIGINT`/`Ctrl-C` behavior, but it does not
-provide some of the features desired by What4.]  Thus, use of `Ctrl-C`
-when running with the Yices online solver will typically leave behind
-one or more `yices` processes that must be manually killed.
+Yices interaction does not use the `yices_smt2` executable which
+provides the SMTLIB2 interface; instead What4 uses the `yices`
+executable, which supports the Yices language.
+
+The origins of this difference were likely related to array support
+features that weren't available in SMTLIB2, and original development
+of the code that is now in What4 may have predated SMTLIB2
+availability.
+
+> At the present time (2021), it is thought that SMTLIB2 support for
+> Array theory may be sufficiently advanced that the Yices language
+> interface is no longer needed, but this requires further
+> investigation.
+
+Note that because of the use of the `yices` executable the Yices
+solver interaction is a notable exception to the process and signal
+management described above.  The `yices` REPL mode modifies `SIGINT`
+(`Ctrl-C`) to stop the current search and return to the REPL prompt
+and `SIGINT` is otherwise ignored. Thus, use of `Ctrl-C` when running
+with the Yices online solver will typically leave behind one or more
+`yices` processes that must be manually killed.
 
 While it is possible to install a handler for keyboard interrupts that
 will shutdown the Yices process, this is problematic for several
