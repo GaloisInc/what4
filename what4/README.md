@@ -219,10 +219,47 @@ The key modules to look at when interacting with a solver are:
 * `What4.Protocol.SMTLib2` (the functions to interact with a solver backend)
 * `What4.Solver` (solver-specific implementations of `What4.Protocol.SMTLib2`)
 * `What4.Solver.*`
+* `What4.Protocol.Online` (interface for online solver connections)
 * `What4.SatResult` and `What4.Expr.GroundEval` (for analyzing solver output)
 
 Additional implementation and operational documentation can be found
 in the [implementation documentation in doc/implementation.md](doc/implementation.md).
+
+## Formula Construction vs Solving
+
+In what4, building expressions and solving expressions are orthogonal concerns.
+When you create an `ExprBuilder` (with `newExprBuilder`), you are not committing
+to any particular solver or solving strategy (except insofar as the selected
+floating point mode might preclude the use of certain solvers).  There are two
+dimensions of solver choice: solver and mode.  The supported solvers are listed
+in `What4.Solver.*`.  There are two modes:
+
+- All solvers can be used in an "offline" mode, where a new solver process is
+  created for each query (e.g., via `What4.Solver.solver_adapter_check_sat`)
+- Many solvers also support an "online" mode, where what4 maintains a persistent
+  connection to the solver and can issue multiple queries to the same solver
+  process (via the interfaces in `What4.Protocol.Online`)
+
+There are a number of reasons to use solvers in online mode.  First, state
+(i.e., previously defined terms and assumptions) can be shared between queries.
+For a series of closely related queries that share context, this can be a
+significant performance benefit.  Solvers that support online solving provide
+the SMT `push` and `pop` primitives for maintaining context frames that can be
+discarded (to define local bindings and assumptions).  The canonical use of
+online solving is *symbolic execution*, which usually requires reflecting the
+state of the program at every program point into the solver (in the form of a
+path condition) and using `push` and `pop` to mimic the call and return
+structure of programs. Second, reusing a single solver instance can save process
+startup overhead in the presence of many small queries.
+
+While it may always seem advantageous to use the online solving mode, there are
+advantages to offline solving.  As offline solving creates a fresh solver
+process for each query, it enables parallel solving.  Online solving necessarily
+serializes queries.  Additionally, offline solving avoids the need for complex
+state management to synchronize the solver state with the state of the tool
+using what4.  Additionally, not all solvers that support online interaction
+support per-goal timeouts; using offline solving trivially allows users of what4
+to enforce timeouts for each solved goal.
 
 ## Known working solver versions
 
