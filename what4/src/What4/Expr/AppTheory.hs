@@ -173,11 +173,8 @@ appTheory a0 =
     FloatMul{}        -> FloatingPointTheory
     FloatDiv{}        -> FloatingPointTheory
     FloatRem{}        -> FloatingPointTheory
-    FloatMin{}        -> FloatingPointTheory
-    FloatMax{}        -> FloatingPointTheory
     FloatFMA{}        -> FloatingPointTheory
     FloatFpEq{}       -> FloatingPointTheory
-    FloatFpNe{}       -> FloatingPointTheory
     FloatLe{}         -> FloatingPointTheory
     FloatLt{}         -> FloatingPointTheory
     FloatIsNaN{}      -> FloatingPointTheory

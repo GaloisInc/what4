@@ -1324,16 +1324,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     -> !(e (BaseFloatType fpp))
     -> !(e (BaseFloatType fpp))
     -> App e (BaseFloatType fpp)
-  FloatMin
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatMax
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
   FloatFMA
     :: !(FloatPrecisionRepr fpp)
     -> !RoundingMode
@@ -1342,10 +1332,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     -> !(e (BaseFloatType fpp))
     -> App e (BaseFloatType fpp)
   FloatFpEq
-    :: !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e BaseBoolType
-  FloatFpNe
     :: !(e (BaseFloatType fpp))
     -> !(e (BaseFloatType fpp))
     -> App e BaseBoolType
@@ -1617,11 +1603,8 @@ appType a =
     FloatMul fpp _ _ _ -> BaseFloatRepr fpp
     FloatDiv fpp _ _ _ -> BaseFloatRepr fpp
     FloatRem fpp _ _ -> BaseFloatRepr fpp
-    FloatMin fpp _ _ -> BaseFloatRepr fpp
-    FloatMax fpp _ _ -> BaseFloatRepr fpp
     FloatFMA fpp _ _ _ _ -> BaseFloatRepr fpp
     FloatFpEq{} -> knownRepr
-    FloatFpNe{} -> knownRepr
     FloatLe{} -> knownRepr
     FloatLt{} -> knownRepr
     FloatIsNaN{} -> knownRepr
@@ -1780,11 +1763,8 @@ abstractEval f a0 = do
     FloatMul{} -> ()
     FloatDiv{} -> ()
     FloatRem{} -> ()
-    FloatMin{} -> ()
-    FloatMax{} -> ()
     FloatFMA{} -> ()
     FloatFpEq{} -> Nothing
-    FloatFpNe{} -> Nothing
     FloatLe{} -> Nothing
     FloatLt{} -> Nothing
     FloatIsNaN{} -> Nothing
@@ -1971,11 +1951,8 @@ reduceApp sym unary a0 = do
     FloatMul _ r x y -> floatMul sym r x y
     FloatDiv _ r x y -> floatDiv sym r x y
     FloatRem _ x y -> floatRem sym x y
-    FloatMin _ x y -> floatMin sym x y
-    FloatMax _ x y -> floatMax sym x y
     FloatFMA _ r x y z -> floatFMA sym r x y z
     FloatFpEq x y -> floatFpEq sym x y
-    FloatFpNe x y -> floatFpNe sym x y
     FloatLe   x y -> floatLe sym x y
     FloatLt   x y -> floatLt sym x y
     FloatIsNaN     x -> floatIsNaN sym x
@@ -2278,11 +2255,8 @@ ppApp' a0 = do
     FloatMul _ r x y -> ppSExpr (Text.pack $ "floatMul " <> show r) [x, y]
     FloatDiv _ r x y -> ppSExpr (Text.pack $ "floatDiv " <> show r) [x, y]
     FloatRem _ x y -> ppSExpr "floatRem" [x, y]
-    FloatMin _ x y -> ppSExpr "floatMin" [x, y]
-    FloatMax _ x y -> ppSExpr "floatMax" [x, y]
     FloatFMA _ r x y z -> ppSExpr (Text.pack $ "floatFMA " <> show r) [x, y, z]
     FloatFpEq x y -> ppSExpr "floatFpEq" [x, y]
-    FloatFpNe x y -> ppSExpr "floatFpNe" [x, y]
     FloatLe x y -> ppSExpr "floatLe" [x, y]
     FloatLt x y -> ppSExpr "floatLt" [x, y]
     FloatIsNaN x -> ppSExpr "floatIsNaN" [x]

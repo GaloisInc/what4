@@ -334,8 +334,8 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
     -> SymInterpretedFloat sym fi
     -> IO (Pred sym)
 
-  -- | Check IEEE non-equality of two floating point numbers.
-  iFloatFpNe
+  -- | Check IEEE apartness of two floating point numbers.
+  iFloatFpApart
     :: sym
     -> SymInterpretedFloat sym fi
     -> SymInterpretedFloat sym fi

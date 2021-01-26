@@ -319,11 +319,8 @@ appVerilogExpr app =
     FloatMul  _ _ _ _ -> doNotSupportError "floats"
     FloatDiv _ _ _ _ -> doNotSupportError "floats"
     FloatRem _ _ _ -> doNotSupportError "floats"
-    FloatMin _ _ _ -> doNotSupportError "floats"
-    FloatMax _ _ _ -> doNotSupportError "floats"
     FloatFMA _ _ _ _ _ -> doNotSupportError "floats"
     FloatFpEq _ _ -> doNotSupportError "floats"
-    FloatFpNe _ _ -> doNotSupportError "floats"
     FloatLe _ _ -> doNotSupportError "floats"
     FloatLt _ _ -> doNotSupportError "floats"
 

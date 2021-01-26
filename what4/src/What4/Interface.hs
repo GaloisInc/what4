@@ -127,6 +127,7 @@ module What4.Interface
   , orOneOf
   , itePredM
   , iteM
+  , iteList
   , predToReal
 
     -- ** Complex number operations
@@ -169,7 +170,6 @@ import           Control.Monad.IO.Class
 import qualified Data.BitVector.Sized as BV
 import           Data.Coerce (coerce)
 import           Data.Foldable
-import           Data.Hashable
 import           Data.Kind ( Type )
 import qualified Data.Map as Map
 import           Data.Parameterized.Classes
@@ -197,6 +197,7 @@ import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
 import           What4.Utils.Complex
+import           What4.Utils.FloatHelpers (RoundingMode(..))
 import           What4.Utils.StringLiteral
 
 ------------------------------------------------------------------------
@@ -1799,21 +1800,30 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     -> SymFloat sym fpp
     -> IO (SymFloat sym fpp)
 
-  -- | Compute the reminder: @x - y * n@, where @n@ in Z is nearest to @x / y@.
+  -- | Compute the reminder: @x - y * n@, where @n@ in Z is nearest to @x / y@
+  --   (breaking ties to even values of @n@).
   floatRem
     :: sym
     -> SymFloat sym fpp
     -> SymFloat sym fpp
     -> IO (SymFloat sym fpp)
 
-  -- | Return the min of two floating point numbers.
+  -- | Return the minimum of two floating point numbers.
+  --   If one argument is NaN, return the other argument.
+  --   If the arguments are equal when compared as floating-point values,
+  --   one of the two will be returned, but it is unspecified which;
+  --   this underspecification can (only) be observed with zeros of different signs.
   floatMin
     :: sym
     -> SymFloat sym fpp
     -> SymFloat sym fpp
     -> IO (SymFloat sym fpp)
 
-  -- | Return the max of two floating point numbers.
+  -- | Return the maximum of two floating point numbers.
+  --   If one argument is NaN, return the other argument.
+  --   If the arguments are equal when compared as floating-point values,
+  --   one of the two will be returned, but it is unspecified which;
+  --   this underspecification can (only) be observed with zeros of different signs.
   floatMax
     :: sym
     -> SymFloat sym fpp
@@ -1865,21 +1875,37 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     -> SymFloat sym fpp
     -> IO (Pred sym)
 
-  -- | Check IEEE-754 non-equality of two floating point numbers.
+  -- | Check IEEE-754 apartness of two floating point numbers.
   --
   --   NOTE! This test returns false if either value is @NaN@; in particular
-  --   @NaN@ is not distinct from any other value!  Moreover, positive and
-  --   negative 0 will not compare distinct, despite having different
-  --   bit patterns.
+  --   @NaN@ is not apart from any other value!  Moreover, positive and
+  --   negative 0 will not compare apart, despite having different
+  --   bit patterns.  Note that @x@ is apart from @y@ iff @x < y@ or @x > y@.
   --
   --   This test usually does NOT correspond to the not-equal tests found
   --   in programming languages.  Instead, one generally takes the logical
   --   negation of the `floatFpEq` test.
-  floatFpNe
+  floatFpApart
     :: sym
     -> SymFloat sym fpp
     -> SymFloat sym fpp
     -> IO (Pred sym)
+  floatFpApart sym x y =
+    do l <- floatLt sym x y
+       g <- floatGt sym x y
+       orPred sym l g
+
+  -- | Check if two floating point numbers are "unordered".  This happens
+  --   precicely when one or both of the inputs is @NaN@.
+  floatFpUnordered
+    :: sym
+    -> SymFloat sym fpp
+    -> SymFloat sym fpp
+    -> IO (Pred sym)
+  floatFpUnordered sym x y =
+    do xnan <- floatIsNaN sym x
+       ynan <- floatIsNaN sym y
+       orPred sym xnan ynan
 
   -- | Check IEEE-754 @<=@ on two floating point numbers.
   --
@@ -2348,17 +2374,6 @@ bvBitreverse sym v = do
   bvJoinVector sym (knownNat @1) . Vector.reverse
     =<< bvSplitVector sym (bvWidth v) (knownNat @1) v
 
--- | Rounding modes for IEEE-754 floating point operations.
-data RoundingMode
-  = RNE -- ^ Round to nearest even.
-  | RNA -- ^ Round to nearest away.
-  | RTP -- ^ Round toward plus Infinity.
-  | RTN -- ^ Round toward minus Infinity.
-  | RTZ -- ^ Round toward zero.
-  deriving (Eq, Generic, Ord, Show, Enum)
-
-instance Hashable RoundingMode
-
 
 -- | Create a literal from an 'IndexLit'.
 indexLit :: IsExprBuilder sym => sym -> IndexLit idx -> IO (SymExpr sym idx)
@@ -2371,15 +2386,31 @@ indexLit sym (BVIndexLit w v) = bvLit sym w v
 --   false only the corresponding "then" or "else"
 --   action is run; otherwise both actions are run
 --   and combined with the given "ite" action.
-iteM :: IsExprBuilder sym
-        => (sym -> Pred sym -> v -> v -> IO v)
-        -> sym -> Pred sym -> IO v -> IO v -> IO v
+iteM :: IsExprBuilder sym =>
+  (sym -> Pred sym -> v -> v -> IO v) ->
+  sym -> Pred sym -> IO v -> IO v -> IO v
 iteM ite sym p mx my = do
   case asConstantPred p of
     Just True -> mx
     Just False -> my
     Nothing -> join $ ite sym p <$> mx <*> my
 
+-- | An iterated sequence of if/then/else operations.
+--   The list of predicates and "then" results is
+--   constructed as-needed. The "default" value
+--   represents the result of the expression if
+--   none of the predicates in the given list
+--   is true.
+iteList :: IsExprBuilder sym =>
+  (sym -> Pred sym -> v -> v -> IO v) ->
+  sym ->
+  [(IO (Pred sym), IO v)] ->
+  (IO v) ->
+  IO v
+iteList _ite _sym [] def = def
+iteList ite sym ((mp,mx):xs) def =
+  do p <- mp
+     iteM ite sym p mx (iteList ite sym xs def)
 
 -- | A function that can be applied to symbolic arguments.
 --

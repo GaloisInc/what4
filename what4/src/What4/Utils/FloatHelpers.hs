@@ -1,14 +1,45 @@
 {-# Language BlockArguments, OverloadedStrings #-}
 {-# Language BangPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# Language GADTs #-}
 module What4.Utils.FloatHelpers where
 
+import qualified Control.Exception as Ex
 import Data.Ratio(numerator,denominator)
-import Data.Int(Int64)
-import Data.Bits(testBit,setBit,shiftL,shiftR,(.&.),(.|.))
+import Data.Hashable
+import GHC.Generics (Generic)
+import GHC.Stack
+
 import LibBF
 
+import What4.BaseTypes
 import What4.Panic (panic)
 
+-- | Rounding modes for IEEE-754 floating point operations.
+data RoundingMode
+  = RNE -- ^ Round to nearest even.
+  | RNA -- ^ Round to nearest away.
+  | RTP -- ^ Round toward plus Infinity.
+  | RTN -- ^ Round toward minus Infinity.
+  | RTZ -- ^ Round toward zero.
+  deriving (Eq, Generic, Ord, Show, Enum)
+
+instance Hashable RoundingMode
+
+bfStatus :: HasCallStack => (a, Status) -> a
+bfStatus (_, MemError)     = Ex.throw Ex.HeapOverflow
+bfStatus (x,_)             = x
+
+fppOpts :: FloatPrecisionRepr fpp -> RoundingMode -> BFOpts
+fppOpts (FloatingPointPrecisionRepr eb sb) r =
+  fpOpts (intValue eb) (intValue sb) (toRoundMode r)
+
+toRoundMode :: RoundingMode -> RoundMode
+toRoundMode RNE = NearEven
+toRoundMode RNA = NearAway
+toRoundMode RTP = ToPosInf
+toRoundMode RTN = ToNegInf
+toRoundMode RTZ = ToZero
 
 -- | Make LibBF options for the given precision and rounding mode.
 fpOpts :: Integer -> Integer -> RoundMode -> BFOpts
@@ -29,20 +60,16 @@ fpOpts e p r =
                   else Nothing
 
 
--- | Check that we didn't get an unexpected status.
-fpCheckStatus :: (BigFloat,Status) -> BigFloat
-fpCheckStatus (r,s) =
-  case s of
-    MemError  -> panic "checkStatus" [ "libBF: Memory error" ]
-    _         -> r
+-- | Make a floating point number from an integer, using the given rounding mode
+floatFromInteger :: BFOpts -> Integer -> BigFloat
+floatFromInteger opts i = bfStatus (bfRoundFloat opts (bfFromInteger i))
 
 -- | Make a floating point number from a rational, using the given rounding mode
-floatFromRational :: Integer -> Integer -> RoundMode -> Rational -> BigFloat
-floatFromRational e p r rat = fpCheckStatus
+floatFromRational :: BFOpts -> Rational -> BigFloat
+floatFromRational opts rat = bfStatus
     if den == 1 then bfRoundFloat opts num
                 else bfDiv opts num (bfFromInteger den)
   where
-  opts  = fpOpts e p r
 
   num   = bfFromInteger (numerator rat)
   den   = denominator rat
@@ -62,100 +89,18 @@ floatToRational bf =
                            Neg -> negate ab
           where ab = fromInteger i * (2 ^^ ev)
 
-
 -- | Convert a floating point number to an integer, if possible.
-floatToInteger :: RoundMode -> BigFloat -> Maybe Integer
+floatToInteger :: RoundingMode -> BigFloat -> Maybe Integer
 floatToInteger r fp =
   do rat <- floatToRational fp
      pure case r of
-            NearEven -> round rat
-            NearAway -> if rat > 0 then ceiling rat else floor rat
-            ToPosInf -> ceiling rat
-            ToNegInf -> floor rat
-            ToZero   -> truncate rat
-            _        -> panic "fpCvtToInteger"
-                              ["Unexpected rounding mode", show r]
+            RNE -> round rat
+            RNA -> if rat > 0 then ceiling rat else floor rat
+            RTP -> ceiling rat
+            RTN -> floor rat
+            RTZ -> truncate rat
 
-
--- | Make a float using "raw" bits.
-floatFromBits ::
-  Integer {- ^ Exponent width -} ->
-  Integer {- ^ Precision widht -} ->
-  Integer {- ^ Raw bits -} ->
-  BigFloat
-
-floatFromBits e p bits
-  | expoBiased == 0 && mant == 0 =            -- zero
-    if isNeg then bfNegZero else bfPosZero
-
-  | expoBiased == eMask && mant ==  0 =       -- infinity
-    if isNeg then bfNegInf else bfPosInf
-
-  | expoBiased == eMask = bfNaN               -- NaN
-
-  | expoBiased == 0 =                         -- Subnormal
-    case bfMul2Exp opts (bfFromInteger mant) (expoVal + 1) of
-      (num,Ok) -> if isNeg then bfNeg num else num
-      (_,s)    -> panic "floatFromBits" [ "Unexpected status: " ++ show s ]
-
-  | otherwise =                               -- Normal
-    case bfMul2Exp opts (bfFromInteger mantVal) expoVal of
-      (num,Ok) -> if isNeg then bfNeg num else num
-      (_,s)    -> panic "floatFromBits" [ "Unexpected status: " ++ show s ]
-
-  where
-  opts       = expBits e' <> precBits (p' + 1) <> allowSubnormal
-
-  e'         = fromInteger e                               :: Int
-  p'         = fromInteger p - 1                           :: Int
-  eMask      = (1 `shiftL` e') - 1                         :: Int64
-  pMask      = (1 `shiftL` p') - 1                         :: Integer
-
-  isNeg      = testBit bits (e' + p')
-
-  mant       = pMask .&. bits                              :: Integer
-  mantVal    = mant `setBit` p'                            :: Integer
-  -- accounts for the implicit 1 bit
-
-  expoBiased = eMask .&. fromInteger (bits `shiftR` p')    :: Int64
-  bias       = eMask `shiftR` 1                            :: Int64
-  expoVal    = expoBiased - bias - fromIntegral p'         :: Int64
-
-
--- | Turn a float into raw bits.
--- @NaN@ is represented as a positive "quiet" @NaN@
--- (most significant bit in the significand is set, the rest of it is 0)
-floatToBits :: Integer -> Integer -> BigFloat -> Integer
-floatToBits e p bf =  (isNeg      `shiftL` (e' + p'))
-                  .|. (expBiased  `shiftL` p')
-                  .|. (mant       `shiftL` 0)
-  where
-  e' = fromInteger e     :: Int
-  p' = fromInteger p - 1 :: Int
-
-  eMask = (1 `shiftL` e') - 1   :: Integer
-  pMask = (1 `shiftL` p') - 1   :: Integer
-
-  (isNeg, expBiased, mant) =
-    case bfToRep bf of
-      BFNaN       -> (0,  eMask, 1 `shiftL` (p' - 1))
-      BFRep s num -> (sign, be, ma)
-        where
-        sign = case s of
-                Neg -> 1
-                Pos -> 0
-
-        (be,ma) =
-          case num of
-            Zero     -> (0,0)
-            Num i ev
-              | ex == 0   -> (0, i `shiftL` (p' - m  -1))
-              | otherwise -> (ex, (i `shiftL` (p' - m)) .&. pMask)
-              where
-              m    = msb 0 i - 1
-              bias = eMask `shiftR` 1
-              ex   = toInteger ev + bias + toInteger m
-
-            Inf -> (eMask,0)
-
-  msb !n j = if j == 0 then n else msb (n+1) (j `shiftR` 1)
+floatRoundToInt :: HasCallStack =>
+  FloatPrecisionRepr fpp -> RoundingMode -> BigFloat -> BigFloat
+floatRoundToInt fpp r bf =
+  bfStatus (bfRoundFloat (fppOpts fpp r) (bfStatus (bfRoundInt (toRoundMode r) bf)))

@@ -125,6 +125,7 @@ import qualified System.IO.Streams.Attoparsec.Text as Streams
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
 import qualified Prettyprinter as PP
+import           LibBF( bfToBits )
 
 import           Prelude hiding (writeFile)
 
@@ -142,7 +143,7 @@ import qualified What4.Protocol.SMTLib2.Syntax as SMT2 hiding (Term)
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Protocol.SMTWriter hiding (assume, Term)
 import           What4.SatResult
-import           What4.Utils.FloatHelpers (floatToBits)
+import           What4.Utils.FloatHelpers (fppOpts)
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
 import           What4.Utils.Versions
@@ -508,8 +509,6 @@ instance SupportTermOps Term where
   floatMul r = bin_app $ mkRoundingOp "fp.mul" r
   floatDiv r = bin_app $ mkRoundingOp "fp.div" r
   floatRem = bin_app "fp.rem"
-  floatMin = bin_app "fp.min"
-  floatMax = bin_app "fp.max"
 
   floatFMA r x y z = term_app (mkRoundingOp "fp.fma" r) [x, y, z]
 
@@ -530,7 +529,7 @@ instance SupportTermOps Term where
       un_app (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) (bvTerm w bv)
     where
       w = addNat eb sb
-      bv = BV.mkBV w (floatToBits (intValue eb) (intValue sb) bf)
+      bv = BV.mkBV w (bfToBits (fppOpts fpp RNE) bf)
 
   floatCast fpp r = un_app $ mkRoundingOp (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) r
   floatRound r = un_app $ mkRoundingOp "fp.roundToIntegral" r

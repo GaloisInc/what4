@@ -3305,8 +3305,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatMul = floatIEEEArithBinOpR FloatMul
   floatDiv = floatIEEEArithBinOpR FloatDiv
   floatRem = floatIEEEArithBinOp FloatRem
-  floatMin = floatIEEEArithBinOp FloatMin
-  floatMax = floatIEEEArithBinOp FloatMax
   floatFMA sym r x y z =
     let BaseFloatRepr fpp = exprType x in sbMakeExpr sym $ FloatFMA fpp r x y z
   floatEq sym x y
@@ -3316,9 +3314,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatFpEq sym x y
     | x == y = notPred sym =<< floatIsNaN sym x
     | otherwise = floatIEEELogicBinOp FloatFpEq sym x y
-  floatFpNe sym x y
-    | x == y = return $ falsePred sym
-    | otherwise = floatIEEELogicBinOp FloatFpNe sym x y
   floatLe sym x y
     | x == y = notPred sym =<< floatIsNaN sym x
     | otherwise = floatIEEELogicBinOp FloatLe sym x y
@@ -3352,6 +3347,34 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatToBinary sym x = case exprType x of
     BaseFloatRepr fpp | LeqProof <- lemmaFloatPrecisionIsPos fpp ->
       sbMakeExpr sym $ FloatToBinary fpp x
+
+  floatMin sym x y =
+    iteList floatIte sym
+      [ (floatIsNaN sym x, pure y)
+      , (floatIsNaN sym y, pure x)
+      , (floatLt sym x y , pure x)
+      , (floatLt sym y x , pure y)
+      , (floatEq sym x y , pure x) -- NB logical equality, not IEEE 754 equality
+      ]
+      -- The only way to get here is if x and y are zeros
+      -- with different sign.
+      -- Return one of the two values nondeterministicly.
+      (do b <- freshConstant sym emptySymbol BaseBoolRepr
+          floatIte sym b x y)
+
+  floatMax sym x y =
+    iteList floatIte sym
+      [ (floatIsNaN sym x, pure y)
+      , (floatIsNaN sym y, pure x)
+      , (floatLt sym x y , pure y)
+      , (floatLt sym y x , pure x)
+      , (floatEq sym x y , pure x) -- NB logical equality, not IEEE 754 equality
+      ]
+      -- The only way to get here is if x and y are zeros
+      -- with different sign.
+      -- Return one of the two values nondeterministicly.
+      (do b <- freshConstant sym emptySymbol BaseBoolRepr
+          floatIte sym b x y)
 
   bvToFloat sym fpp r = sbMakeExpr sym . BVToFloat fpp r
   sbvToFloat sym fpp r = sbMakeExpr sym . SBVToFloat fpp r
@@ -3510,7 +3533,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatEq = realEq
   iFloatNe = realNe
   iFloatFpEq = realEq
-  iFloatFpNe = realNe
+  iFloatFpApart = realNe
   iFloatLe = realLe
   iFloatLt = realLt
   iFloatGe = realGe
@@ -3602,7 +3625,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
   iFloatEq = isEq
   iFloatNe sym x y = notPred sym =<< isEq sym x y
   iFloatFpEq = floatUninterpLogicBinOp "uninterpreted_float_fp_eq"
-  iFloatFpNe = floatUninterpLogicBinOp "uninterpreted_float_fp_ne"
+  iFloatFpApart = floatUninterpLogicBinOp "uninterpreted_float_fp_apart"
   iFloatLe = floatUninterpLogicBinOp "uninterpreted_float_le"
   iFloatLt = floatUninterpLogicBinOp "uninterpreted_float_lt"
   iFloatGe sym x y = floatUninterpLogicBinOp "uninterpreted_float_le" sym y x
@@ -3756,7 +3779,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatEq = floatEq
   iFloatNe = floatNe
   iFloatFpEq = floatFpEq
-  iFloatFpNe = floatFpNe
+  iFloatFpApart = floatFpApart
   iFloatLe = floatLe
   iFloatLt = floatLt
   iFloatGe = floatGe

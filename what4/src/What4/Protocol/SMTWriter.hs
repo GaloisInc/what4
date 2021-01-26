@@ -130,7 +130,7 @@ import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder (decimal)
 import qualified Data.Text.Lazy as Lazy
 import           Data.Word
-import           LibBF (BigFloat)
+import           LibBF (BigFloat, bfFromBits)
 
 import           Numeric.Natural
 import           Prettyprinter hiding (Unbounded)
@@ -403,9 +403,6 @@ class Num v => SupportTermOps v where
   floatMul :: RoundingMode -> v -> v -> v
   floatDiv :: RoundingMode -> v -> v -> v
   floatRem :: v -> v -> v
-  floatMin :: v -> v -> v
-  floatMax :: v -> v -> v
-
   floatFMA :: RoundingMode -> v -> v -> v -> v
 
   floatEq   :: v -> v -> v
@@ -2437,14 +2434,6 @@ appSMTExpr ae = do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
       freshBoundTerm (FloatTypeMap fpp) $ floatRem xe ye
-    FloatMin fpp x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm (FloatTypeMap fpp) $ floatMin xe ye
-    FloatMax fpp x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm (FloatTypeMap fpp) $ floatMax xe ye
     FloatFMA fpp r x y z -> do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
@@ -2454,13 +2443,6 @@ appSMTExpr ae = do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
       freshBoundTerm BoolTypeMap $ floatFpEq xe ye
-    FloatFpNe x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm BoolTypeMap $
-        notExpr (floatEq xe ye)
-        .&& notExpr (floatIsNaN xe)
-        .&& notExpr (floatIsNaN ye)
     FloatLe x y -> do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
@@ -3001,8 +2983,8 @@ getSolverVal :: forall h t tp
 getSolverVal _ smtFns BoolTypeMap   tm = smtEvalBool smtFns tm
 getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns w tm
 getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
-getSolverVal _ smtFns (FloatTypeMap fpp@(FloatingPointPrecisionRepr eb sb)) tm =
-  floatFromBits (intValue eb) (intValue sb) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
+getSolverVal _ smtFns (FloatTypeMap fpp) tm =
+  bfFromBits (fppOpts fpp RNE) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
 getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
 getSolverVal _ smtFns NatTypeMap    tm = do
   r <- smtEvalReal smtFns tm
@@ -3069,7 +3051,7 @@ smtExprGroundEvalFn conn smtFns = do
                 getSolverVal conn smtFns tp (fromText nm)
 
               Just (SMTExpr tp expr) ->
-                runMaybeT (tryEvalGroundExpr cachedEval e) >>= \case
+                runMaybeT (tryEvalGroundExpr (lift . cachedEval) e) >>= \case
                   Just x  -> return x
                   -- If we cannot compute the value ourself, query the
                   -- value from the solver directly instead.
