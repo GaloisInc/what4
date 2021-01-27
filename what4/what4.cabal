@@ -274,6 +274,7 @@ test-suite expr-builder-smtlib2
     bytestring,
     containers,
     data-binary-ieee754,
+    libBF,
     parameterized-utils,
     tasty >= 0.10,
     tasty-hunit >= 0.9,
