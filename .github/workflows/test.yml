@@ -1,0 +1,56 @@
+name: Build and Test
+on:
+  - push
+  - pull_request
+jobs:
+  linux:
+    name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow-failure }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        ghc: [8.10.3, 8.8.4, 8.6.5, 8.4.4]
+        allow-failure: [false]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: haskell/actions/setup@v1
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          enable-stack: false
+      - uses: actions/cache@v2
+        name: Cache builds
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: |
+            cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
+          restore-keys: |
+            cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-
+      - name: Cabal update
+        shell: bash
+        run: cabal update
+      - name: Cabal check
+        shell: bash
+        run: |
+          cd what4
+          cabal check
+      - name: Cabal configure
+        shell: bash
+        run: |
+          cd what4
+          cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests
+      - name: Build
+        shell: bash
+        run: cabal build what4
+      - name: Test
+        shell: bash
+        run: cabal test what4
+      - name: Documentation
+        shell: bash
+        run: cabal haddock what4
