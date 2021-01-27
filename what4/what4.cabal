@@ -119,6 +119,7 @@ library
     What4.WordMap
 
     What4.Expr
+    What4.Expr.App
     What4.Expr.ArrayUpdateMap
     What4.Expr.AppTheory
     What4.Expr.BoolMap
@@ -179,7 +180,6 @@ library
     Test.Verification
 
   other-modules:
-    What4.Expr.App
     Paths_what4
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns

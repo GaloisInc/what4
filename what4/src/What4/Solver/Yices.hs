@@ -287,12 +287,6 @@ instance SupportTermOps YicesTerm where
 
   lambdaTerm = Just yicesLambda
 
-
-  floatPZero _ = floatFail
-  floatNZero _ = floatFail
-  floatNaN   _ = floatFail
-  floatPInf  _ = floatFail
-  floatNInf  _ = floatFail
   floatTerm _ _ = floatFail
 
   floatNeg  _   = floatFail

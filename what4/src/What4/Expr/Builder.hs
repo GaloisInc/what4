@@ -234,6 +234,7 @@ import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
 import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
+import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
 
 ------------------------------------------------------------------------
@@ -3292,44 +3293,108 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatLit sym fpp f =
     do l <- curProgramLoc sym
        return $! FloatExpr fpp f l
-  floatPZero = floatIEEEArithCt FloatPZero
-  floatNZero = floatIEEEArithCt FloatNZero
-  floatNaN = floatIEEEArithCt FloatNaN
-  floatPInf = floatIEEEArithCt FloatPInf
-  floatNInf = floatIEEEArithCt FloatNInf
-  floatNeg = floatIEEEArithUnOp FloatNeg
-  floatAbs = floatIEEEArithUnOp FloatAbs
-  floatSqrt = floatIEEEArithUnOpR FloatSqrt
-  floatAdd = floatIEEEArithBinOpR FloatAdd
-  floatSub = floatIEEEArithBinOpR FloatSub
-  floatMul = floatIEEEArithBinOpR FloatMul
-  floatDiv = floatIEEEArithBinOpR FloatDiv
-  floatRem = floatIEEEArithBinOp FloatRem
+
+  floatPZero sym fpp = floatLit sym fpp BF.bfPosZero
+  floatNZero sym fpp = floatLit sym fpp BF.bfNegZero
+  floatNaN   sym fpp = floatLit sym fpp BF.bfNaN
+  floatPInf  sym fpp = floatLit sym fpp BF.bfPosInf
+  floatNInf  sym fpp = floatLit sym fpp BF.bfNegInf
+
+  floatNeg sym (FloatExpr fpp x _) = floatLit sym fpp (BF.bfNeg x)
+  floatNeg sym x = floatIEEEArithUnOp FloatNeg sym x
+
+  floatAbs sym (FloatExpr fpp x _) = floatLit sym fpp (BF.bfAbs x)
+  floatAbs sym x = floatIEEEArithUnOp FloatAbs sym x
+
+  floatSqrt sym r (FloatExpr fpp x _) =
+    floatLit sym fpp (bfStatus (BF.bfSqrt (fppOpts fpp r) x))
+  floatSqrt sym r x = floatIEEEArithUnOpR FloatSqrt sym r x
+
+  floatAdd sym r (FloatExpr fpp x _) (FloatExpr _ y _) =
+    floatLit sym fpp (bfStatus (BF.bfAdd (fppOpts fpp r) x y))
+  floatAdd sym r x y = floatIEEEArithBinOpR FloatAdd sym r x y
+
+  floatSub sym r (FloatExpr fpp x _) (FloatExpr _ y _) =
+    floatLit sym fpp (bfStatus (BF.bfSub (fppOpts fpp r) x y ))
+  floatSub sym r x y = floatIEEEArithBinOpR FloatSub sym r x y
+
+  floatMul sym r (FloatExpr fpp x _) (FloatExpr _ y _) =
+    floatLit sym fpp (bfStatus (BF.bfMul (fppOpts fpp r) x y))
+  floatMul sym r x y = floatIEEEArithBinOpR FloatMul sym r x y
+
+  floatDiv sym r (FloatExpr fpp x _) (FloatExpr _ y _) =
+    floatLit sym fpp (bfStatus (BF.bfDiv (fppOpts fpp r) x y))
+  floatDiv sym r x y = floatIEEEArithBinOpR FloatDiv sym r x y
+
+  floatRem sym (FloatExpr fpp x _) (FloatExpr _ y _) =
+    floatLit sym fpp (bfStatus (BF.bfRem (fppOpts fpp RNE) x y))
+  floatRem sym x y = floatIEEEArithBinOp FloatRem sym x y
+
+  floatFMA sym r (FloatExpr fpp x _) (FloatExpr _ y _) (FloatExpr _ z _) =
+    floatLit sym fpp (bfStatus (BF.bfFMA (fppOpts fpp r) x y z))
   floatFMA sym r x y z =
     let BaseFloatRepr fpp = exprType x in sbMakeExpr sym $ FloatFMA fpp r x y z
+
+  floatEq sym (FloatExpr _ x _) (FloatExpr _ y _) =
+    pure . backendPred sym $! (BF.bfCompare x y == EQ)
   floatEq sym x y
     | x == y = return $! truePred sym
     | otherwise = floatIEEELogicBinOp (BaseEq (exprType x)) sym x y
+
   floatNe sym x y = notPred sym =<< floatEq sym x y
+
+  floatFpEq sym (FloatExpr _ x _) (FloatExpr _ y _) =
+    pure . backendPred sym $! (x == y)
   floatFpEq sym x y
     | x == y = notPred sym =<< floatIsNaN sym x
     | otherwise = floatIEEELogicBinOp FloatFpEq sym x y
+
+  floatLe sym (FloatExpr _ x _) (FloatExpr _ y _) =
+    pure . backendPred sym $! (x <= y)
   floatLe sym x y
     | x == y = notPred sym =<< floatIsNaN sym x
     | otherwise = floatIEEELogicBinOp FloatLe sym x y
+
+  floatLt sym (FloatExpr _ x _) (FloatExpr _ y _) =
+    pure . backendPred sym $! (x < y)
   floatLt sym x y
     | x == y = return $ falsePred sym
     | otherwise = floatIEEELogicBinOp FloatLt sym x y
+
   floatGe sym x y = floatLe sym y x
   floatGt sym x y = floatLt sym y x
   floatIte sym c x y = mkIte sym c x y
-  floatIsNaN = floatIEEELogicUnOp FloatIsNaN
-  floatIsInf = floatIEEELogicUnOp FloatIsInf
-  floatIsZero = floatIEEELogicUnOp FloatIsZero
-  floatIsPos = floatIEEELogicUnOp FloatIsPos
-  floatIsNeg = floatIEEELogicUnOp FloatIsNeg
-  floatIsSubnorm = floatIEEELogicUnOp FloatIsSubnorm
-  floatIsNorm = floatIEEELogicUnOp FloatIsNorm
+
+  floatIsNaN sym (FloatExpr _ x _) =
+    pure . backendPred sym $! BF.bfIsNaN x
+  floatIsNaN sym x = floatIEEELogicUnOp FloatIsNaN sym x
+
+  floatIsInf sym (FloatExpr _ x _) =
+    pure . backendPred sym $! BF.bfIsInf x
+  floatIsInf sym x = floatIEEELogicUnOp FloatIsInf sym x
+
+  floatIsZero sym (FloatExpr _ x _) =
+    pure . backendPred sym $! BF.bfIsZero x
+  floatIsZero sym x = floatIEEELogicUnOp FloatIsZero sym x
+
+  floatIsPos sym (FloatExpr _ x _) =
+    pure . backendPred sym $! BF.bfIsPos x
+  floatIsPos sym x = floatIEEELogicUnOp FloatIsPos sym x
+
+  floatIsNeg sym (FloatExpr _ x _) =
+    pure . backendPred sym $! BF.bfIsNeg x
+  floatIsNeg sym x = floatIEEELogicUnOp FloatIsNeg sym x
+
+  floatIsSubnorm sym (FloatExpr fpp x _) =
+    pure . backendPred sym $! BF.bfIsSubnormal (fppOpts fpp RNE) x
+  floatIsSubnorm sym x = floatIEEELogicUnOp FloatIsSubnorm sym x
+
+  floatIsNorm sym (FloatExpr fpp x _) =
+    pure . backendPred sym $! BF.bfIsNormal (fppOpts fpp RNE) x
+  floatIsNorm sym x = floatIEEELogicUnOp FloatIsNorm sym x
+
+  floatCast sym fpp r (FloatExpr _ x _) =
+    floatLit sym fpp (bfStatus (BF.bfRoundFloat (fppOpts fpp r) x))
   floatCast sym fpp r x
     | FloatingPointPrecisionRepr eb sb <- fpp
     , Just (FloatCast (FloatingPointPrecisionRepr eb' sb') _ fval) <- asApp x
@@ -3338,12 +3403,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just Refl <- testEquality (BaseFloatRepr fpp) (exprType fval)
     = return fval
     | otherwise = sbMakeExpr sym $ FloatCast fpp r x
-  floatRound = floatIEEEArithUnOpR FloatRound
+
+  floatRound sym r (FloatExpr fpp x _) =
+    floatLit sym fpp (floatRoundToInt fpp r x)
+  floatRound sym r x = floatIEEEArithUnOpR FloatRound sym r x
+
   floatFromBinary sym fpp x
+    | Just bv <- asBV x
+    = floatLit sym fpp (BF.bfFromBits (fppOpts fpp RNE) (BV.asUnsigned bv))
     | Just (FloatToBinary fpp' fval) <- asApp x
     , Just Refl <- testEquality fpp fpp'
     = return fval
     | otherwise = sbMakeExpr sym $ FloatFromBinary fpp x
+
+  floatToBinary sym (FloatExpr fpp@(FloatingPointPrecisionRepr eb sb) x _)
+    | Just LeqProof <- isPosNat (addNat eb sb) =
+        bvLit sym (addNat eb sb) (BV.mkBV (addNat eb sb) (BF.bfToBits (fppOpts fpp RNE) x))
   floatToBinary sym x = case exprType x of
     BaseFloatRepr fpp | LeqProof <- lemmaFloatPrecisionIsPos fpp ->
       sbMakeExpr sym $ FloatToBinary fpp x
@@ -3376,12 +3451,40 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       (do b <- freshConstant sym emptySymbol BaseBoolRepr
           floatIte sym b x y)
 
-  bvToFloat sym fpp r = sbMakeExpr sym . BVToFloat fpp r
-  sbvToFloat sym fpp r = sbMakeExpr sym . SBVToFloat fpp r
-  realToFloat sym fpp r = sbMakeExpr sym . RealToFloat fpp r
-  floatToBV sym w r = sbMakeExpr sym . FloatToBV w r
-  floatToSBV sym w r = sbMakeExpr sym . FloatToSBV w r
-  floatToReal sym = sbMakeExpr sym . FloatToReal
+  bvToFloat sym fpp r x
+    | Just bv <- asBV x = floatLit sym fpp (floatFromInteger (fppOpts fpp r) (BV.asUnsigned bv))
+    | otherwise = sbMakeExpr sym (BVToFloat fpp r x)
+
+  sbvToFloat sym fpp r x
+    | Just bv <- asBV x = floatLit sym fpp (floatFromInteger (fppOpts fpp r) (BV.asSigned (bvWidth x) bv))
+    | otherwise = sbMakeExpr sym (SBVToFloat fpp r x)
+
+  realToFloat sym fpp r x
+    | Just x' <- asRational x = floatLit sym fpp (floatFromRational (fppOpts fpp r) x')
+    | otherwise = sbMakeExpr sym (RealToFloat fpp r x)
+
+  floatToBV sym w r x
+    | FloatExpr _ bf _ <- x
+    , Just i <- floatToInteger r bf
+    , 0 <= i && i <= maxUnsigned w
+    = bvLit sym w (BV.mkBV w i)
+
+    | otherwise = sbMakeExpr sym (FloatToBV w r x)
+
+  floatToSBV sym w r x
+    | FloatExpr _ bf _ <- x
+    , Just i <- floatToInteger r bf
+    , minSigned w <= i && i <= maxSigned w
+    = bvLit sym w (BV.mkBV w i)
+
+    | otherwise = sbMakeExpr sym (FloatToSBV w r x)
+
+  floatToReal sym x
+    | FloatExpr _ bf _ <- x
+    , Just q <- floatToRational bf
+    = realLit sym q
+
+    | otherwise = sbMakeExpr sym (FloatToReal x)
 
   ----------------------------------------------------------------------
   -- Cplx operations
@@ -3470,13 +3573,8 @@ floatIEEEArithUnOpR
   -> IO (e (BaseFloatType fpp))
 floatIEEEArithUnOpR ctor sym r x =
   let BaseFloatRepr fpp = exprType x in sbMakeExpr sym $ ctor fpp r x
-floatIEEEArithCt
-  :: (e ~ Expr t)
-  => (FloatPrecisionRepr fpp -> App e (BaseFloatType fpp))
-  -> ExprBuilder t st fs
-  -> FloatPrecisionRepr fpp
-  -> IO (e (BaseFloatType fpp))
-floatIEEEArithCt ctor sym fpp = sbMakeExpr sym $ ctor fpp
+
+
 floatIEEELogicBinOp
   :: (e ~ Expr t)
   => (e (BaseFloatType fpp) -> e (BaseFloatType fpp) -> App e BaseBoolType)

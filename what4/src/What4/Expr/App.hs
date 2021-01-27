@@ -223,6 +223,9 @@ instance IsExpr (Expr t) where
 
   rationalBounds x = ravRange $ exprAbsValue x
 
+  asFloat (FloatExpr _fpp bf _) = Just bf
+  asFloat _ = Nothing
+
   asComplex e
     | Just (Cplx c) <- asApp e = traverse asRational c
     | otherwise = Nothing
@@ -1277,11 +1280,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   --------------------------------
   -- Float operations
 
-  FloatPZero :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNZero :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNaN :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatPInf :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNInf :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
   FloatNeg
     :: !(FloatPrecisionRepr fpp)
     -> !(e (BaseFloatType fpp))
@@ -1590,11 +1588,6 @@ appType a =
     BVSext  w _ -> BaseBVRepr w
     BVFill w _ -> BaseBVRepr w
 
-    FloatPZero fpp -> BaseFloatRepr fpp
-    FloatNZero fpp -> BaseFloatRepr fpp
-    FloatNaN fpp -> BaseFloatRepr fpp
-    FloatPInf fpp -> BaseFloatRepr fpp
-    FloatNInf fpp -> BaseFloatRepr fpp
     FloatNeg fpp _ -> BaseFloatRepr fpp
     FloatAbs fpp _ -> BaseFloatRepr fpp
     FloatSqrt fpp _ _ -> BaseFloatRepr fpp
@@ -1750,11 +1743,6 @@ abstractEval f a0 = do
     BVCountLeadingZeros w x -> BVD.clz w (f x)
     BVCountTrailingZeros w x -> BVD.ctz w (f x)
 
-    FloatPZero{} -> ()
-    FloatNZero{} -> ()
-    FloatNaN{} -> ()
-    FloatPInf{} -> ()
-    FloatNInf{} -> ()
     FloatNeg{} -> ()
     FloatAbs{} -> ()
     FloatSqrt{} -> ()
@@ -1938,11 +1926,6 @@ reduceApp sym unary a0 = do
     BVCountLeadingZeros _ x -> bvCountLeadingZeros sym x
     BVCountTrailingZeros _ x -> bvCountTrailingZeros sym x
 
-    FloatPZero fpp -> floatPZero sym fpp
-    FloatNZero fpp -> floatNZero sym fpp
-    FloatNaN   fpp -> floatNaN sym fpp
-    FloatPInf  fpp -> floatPInf sym fpp
-    FloatNInf  fpp -> floatNInf sym fpp
     FloatNeg _ x -> floatNeg sym x
     FloatAbs _ x -> floatAbs sym x
     FloatSqrt _ r x -> floatSqrt sym r x
@@ -2242,11 +2225,7 @@ ppApp' a0 = do
 
     --------------------------------
     -- Float operations
-    FloatPZero _ -> prettyApp "floatPZero" []
-    FloatNZero _ -> prettyApp "floatNZero" []
-    FloatNaN _ -> prettyApp "floatNaN" []
-    FloatPInf _ -> prettyApp "floatPInf" []
-    FloatNInf _ -> prettyApp "floatNInf" []
+
     FloatNeg _ x -> ppSExpr "floatNeg" [x]
     FloatAbs _ x -> ppSExpr "floatAbs" [x]
     FloatSqrt _ r x -> ppSExpr (Text.pack $ "floatSqrt " <> show r) [x]

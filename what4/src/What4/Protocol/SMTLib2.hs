@@ -494,12 +494,6 @@ instance SupportTermOps Term where
   bvExtract _ b n x | n > 0 = SMT2.extract (b+n-1) b x
                     | otherwise = error $ "bvExtract given non-positive width " ++ show n
 
-  floatPZero fpp = term_app (mkFloatSymbol "+zero" (asSMTFloatPrecision fpp)) []
-  floatNZero fpp = term_app (mkFloatSymbol "-zero" (asSMTFloatPrecision fpp)) []
-  floatNaN fpp   = term_app (mkFloatSymbol "NaN"   (asSMTFloatPrecision fpp)) []
-  floatPInf fpp  = term_app (mkFloatSymbol "+oo"   (asSMTFloatPrecision fpp)) []
-  floatNInf fpp  = term_app (mkFloatSymbol "-oo"   (asSMTFloatPrecision fpp)) []
-
   floatNeg  = un_app "fp.neg"
   floatAbs  = un_app "fp.abs"
   floatSqrt r = un_app $ mkRoundingOp "fp.sqrt " r

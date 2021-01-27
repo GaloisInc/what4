@@ -298,6 +298,9 @@ class HasAbsValue e => IsExpr e where
   asRational :: e BaseRealType -> Maybe Rational
   asRational _ = Nothing
 
+  -- | Return floating-point value if this is a constant
+  asFloat :: e (BaseFloatType fpp) -> Maybe BigFloat
+
   -- | Return any bounding information we have about the term
   rationalBounds :: e BaseRealType -> ValueRange Rational
 
@@ -348,6 +351,12 @@ class HasAbsValue e => IsExpr e where
   bvWidth e =
     case exprType e of
       BaseBVRepr w -> w
+
+  -- | Get the precision of a floating-point expression
+  floatPrecision :: e (BaseFloatType fpp) -> FloatPrecisionRepr fpp
+  floatPrecision e =
+    case exprType e of
+      BaseFloatRepr fpp -> fpp
 
   -- | Print a sym expression for debugging or display purposes.
   printSymExpr :: e tp -> Doc ann

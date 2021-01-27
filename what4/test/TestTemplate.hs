@@ -39,6 +39,7 @@ import           What4.Protocol.Online (SolverProcess(..), OnlineSolver(..))
 --import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.CVC4 as CVC4
 
+import What4.Expr.App (reduceApp)
 import What4.Expr.Builder
 import What4.Expr.GroundEval
 import What4.SatResult
@@ -70,13 +71,14 @@ main =
      --extendConfig Z3.z3Options (getConfiguration sym)
      --proc <- Online.startSolverProcess @(SMT2.Writer Z3.Z3) Z3.z3Features Nothing sym
 
-     extendConfig CVC4.cvc4Options (getConfiguration sym)
-     proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
+     --extendConfig CVC4.cvc4Options (getConfiguration sym)
+     --proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
 
      -- h <- openFile "z3.out" WriteMode
      let testnum = 500
 
-     tests <- sequence [ do p <- templateGroundEvalTest sym proc t testnum
+     tests <- sequence [ do -- p <- templateGroundEvalTest sym proc t testnum
+                            p <- templateConstantFoldTest sym t testnum
                             pure (fromString (show t), p)
                        | Some t <- xs
                        ]
@@ -414,6 +416,21 @@ mapGroundEval m x =
     Just v -> pure (unGVW v)
     Nothing -> tryEvalGroundExpr (mapGroundEval m) x
 
+groundLit ::  ExprBuilder t st fs -> BaseTypeRepr tp -> GroundValue tp -> IO (Expr t tp)
+groundLit sym tp v =
+  case tp of
+    BaseFloatRepr fpp -> floatLit sym fpp v
+    BaseBVRepr w      -> bvLit sym w v
+    BaseBoolRepr      -> pure (backendPred sym v)
+    BaseRealRepr      -> realLit sym v
+    _ -> error $ unwords ["groundLit TODO", show tp]
+
+reduceEval :: ExprBuilder t st fs -> MapF (Expr t) GroundValueWrapper -> Expr t tp -> IO (Expr t tp)
+reduceEval sym m e
+  | Just v <- MapF.lookup e m = groundLit sym (exprType e) (unGVW v)
+  | Just a <- asApp e = reduceApp sym bvUnary =<< traverseApp (reduceEval sym m) a
+  | otherwise = pure e
+
 solverEval :: forall t st fs solver tp.
   OnlineSolver solver =>
   ExprBuilder t st fs ->
@@ -500,6 +517,30 @@ templateGroundEvalTest sym proc t numTests =
                  case v of
                    Just v_ -> Just True === groundEq (exprType expr) v_ v'
                    Nothing -> success
+
+
+templateConstantFoldTest ::
+  ExprBuilder t st fs ->
+  TestTemplate tp ->
+  Int ->
+  IO Property
+templateConstantFoldTest sym t numTests =
+  do (sz, gmapGen, expr) <- templateGen sym t
+     pure $ withTests (fromIntegral (max 1 (numTests * sz))) $ property $
+       do annotateShow (printSymExpr expr)
+          gmap <- forAllWith showMap gmapGen
+
+          v  <- liftIO (runMaybeT (mapGroundEval gmap expr))
+          annotate (maybe "Nothing" (showGroundVal (exprType expr)) v)
+
+          v' <- liftIO (reduceEval sym gmap expr)
+          annotateShow (printSymExpr v')
+
+          case v of
+            Just v_ ->
+              do p <- liftIO (isEq sym v' =<< groundLit sym (exprType expr) v_)
+                 Just True === asConstantPred p
+            Nothing -> False === baseIsConcrete v'
 
 -- | Use the template to create an expression, and a Hedgehog generator that
 --   builds a map from variables to concrete values for creating individual

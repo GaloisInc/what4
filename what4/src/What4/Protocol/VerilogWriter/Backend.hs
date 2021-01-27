@@ -306,11 +306,6 @@ appVerilogExpr app =
       doNotSupportError "bit vector count leading zeros" -- TODO
 
     -- Float operations
-    FloatPZero _ -> doNotSupportError "floats"
-    FloatNZero _ -> doNotSupportError "floats"
-    FloatNaN _ -> doNotSupportError "floats"
-    FloatPInf _ -> doNotSupportError "floats"
-    FloatNInf _ -> doNotSupportError "floats"
     FloatNeg _ _ -> doNotSupportError "floats"
     FloatAbs _ _ -> doNotSupportError "floats"
     FloatSqrt _ _ _ -> doNotSupportError "floats"

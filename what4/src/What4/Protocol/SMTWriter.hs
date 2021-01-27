@@ -388,11 +388,6 @@ class Num v => SupportTermOps v where
   bvSumExpr _ (h:r) = foldl bvAdd h r
 
   floatTerm  :: FloatPrecisionRepr fpp -> BigFloat -> v
-  floatPZero :: FloatPrecisionRepr fpp -> v
-  floatNZero :: FloatPrecisionRepr fpp  -> v
-  floatNaN   :: FloatPrecisionRepr fpp  -> v
-  floatPInf  :: FloatPrecisionRepr fpp -> v
-  floatNInf  :: FloatPrecisionRepr fpp -> v
 
   floatNeg  :: v -> v
   floatAbs  :: v -> v
@@ -2395,16 +2390,7 @@ appSMTExpr ae = do
 
     ------------------------------------------
     -- Floating-point operations
-    FloatPZero fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatPZero fpp
-    FloatNZero fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNZero fpp
-    FloatNaN fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNaN fpp
-    FloatPInf fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatPInf fpp
-    FloatNInf fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNInf fpp
+
     FloatNeg fpp x -> do
       xe <- mkBaseExpr x
       freshBoundTerm (FloatTypeMap fpp) $ floatNeg xe

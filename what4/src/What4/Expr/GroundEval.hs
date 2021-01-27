@@ -151,8 +151,16 @@ evalGroundExpr :: (forall u . Expr t u -> IO (GroundValue u))
               -> IO (GroundValue tp)
 evalGroundExpr f e =
  runMaybeT (tryEvalGroundExpr (lift . f) e) >>= \case
-    Nothing -> fail $ unwords ["evalGroundExpr: could not evaluate expression:", show e]
-    Just x  -> return x
+    Just x -> return x
+
+    Nothing
+      | BoundVarExpr v <- e ->
+          case bvarKind v of
+            QuantifierVarKind -> fail $ "The ground evaluator does not support bound variables."
+            LatchVarKind      -> return $! defaultValueForType (bvarType v)
+            UninterpVarKind   -> return $! defaultValueForType (bvarType v)
+      | otherwise -> fail $ unwords ["evalGroundExpr: could not evaluate expression:", show e]
+
 
 {-# INLINABLE tryEvalGroundExpr #-}
 -- | Evaluate an element, when given an evaluation function for
@@ -171,16 +179,12 @@ tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingNatRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingIntegerRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
-tryEvalGroundExpr _ (StringExpr x _) = return x
-tryEvalGroundExpr _ (BoolExpr b _) = return b
+tryEvalGroundExpr _ (StringExpr x _)  = return x
+tryEvalGroundExpr _ (BoolExpr b _)    = return b
 tryEvalGroundExpr _ (FloatExpr _ f _) = return f
 tryEvalGroundExpr f (NonceAppExpr a0) = evalGroundNonceApp f (nonceExprApp a0)
 tryEvalGroundExpr f (AppExpr a0)      = evalGroundApp f (appExprApp a0)
-tryEvalGroundExpr _ (BoundVarExpr v) =
-  case bvarKind v of
-    QuantifierVarKind -> fail $ "The ground evaluator does not support bound variables."
-    LatchVarKind      -> return $! defaultValueForType (bvarType v)
-    UninterpVarKind   -> return $! defaultValueForType (bvarType v)
+tryEvalGroundExpr _ (BoundVarExpr _)  = mzero
 
 {-# INLINABLE evalGroundNonceApp #-}
 -- | Helper function for evaluating @NonceApp@ expressions.
@@ -404,11 +408,6 @@ evalGroundApp f a0 = do
 
     ------------------------------------------------------------------------
     -- Floating point Operations
-    FloatPZero{}       -> pure BF.bfPosZero
-    FloatNZero{}       -> pure BF.bfNegZero
-    FloatNaN{}         -> pure BF.bfNaN
-    FloatPInf{}        -> pure BF.bfPosInf
-    FloatNInf{}        -> pure BF.bfNegInf
 
     FloatNeg _fpp x    -> BF.bfNeg <$> f x
     FloatAbs _fpp x    -> BF.bfAbs <$> f x
