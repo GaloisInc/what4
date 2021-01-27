@@ -50,6 +50,7 @@ import What4.Utils.FloatHelpers
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Gen
+import GHC.Stack
 
 --import Debug.Trace (trace)
 
@@ -71,14 +72,15 @@ main =
      --extendConfig Z3.z3Options (getConfiguration sym)
      --proc <- Online.startSolverProcess @(SMT2.Writer Z3.Z3) Z3.z3Features Nothing sym
 
-     --extendConfig CVC4.cvc4Options (getConfiguration sym)
-     --proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
+     extendConfig CVC4.cvc4Options (getConfiguration sym)
+     proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
 
      -- h <- openFile "z3.out" WriteMode
      let testnum = 500
 
-     tests <- sequence [ do -- p <- templateGroundEvalTest sym proc t testnum
-                            p <- templateConstantFoldTest sym t testnum
+     tests <- sequence [ do p <- templateGroundEvalTestAlt sym proc t testnum
+                            --p <- templateGroundEvalTest sym proc t testnum
+                            --p <- templateConstantFoldTest sym t testnum
                             pure (fromString (show t), p)
                        | Some t <- xs
                        ]
@@ -317,7 +319,8 @@ floatOps fpp@(FloatingPointPrecisionRepr eb sb) rs subterms = casts <> uops <> b
 
 castTemplates :: RoundingMode -> [Some TestTemplate]
 castTemplates r =
-  [ Some (TFloatToBits (TVar (knownRepr :: BaseTypeRepr (BaseFloatType Prec32))))
+  [ Some (TFloatFromBits (knownRepr :: FloatPrecisionRepr Prec32) (TVar (BaseBVRepr (knownNat @32))))
+  , Some (TFloatToBits (TVar (knownRepr :: BaseTypeRepr (BaseFloatType Prec32))))
   , Some (TFloatCast (knownRepr :: FloatPrecisionRepr Prec32) r
               (TVar (knownRepr :: BaseTypeRepr (BaseFloatType Prec64))))
   , Some (TFloatCast (knownRepr :: FloatPrecisionRepr Prec64) r
@@ -388,27 +391,38 @@ genFloat (FloatingPointPrecisionRepr eb sb) =
         , ( 1, pure bfPosInf)
         , ( 1, pure bfNegInf)
         , ( 1, pure bfNaN)
-        , (95, genNormal)
+        , (50, genNormal)
+        , ( 5, genSubnormal)
+        , (45, genBinary)
         ]
  where
   emax = bit (fromInteger (intValue eb - 1)) - 1
   smax = bit (fromInteger (intValue sb)) - 1
   opts = fpOpts (intValue eb) (intValue sb) Away
+  numBits = intValue eb + intValue sb
 
+  -- generates non-shrinkable floats uniformly chosen from among all bitpatterns
+  genBinary =
+    do bits <- Gen.integral_ (Gen.linear 0 (bit (fromInteger numBits) - 1))
+       pure (bfFromBits opts bits)
+
+  -- generates non-shrinkable floats corresponding to subnormal values.  These are
+  -- values with 0 biased exponent and nonzero mantissa.
+  genSubnormal =
+    do sgn  <- Gen.bool
+       bits <- Gen.integral_ (Gen.linear 1 (bit (fromInteger (intValue sb)) - 1))
+       let x0 = bfFromBits opts bits
+       let x  = if sgn then bfNeg x0 else x0
+       pure $! x
+
+  -- tries to generate shrinkable floats, prefering "smaller" values
   genNormal =
     do sgn <- Gen.bool
        ex  <- Gen.integral (Gen.linearFrom 0 (1-emax) emax)
        mag <- Gen.integral (Gen.linear 1 smax)
-       let (x0,st) = bfMul2Exp opts (bfFromInteger mag) (ex - fromIntegral (lgCeil mag))
-       let x = if sgn then bfNeg x0 else x0
-       let statusCheck =
-             case st of
-                MemError -> error ("genFloat: MemoryError!")
-                _ -> ()
-
-                -- Ok -> ()
-                -- _ -> trace (unwords [show st, show sgn, show ex, show mag, show x]) ()
-       statusCheck `seq` (pure x)
+       let x0 = bfStatus (bfMul2Exp opts (bfFromInteger mag) (ex - fromIntegral (lgCeil mag)))
+       let x  = if sgn then bfNeg x0 else x0
+       pure $! x
 
 mapGroundEval :: MapF (Expr t) GroundValueWrapper -> Expr t tp -> MaybeT IO (GroundValue tp)
 mapGroundEval m x =
@@ -430,6 +444,46 @@ reduceEval sym m e
   | Just v <- MapF.lookup e m = groundLit sym (exprType e) (unGVW v)
   | Just a <- asApp e = reduceApp sym bvUnary =<< traverseApp (reduceEval sym m) a
   | otherwise = pure e
+
+verifySolverEval :: forall t st fs solver tp.
+  OnlineSolver solver =>
+  ExprBuilder t st fs ->
+  SolverProcess t solver ->
+  MapF (Expr t) GroundValueWrapper ->
+  Expr t tp ->
+  GroundValue tp ->
+  IO Bool
+verifySolverEval _sym proc gmap expr val =
+  do let c = Online.solverConn proc
+     let f :: Pair (Expr t) GroundValueWrapper -> IO (SMT.Term solver)
+         f (Pair e (GVW v)) =
+            case exprType e of
+              BaseFloatRepr fpp ->
+                do e' <- mkSMTTerm c e
+                   return (e' .== SMT.floatTerm fpp v)
+              BaseBVRepr w ->
+                do e' <- mkSMTTerm c e
+                   return (e' .== SMT.bvTerm w v)
+              BaseBoolRepr ->
+                do e' <- mkSMTTerm c e
+                   return (e' .== SMT.boolExpr v)
+              BaseRealRepr ->
+                do e' <- mkSMTTerm c e
+                   return (e' .== SMT.rationalTerm v)
+
+              tp -> fail ("verifySolverEval: TODO " ++ show tp)
+
+     Online.inNewFrame proc do
+       mapM_ (SMT.assumeFormula c <=< f) (MapF.toList gmap)
+
+       gl <- f (Pair expr (GVW val))
+       SMT.assumeFormula c (SMT.notExpr gl)
+
+       res <- Online.check proc "eval"
+       case res of
+         Unknown -> fail "Expected UNSAT, but got UNKNOWN"
+         Unsat _ -> pure True
+         Sat _   -> pure False
 
 solverEval :: forall t st fs solver tp.
   OnlineSolver solver =>
@@ -485,11 +539,12 @@ showMap gmap = unlines (map f (MapF.toList gmap))
     f :: Pair (Expr t) (GroundValueWrapper) -> String
     f (Pair e (GVW v)) = show (printSymExpr e) <> " |-> " <> showGroundVal (exprType e) v
 
-showGroundVal :: BaseTypeRepr tp -> GroundValue tp -> String
+showGroundVal :: HasCallStack => BaseTypeRepr tp -> GroundValue tp -> String
 showGroundVal tp v =
   case tp of
     BaseFloatRepr fpp ->
-      show v <> " 0x" <> showHex (bfToBits (fppOpts fpp RNE) v) ""
+      let i = bfToBits (fppOpts fpp RNE) v in
+        show v <> " 0x" <> showHex i ""
     BaseBVRepr w -> BV.ppHex w v
     BaseRealRepr -> show v
     BaseBoolRepr -> show v
@@ -517,6 +572,28 @@ templateGroundEvalTest sym proc t numTests =
                  case v of
                    Just v_ -> Just True === groundEq (exprType expr) v_ v'
                    Nothing -> success
+
+templateGroundEvalTestAlt ::
+  OnlineSolver solver =>
+  ExprBuilder t st fs ->
+  SolverProcess t solver ->
+  TestTemplate tp ->
+  Int ->
+  IO Property
+templateGroundEvalTestAlt sym proc t numTests =
+  do (sz, gmapGen, expr) <- templateGen sym t
+     pure $ withTests (fromIntegral (max 1 (numTests * sz))) $ property $
+       do annotateShow (printSymExpr expr)
+          gmap <- forAllWith showMap gmapGen
+          v  <- liftIO (runMaybeT (mapGroundEval gmap expr))
+          case v of
+            Nothing -> success
+            Just v_ ->
+              do annotate (showGroundVal (exprType expr) v_)
+                 res <- liftIO (try (verifySolverEval sym proc gmap expr v_))
+                 case res of
+                   Left (ex :: IOError) -> footnote (show ex) >> failure
+                   Right b -> if b then success else failure
 
 
 templateConstantFoldTest ::
