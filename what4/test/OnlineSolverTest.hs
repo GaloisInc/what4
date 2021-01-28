@@ -12,26 +12,27 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 
-import Control.Exception ( try, SomeException )
-import Control.Lens (folded)
-import Control.Monad ( forM, void )
-import Data.Char ( toLower )
-import Data.Proxy
-import System.Exit ( ExitCode(..) )
-import System.Process ( readProcessWithExitCode )
+import           Control.Exception ( try, SomeException )
+import           Control.Lens (folded)
+import           Control.Monad ( forM, void )
+import           Data.Char ( toLower )
+import           Data.Proxy
+import           System.Exit ( ExitCode(..) )
+import           System.Process ( readProcessWithExitCode )
 
-import Test.Tasty
-import Test.Tasty.HUnit
+import           Test.Tasty
+import           Test.Tasty.HUnit
 
-import Data.Parameterized.Nonce
+import qualified Data.BitVector.Sized as BV
+import           Data.Parameterized.Nonce
 
-import What4.Config
-import What4.Interface
-import What4.Expr
-import What4.ProblemFeatures
-import What4.Solver
-import What4.Protocol.Online
-import What4.Protocol.SMTWriter
+import           What4.Config
+import           What4.Interface
+import           What4.Expr
+import           What4.ProblemFeatures
+import           What4.Solver
+import           What4.Protocol.Online
+import           What4.Protocol.SMTWriter
 import qualified What4.Protocol.SMTLib2 as SMT2
 import qualified What4.Solver.Yices as Yices
 
@@ -61,6 +62,9 @@ mkSmokeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testCase n
             Unknown -> fail "Solver returned UNKNOWN"
             Sat _ -> fail "Should be UNSAT"
             Unsat _ -> return ()
+
+
+----------------------------------------------------------------------
 
 mkFormula1 :: IsSymExprBuilder sym
           => sym
@@ -124,8 +128,8 @@ checkFormula1Model sym p q r eval =
 
 -- Solve Formula1 using a frame (push/pop) for each of the good and
 -- bad cases
-mkQuickstartTest :: (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc]) -> TestTree
-mkQuickstartTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testCaseSteps nm $ \step ->
+quickstartTest :: (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc]) -> TestTree
+quickstartTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
   do sym <- newExprBuilder FloatUninterpretedRepr State gen
      extendConfig opts (getConfiguration sym)
@@ -165,8 +169,8 @@ mkQuickstartTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testC
 
 
 -- Solve Formula1 directly, with a solver reset between good and bad cases
-mkQuickstartTestAlt :: (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc]) -> TestTree
-mkQuickstartTestAlt (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testCaseSteps nm $ \step ->
+quickstartTestAlt :: (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc]) -> TestTree
+quickstartTestAlt (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
   do sym <- newExprBuilder FloatUninterpretedRepr State gen
      extendConfig opts (getConfiguration sym)
@@ -204,6 +208,9 @@ mkQuickstartTestAlt (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts) = te
        Unknown -> fail "Solver returned UNKNOWN"
        Sat _   -> fail "Should be a unique model!"
 
+----------------------------------------------------------------------
+
+
 
 getSolverVersion :: String -> IO String
 getSolverVersion solver =
@@ -229,7 +236,8 @@ main = do
   defaultMain $
     localOption (mkTimeout (10 * 1000 * 1000)) $
     testGroup "OnlineSolverTests"
-    [ testGroup "SmokeTest" $ map mkSmokeTest allOnlineSolvers
-    , testGroup "QuickStart Framed" $ map mkQuickstartTest allOnlineSolvers
-    , testGroup "QuickStart Direct" $ map mkQuickstartTestAlt allOnlineSolvers
+    [
+      testGroup "SmokeTest" $ map mkSmokeTest allOnlineSolvers
+    , testGroup "QuickStart Framed" $ map quickstartTest allOnlineSolvers
+    , testGroup "QuickStart Direct" $ map quickstartTestAlt allOnlineSolvers
     ]
