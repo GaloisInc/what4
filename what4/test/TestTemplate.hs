@@ -36,7 +36,6 @@ import qualified What4.Protocol.SMTWriter as SMT
 import qualified What4.Protocol.SMTLib2 as SMT2
 import qualified What4.Protocol.Online as Online
 import           What4.Protocol.Online (SolverProcess(..), OnlineSolver(..))
---import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.CVC4 as CVC4
 
 import What4.Expr.App (reduceApp)
@@ -60,7 +59,7 @@ data State t = State
 
 main :: IO ()
 main =
-  do let fpp = knownRepr :: FloatPrecisionRepr Prec32 -- (FloatingPointPrecision 4 4)
+  do let fpp = knownRepr :: FloatPrecisionRepr Prec32
 
      let xs = castTemplates RNE <>
               (Some <$> floatTestTemplates [] 0 fpp) <>
@@ -69,13 +68,9 @@ main =
 
      sym <- newExprBuilder FloatIEEERepr State globalNonceGenerator
 
-     --extendConfig Z3.z3Options (getConfiguration sym)
-     --proc <- Online.startSolverProcess @(SMT2.Writer Z3.Z3) Z3.z3Features Nothing sym
-
      extendConfig CVC4.cvc4Options (getConfiguration sym)
      proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
 
-     -- h <- openFile "z3.out" WriteMode
      let testnum = 500
 
      tests <- sequence [ do p <- templateGroundEvalTestAlt sym proc t testnum
@@ -86,6 +81,7 @@ main =
                        ]
      _ <- checkSequential $ Group "Float tests" tests
      return ()
+
 
 data FUnOp
   = FNeg
@@ -125,29 +121,6 @@ data FRelOp
   | FGe
   | FGt
  deriving Show
-
-roundingModes :: [RoundingMode]
-roundingModes = [ RNE, RNA, RTP, RTN, RTZ ]
-
-fBinOps :: [RoundingMode] -> [FBinOp]
-fBinOps rs =
-  (FAdd <$> rs) <>
-  (FSub <$> rs) <>
-  (FMul <$> rs) <>
-  (FDiv <$> rs) <>
-  [ FRem, FMin, FMax ]
-
-fUnOps :: [RoundingMode] -> [FUnOp]
-fUnOps rs =
-  [ FNeg, FAbs ] <>
-  (FSqrt <$> rs) <>
-  (FRound <$> rs)
-
-fTestOps :: [FTestOp]
-fTestOps = [ FIsNaN, FIsInf, FIsZero, FIsPos, FIsNeg, FIsSubnorm, FIsNorm ]
-
-fRelOps :: [FRelOp]
-fRelOps = [ FLogicEq, FLogicNeq, FEq, FApart, FUnordered, FLe, FLt, FGe, FGt ]
 
 -- | This datatype essentially mirrors the public API of the
 --   What4 interface.  There should (eventually) be one element
@@ -278,6 +251,7 @@ instance Show (TestTemplate tp) where
        shows r . showString " " .
        showsPrec 10 x
 
+-- | Compute the maximum depth of the given test template
 templateDepth :: TestTemplate tp -> Integer
 templateDepth = f
   where
@@ -302,21 +276,8 @@ templateDepth = f
           TBVToFloat _ _ _ x  -> 1 + f x
           TFloatToBV _ _ _ x  -> 1 + f x
 
-floatOps ::
-  FloatPrecisionRepr fpp ->
-  [RoundingMode] ->
-  [TestTemplate (BaseFloatType fpp)] ->
-  [TestTemplate (BaseFloatType fpp)]
-floatOps fpp@(FloatingPointPrecisionRepr eb sb) rs subterms = casts <> uops <> bops <> fma
-  where
-    uops  = [ TFloatUnOp op x | op <- fUnOps rs, x <- subterms ]
-    bops  = [ TFloatBinOp op x y | op <- fBinOps rs, x <- subterms, y <- subterms ]
-    fma   = [ TFloatFMA r x y z | r <- rs, x <- subterms, y <- subterms, z <- subterms ]
-    casts = [ case isPosNat (addNat eb sb) of
-                Just LeqProof -> TFloatFromBits fpp (TVar (BaseBVRepr (addNat eb sb)))
-                Nothing -> error $ unwords ["floatOps", "bad fpp", show fpp]
-            ]
 
+-- | A manually provided collection test templates that test coercions between types.
 castTemplates :: RoundingMode -> [Some TestTemplate]
 castTemplates r =
   [ Some (TFloatFromBits (knownRepr :: FloatPrecisionRepr Prec32) (TVar (BaseBVRepr (knownNat @32))))
@@ -340,6 +301,11 @@ castTemplates r =
   ]
 
 
+-- | Generate test templates for all predicates and relations
+--   on folating point values, whose subterms are generated
+--   by calling @floatTemplates.  With the given inputs.
+--
+--   CAUTION! This function blows up very quickly!
 floatTestTemplates ::
   [RoundingMode] ->
   Integer ->
@@ -351,6 +317,11 @@ floatTestTemplates rs n fpp = tops <> relops
    tops   = [ TFloatTest op x | op <- fTestOps, x <- subterms ]
    relops = [ TFloatRel op x y | op <- fRelOps, x <- subterms, y <- subterms ]
 
+-- | Generate floating-point test templates of the given
+--   depth, iterating through each of the given rounding
+--   modes for operations that require rounding.
+--
+--   CAUTION! This function blows up very quickly!
 floatTemplates ::
   [RoundingMode] ->
   Integer ->
@@ -366,6 +337,46 @@ floatTemplates rs n fpp
 
    f d | d < 1 = [ TVar (BaseFloatRepr fpp) ]
    f d = [ TVar (BaseFloatRepr fpp) ] <> floatOps fpp rs (f (d-1))
+
+floatOps ::
+  FloatPrecisionRepr fpp ->
+  [RoundingMode] ->
+  [TestTemplate (BaseFloatType fpp)] ->
+  [TestTemplate (BaseFloatType fpp)]
+floatOps fpp@(FloatingPointPrecisionRepr eb sb) rs subterms = casts <> uops <> bops <> fma
+  where
+    uops  = [ TFloatUnOp op x | op <- fUnOps rs, x <- subterms ]
+    bops  = [ TFloatBinOp op x y | op <- fBinOps rs, x <- subterms, y <- subterms ]
+    fma   = [ TFloatFMA r x y z | r <- rs, x <- subterms, y <- subterms, z <- subterms ]
+    casts = [ case isPosNat (addNat eb sb) of
+                Just LeqProof -> TFloatFromBits fpp (TVar (BaseBVRepr (addNat eb sb)))
+                Nothing -> error $ unwords ["floatOps", "bad fpp", show fpp]
+            ]
+
+roundingModes :: [RoundingMode]
+roundingModes = [ RNE, RNA, RTP, RTN, RTZ ]
+
+fBinOps :: [RoundingMode] -> [FBinOp]
+fBinOps rs =
+  (FAdd <$> rs) <>
+  (FSub <$> rs) <>
+  (FMul <$> rs) <>
+  (FDiv <$> rs) <>
+  [ FRem, FMin, FMax ]
+
+fUnOps :: [RoundingMode] -> [FUnOp]
+fUnOps rs =
+  [ FNeg, FAbs ] <>
+  (FSqrt <$> rs) <>
+  (FRound <$> rs)
+
+fTestOps :: [FTestOp]
+fTestOps = [ FIsNaN, FIsInf, FIsZero, FIsPos, FIsNeg, FIsSubnorm, FIsNorm ]
+
+fRelOps :: [FRelOp]
+fRelOps = [ FLogicEq, FLogicNeq, FEq, FApart, FUnordered, FLe, FLt, FGe, FGt ]
+
+
 
 generateByType :: BaseTypeRepr tp -> Gen (GroundValue tp)
 generateByType BaseBoolRepr = Gen.bool
@@ -383,6 +394,8 @@ genBV w =
   do val <- Gen.integral (Gen.linearFrom 0 (minSigned w) (maxSigned w))
      pure (BV.mkBV w val)
 
+-- | A random generator for floating-point values that tries to
+--   get good coverage for all the various special and normal values.
 genFloat :: FloatPrecisionRepr fpp -> Gen BigFloat
 genFloat (FloatingPointPrecisionRepr eb sb) =
     Gen.frequency
@@ -424,12 +437,15 @@ genFloat (FloatingPointPrecisionRepr eb sb) =
        let x  = if sgn then bfNeg x0 else x0
        pure $! x
 
+-- | Use the given map to bind the values in an expression and compute the value
+--   of the expression, if it can be computed.
 mapGroundEval :: MapF (Expr t) GroundValueWrapper -> Expr t tp -> MaybeT IO (GroundValue tp)
 mapGroundEval m x =
   case MapF.lookup x m of
     Just v -> pure (unGVW v)
     Nothing -> tryEvalGroundExpr (mapGroundEval m) x
 
+-- | Inject ground values into expressions based on their type.
 groundLit ::  ExprBuilder t st fs -> BaseTypeRepr tp -> GroundValue tp -> IO (Expr t tp)
 groundLit sym tp v =
   case tp of
@@ -439,12 +455,22 @@ groundLit sym tp v =
     BaseRealRepr      -> realLit sym v
     _ -> error $ unwords ["groundLit TODO", show tp]
 
+-- | Given a map binding varables to expressions, rebuild the given expression by reapplying
+--   the expression formers appearing in it.  This is used to test the constant-folding
+--   rules of the expression builder.
 reduceEval :: ExprBuilder t st fs -> MapF (Expr t) GroundValueWrapper -> Expr t tp -> IO (Expr t tp)
 reduceEval sym m e
   | Just v <- MapF.lookup e m = groundLit sym (exprType e) (unGVW v)
   | Just a <- asApp e = reduceApp sym bvUnary =<< traverseApp (reduceEval sym m) a
   | otherwise = pure e
 
+-- | Use the given solver process as an evaluation oracle to
+--   verify that a given expression must have the given
+--   value when the variables in it are bound via the
+--   given map.
+--
+--   A value as computed via @solverEval@ may nonetheless fail
+--   this test if functions appearing in it are underconstrained.
 verifySolverEval :: forall t st fs solver tp.
   OnlineSolver solver =>
   ExprBuilder t st fs ->
@@ -485,6 +511,14 @@ verifySolverEval _sym proc gmap expr val =
          Unsat _ -> pure True
          Sat _   -> pure False
 
+-- | Use the given solver process as an evaluation oracle to
+--   compute the a value of the given expression when given
+--   a binding of variables that appear in the expression.
+--   Return the value computed by the solver.
+--
+--   In principle, the solver might return one of several
+--   different values for the expression if any of the
+--   functions appearing in it are partial or underspecified.
 solverEval :: forall t st fs solver tp.
   OnlineSolver solver =>
   ExprBuilder t st fs ->
@@ -550,6 +584,21 @@ showGroundVal tp v =
     BaseBoolRepr -> show v
     _ -> "showGroundVal: TODO " <> show tp
 
+-- | This property generator takes a template and uses it to
+--   compare our Haskell-side ground evaulation code against
+--   the computations performed by an online solver, which
+--   is used as a computational oracle.  Random values are
+--   chosen for the free variables, and the expression is evaluated
+--   by the ground evaluator using the generated values for
+--   the variables.  Next, in the solver, we assert the equality of
+--   the same variables to their concrete values and ask for a satisfying
+--   model; then we ask the solver for the value of the expression in
+--   that model and check that the two computations agree.
+--
+--   Some expressions are underspecified, which means their output is
+--   unconstrained for some inputs (e.g, division by 0). In these cases
+--   the ground evaluator may compute no value at all; these cases
+--   are considered successful tests.
 templateGroundEvalTest ::
   OnlineSolver solver =>
   ExprBuilder t st fs ->
@@ -573,6 +622,18 @@ templateGroundEvalTest sym proc t numTests =
                    Just v_ -> Just True === groundEq (exprType expr) v_ v'
                    Nothing -> success
 
+-- | This property generator takes a template and uses it to
+--   compare our Haskell-side ground evaulation code against
+--   the computations performed by an online solver, which
+--   is used as a computational oracle.  Random values are
+--   chosen for the free variables, and the expression is evaluated
+--   by the ground evaluator using the generated values for
+--   the variables.  Next, in the solver, we assert the equality of
+--   the same variables to their concrete values, and ask the solver
+--   to prove that it has the same value as we computed in the
+--   ground evaluator.  This complements the above test; together
+--   they demonstrate that the ground evaluator, when it computes a
+--   value at all, computes the unique value that a solver may assign to it.
 templateGroundEvalTestAlt ::
   OnlineSolver solver =>
   ExprBuilder t st fs ->
@@ -596,6 +657,17 @@ templateGroundEvalTestAlt sym proc t numTests =
                    Right b -> if b then success else failure
 
 
+-- | This property generator takes a template and uses it to
+--   compare the ground evaluation code against the constant-folding
+--   rules used when constructing terms.  Similar to the test above,
+--   we compute an expression and then use ground evaluation to
+--   compute a value for randomly-chosen values of the variables.
+--   Next, we \"reduce\" the expression by reapplying the syntactic
+--   constructors, replacing the variables with literal expressions.
+--   Finally, we check that the expression has constant-folded to
+--   a literal expression that agrees with the ground value computed
+--   before. Moreover, ground evaluation should fail to compute a value
+--   iff the reduced expression does not constant-fold to a literal.
 templateConstantFoldTest ::
   ExprBuilder t st fs ->
   TestTemplate tp ->
@@ -619,9 +691,11 @@ templateConstantFoldTest sym t numTests =
                  Just True === asConstantPred p
             Nothing -> False === baseIsConcrete v'
 
--- | Use the template to create an expression, and a Hedgehog generator that
---   builds a map from variables to concrete values for creating individual
---   test cases.
+-- | Given a test template, compute data that can be used to drive one of the
+--   test predicates above.  We return an @Int@ that counts how many variables
+--   appear in the template, a generator action that computes ground values
+--   for the variables appearing in the template, and an expression over
+--   those variables according to the template.
 templateGen :: forall t st fs tp.
   ExprBuilder t st fs -> TestTemplate tp -> IO (Int, Gen (MapF (Expr t) GroundValueWrapper), Expr t tp)
 templateGen sym = f
