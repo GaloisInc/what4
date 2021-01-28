@@ -174,7 +174,7 @@ library
     What4.Expr.App
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  ghc-prof-options: -fprof-auto-top
+  -- ghc-prof-options: -fprof-auto-top
   if impl(ghc >= 8.6)
     default-extensions: NoStarIsType
 
