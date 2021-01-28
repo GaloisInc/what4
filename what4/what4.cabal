@@ -73,7 +73,7 @@ library
     hashtables >= 1.2.3,
     io-streams >= 1.5,
     lens >= 4.18,
-    libBF >= 0.5.1 && < 0.6,
+    libBF >= 0.6 && < 0.7,
     mtl >= 2.2.1,
     panic >= 0.3,
     parameterized-utils >= 2.1 && < 2.2,
