@@ -64,6 +64,16 @@
 --   * a method for \"unsetting\" options to restore the default state of an option
 --   * a method for removing options from a configuration altogether
 --       (i.e., to undo extendConfig)
+--
+--
+-- Note regarding concurrency: the configuration data structures in this
+-- module are implemented using MVars, and may safely be used in a multithreaded
+-- way; configuration changes made in one thread will be visible to others
+-- in a properly synchronized way.  Of course, if one desires to isolate
+-- configuration changes in different threads from each other, separate
+-- configuration objects are required. As noted in the documentation for
+-- @set_opt_onset@, the validation procedures for options should not
+-- look up the value of other options, or deadlock may occur.
 ------------------------------------------------------------------------------
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -152,6 +162,7 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Applicative (Const(..))
+import           Control.Concurrent.MVar
 import           Control.Exception
 import           Control.Lens ((&))
 import           Control.Monad.Identity
@@ -161,7 +172,6 @@ import           Data.Kind
 import           Data.Maybe
 import           Data.Typeable
 import           Data.Foldable (toList)
-import           Data.IORef
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Parameterized.Some
 import           Data.Sequence (Seq)
@@ -306,7 +316,9 @@ data OptionStyle (tp :: BaseType) =
 
   , opt_onset :: Maybe (ConcreteVal tp) -> ConcreteVal tp -> IO OptionSetResult
     -- ^ An operation for validating new option values.  This action may also
-    -- be used to take actions whenever an option setting is changed.
+    -- be used to take actions whenever an option setting is changed.  NOTE!
+    -- the onset action should not attempt to look up the values of other
+    -- configuration settings, or deadlock may occur.
     --
     -- The first argument is the current value of the option (if any).
     -- The second argument is the new value that is being set.
@@ -577,7 +589,7 @@ optUV o vf h = mkOpt o (defaultOpt (configOptionType o)
 data ConfigLeaf where
   ConfigLeaf ::
     !(OptionStyle tp)              {- Style for this option -} ->
-    IORef (Maybe (ConcreteVal tp)) {- State of the option -} ->
+    MVar (Maybe (ConcreteVal tp)) {- State of the option -} ->
     Maybe (Doc Void)               {- Help text for the option -} ->
     ConfigLeaf
 
@@ -647,7 +659,7 @@ insertOption :: (MonadIO m, MonadFail m) => ConfigDesc -> ConfigMap -> m ConfigM
 insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p ps f m
   where
   f Nothing  =
-       do ref <- liftIO (newIORef (opt_default_value sty))
+       do ref <- liftIO (newMVar (opt_default_value sty))
           return (Just (ConfigLeaf sty ref h))
   f (Just _) = fail ("Option " ++ showPath ++ " already exists")
 
@@ -657,9 +669,9 @@ insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p
 ------------------------------------------------------------------------
 -- Config
 
--- | The main configuration datatype.  It consists of an IORef
+-- | The main configuration datatype.  It consists of an MVar
 --   continaing the actual configuration data.
-newtype Config = Config (IORef ConfigMap)
+newtype Config = Config (MVar ConfigMap)
 
 -- | Construct a new configuration from the given configuration
 --   descriptions.
@@ -667,7 +679,7 @@ initialConfig :: Integer           -- ^ Initial value for the `verbosity` option
               -> [ConfigDesc]      -- ^ Option descriptions to install
               -> IO (Config)
 initialConfig initVerbosity ts = do
-   cfg <- Config <$> newIORef Map.empty
+   cfg <- Config <$> newMVar Map.empty
    extendConfig (builtInOpts initVerbosity ++ ts) cfg
    return cfg
 
@@ -677,7 +689,7 @@ extendConfig :: [ConfigDesc]
              -> Config
              -> IO ()
 extendConfig ts (Config cfg) =
-  (readIORef cfg >>= \m -> foldM (flip insertOption) m ts) >>= writeIORef cfg
+  modifyMVar_ cfg (\m -> foldM (flip insertOption) m ts)
 
 -- | Verbosity of the simulator.  This option controls how much
 --   informational and debugging output is generated.
@@ -759,7 +771,7 @@ getOptionSetting ::
   Config ->
   IO (OptionSetting tp)
 getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
-  getConst . adjustConfigMap p ps f =<< readIORef cfg
+   readMVar cfg >>= getConst . adjustConfigMap p ps f
  where
   f Nothing  = Const (fail $ "Option not found: " ++ show o)
   f (Just x) = Const (leafToSetting x)
@@ -768,12 +780,11 @@ getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
     | Just Refl <- testEquality (opt_type sty) tp = return $
       OptionSetting
       { optionSettingName = o
-      , getOption  = readIORef ref
-      , setOption = \v ->
-          do old <- readIORef ref
-             res <- opt_onset sty old v
-             unless (isJust (optionSetError res)) (writeIORef ref (Just v))
-             return res
+      , getOption  = readMVar ref
+      , setOption = \v -> modifyMVar ref $ \old ->
+          do res <- opt_onset sty old v
+             let new = if (isJust (optionSetError res)) then old else (Just v)
+             new `seq` return (new, res)
       }
     | otherwise = fail ("Type mismatch retriving option " ++ show o ++
                          "\nExpected: " ++ show tp ++ " but found " ++ show (opt_type sty))
@@ -789,7 +800,7 @@ getOptionSettingFromText ::
 getOptionSettingFromText nm (Config cfg) =
    case splitPath nm of
      Nothing -> fail "Illegal empty name for option"
-     Just (p:|ps) -> getConst . adjustConfigMap p ps (f (p:|ps)) =<< readIORef cfg
+     Just (p:|ps) -> readMVar cfg >>= (getConst . adjustConfigMap p ps (f (p:|ps)))
   where
   f (p:|ps) Nothing  = Const (fail $ "Option not found: " ++ (Text.unpack (Text.intercalate "." (p:ps))))
   f path (Just x) = Const (leafToSetting path x)
@@ -797,12 +808,11 @@ getOptionSettingFromText nm (Config cfg) =
   leafToSetting path (ConfigLeaf sty ref _h) = return $
     Some OptionSetting
          { optionSettingName = ConfigOption (opt_type sty) path
-         , getOption = readIORef ref
-         , setOption = \v ->
-             do old <- readIORef ref
-                res <- opt_onset sty old v
-                unless (isJust (optionSetError res)) (writeIORef ref (Just v))
-                return res
+         , getOption = readMVar ref
+         , setOption = \v -> modifyMVar ref $ \old ->
+             do res <- opt_onset sty old v
+                let new = if (isJust (optionSetError res)) then old else (Just v)
+                new `seq` return (new, res)
          }
 
 
@@ -819,12 +829,12 @@ getConfigValues ::
   Config ->
   IO [ConfigValue]
 getConfigValues prefix (Config cfg) =
-  do m <- readIORef cfg
+  do m <- readMVar cfg
      let ps = Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq ConfigValue) IO ConfigLeaf
          f [] _ = fail $ "getConfigValues: illegal empty option name"
          f (p:path) l@(ConfigLeaf sty ref _h) =
-            do liftIO (readIORef ref) >>= \case
+            do liftIO (readMVar ref) >>= \case
                  Just x  -> tell (Seq.singleton (ConfigValue (ConfigOption (opt_type sty) (p:|path)) x))
                  Nothing -> return ()
                return l
@@ -845,7 +855,7 @@ ppOption nm sty x help =
 
 ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc Void)
 ppConfigLeaf nm (ConfigLeaf sty ref help) =
-  do x <- readIORef ref
+  do x <- readMVar ref
      return $ ppOption nm sty x help
 
 -- | Given the name of a subtree, compute help text for
@@ -857,7 +867,7 @@ configHelp ::
   Config ->
   IO [Doc Void]
 configHelp prefix (Config cfg) =
-  do m <- readIORef cfg
+  do m <- readMVar cfg
      let ps = Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
