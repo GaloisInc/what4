@@ -1221,6 +1221,18 @@ addPartialSideCond ::
 addPartialSideCond _ t NatTypeMap Nothing =
   do addSideCondition "nat_range" $ t .>= 0
 
+-- NB, structs also (might) have a side condition even if there is no abstract
+-- domain (due to the possibility of containing nats)
+addPartialSideCond conn t (StructTypeMap ctx) Nothing =
+     Ctx.forIndex (Ctx.size ctx)
+        (\start i ->
+            do start
+               addPartialSideCond conn
+                 (structProj @h ctx i t)
+                 (ctx Ctx.! i)
+                 Nothing)
+        (return ())
+
 -- in all other cases, no abstract domain information means unconstrained values
 addPartialSideCond _ _ _ Nothing = return ()
 
