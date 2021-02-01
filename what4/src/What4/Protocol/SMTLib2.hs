@@ -1133,6 +1133,7 @@ startSolver solver ack setup feats auxOutput sym = do
             , solverName     = show solver
             , solverEarlyUnsat = earlyUnsatRef
             , solverSupportsResetAssertions = supportsResetAssertions solver
+            , solverGoalTimeout = SolverGoalTimeout 0 -- no timeout by default
             }
 
 shutdownSolver

@@ -99,6 +99,10 @@ module What4.SWord
   , bvAshr
   , bvRol
   , bvRor
+
+    -- * Zero- and sign-extend
+  , bvZext
+  , bvSext
   ) where
 
 
@@ -719,3 +723,33 @@ bvRol = reduceRotate W.bvRol
 
 bvRor  :: W.IsExprBuilder sym => sym -> SWord sym -> SWord sym -> IO (SWord sym)
 bvRor = reduceRotate W.bvRor
+
+-- | Zero-extend a value, adding the specified number of bits.
+bvZext :: forall sym. IsExprBuilder sym => sym -> Natural -> SWord sym -> IO (SWord sym)
+bvZext sym n sw =
+  case mkNatRepr n of
+    Some (nr :: NatRepr n) ->
+      case isPosNat nr of
+        Nothing -> pure sw
+        Just lp@LeqProof ->
+          case sw of
+            ZBV -> bvLit sym (toInteger n) 0
+            DBV (x :: W.SymBV sym w) ->
+              withLeqProof (leqAdd2 (leqRefl (W.bvWidth x)) lp :: LeqProof (w+1) (w+n)) $
+              withLeqProof (leqAdd LeqProof nr :: LeqProof 1 (w+n)) $
+              DBV <$> W.bvZext sym (addNat (W.bvWidth x) nr) x
+
+-- | Sign-extend a value, adding the specified number of bits.
+bvSext :: forall sym. IsExprBuilder sym => sym -> Natural -> SWord sym -> IO (SWord sym)
+bvSext sym n sw =
+  case mkNatRepr n of
+    Some (nr :: NatRepr n) ->
+      case isPosNat nr of
+        Nothing -> pure sw
+        Just lp@LeqProof ->
+          case sw of
+            ZBV -> bvLit sym (toInteger n) 0
+            DBV (x :: W.SymBV sym w) ->
+              withLeqProof (leqAdd2 (leqRefl (W.bvWidth x)) lp :: LeqProof (w+1) (w+n)) $
+              withLeqProof (leqAdd LeqProof nr :: LeqProof 1 (w+n)) $
+              DBV <$> W.bvSext sym (addNat (W.bvWidth x) nr) x
