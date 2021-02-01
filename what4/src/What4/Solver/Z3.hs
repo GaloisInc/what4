@@ -188,7 +188,7 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setOption writer "produce-models" "true"
     -- Tell Z3 to round and print algebraic reals as decimal
     SMT2.setOption writer "pp.decimal" "true"
-    -- Tell Z3 to make declaraions global, so they are not removed by 'pop' commands
+    -- Tell Z3 to make declarations global, so they are not removed by 'pop' commands
     SMT2.setOption writer "global-declarations" "true"
     -- Tell Z3 to compute UNSAT cores, if that feature is enabled
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do

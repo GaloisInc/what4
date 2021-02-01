@@ -786,7 +786,7 @@ getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
              let new = if (isJust (optionSetError res)) then old else (Just v)
              new `seq` return (new, res)
       }
-    | otherwise = fail ("Type mismatch retriving option " ++ show o ++
+    | otherwise = fail ("Type mismatch retrieving option " ++ show o ++
                          "\nExpected: " ++ show tp ++ " but found " ++ show (opt_type sty))
 
 -- | Given a text name, produce an @OptionSetting@
