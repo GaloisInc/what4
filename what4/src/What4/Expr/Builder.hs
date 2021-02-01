@@ -18,9 +18,6 @@ propigate in the expected sequentually-consistent ways.  Of course,
 threads may still clobber state others have set (e.g., the current 
 program location) so the potentialy for truly multithreaded us is
 somewhat limited.
-Moreover, the \"user\" state in @sbStateManager@ is entirely under
-the control of clients of this module, and they are responsible for
-ensuring such multithreading properties as they may require.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
@@ -60,7 +57,7 @@ module What4.Expr.Builder
   , sbUnaryThreshold
   , sbCacheStartSize
   , sbBVDomainRangeLimit
-  , sbStateManager
+  , sbUserState
   , exprCounter
   , startCaching
   , stopCaching
@@ -638,7 +635,7 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
           -- | The current program location
         , sbProgramLoc :: !(IORef ProgramLoc)
           -- | Additional state maintained by the state manager
-        , sbStateManager :: !(IORef (st t))
+        , sbUserState :: !(st t)
 
         , sbVarBindings :: !(IORef (SymbolVarBimap t))
         , sbUninterpFnCache :: !(IORef (Map (SolverSymbol, Some (Ctx.Assignment BaseTypeRepr)) (SomeSymFn (ExprBuilder t st fs))))
@@ -1469,12 +1466,11 @@ newExprBuilder ::
   FloatModeRepr fm
   -- ^ Float interpretation mode (i.e., how are floats translated for the solver).
   -> st t
-  -- ^ Current state for simple builder.
+  -- ^ Initial state for the expression builder
   -> NonceGenerator IO t
   -- ^ Nonce generator for names
   ->  IO (ExprBuilder t st (Flags fm))
 newExprBuilder floatMode st gen = do
-  st_ref <- newIORef st
   es <- newStorage gen
 
   let t = BoolExpr True initializationLoc
@@ -1512,7 +1508,7 @@ newExprBuilder floatMode st gen = do
                , exprCounter = gen
                , curAllocator = storage_ref
                , sbNonLinearOps = nonLinearOps
-               , sbStateManager = st_ref
+               , sbUserState = st
                , sbVarBindings = bindings_ref
                , sbUninterpFnCache = uninterp_fn_cache_ref
                , sbMatlabFnCache = matlabFnCache
