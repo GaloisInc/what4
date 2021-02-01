@@ -115,6 +115,12 @@ getGoalTimeoutInSeconds sgt =
 
 
 -- | A live connection to a running solver process.
+--
+--   This data structure should be used in a single-threaded
+--   manner or with external synchronization to ensure that
+--   only a single thread has access at a time. Unsynchronized
+--   multithreaded use will lead to race conditions and very
+--   strange results.
 data SolverProcess scope solver = SolverProcess
   { solverConn  :: !(WriterConn scope solver)
     -- ^ Writer for sending commands to the solver

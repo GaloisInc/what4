@@ -591,6 +591,10 @@ data StackEntry t (h :: Type) = StackEntry
 -- It is responsible for knowing the capabilities of the solver; generating
 -- fresh names when needed; maintaining the stack of pushes and pops, and
 -- sending queries to the solver.
+--
+-- A WriterConn should be used in a single-threaded manner or using external
+-- synchronization to ensure that only one thread is accessing this connection
+-- at a time, otherwise race conditions and unpredictable results may occur.
 data WriterConn t (h :: Type) =
   WriterConn { smtWriterName :: !String
                -- ^ Name of writer for error reporting purposes.

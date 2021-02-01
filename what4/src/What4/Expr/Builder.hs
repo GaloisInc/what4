@@ -8,6 +8,19 @@ Maintainer  : jhendrix@galois.com
 This module defines the canonical implementation of the solver interface
 from "What4.Interface". Type @'ExprBuilder' t st@ is
 an instance of the classes 'IsExprBuilder' and 'IsSymExprBuilder'.
+
+Notes regarding concurrency: The expression builder datatype contains
+a number of mutable storage locations.  These are designed so they
+may reasonably be used in a multithreaded context.  In particular,
+nonce values are generated atomically, and other IORefs used in this
+module are modified or written atomically, so modifications should
+propigate in the expected sequentually-consistent ways.  Of course,
+threads may still clobber state others have set (e.g., the current 
+program location) so the potentialy for truly multithreaded us is
+somewhat limited.
+Moreover, the \"user\" state in @sbStateManager@ is entirely under
+the control of clients of this module, and they are responsible for
+ensuring such multithreading properties as they may require.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
@@ -1233,16 +1246,16 @@ lookupIdx c n = liftIO $ PM.lookup n <$> readIORef (cMap c)
 {-# INLINE insertIdxValue #-}
 -- | Bind the value to the given expr in the index.
 insertIdxValue :: MonadIO m => IdxCache t f -> Nonce t tp -> f tp -> m ()
-insertIdxValue c e v = seq v $ liftIO $ modifyIORef (cMap c) $ PM.insert e v
+insertIdxValue c e v = seq v $ liftIO $ atomicModifyIORef' (cMap c) $ (\m -> (PM.insert e v m, ()))
 
 {-# INLINE deleteIdxValue #-}
 -- | Remove a value from the IdxCache
 deleteIdxValue :: MonadIO m => IdxCache t f -> Nonce t (tp :: BaseType) -> m ()
-deleteIdxValue c e = liftIO $ modifyIORef (cMap c) $ PM.delete e
+deleteIdxValue c e = liftIO $ atomicModifyIORef' (cMap c) $ (\m -> (PM.delete e m, ()))
 
 -- | Remove all values from the IdxCache
 clearIdxCache :: MonadIO m => IdxCache t f -> m ()
-clearIdxCache c = liftIO $ writeIORef (cMap c) PM.empty
+clearIdxCache c = liftIO $ atomicWriteIORef (cMap c) PM.empty
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
@@ -1315,7 +1328,7 @@ sbMakeExpr sym a = do
   pc <- curProgramLoc sym
   let v = abstractEval exprAbsValue a
   when (isNonLinearApp a) $
-    modifyIORef' (sbNonLinearOps sym) (+1)
+    atomicModifyIORef' (sbNonLinearOps sym) (\n -> (n+1,()))
   case appType a of
     -- Check if abstract interpretation concludes this is a constant.
     BaseBoolRepr | Just b <- v -> return $ backendPred sym b
@@ -1333,7 +1346,7 @@ updateVarBinding :: ExprBuilder t st fs
 updateVarBinding sym nm v
   | nm == emptySymbol = return ()
   | otherwise =
-    modifyIORef' (sbVarBindings sym) $ (ins nm $! v)
+    atomicModifyIORef' (sbVarBindings sym) $ (\x -> v `seq` (ins nm v x, ()))
   where ins n x (SymbolVarBimap m) = SymbolVarBimap (Bimap.insert n x m)
 
 -- | Creates a new bound var.
@@ -1433,11 +1446,11 @@ cacheOptStyle gen storageRef szSetting =
         | otherwise = return ()
 
  stop  = do s <- newStorage gen
-            writeIORef storageRef s
+            atomicWriteIORef storageRef s
 
  start = do sz <- CFG.getOpt szSetting
             s <- newCachedStorage gen (fromInteger sz)
-            writeIORef storageRef s
+            atomicWriteIORef storageRef s
 
 cacheOptDesc ::
   NonceGenerator IO t ->
@@ -1515,14 +1528,14 @@ getSymbolVarBimap sym = readIORef (sbVarBindings sym)
 stopCaching :: ExprBuilder t st fs -> IO ()
 stopCaching sb = do
   s <- newStorage (exprCounter sb)
-  writeIORef (curAllocator sb) s
+  atomicWriteIORef (curAllocator sb) s
 
 -- | Restart caching applications in backend (clears cache if it is currently caching).
 startCaching :: ExprBuilder t st fs -> IO ()
 startCaching sb = do
   sz <- CFG.getOpt (sbCacheStartSize sb)
   s <- newCachedStorage (exprCounter sb) (fromInteger sz)
-  writeIORef (curAllocator sb) s
+  atomicWriteIORef (curAllocator sb) s
 
 bvBinDivOp :: (1 <= w)
             => (NatRepr w -> BV.BV w -> BV.BV w -> BV.BV w)
@@ -2280,7 +2293,7 @@ sameTerm x y = testEquality x y
 instance IsExprBuilder (ExprBuilder t st fs) where
   getConfiguration = sbConfiguration
 
-  setSolverLogListener sb = writeIORef (sbSolverLogger sb)
+  setSolverLogListener sb = atomicWriteIORef (sbSolverLogger sb)
   getSolverLogListener sb = readIORef (sbSolverLogger sb)
 
   logSolverEvent sb ev =
@@ -2307,7 +2320,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   -- Program location operations
 
   getCurrentProgramLoc = curProgramLoc
-  setCurrentProgramLoc sym l = writeIORef (sbProgramLoc sym) l
+  setCurrentProgramLoc sym l = atomicWriteIORef (sbProgramLoc sym) l
 
   ----------------------------------------------------------------------
   -- Bool operations.
@@ -4670,7 +4683,7 @@ cachedUninterpFn sym fn_name arg_types ret_type handler = do
       -> fail "Duplicate uninterpreted function declaration."
     Nothing -> do
       fn <- handler sym fn_name arg_types ret_type
-      modifyIORef' (sbUninterpFnCache sym) (Map.insert fn_key (SomeSymFn fn))
+      atomicModifyIORef' (sbUninterpFnCache sym) (\m -> (Map.insert fn_key (SomeSymFn fn) m, ()))
       return fn
   where fn_key =  (fn_name, Some (arg_types Ctx.:> ret_type))
 
