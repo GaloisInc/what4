@@ -14,9 +14,9 @@ a number of mutable storage locations.  These are designed so they
 may reasonably be used in a multithreaded context.  In particular,
 nonce values are generated atomically, and other IORefs used in this
 module are modified or written atomically, so modifications should
-propigate in the expected sequentually-consistent ways.  Of course,
+propagate in the expected sequentially-consistent ways.  Of course,
 threads may still clobber state others have set (e.g., the current 
-program location) so the potentialy for truly multithreaded us is
+program location) so the potential for truly multithreaded use is
 somewhat limited.
 -}
 {-# LANGUAGE CPP #-}

@@ -72,7 +72,7 @@
 -- in a properly synchronized way.  Of course, if one desires to isolate
 -- configuration changes in different threads from each other, separate
 -- configuration objects are required. As noted in the documentation for
--- @set_opt_onset@, the validation procedures for options should not
+-- 'opt_onset', the validation procedures for options should not
 -- look up the value of other options, or deadlock may occur.
 ------------------------------------------------------------------------------
 {-# LANGUAGE CPP #-}
@@ -204,7 +204,7 @@ import           What4.Utils.StringLiteral
 --   to statically-checkable failures (missing symbols and type-checking,
 --   respectively) by consistently using `ConfigOption` values.
 --
---   The following example indicates the suggested useage
+--   The following example indicates the suggested usage
 --
 -- @
 --   asdfFrob :: ConfigOption BaseRealType
@@ -219,7 +219,7 @@ data ConfigOption (tp :: BaseType) where
 instance Show (ConfigOption tp) where
   show = configOptionName
 
--- | Construct a `ConfigOption` from a string name.  Idomatic useage is
+-- | Construct a `ConfigOption` from a string name.  Idiomatic usage is
 --   to define a single top-level `ConfigOption` value in the module where the option
 --   is defined to consistently fix its name and type for all subsequent uses.
 configOption :: BaseTypeRepr tp -> String -> ConfigOption tp
@@ -260,7 +260,7 @@ configOptionType (ConfigOption tp _) = tp
 --   (as defined by the associated @OptionStyle@).  The result of the validation
 --   function is an @OptionSetResult@.  If the option value given is invalid
 --   for some reason, an error should be returned.  Additionally, warning messages
---   may be returned, which will be passed through to the eventuall call site
+--   may be returned, which will be passed through to the eventual call site
 --   attempting to alter the option setting.
 data OptionSetResult =
   OptionSetResult
@@ -520,7 +520,7 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 data ConfigDesc where
   ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
 
--- | The most general method for construcing a normal `ConfigDesc`.
+-- | The most general method for constructing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> OptionStyle tp      -- ^ Define the style of this option
       -> Maybe (Doc Void)    -- ^ Help text
@@ -670,7 +670,7 @@ insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p
 -- Config
 
 -- | The main configuration datatype.  It consists of an MVar
---   continaing the actual configuration data.
+--   containing the actual configuration data.
 newtype Config = Config (MVar ConfigMap)
 
 -- | Construct a new configuration from the given configuration
