@@ -125,7 +125,7 @@ solverAdapterOptions xs@(def:_) =
      return (opts, readIORef ref)
 
  where
- f ref x = (T.pack (solver_adapter_name x), writeIORef ref x >> return optOK)
+ f ref x = (T.pack (solver_adapter_name x), atomicWriteIORef ref x >> return optOK)
  vals ref = Map.fromList (map (f ref) xs)
  sty ref = mkOpt defaultSolverAdapter
                  (listOptSty (vals ref))
