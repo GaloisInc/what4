@@ -188,9 +188,6 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.Binary.IEEE754 as IEEE754
-import           Data.Foldable
-import qualified Data.HashTable.Class as H (toList)
-import qualified Data.HashTable.ST.Basic as H
 import           Data.Hashable
 import           Data.IORef
 import           Data.Kind
@@ -208,17 +205,9 @@ import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio (numerator, denominator)
-import           Data.STRef
-import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.String
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
 import           Numeric.Natural
-import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -266,246 +255,6 @@ cachedEval tbl k action = do
       stToIO $ PH.insert tbl k r
       return r
 
--- | This type represents 'Expr' values that were built from a
--- 'NonceApp'.
---
--- Parameter @t@ is a phantom type brand used to track nonces.
---
--- Selector functions are provided to destruct 'NonceAppExpr' values,
--- but the constructor is kept hidden. The preferred way to construct
--- an 'Expr' from a 'NonceApp' is to use 'sbNonceExpr'.
-data NonceAppExpr t (tp :: BaseType)
-   = NonceAppExprCtor { nonceExprId  :: {-# UNPACK #-} !(Nonce t tp)
-                     , nonceExprLoc :: !ProgramLoc
-                     , nonceExprApp :: !(NonceApp t (Expr t) tp)
-                     , nonceExprAbsValue :: !(AbstractValue tp)
-                     }
-
--- | This type represents 'Expr' values that were built from an 'App'.
---
--- Parameter @t@ is a phantom type brand used to track nonces.
---
--- Selector functions are provided to destruct 'AppExpr' values, but
--- the constructor is kept hidden. The preferred way to construct an
--- 'Expr' from an 'App' is to use 'sbMakeExpr'.
-data AppExpr t (tp :: BaseType)
-   = AppExprCtor { appExprId  :: {-# UNPACK #-} !(Nonce t tp)
-                , appExprLoc :: !ProgramLoc
-                , appExprApp :: !(App (Expr t) tp)
-                , appExprAbsValue :: !(AbstractValue tp)
-                }
-
-------------------------------------------------------------------------
--- Expr
-
--- | The main ExprBuilder expression datastructure.  The non-trivial @Expr@
--- values constructed by this module are uniquely identified by a
--- nonce value that is used to explicitly represent sub-term sharing.
--- When traversing the structure of an @Expr@ it is usually very important
--- to memoize computations based on the values of these identifiers to avoid
--- exponential blowups due to shared term structure.
---
--- Type parameter @t@ is a phantom type brand used to relate nonces to
--- a specific nonce generator (similar to the @s@ parameter of the
--- @ST@ monad). The type index @tp@ of kind 'BaseType' indicates the
--- type of the values denoted by the given expression.
---
--- Type @'Expr' t@ instantiates the type family @'SymExpr'
--- ('ExprBuilder' t st)@.
-data Expr t (tp :: BaseType) where
-  SemiRingLiteral :: !(SR.SemiRingRepr sr) -> !(SR.Coefficient sr) -> !ProgramLoc -> Expr t (SR.SemiRingBase sr)
-  BoolExpr :: !Bool -> !ProgramLoc -> Expr t BaseBoolType
-  StringExpr :: !(StringLiteral si) -> !ProgramLoc -> Expr t (BaseStringType si)
-  -- Application
-  AppExpr :: {-# UNPACK #-} !(AppExpr t tp) -> Expr t tp
-  -- An atomic predicate
-  NonceAppExpr :: {-# UNPACK #-} !(NonceAppExpr t tp) -> Expr t tp
-  -- A bound variable
-  BoundVarExpr :: !(ExprBoundVar t tp) -> Expr t tp
-
--- | Destructor for the 'AppExpr' constructor.
-{-# INLINE asApp #-}
-asApp :: Expr t tp -> Maybe (App (Expr t) tp)
-asApp (AppExpr a) = Just (appExprApp a)
-asApp _ = Nothing
-
--- | Destructor for the 'NonceAppExpr' constructor.
-{-# INLINE asNonceApp #-}
-asNonceApp :: Expr t tp -> Maybe (NonceApp t (Expr t) tp)
-asNonceApp (NonceAppExpr a) = Just (nonceExprApp a)
-asNonceApp _ = Nothing
-
-exprLoc :: Expr t tp -> ProgramLoc
-exprLoc (SemiRingLiteral _ _ l) = l
-exprLoc (BoolExpr _ l) = l
-exprLoc (StringExpr _ l) = l
-exprLoc (NonceAppExpr a)  = nonceExprLoc a
-exprLoc (AppExpr a)   = appExprLoc a
-exprLoc (BoundVarExpr v) = bvarLoc v
-
-mkExpr :: Nonce t tp
-      -> ProgramLoc
-      -> App (Expr t) tp
-      -> AbstractValue tp
-      -> Expr t tp
-mkExpr n l a v = AppExpr $ AppExprCtor { appExprId  = n
-                                    , appExprLoc = l
-                                    , appExprApp = a
-                                    , appExprAbsValue = v
-                                    }
-
-type BoolExpr t = Expr t BaseBoolType
-type NatExpr  t = Expr t BaseNatType
-type BVExpr t n = Expr t (BaseBVType n)
-type IntegerExpr t = Expr t BaseIntegerType
-type RealExpr t = Expr t BaseRealType
-type CplxExpr t = Expr t BaseComplexType
-type StringExpr t si = Expr t (BaseStringType si)
-
-
-
-iteSize :: Expr t tp -> Integer
-iteSize e =
-  case asApp e of
-    Just (BaseIte _ sz _ _ _) -> sz
-    _ -> 0
-
-instance IsExpr (Expr t) where
-  asConstantPred = exprAbsValue
-
-  asNat (SemiRingLiteral SR.SemiRingNatRepr n _) = Just n
-  asNat _ = Nothing
-
-  natBounds x = exprAbsValue x
-
-  asInteger (SemiRingLiteral SR.SemiRingIntegerRepr n _) = Just n
-  asInteger _ = Nothing
-
-  integerBounds x = exprAbsValue x
-
-  asRational (SemiRingLiteral SR.SemiRingRealRepr r _) = Just r
-  asRational _ = Nothing
-
-  rationalBounds x = ravRange $ exprAbsValue x
-
-  asComplex e
-    | Just (Cplx c) <- asApp e = traverse asRational c
-    | otherwise = Nothing
-
-  exprType (SemiRingLiteral sr _ _) = SR.semiRingBase sr
-  exprType (BoolExpr _ _) = BaseBoolRepr
-  exprType (StringExpr s _) = BaseStringRepr (stringLiteralInfo s)
-  exprType (NonceAppExpr e)  = nonceAppType (nonceExprApp e)
-  exprType (AppExpr e) = appType (appExprApp e)
-  exprType (BoundVarExpr i) = bvarType i
-
-  asBV (SemiRingLiteral (SR.SemiRingBVRepr _ _) i _) = Just i
-  asBV _ = Nothing
-
-  unsignedBVBounds x = Just $ BVD.ubounds $ exprAbsValue x
-  signedBVBounds x = Just $ BVD.sbounds (bvWidth x) $ exprAbsValue x
-
-  asAffineVar e = case exprType e of
-    BaseNatRepr
-      | Just (a, x, b) <- WSum.asAffineVar $
-          asWeightedSum SR.SemiRingNatRepr e ->
-        Just (ConcreteNat a, x, ConcreteNat b)
-    BaseIntegerRepr
-      | Just (a, x, b) <- WSum.asAffineVar $
-          asWeightedSum SR.SemiRingIntegerRepr e ->
-        Just (ConcreteInteger a, x, ConcreteInteger b)
-    BaseRealRepr
-      | Just (a, x, b) <- WSum.asAffineVar $
-          asWeightedSum SR.SemiRingRealRepr e ->
-        Just (ConcreteReal a, x, ConcreteReal b)
-    BaseBVRepr w
-      | Just (a, x, b) <- WSum.asAffineVar $
-          asWeightedSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e ->
-        Just (ConcreteBV w a, x, ConcreteBV w b)
-    _ -> Nothing
-
-  asString (StringExpr x _) = Just x
-  asString _ = Nothing
-
-  asConstantArray (asApp -> Just (ConstantArray _ _ def)) = Just def
-  asConstantArray _ = Nothing
-
-  asStruct (asApp -> Just (StructCtor _ flds)) = Just flds
-  asStruct _ = Nothing
-
-  printSymExpr = pretty
-
-
-asSemiRingLit :: SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> Maybe (SR.Coefficient sr)
-asSemiRingLit sr (SemiRingLiteral sr' x _loc)
-  | Just Refl <- testEquality sr sr'
-  = Just x
-
-  -- special case, ignore the BV ring flavor for this purpose
-  | SR.SemiRingBVRepr _ w  <- sr
-  , SR.SemiRingBVRepr _ w' <- sr'
-  , Just Refl <- testEquality w w'
-  = Just x
-
-asSemiRingLit _ _ = Nothing
-
-asSemiRingSum :: SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> Maybe (WeightedSum (Expr t) sr)
-asSemiRingSum sr (asSemiRingLit sr -> Just x) = Just (WSum.constant sr x)
-asSemiRingSum sr (asApp -> Just (SemiRingSum x))
-   | Just Refl <- testEquality sr (WSum.sumRepr x) = Just x
-asSemiRingSum _ _ = Nothing
-
-asSemiRingProd :: SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> Maybe (SemiRingProduct (Expr t) sr)
-asSemiRingProd sr (asApp -> Just (SemiRingProd x))
-  | Just Refl <- testEquality sr (WSum.prodRepr x) = Just x
-asSemiRingProd _ _ = Nothing
-
--- | This privides a view of a semiring expr as a weighted sum of values.
-data SemiRingView t sr
-   = SR_Constant !(SR.Coefficient sr)
-   | SR_Sum  !(WeightedSum (Expr t) sr)
-   | SR_Prod !(SemiRingProduct (Expr t) sr)
-   | SR_General
-
-viewSemiRing:: SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> SemiRingView t sr
-viewSemiRing sr x
-  | Just r <- asSemiRingLit sr x  = SR_Constant r
-  | Just s <- asSemiRingSum sr x  = SR_Sum s
-  | Just p <- asSemiRingProd sr x = SR_Prod p
-  | otherwise = SR_General
-
-asWeightedSum :: HashableF (Expr t) => SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> WeightedSum (Expr t) sr
-asWeightedSum sr x
-  | Just r <- asSemiRingLit sr x = WSum.constant sr r
-  | Just s <- asSemiRingSum sr x = s
-  | otherwise = WSum.var sr x
-
-asConjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
-asConjunction (BoolExpr True _) = []
-asConjunction (asApp -> Just (ConjPred xs)) =
- case BM.viewBoolMap xs of
-   BoolMapUnit     -> []
-   BoolMapDualUnit -> [(BoolExpr False initializationLoc, Positive)]
-   BoolMapTerms (tm:|tms) -> tm:tms
-asConjunction x = [(x,Positive)]
-
-
-asDisjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
-asDisjunction (BoolExpr False _) = []
-asDisjunction (asApp -> Just (NotPred (asApp -> Just (ConjPred xs)))) =
- case BM.viewBoolMap xs of
-   BoolMapUnit     -> []
-   BoolMapDualUnit -> [(BoolExpr True initializationLoc, Positive)]
-   BoolMapTerms (tm:|tms) -> map (over _2 BM.negatePolarity) (tm:tms)
-asDisjunction x = [(x,Positive)]
-
-asPosAtom :: Expr t BaseBoolType -> (Expr t BaseBoolType, Polarity)
-asPosAtom (asApp -> Just (NotPred x)) = (x, Negative)
-asPosAtom x                           = (x, Positive)
-
-asNegAtom :: Expr t BaseBoolType -> (Expr t BaseBoolType, Polarity)
-asNegAtom (asApp -> Just (NotPred x)) = (x, Positive)
-asNegAtom x                           = (x, Negative)
 
 ------------------------------------------------------------------------
 -- SymbolVarBimap
@@ -520,7 +269,7 @@ newtype SymbolVarBimap t = SymbolVarBimap (Bimap SolverSymbol (SymbolBinding t))
 data SymbolBinding t
    = forall tp . VarSymbolBinding !(ExprBoundVar t tp)
      -- ^ Solver
-   | forall args ret . FnSymbolBinding  !(ExprSymFn t (Expr t) args ret)
+   | forall args ret . FnSymbolBinding  !(ExprSymFn t args ret)
 
 instance Eq (SymbolBinding t) where
   VarSymbolBinding x == VarSymbolBinding y = isJust (testEquality x y)
@@ -562,7 +311,7 @@ instance HashableF (MatlabFnWrapper t) where
   hashWithSaltF s (MatlabFnWrapper f) = hashWithSalt s f
 
 data ExprSymFnWrapper t c
-   = forall a r . (c ~ (a ::> r)) => ExprSymFnWrapper (ExprSymFn t (Expr t) a r)
+   = forall a r . (c ~ (a ::> r)) => ExprSymFnWrapper (ExprSymFn t a r)
 
 data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 
@@ -649,29 +398,11 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
         , sbFloatMode :: !(FloatModeRepr fm)
         }
 
-type instance SymFn (ExprBuilder t st fs) = ExprSymFn t (Expr t)
+type instance SymFn (ExprBuilder t st fs) = ExprSymFn t
 type instance SymExpr (ExprBuilder t st fs) = Expr t
 type instance BoundVar (ExprBuilder t st fs) = ExprBoundVar t
 type instance SymAnnotation (ExprBuilder t st fs) = Nonce t
 
--- | Get abstract value associated with element.
-exprAbsValue :: Expr t tp -> AbstractValue tp
-exprAbsValue (SemiRingLiteral sr x _) =
-  case sr of
-    SR.SemiRingNatRepr  -> natSingleRange x
-    SR.SemiRingIntegerRepr  -> singleRange x
-    SR.SemiRingRealRepr -> ravSingle x
-    SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
-
-exprAbsValue (StringExpr l _) = stringAbsSingle l
-exprAbsValue (BoolExpr b _)   = Just b
-exprAbsValue (NonceAppExpr e) = nonceExprAbsValue e
-exprAbsValue (AppExpr e)      = appExprAbsValue e
-exprAbsValue (BoundVarExpr v) =
-  fromMaybe (unconstrainedAbsValue (bvarType v)) (bvarAbstractValue v)
-
-instance HasAbsValue (Expr t) where
-  getAbsValue = exprAbsValue
 
 ------------------------------------------------------------------------
 -- | ExprAllocator provides an interface for creating expressions from
@@ -690,435 +421,7 @@ data ExprAllocator t
                              -> IO (Expr t tp)
                   }
 
-------------------------------------------------------------------------
--- Expr operations
 
-{-# INLINE compareExpr #-}
-compareExpr :: Expr t x -> Expr t y -> OrderingF x y
-
--- Special case, ignore the BV semiring flavor for this purpose
-compareExpr (SemiRingLiteral (SR.SemiRingBVRepr _ wx) x _) (SemiRingLiteral (SR.SemiRingBVRepr _ wy) y _) =
-  case compareF wx wy of
-    LTF -> LTF
-    EQF -> fromOrdering (compare x y)
-    GTF -> GTF
-compareExpr (SemiRingLiteral srx x _) (SemiRingLiteral sry y _) =
-  case compareF srx sry of
-    LTF -> LTF
-    EQF -> fromOrdering (SR.sr_compare srx x y)
-    GTF -> GTF
-compareExpr SemiRingLiteral{} _ = LTF
-compareExpr _ SemiRingLiteral{} = GTF
-
-compareExpr (StringExpr x _) (StringExpr y _) =
-  case compareF x y of
-    LTF -> LTF
-    EQF -> EQF
-    GTF -> GTF
-
-compareExpr StringExpr{} _ = LTF
-compareExpr _ StringExpr{} = GTF
-
-compareExpr (BoolExpr x _) (BoolExpr y _) = fromOrdering (compare x y)
-compareExpr BoolExpr{} _ = LTF
-compareExpr _ BoolExpr{} = GTF
-
-compareExpr (NonceAppExpr x) (NonceAppExpr y) = compareF x y
-compareExpr NonceAppExpr{} _ = LTF
-compareExpr _ NonceAppExpr{} = GTF
-
-compareExpr (AppExpr x) (AppExpr y) = compareF (appExprId x) (appExprId y)
-compareExpr AppExpr{} _ = LTF
-compareExpr _ AppExpr{} = GTF
-
-compareExpr (BoundVarExpr x) (BoundVarExpr y) = compareF x y
-
-instance TestEquality (NonceAppExpr t) where
-  testEquality x y =
-    case compareF x y of
-      EQF -> Just Refl
-      _ -> Nothing
-
-instance OrdF (NonceAppExpr t)  where
-  compareF x y = compareF (nonceExprId x) (nonceExprId y)
-
-instance Eq (NonceAppExpr t tp) where
-  x == y = isJust (testEquality x y)
-
-instance Ord (NonceAppExpr t tp) where
-  compare x y = toOrdering (compareF x y)
-
-instance TestEquality (Expr t) where
-  testEquality x y =
-    case compareF x y of
-      EQF -> Just Refl
-      _ -> Nothing
-
-instance OrdF (Expr t)  where
-  compareF = compareExpr
-
-instance Eq (Expr t tp) where
-  x == y = isJust (testEquality x y)
-
-instance Ord (Expr t tp) where
-  compare x y = toOrdering (compareF x y)
-
-instance Hashable (Expr t tp) where
-  hashWithSalt s (BoolExpr b _) = hashWithSalt (hashWithSalt s (0::Int)) b
-  hashWithSalt s (SemiRingLiteral sr x _) =
-    case sr of
-      SR.SemiRingNatRepr     -> hashWithSalt (hashWithSalt s (1::Int)) x
-      SR.SemiRingIntegerRepr -> hashWithSalt (hashWithSalt s (2::Int)) x
-      SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
-      SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
-
-  hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (5::Int)) x
-  hashWithSalt s (AppExpr x)      = hashWithSalt (hashWithSalt s (6::Int)) (appExprId x)
-  hashWithSalt s (NonceAppExpr x) = hashWithSalt (hashWithSalt s (7::Int)) (nonceExprId x)
-  hashWithSalt s (BoundVarExpr x) = hashWithSalt (hashWithSalt s (8::Int)) x
-
-instance PH.HashableF (Expr t) where
-  hashWithSaltF = hashWithSalt
-
-------------------------------------------------------------------------
--- PPIndex
-
-data PPIndex
-   = ExprPPIndex {-# UNPACK #-} !Word64
-   | RatPPIndex !Rational
-  deriving (Eq, Ord, Generic)
-
-instance Hashable PPIndex
-
-------------------------------------------------------------------------
--- countOccurrences
-
-countOccurrences :: Expr t tp -> Map.Map PPIndex Int
-countOccurrences e0 = runST $ do
-  visited <- H.new
-  countOccurrences' visited e0
-  Map.fromList <$> H.toList visited
-
-type OccurrenceTable s = H.HashTable s PPIndex Int
-
-
-incOccurrence :: OccurrenceTable s -> PPIndex -> ST s () -> ST s ()
-incOccurrence visited idx sub = do
-  mv <- H.lookup visited idx
-  case mv of
-    Just i -> H.insert visited idx $! i+1
-    Nothing -> sub >> H.insert visited idx 1
-
--- FIXME... why does this ignore Nat and Int literals?
-countOccurrences' :: forall t tp s . OccurrenceTable s -> Expr t tp -> ST s ()
-countOccurrences' visited (SemiRingLiteral SR.SemiRingRealRepr r _) = do
-  incOccurrence visited (RatPPIndex r) $
-    return ()
-countOccurrences' visited (AppExpr e) = do
-  let idx = ExprPPIndex (indexValue (appExprId e))
-  incOccurrence visited idx $ do
-    traverseFC_ (countOccurrences' visited) (appExprApp e)
-countOccurrences' visited (NonceAppExpr e) = do
-  let idx = ExprPPIndex (indexValue (nonceExprId e))
-  incOccurrence visited idx $ do
-    traverseFC_ (countOccurrences' visited) (nonceExprApp e)
-countOccurrences' _ _ = return ()
-
-------------------------------------------------------------------------
--- boundVars
-
-type BoundVarMap s t = H.HashTable s PPIndex (Set (Some (ExprBoundVar t)))
-
-cache :: (Eq k, Hashable k) => H.HashTable s k r -> k -> ST s r -> ST s r
-cache h k m = do
-  mr <- H.lookup h k
-  case mr of
-    Just r -> return r
-    Nothing -> do
-      r <- m
-      H.insert h k r
-      return r
-
-
-boundVars :: Expr t tp -> ST s (BoundVarMap s t)
-boundVars e0 = do
-  visited <- H.new
-  _ <- boundVars' visited e0
-  return visited
-
-boundVars' :: BoundVarMap s t
-           -> Expr t tp
-           -> ST s (Set (Some (ExprBoundVar t)))
-boundVars' visited (AppExpr e) = do
-  let idx = indexValue (appExprId e)
-  cache visited (ExprPPIndex idx) $ do
-    sums <- sequence (toListFC (boundVars' visited) (appExprApp e))
-    return $ foldl' Set.union Set.empty sums
-boundVars' visited (NonceAppExpr e) = do
-  let idx = indexValue (nonceExprId e)
-  cache visited (ExprPPIndex idx) $ do
-    sums <- sequence (toListFC (boundVars' visited) (nonceExprApp e))
-    return $ foldl' Set.union Set.empty sums
-boundVars' visited (BoundVarExpr v)
-  | QuantifierVarKind <- bvarKind v = do
-      let idx = indexValue (bvarId v)
-      cache visited (ExprPPIndex idx) $
-        return (Set.singleton (Some v))
-boundVars' _ _ = return Set.empty
-
-------------------------------------------------------------------------
--- Pretty printing
-
-instance Show (Expr t tp) where
-  show = show . ppExpr
-
-instance Pretty (Expr t tp) where
-  pretty = ppExpr
-
-
--- | @AppPPExpr@ represents a an application, and it may be let bound.
-data AppPPExpr ann
-   = APE { apeIndex :: !PPIndex
-         , apeLoc :: !ProgramLoc
-         , apeName :: !Text
-         , apeExprs :: ![PPExpr ann]
-         , apeLength :: !Int
-           -- ^ Length of AppPPExpr not including parenthesis.
-         }
-
-data PPExpr ann
-   = FixedPPExpr !(Doc ann) ![Doc ann] !Int
-     -- ^ A fixed doc with length.
-   | AppPPExpr !(AppPPExpr ann)
-     -- ^ A doc that can be let bound.
-
--- | Pretty print a AppPPExpr
-apeDoc :: AppPPExpr ann -> (Doc ann, [Doc ann])
-apeDoc a = (pretty (apeName a), ppExprDoc True <$> apeExprs a)
-
-textPPExpr :: Text -> PPExpr ann
-textPPExpr t = FixedPPExpr (pretty t) [] (Text.length t)
-
-stringPPExpr :: String -> PPExpr ann
-stringPPExpr t = FixedPPExpr (pretty t) [] (length t)
-
--- | Get length of Expr including parens.
-ppExprLength :: PPExpr ann -> Int
-ppExprLength (FixedPPExpr _ [] n) = n
-ppExprLength (FixedPPExpr _ _ n) = n + 2
-ppExprLength (AppPPExpr a) = apeLength a + 2
-
-parenIf :: Bool -> Doc ann -> [Doc ann] -> Doc ann
-parenIf _ h [] = h
-parenIf False h l = hsep (h:l)
-parenIf True h l = parens (hsep (h:l))
-
--- | Pretty print PPExpr
-ppExprDoc :: Bool -> PPExpr ann -> Doc ann
-ppExprDoc b (FixedPPExpr d a _) = parenIf b d a
-ppExprDoc b (AppPPExpr a) = uncurry (parenIf b) (apeDoc a)
-
-data PPExprOpts = PPExprOpts { ppExpr_maxWidth :: Int
-                           , ppExpr_useDecimal :: Bool
-                           }
-
-defaultPPExprOpts :: PPExprOpts
-defaultPPExprOpts =
-  PPExprOpts { ppExpr_maxWidth = 68
-            , ppExpr_useDecimal = True
-            }
-
--- | Pretty print an 'Expr' using let bindings to create the term.
-ppExpr :: Expr t tp -> Doc ann
-ppExpr e
-     | Prelude.null bindings = ppExprDoc False r
-     | otherwise =
-       vsep
-       [ "let" <+> align (vcat bindings)
-       , " in" <+> align (ppExprDoc False r) ]
-  where (bindings,r) = runST (ppExpr' e defaultPPExprOpts)
-
-instance ShowF (Expr t)
-
--- | Pretty print the top part of an element.
-ppExprTop :: Expr t tp -> Doc ann
-ppExprTop e = ppExprDoc False r
-  where (_,r) = runST (ppExpr' e defaultPPExprOpts)
-
--- | Contains the elements before, the index, doc, and width and
--- the elements after.
-type SplitPPExprList ann = Maybe ([PPExpr ann], AppPPExpr ann, [PPExpr ann])
-
-findExprToRemove :: [PPExpr ann] -> SplitPPExprList ann
-findExprToRemove exprs0 = go [] exprs0 Nothing
-  where go :: [PPExpr ann] -> [PPExpr ann] -> SplitPPExprList ann -> SplitPPExprList ann
-        go _ [] mr = mr
-        go prev (e@FixedPPExpr{} : exprs) mr = do
-          go (e:prev) exprs mr
-        go prev (AppPPExpr a:exprs) mr@(Just (_,a',_))
-          | apeLength a < apeLength a' = go (AppPPExpr a:prev) exprs mr
-        go prev (AppPPExpr a:exprs) _ = do
-          go (AppPPExpr a:prev) exprs (Just (reverse prev, a, exprs))
-
-
-ppExpr' :: forall t tp s ann. Expr t tp -> PPExprOpts -> ST s ([Doc ann], PPExpr ann)
-ppExpr' e0 o = do
-  let max_width = ppExpr_maxWidth o
-  let use_decimal = ppExpr_useDecimal o
-  -- Get map that counts number of elements.
-  let m = countOccurrences e0
-  -- Return number of times a term is referred to in dag.
-  let isShared :: PPIndex -> Bool
-      isShared w = fromMaybe 0 (Map.lookup w m) > 1
-
-  -- Get bounds variables.
-  bvars <- boundVars e0
-
-  bindingsRef <- newSTRef Seq.empty
-
-  visited <- H.new :: ST s (H.HashTable s PPIndex (PPExpr ann))
-  visited_fns <- H.new :: ST s (H.HashTable s Word64 Text)
-
-  let -- Add a binding to the list of bindings
-      addBinding :: AppPPExpr ann -> ST s (PPExpr ann)
-      addBinding a = do
-        let idx = apeIndex a
-        cnt <- Seq.length <$> readSTRef bindingsRef
-
-        vars <- fromMaybe Set.empty <$> H.lookup bvars idx
-        -- TODO: avoid intermediate String from 'ppBoundVar'
-        let args :: [String]
-            args = viewSome ppBoundVar <$> Set.toList vars
-
-        let nm = case idx of
-                   ExprPPIndex e -> "v" ++ show e
-                   RatPPIndex _ -> "r" ++ show cnt
-        let lhs = parenIf False (pretty nm) (pretty <$> args)
-        let doc = vcat
-                  [ "--" <+> pretty (plSourceLoc (apeLoc a))
-                  , lhs <+> "=" <+> uncurry (parenIf False) (apeDoc a) ]
-        modifySTRef' bindingsRef (Seq.|> doc)
-        let len = length nm + sum ((\arg_s -> length arg_s + 1) <$> args)
-        let nm_expr = FixedPPExpr (pretty nm) (map pretty args) len
-        H.insert visited idx $! nm_expr
-        return nm_expr
-
-  let fixLength :: Int
-                -> [PPExpr ann]
-                -> ST s ([PPExpr ann], Int)
-      fixLength cur_width exprs
-        | cur_width > max_width
-        , Just (prev_e, a, next_e) <- findExprToRemove exprs = do
-          r <- addBinding a
-          let exprs' = prev_e ++ [r] ++ next_e
-          fixLength (cur_width - apeLength a + ppExprLength r) exprs'
-      fixLength cur_width exprs = do
-        return $! (exprs, cur_width)
-
-  -- Pretty print an argument.
-  let renderArg :: PrettyArg (Expr t) -> ST s (PPExpr ann)
-      renderArg (PrettyArg e) = getBindings e
-      renderArg (PrettyText txt) = return (textPPExpr txt)
-      renderArg (PrettyFunc nm args) =
-        do exprs0 <- traverse renderArg args
-           let total_width = Text.length nm + sum ((\e -> 1 + ppExprLength e) <$> exprs0)
-           (exprs1, cur_width) <- fixLength total_width exprs0
-           let exprs = map (ppExprDoc True) exprs1
-           return (FixedPPExpr (pretty nm) exprs cur_width)
-
-      renderApp :: PPIndex
-                -> ProgramLoc
-                -> Text
-                -> [PrettyArg (Expr t)]
-                -> ST s (AppPPExpr ann)
-      renderApp idx loc nm args = Ex.assert (not (Prelude.null args)) $ do
-        exprs0 <- traverse renderArg args
-        -- Get width not including parenthesis of outer app.
-        let total_width = Text.length nm + sum ((\e -> 1 + ppExprLength e) <$> exprs0)
-        (exprs, cur_width) <- fixLength total_width exprs0
-        return APE { apeIndex = idx
-                   , apeLoc = loc
-                   , apeName = nm
-                   , apeExprs = exprs
-                   , apeLength = cur_width
-                   }
-
-      cacheResult :: PPIndex
-                  -> ProgramLoc
-                  -> PrettyApp (Expr t)
-                  -> ST s (PPExpr ann)
-      cacheResult _ _ (nm,[]) = do
-        return (textPPExpr nm)
-      cacheResult idx loc (nm,args) = do
-        mr <- H.lookup visited idx
-        case mr of
-          Just d -> return d
-          Nothing -> do
-            a <- renderApp idx loc nm args
-            if isShared idx then
-              addBinding a
-             else
-              return (AppPPExpr a)
-
-      bindFn :: ExprSymFn t (Expr t) idx ret -> ST s (PrettyArg (Expr t))
-      bindFn f = do
-        let idx = indexValue (symFnId f)
-        mr <- H.lookup visited_fns idx
-        case mr of
-          Just d -> return (PrettyText d)
-          Nothing -> do
-            case symFnInfo f of
-              UninterpFnInfo{} -> do
-                let def_doc = viaShow f <+> "=" <+> "??"
-                modifySTRef' bindingsRef (Seq.|> def_doc)
-              DefinedFnInfo vars rhs _ -> do
-                -- TODO: avoid intermediate String from 'ppBoundVar'
-                let pp_vars = toListFC (pretty . ppBoundVar) vars
-                let def_doc = viaShow f <+> hsep pp_vars <+> "=" <+> ppExpr rhs
-                modifySTRef' bindingsRef (Seq.|> def_doc)
-              MatlabSolverFnInfo fn_id _ _ -> do
-                let def_doc = viaShow f <+> "=" <+> ppMatlabSolverFn fn_id
-                modifySTRef' bindingsRef (Seq.|> def_doc)
-
-            let d = Text.pack (show f)
-            H.insert visited_fns idx $! d
-            return $! PrettyText d
-
-      -- Collect definitions for all applications that occur multiple times
-      -- in term.
-      getBindings :: Expr t u -> ST s (PPExpr ann)
-      getBindings (SemiRingLiteral sr x l) =
-        case sr of
-          SR.SemiRingNatRepr ->
-            return $ stringPPExpr (show x)
-          SR.SemiRingIntegerRepr ->
-            return $ stringPPExpr (show x)
-          SR.SemiRingRealRepr -> cacheResult (RatPPIndex x) l app
-             where n = numerator x
-                   d = denominator x
-                   app | d == 1      = prettyApp (fromString (show n)) []
-                       | use_decimal = prettyApp (fromString (show (fromRational x :: Double))) []
-                       | otherwise   = prettyApp "divReal"  [ showPrettyArg n, showPrettyArg d ]
-          SR.SemiRingBVRepr _ w ->
-            return $ stringPPExpr $ BV.ppHex w x
-
-      getBindings (StringExpr x _) =
-        return $ stringPPExpr $ (show x)
-      getBindings (BoolExpr b _) =
-        return $ stringPPExpr (if b then "true" else "false")
-      getBindings (NonceAppExpr e) =
-        cacheResult (ExprPPIndex (indexValue (nonceExprId e))) (nonceExprLoc e)
-          =<< ppNonceApp bindFn (nonceExprApp e)
-      getBindings (AppExpr e) =
-        cacheResult (ExprPPIndex (indexValue (appExprId e)))
-                    (appExprLoc e)
-                    (ppApp' (appExprApp e))
-      getBindings (BoundVarExpr i) =
-        return $ stringPPExpr $ ppBoundVar i
-
-  r <- getBindings e0
-  bindings <- toList <$> readSTRef bindingsRef
-  return (toList bindings, r)
 
 
 ------------------------------------------------------------------------
@@ -1205,11 +508,6 @@ newCachedStorage g sz = stToIO $ do
   return $ ExprAllocator { appExpr = cachedAppExpr g appCache
                         , nonceExpr = cachedNonceExpr g predCache
                         }
-
-instance PolyEq (Expr t x) (Expr t y) where
-  polyEqF x y = do
-    Refl <- testEquality x y
-    return Refl
 
 
 ------------------------------------------------------------------------
@@ -1569,7 +867,7 @@ symbolicIndices sym = traverseFC f
 
 -- | This evaluate a symbolic function against a set of arguments.
 betaReduce :: ExprBuilder t st fs
-           -> ExprSymFn t (Expr t) args ret
+           -> ExprSymFn t args ret
            -> Ctx.Assignment (Expr t) args
            -> IO (Expr t ret)
 betaReduce sym f args =
@@ -1627,7 +925,7 @@ recordBoundVar tbl v = do
 data CachedSymFn t c
   = forall a r
     . (c ~ (a ::> r))
-    => CachedSymFn Bool (ExprSymFn t (Expr t) a r)
+    => CachedSymFn Bool (ExprSymFn t a r)
 
 -- | Data structure used for caching evaluation.
 data EvalHashTables t
@@ -1640,8 +938,8 @@ data EvalHashTables t
 -- This returns whether the function changed as a Boolean and the function itself.
 evalSimpleFn :: EvalHashTables t
              -> ExprBuilder t st fs
-             -> ExprSymFn t (Expr t) idx ret
-             -> IO (Bool,ExprSymFn t (Expr t) idx ret)
+             -> ExprSymFn t idx ret
+             -> IO (Bool,ExprSymFn t idx ret)
 evalSimpleFn tbl sym f =
   case symFnInfo f of
     UninterpFnInfo{} -> return (False, f)
@@ -2275,16 +1573,6 @@ tryOrAbsorption (asApp -> Just (ConjPred as)) (asDisjunction -> bs)
 tryOrAbsorption _ _ = False
 
 
--- | A slightly more aggressive syntactic equality check than testEquality,
---   `sameTerm` will recurse through a small collection of known syntax formers.
-sameTerm :: Expr t a -> Expr t b -> Maybe (a :~: b)
-
-sameTerm (asApp -> Just (FloatToBinary fppx x)) (asApp -> Just (FloatToBinary fppy y)) =
-  do Refl <- testEquality fppx fppy
-     Refl <- sameTerm x y
-     return Refl
-
-sameTerm x y = testEquality x y
 
 instance IsExprBuilder (ExprBuilder t st fs) where
   getConfiguration = sbConfiguration
@@ -3632,7 +2920,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
                         -> IO (Expr t d)
             evalArgs const_idx sym_idx a = do
               sbConcreteLookup sym (unwrapArrayResult a) (Just const_idx) sym_idx
-        let evalIndex :: ExprSymFn t (Expr t) ctx ret
+        let evalIndex :: ExprSymFn t ctx ret
                       -> Ctx.Assignment (ArrayResultWrapper (Expr t) (i::>itp)) ctx
                       -> Ctx.Assignment IndexLit (i::>itp)
                       -> IO (Expr t ret)
