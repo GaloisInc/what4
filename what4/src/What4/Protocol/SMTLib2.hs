@@ -93,6 +93,7 @@ import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
+import           Data.List.NonEmpty ( NonEmpty(..) )
 import           Data.IORef
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy
@@ -1150,8 +1151,8 @@ shutdownSolver _solver p = do
 -----------------------------------------------------------------
 -- Checking solver version bounds
 
-mkChunks :: [Word] -> [Versions.VChunk]
-mkChunks = map ((:[]) . Versions.Digits)
+mkChunks :: Word -> [Word] -> NonEmpty Versions.VChunk
+mkChunks maj vs = fmap ( (:| []) . Versions.Digits) (maj :| vs)
 
 -- | The minimum (inclusive) version bound for a given solver.
 --
@@ -1161,7 +1162,7 @@ solverMinVersions :: Map String Version
 solverMinVersions =
   [ -- TODO: Why is this verion required?
     ( "Yices"
-    , Version { _vEpoch = Nothing, _vChunks = mkChunks [2, 6, 1], _vRel = []}
+    , Version { _vEpoch = Nothing, _vChunks = mkChunks 2 [6, 1], _vRel = [], _vMeta = [] }
     )
   ]
 
