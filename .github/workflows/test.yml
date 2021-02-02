@@ -52,12 +52,12 @@ jobs:
         # LD_LIBRARY_PATH manipulation may be removed for all steps.
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC gmp zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
+          nix-shell -p cabal-install $GHC gmp zlib happy --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
       - name: Build
         shell: bash
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC gmp zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal build --extra-lib-dirs="$ZLIB_LOC"'
+          nix-shell -p cabal-install $GHC gmp zlib happy --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal build --extra-lib-dirs="$ZLIB_LOC"'
       - name: Test
         shell: bash
         run: |
