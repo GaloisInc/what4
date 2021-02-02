@@ -74,6 +74,7 @@ module What4.Protocol.SMTLib2
   , checkSolverVersion
   , checkSolverVersion'
   , queryErrorBehavior
+  , defaultSolverBounds
     -- * Re-exports
   , SMTWriter.WriterConn
   , SMTWriter.assume
@@ -1152,28 +1153,10 @@ shutdownSolver _solver p = do
 -----------------------------------------------------------------
 -- Checking solver version bounds
 
--- | The minimum (inclusive) version bound for a given solver.
---
--- The keys come from @'smtWriterName'@ in @'WriterConn'@.
--- See also https://github.com/GaloisInc/crucible/issues/194
-solverMinVersions :: Map String Version
-solverMinVersions =
-  [ ( "Yices", $(ver "2.6.1") )
-  , ( "Z3"   , $(ver "4.8.7") )
-  , ( "CVC4" , $(ver "1.7") )
-  , ( "STP"  , $(ver "3.2.1") )
-  ]
 
--- | The maximum (non-inclusive) version bound for a given solver.
---
--- The keys come from @'smtWriterName'@ in @'WriterConn'@.
-solverMaxVersions :: Map String Version
-solverMaxVersions =
-  [ ( "Yices", $(ver "2.7") )
-  , ( "Z3"   , $(ver "4.9") )
-  , ( "CVC4" , $(ver "1.9") )
-  , ( "STP"  , $(ver "3.3") )
-  ]
+-- | Solver version bounds computed from \"solverBounds.config\"
+defaultSolverBounds :: Map Text SolverBounds
+defaultSolverBounds = Map.fromList $(computeDefaultSolverBounds)
 
 -- | Things that can go wrong while checking which solver version we've got
 data SolverVersionCheckError =
@@ -1193,18 +1176,16 @@ ppSolverVersionCheckError err =
 
 data SolverVersionError =
   SolverVersionError
-  { vMin :: Maybe Version
-  , vMax :: Maybe Version
+  { vBounds :: SolverBounds
   , vActual :: Version
   }
-  deriving (Eq, Ord)
 
 ppSolverVersionError :: SolverVersionError -> PP.Doc ann
 ppSolverVersionError err =
   PP.vsep
   [ "Solver did not meet version bound restrictions:"
-  , "Lower bound (inclusive):" PP.<+> na (vMin err)
-  , "Upper bound (non-inclusive):" PP.<+> na (vMax err)
+  , "Lower bound (inclusive):" PP.<+> na (lower (vBounds err))
+  , "Upper bound (non-inclusive):" PP.<+> na (upper (vBounds err))
   , "Actual version:" PP.<+> PP.viaShow (vActual err)
   ]
   where na (Just s) = PP.viaShow s
@@ -1253,42 +1234,34 @@ versionResult _ s =
 
 -- | Ensure the solver's version falls within a known-good range.
 checkSolverVersion' :: SMTLib2Tweaks solver =>
-  Map String Version {- ^ min version bounds (inclusive) -} ->
-  Map String Version {- ^ max version bounds (non-inclusive) -} ->
+  Map Text SolverBounds ->
   SolverProcess scope (Writer solver) ->
   IO (Either SolverVersionCheckError (Maybe SolverVersionError))
-checkSolverVersion' mins maxes proc =
+checkSolverVersion' boundsMap proc =
   let conn = solverConn proc
       name = smtWriterName conn
-      min0 = Map.lookup name mins
-      max0 = Map.lookup name maxes
-      verr = pure . Right . Just . SolverVersionError min0 max0
       done = pure (Right Nothing)
-  in
-    case (min0, max0) of
-      (Nothing, Nothing) -> done
-      (p, q) -> do
-        getVersion conn
-        res <- versionResult conn (solverResponse proc)
-        case Versions.version res of
-          Left e -> pure (Left (UnparseableVersion e))
-          Right actualVer ->
-            case (p, q) of
-              -- This case is handled in the above case block
-              (Nothing, Nothing) -> error "What4/SMTLIB2: Impossible"
-              (Nothing, Just maxVer) ->
-                if actualVer < maxVer then done else verr actualVer
-              (Just minVer, Nothing) ->
-                if minVer <= actualVer then done else verr actualVer
-              (Just minVer, Just maxVer) ->
-                if minVer <= actualVer && actualVer < maxVer
-                then done
-                else verr actualVer
+      verr bnds actual = pure (Right (Just (SolverVersionError bnds actual))) in
+  case Map.lookup (Text.pack name) boundsMap of
+    Nothing -> done
+    Just bnds ->
+      do getVersion conn
+         res <- versionResult conn (solverResponse proc)
+         case Versions.version res of
+           Left e -> pure (Left (UnparseableVersion e))
+           Right actualVer ->
+             case (lower bnds, upper bnds) of
+               (Nothing, Nothing) -> done
+               (Nothing, Just maxVer) ->
+                 if actualVer < maxVer then done else verr bnds actualVer
+               (Just minVer, Nothing) ->
+                 if minVer <= actualVer then done else verr bnds actualVer
+               (Just minVer, Just maxVer) ->
+                 if minVer <= actualVer && actualVer < maxVer then done else verr bnds actualVer
 
 
 -- | Ensure the solver's version falls within a known-good range.
 checkSolverVersion :: SMTLib2Tweaks solver =>
   SolverProcess scope (Writer solver) ->
   IO (Either SolverVersionCheckError (Maybe SolverVersionError))
-checkSolverVersion =
-  checkSolverVersion' solverMinVersions solverMaxVersions
+checkSolverVersion = checkSolverVersion' defaultSolverBounds
