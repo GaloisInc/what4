@@ -79,6 +79,7 @@ library
     template-haskell,
     text >= 1.1,
     th-abstraction >=0.1 && <0.5,
+    th-lift >= 0.8.2 && < 0.9,
     transformers >= 0.4,
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
@@ -167,6 +168,7 @@ library
     What4.Utils.Streams
     What4.Utils.StringLiteral
     What4.Utils.Word16String
+    What4.Utils.Versions
 
     Test.Verification
 

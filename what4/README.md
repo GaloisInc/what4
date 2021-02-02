@@ -271,7 +271,7 @@ for the more experimental logics that have not been standardized. If you
 encounter such a situation, please open a ticket, as our goal is to work correctly
 on as wide a collection of solvers as is reasonable.
 
-- Z3 versions 4.8.7 and 4.8.8
+- Z3 versions 4.8.7, 4.8.8, and 4.8.9
 - Yices 2.6.1 and 2.6.2
 - CVC4 1.7 and 1.8
 - Boolector 3.2.1

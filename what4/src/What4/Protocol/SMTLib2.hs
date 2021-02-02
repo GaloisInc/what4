@@ -24,6 +24,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -93,7 +94,6 @@ import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
-import           Data.List.NonEmpty ( NonEmpty(..) )
 import           Data.IORef
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy
@@ -142,6 +142,7 @@ import           What4.Protocol.SMTWriter hiding (assume, Term)
 import           What4.SatResult
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
+import           What4.Utils.Versions
 import           What4.Solver.Adapter
 
 -- | Set the logic to all supported logics.
@@ -1151,26 +1152,28 @@ shutdownSolver _solver p = do
 -----------------------------------------------------------------
 -- Checking solver version bounds
 
-mkChunks :: Word -> [Word] -> NonEmpty Versions.VChunk
-mkChunks maj vs = fmap ( (:| []) . Versions.Digits) (maj :| vs)
-
 -- | The minimum (inclusive) version bound for a given solver.
 --
 -- The keys come from @'smtWriterName'@ in @'WriterConn'@.
 -- See also https://github.com/GaloisInc/crucible/issues/194
 solverMinVersions :: Map String Version
 solverMinVersions =
-  [ -- TODO: Why is this verion required?
-    ( "Yices"
-    , Version { _vEpoch = Nothing, _vChunks = mkChunks 2 [6, 1], _vRel = [], _vMeta = [] }
-    )
+  [ ( "Yices", $(ver "2.6.1") )
+  , ( "Z3"   , $(ver "4.8.7") )
+  , ( "CVC4" , $(ver "1.7") )
+  , ( "STP"  , $(ver "3.2.1") )
   ]
 
 -- | The maximum (non-inclusive) version bound for a given solver.
 --
 -- The keys come from @'smtWriterName'@ in @'WriterConn'@.
 solverMaxVersions :: Map String Version
-solverMaxVersions = []
+solverMaxVersions =
+  [ ( "Yices", $(ver "2.7") )
+  , ( "Z3"   , $(ver "4.9") )
+  , ( "CVC4" , $(ver "1.9") )
+  , ( "STP"  , $(ver "3.3") )
+  ]
 
 -- | Things that can go wrong while checking which solver version we've got
 data SolverVersionCheckError =
@@ -1242,7 +1245,7 @@ versionResult _ s =
   in
     tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
       \case
-        Right (SApp [SAtom ":version", SString ver]) -> pure ver
+        Right (SApp [SAtom ":version", SString v]) -> pure v
         Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
         Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
         Left (SomeException e) ->
