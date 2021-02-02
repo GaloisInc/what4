@@ -9,7 +9,7 @@ jobs:
     continue-on-error: ${{ matrix.allow-failure }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-18.04]
         ghc: [8.10.3, 8.8.4, 8.6.5]
         allow-failure: [false]
       fail-fast: false
