@@ -84,4 +84,4 @@ jobs:
         shell: bash
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal haddock what4 --extra-lib-dirs="$ZLIB_LOC"'
+          nix-shell -p cabal-install $GHC zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal haddock what4 --extra-lib-dirs="$ZLIB_LOC"'
