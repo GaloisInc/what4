@@ -182,8 +182,6 @@ appVerilogExpr app =
 
     -- Arithmetic operations
     RealIsInteger _ -> doNotSupportError "real numbers"
-    NatDiv _ _ -> doNotSupportError "natural numbers"
-    NatMod _ _ -> doNotSupportError "natural numbers"
 
     IntDiv _ _ -> doNotSupportError "integers"
     IntMod _ _ -> doNotSupportError "integers"
@@ -345,11 +343,8 @@ appVerilogExpr app =
     SelectArray _ _ _ -> doNotSupportError "arrays"
 
     -- Conversions
-    NatToInteger _ -> doNotSupportError "integers"
-    IntegerToNat _ -> doNotSupportError "integers"
     IntegerToReal _ -> doNotSupportError "integers"
     RealToInteger _ -> doNotSupportError "integers"
-    BVToNat _ -> doNotSupportError "natural numbers"
     BVToInteger _ -> doNotSupportError "integers"
     SBVToInteger _ -> doNotSupportError "integers"
     IntegerToBV _ _ -> doNotSupportError "integers"

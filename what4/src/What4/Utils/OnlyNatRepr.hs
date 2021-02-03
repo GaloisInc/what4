@@ -9,7 +9,7 @@ restricting index types in MATLAB arrays.
 -}
 {-# LANGUAGE GADTs #-}
 module What4.Utils.OnlyNatRepr
-  ( OnlyNatRepr(..)
+  ( OnlyIntRepr(..)
   , toBaseTypeRepr
   ) where
 
@@ -18,18 +18,18 @@ import Data.Parameterized.Classes (HashableF(..))
 import What4.BaseTypes
 
 -- | This provides a GADT instance used to indicate a 'BaseType' must have
--- value 'BaseNatType'.
-data OnlyNatRepr tp
-   = (tp ~ BaseNatType) => OnlyNatRepr
+-- value 'BaseIntegerType'.
+data OnlyIntRepr tp
+   = (tp ~ BaseIntegerType) => OnlyIntRepr
 
-instance TestEquality OnlyNatRepr where
-  testEquality OnlyNatRepr OnlyNatRepr = Just Refl
+instance TestEquality OnlyIntRepr where
+  testEquality OnlyIntRepr OnlyIntRepr = Just Refl
 
-instance Hashable (OnlyNatRepr tp) where
-  hashWithSalt s OnlyNatRepr = s
+instance Hashable (OnlyIntRepr tp) where
+  hashWithSalt s OnlyIntRepr = s
 
-instance HashableF OnlyNatRepr where
+instance HashableF OnlyIntRepr where
   hashWithSaltF = hashWithSalt
 
-toBaseTypeRepr :: OnlyNatRepr tp -> BaseTypeRepr tp
-toBaseTypeRepr OnlyNatRepr = BaseNatRepr
+toBaseTypeRepr :: OnlyIntRepr tp -> BaseTypeRepr tp
+toBaseTypeRepr OnlyIntRepr = BaseIntegerRepr

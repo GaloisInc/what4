@@ -42,6 +42,7 @@ withTestSolver f = withIONonceGenerator $ \nonce_gen ->
   f =<< newExprBuilder FloatIEEERepr State nonce_gen
 
 
+{-
 -- | Test natDiv and natMod properties described at their declaration
 -- site in What4.Interface
 testNatDivModProps :: TestTree
@@ -64,6 +65,7 @@ testNatDivModProps =
         yn * dn + mn === xn
         diff mn (<) yn
       _ -> failure
+-}
 
 
 testInt :: TestTree
@@ -235,12 +237,14 @@ testInjectiveConversions = testGroup "injective conversion"
       r_lit <- realLit sym (fromIntegral i)
       rti <- realToInteger sym r_lit
       Just i @=? (fromConcreteInteger <$> asConcrete rti)
+{-
   , testProperty "bvToNat" $ property $ do
     i <- forAll $ Gen.integral $ Range.linear 0 255
     liftIO $ withTestSolver $ \sym -> do
       b_lit <- bvLit sym knownRepr (BV.mkBV (knownNat @8) (fromIntegral i))
       nat <- bvToNat sym b_lit
       Just i @=? (fromConcreteNat <$> asConcrete nat)
+-}
   , testProperty "bvToInteger" $ property $ do
     i <- forAll $ Gen.integral $ Range.linear 0 255
     liftIO $ withTestSolver $ \sym -> do
@@ -325,8 +329,8 @@ testIntegerToBV = testGroup "integerToBV"
 main :: IO ()
 main = defaultMain $ testGroup "What4 Expressions"
   [
-    testNatDivModProps
-  , testBvIsNeg
+    --testNatDivModProps
+    testBvIsNeg
   , testInt
   , testProperty "stringEmpty" $ property $ do
     s <- liftIO $ withTestSolver $ \sym -> do

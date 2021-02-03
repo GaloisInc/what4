@@ -36,7 +36,6 @@ import           Data.Parameterized.Classes
 import qualified Data.ByteString as BS
 import           Data.String
 import qualified Data.Text as T
-import           Numeric.Natural
 
 import           What4.BaseTypes
 import qualified What4.Utils.Word16String as WS
@@ -120,10 +119,10 @@ instance HashableF StringLiteral where
 instance Hashable (StringLiteral si) where
   hashWithSalt = hashWithSaltF
 
-stringLitLength :: StringLiteral si -> Natural
-stringLitLength (UnicodeLiteral x) = fromIntegral (T.length x)
-stringLitLength (Char16Literal x)  = fromIntegral (WS.length x)
-stringLitLength (Char8Literal x)   = fromIntegral (BS.length x)
+stringLitLength :: StringLiteral si -> Integer
+stringLitLength (UnicodeLiteral x) = toInteger (T.length x)
+stringLitLength (Char16Literal x)  = toInteger (WS.length x)
+stringLitLength (Char8Literal x)   = toInteger (BS.length x)
 
 stringLitEmpty :: StringInfoRepr si -> StringLiteral si
 stringLitEmpty UnicodeRepr = UnicodeLiteral mempty
@@ -150,30 +149,30 @@ stringLitIsSuffixOf (UnicodeLiteral x) (UnicodeLiteral y) = T.isSuffixOf x y
 stringLitIsSuffixOf (Char16Literal x) (Char16Literal y) = WS.isSuffixOf x y
 stringLitIsSuffixOf (Char8Literal x) (Char8Literal y) = BS.isSuffixOf x y
 
-stringLitSubstring :: StringLiteral si -> Natural -> Natural -> StringLiteral si
+stringLitSubstring :: StringLiteral si -> Integer -> Integer -> StringLiteral si
 stringLitSubstring (UnicodeLiteral x) len off =
-  UnicodeLiteral $ T.take (fromIntegral len)  $ T.drop (fromIntegral off) x
+  UnicodeLiteral $ T.take (fromInteger len)  $ T.drop (fromInteger off) x
 stringLitSubstring (Char16Literal x) len off =
-  Char16Literal  $ WS.take (fromIntegral len) $ WS.drop (fromIntegral off) x
+  Char16Literal  $ WS.take (fromInteger len) $ WS.drop (fromInteger off) x
 stringLitSubstring (Char8Literal x) len off =
-  Char8Literal   $ BS.take (fromIntegral len) $ BS.drop (fromIntegral off) x
+  Char8Literal   $ BS.take (fromIntegral len) $ BS.drop (fromInteger off) x
 
-stringLitIndexOf :: StringLiteral si -> StringLiteral si -> Natural -> Integer
+stringLitIndexOf :: StringLiteral si -> StringLiteral si -> Integer -> Integer
 stringLitIndexOf (UnicodeLiteral x) (UnicodeLiteral y) k
    | T.null y = 0
    | T.null b = -1
-   | otherwise = toInteger (T.length a) + toInteger k
-  where (a,b) = T.breakOn y (T.drop (fromIntegral k) x)
+   | otherwise = toInteger (T.length a) + k
+  where (a,b) = T.breakOn y (T.drop (fromInteger k) x)
 
 stringLitIndexOf (Char16Literal x) (Char16Literal y) k =
-  case WS.findSubstring y (WS.drop (fromIntegral k) x) of
+  case WS.findSubstring y (WS.drop (fromInteger k) x) of
     Nothing -> -1
-    Just n  -> toInteger n + toInteger k
+    Just n  -> toInteger n + k
 
 stringLitIndexOf (Char8Literal x) (Char8Literal y) k =
-  case bsFindSubstring y (BS.drop (fromIntegral k) x) of
+  case bsFindSubstring y (BS.drop (fromInteger k) x) of
     Nothing -> -1
-    Just n  -> toInteger n + toInteger k
+    Just n  -> toInteger n + k
 
 -- | Get the first index of a substring in another string,
 --   or 'Nothing' if the string is not found.

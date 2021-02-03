@@ -53,7 +53,6 @@ typeTheory :: BaseTypeRepr tp -> AppTheory
 typeTheory tp = case tp of
   BaseBoolRepr      -> BoolTheory
   BaseBVRepr _      -> BitvectorTheory
-  BaseNatRepr       -> LinearArithTheory
   BaseIntegerRepr   -> LinearArithTheory
   BaseRealRepr      -> LinearArithTheory
   BaseFloatRepr _   -> FloatingPointTheory
@@ -86,27 +85,16 @@ appTheory a0 =
     SemiRingProd pd ->
       case WSum.prodRepr pd of
         SR.SemiRingBVRepr _ _ -> BitvectorTheory
-        SR.SemiRingNatRepr -> NonlinearArithTheory
         SR.SemiRingIntegerRepr -> NonlinearArithTheory
         SR.SemiRingRealRepr -> NonlinearArithTheory
 
     SemiRingSum sm ->
       case WSum.sumRepr sm of
         SR.SemiRingBVRepr _ _ -> BitvectorTheory
-        SR.SemiRingNatRepr -> LinearArithTheory
         SR.SemiRingIntegerRepr -> LinearArithTheory
         SR.SemiRingRealRepr -> LinearArithTheory
 
     SemiRingLe{} -> LinearArithTheory
-
-    ----------------------------
-    -- Nat operations
-
-    NatDiv _ SemiRingLiteral{} -> LinearArithTheory
-    NatDiv{} -> NonlinearArithTheory
-
-    NatMod _ SemiRingLiteral{} -> LinearArithTheory
-    NatMod{} -> NonlinearArithTheory
 
     ----------------------------
     -- Integer operations
@@ -194,9 +182,7 @@ appTheory a0 =
     --------------------------------
     -- Conversions.
 
-    NatToInteger{}  -> LinearArithTheory
     IntegerToReal{} -> LinearArithTheory
-    BVToNat{}       -> LinearArithTheory
     BVToInteger{}   -> LinearArithTheory
     SBVToInteger{}  -> LinearArithTheory
 
@@ -206,7 +192,6 @@ appTheory a0 =
     CeilReal{}  -> LinearArithTheory
     RealToInteger{} -> LinearArithTheory
 
-    IntegerToNat{} -> LinearArithTheory
     IntegerToBV{}  -> BitvectorTheory
 
     ---------------------

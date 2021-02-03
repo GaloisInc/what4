@@ -39,7 +39,6 @@ module What4.Concrete
 
     -- * Concrete projections
   , fromConcreteBool
-  , fromConcreteNat
   , fromConcreteInteger
   , fromConcreteReal
   , fromConcreteString
@@ -51,7 +50,6 @@ import           Data.List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Numeric as N
-import           Numeric.Natural
 import qualified Prettyprinter as PP
 
 import qualified Data.BitVector.Sized as BV
@@ -68,7 +66,6 @@ import           What4.Utils.StringLiteral
 -- | A data type for representing the concrete values of base types.
 data ConcreteVal tp where
   ConcreteBool    :: Bool -> ConcreteVal BaseBoolType
-  ConcreteNat     :: Natural -> ConcreteVal BaseNatType
   ConcreteInteger :: Integer -> ConcreteVal BaseIntegerType
   ConcreteReal    :: Rational -> ConcreteVal BaseRealType
   ConcreteString  :: StringLiteral si -> ConcreteVal (BaseStringType si)
@@ -91,9 +88,6 @@ deriving instance Show (ConcreteVal tp)
 fromConcreteBool :: ConcreteVal BaseBoolType -> Bool
 fromConcreteBool (ConcreteBool x) = x
 
-fromConcreteNat :: ConcreteVal BaseNatType -> Natural
-fromConcreteNat (ConcreteNat x) = x
-
 fromConcreteInteger :: ConcreteVal BaseIntegerType -> Integer
 fromConcreteInteger (ConcreteInteger x) = x
 
@@ -113,7 +107,7 @@ fromConcreteBV (ConcreteBV _w x) = x
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
 concreteType = \case
   ConcreteBool{}     -> BaseBoolRepr
-  ConcreteNat{}      -> BaseNatRepr
+--  ConcreteNat{}      -> BaseNatRepr
   ConcreteInteger{}  -> BaseIntegerRepr
   ConcreteReal{}     -> BaseRealRepr
   ConcreteString s   -> BaseStringRepr (stringLiteralInfo s)
@@ -156,7 +150,7 @@ ppRational = PP.viaShow
 ppConcrete :: ConcreteVal tp -> PP.Doc ann
 ppConcrete = \case
   ConcreteBool x -> PP.pretty x
-  ConcreteNat x -> PP.pretty x
+--  ConcreteNat x -> PP.pretty x
   ConcreteInteger x -> PP.pretty x
   ConcreteReal x -> ppRational x
   ConcreteString x -> PP.viaShow x

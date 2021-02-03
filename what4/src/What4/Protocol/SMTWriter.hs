@@ -166,7 +166,6 @@ import           What4.Utils.StringLiteral
 -- be encoded.
 data TypeMap (tp::BaseType) where
   BoolTypeMap    :: TypeMap BaseBoolType
-  NatTypeMap     :: TypeMap BaseNatType
   IntegerTypeMap :: TypeMap BaseIntegerType
   RealTypeMap    :: TypeMap BaseRealType
   BVTypeMap      :: (1 <= w) => !(NatRepr w) -> TypeMap (BaseBVType w)
@@ -204,7 +203,6 @@ instance ShowF TypeMap
 
 instance Show (TypeMap a) where
   show BoolTypeMap              = "BoolTypeMap"
-  show NatTypeMap               = "NatTypeMap"
   show IntegerTypeMap           = "IntegerTypeMap"
   show RealTypeMap              = "RealTypeMap"
   show (BVTypeMap n)            = "BVTypeMap " ++ show n
@@ -222,7 +220,6 @@ instance Eq (TypeMap tp) where
 
 instance TestEquality TypeMap where
   testEquality BoolTypeMap BoolTypeMap = Just Refl
-  testEquality NatTypeMap NatTypeMap = Just Refl
   testEquality IntegerTypeMap IntegerTypeMap = Just Refl
   testEquality RealTypeMap RealTypeMap = Just Refl
   testEquality Char8TypeMap Char8TypeMap = Just Refl
@@ -250,7 +247,6 @@ instance TestEquality TypeMap where
   testEquality _ _ = Nothing
 
 semiRingTypeMap :: SR.SemiRingRepr sr -> TypeMap (SR.SemiRingBase sr)
-semiRingTypeMap SR.SemiRingNatRepr         = NatTypeMap
 semiRingTypeMap SR.SemiRingIntegerRepr     = IntegerTypeMap
 semiRingTypeMap SR.SemiRingRealRepr        = RealTypeMap
 semiRingTypeMap (SR.SemiRingBVRepr _flv w) = BVTypeMap w
@@ -1006,7 +1002,6 @@ declareTypes ::
   IO ()
 declareTypes conn = \case
   BoolTypeMap -> return ()
-  NatTypeMap  -> return ()
   IntegerTypeMap -> return ()
   RealTypeMap    -> return ()
   BVTypeMap _ -> return ()
@@ -1134,7 +1129,6 @@ typeMapFirstClass conn tp0 = do
     BaseBVRepr w -> Right $! BVTypeMap w
     BaseFloatRepr fpp -> Right $! FloatTypeMap fpp
     BaseRealRepr -> Right RealTypeMap
-    BaseNatRepr  -> Right NatTypeMap
     BaseIntegerRepr -> Right IntegerTypeMap
     BaseStringRepr Char8Repr -> Right Char8TypeMap
     BaseStringRepr si -> Left (StringTypeUnsupported (Some si))
@@ -1216,23 +1210,13 @@ addPartialSideCond ::
   Maybe (AbstractValue tp) ->
   SMTCollector t h ()
 
--- NB, nats have a side condition even if there is no abstract domain
-addPartialSideCond _ t NatTypeMap Nothing =
-  do addSideCondition "nat_range" $ t .>= 0
-
--- in all other cases, no abstract domain information means unconstrained values
+-- no abstract domain information means unconstrained values
 addPartialSideCond _ _ _ Nothing = return ()
 
 addPartialSideCond _ _ BoolTypeMap (Just Nothing) = return ()
 addPartialSideCond _ t BoolTypeMap (Just (Just b)) =
    -- This is a weird case, but technically possible, so...
   addSideCondition "bool_val" $ t .== boolExpr b
-
-addPartialSideCond _ t NatTypeMap (Just rng) =
-  do addSideCondition "nat_range" $ t .>= integerTerm (toInteger (natRangeLow rng))
-     case natRangeHigh rng of
-       Unbounded -> return ()
-       Inclusive hi -> addSideCondition "nat_range" $ t .<= integerTerm (toInteger hi)
 
 addPartialSideCond _ t IntegerTypeMap (Just rng) =
   do case rangeLowBound rng of
@@ -1265,15 +1249,19 @@ addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRang
        addSideCondition "bv_bitrange" $ (bvOr t (bvTerm w (BV.mkBV w hi))) .== (bvTerm w (BV.mkBV w hi))
 
 addPartialSideCond _ t (Char8TypeMap) (Just (StringAbs len)) =
-  do case natRangeLow len of
-       0 -> return ()
-       lo -> addSideCondition "string length low range" $
-               integerTerm (toInteger lo) .<= stringLength @h t
-     case natRangeHigh len of
+  do case rangeLowBound len of
+       Inclusive lo ->
+          addSideCondition "string length low range" $
+             integerTerm (max 0 lo) .<= stringLength @h t
+       Unbounded ->
+          addSideCondition "string length low range" $
+             integerTerm 0 .<= stringLength @h t
+
+     case rangeHiBound len of
        Unbounded -> return ()
        Inclusive hi ->
          addSideCondition "string length high range" $
-           stringLength @h t .<= integerTerm (toInteger hi)
+           stringLength @h t .<= integerTerm hi
 
 addPartialSideCond _ _ (FloatTypeMap _) (Just ()) = return ()
 
@@ -1497,7 +1485,6 @@ checkVarTypeSupport :: ExprBoundVar n tp -> SMTCollector n h ()
 checkVarTypeSupport var = do
   let t = BoundVarExpr var
   case bvarType var of
-    BaseNatRepr     -> checkIntegerSupport t
     BaseIntegerRepr -> checkIntegerSupport t
     BaseRealRepr    -> checkLinearSupport t
     BaseComplexRepr -> checkLinearSupport t
@@ -1621,7 +1608,7 @@ withConnEntryStack conn = bracket_ (pushEntryStack conn) (popEntryStack conn)
 mkIndexLitTerm :: SupportTermOps v
                => IndexLit tp
                -> v
-mkIndexLitTerm (NatIndexLit i) = fromIntegral i
+mkIndexLitTerm (IntIndexLit i)  = fromInteger i
 mkIndexLitTerm (BVIndexLit w i) = bvTerm w i
 
 -- | Convert structure to list.
@@ -1706,9 +1693,6 @@ defineSMTFunction conn var action =
 mkExpr :: forall h t tp. SMTWriter h => Expr t tp -> SMTCollector t h (SMTExpr h tp)
 mkExpr (BoolExpr b _) =
   return (SMTExpr BoolTypeMap (boolExpr b))
-mkExpr t@(SemiRingLiteral SR.SemiRingNatRepr n _) = do
-  checkLinearSupport t
-  return (SMTExpr NatTypeMap (fromIntegral n))
 mkExpr t@(SemiRingLiteral SR.SemiRingIntegerRepr i _) = do
   checkLinearSupport t
   return (SMTExpr IntegerTypeMap (fromIntegral i))
@@ -1987,26 +1971,6 @@ appSMTExpr ae = do
       x <- mkBaseExpr xe
       freshBoundTerm BoolTypeMap (intDivisible x k)
 
-    NatDiv xe ye -> do
-      case ye of
-        SemiRingLiteral _ _ _ -> return ()
-        _ -> checkNonlinearSupport i
-
-      x <- mkBaseExpr xe
-      y <- mkBaseExpr ye
-
-      freshBoundTerm NatTypeMap (intDiv x y)
-
-    NatMod xe ye -> do
-      case ye of
-        SemiRingLiteral _ _ _ -> return ()
-        _ -> checkNonlinearSupport i
-
-      x <- mkBaseExpr xe
-      y <- mkBaseExpr ye
-
-      freshBoundTerm NatTypeMap (intMod x y)
-
     NotPred x -> freshBoundTerm BoolTypeMap . notExpr =<< mkBaseExpr x
 
     ConjPred xs ->
@@ -2049,17 +2013,6 @@ appSMTExpr ae = do
 
     SemiRingSum s ->
       case WSum.sumRepr s of
-        SR.SemiRingNatRepr ->
-          let smul c e
-                | c ==  1   = (:[]) <$> mkBaseExpr e
-                | otherwise = (:[]) . (integerTerm (toInteger c) *) <$> mkBaseExpr e
-              cnst 0 = []
-              cnst x = [integerTerm (toInteger x)]
-              add x y = pure (y ++ x) -- reversed for efficiency when grouped to the left
-          in
-          freshBoundTerm NatTypeMap . sumExpr
-            =<< WSum.evalM add smul (pure . cnst) s
-
         SR.SemiRingIntegerRepr ->
           let smul c e
                 | c ==  1   = (:[]) <$> mkBaseExpr e
@@ -2327,7 +2280,7 @@ appSMTExpr ae = do
         Char8Repr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
-          freshBoundTerm NatTypeMap $ stringLength @h x
+          freshBoundTerm IntegerTypeMap $ stringLength @h x
         si -> fail ("Unsupported symbolic string length operation " ++  show si)
 
     StringIndexOf xe ye ke ->
@@ -2613,20 +2566,6 @@ appSMTExpr ae = do
     ------------------------------------------------------------------------
     -- Conversions.
 
-    NatToInteger xe -> do
-      x <- mkExpr xe
-      return $ case x of
-                 SMTName _ n -> SMTName IntegerTypeMap n
-                 SMTExpr _ e -> SMTExpr IntegerTypeMap e
-    IntegerToNat x -> do
-      v <- mkExpr x
-      -- We don't add a side condition here as 'IntegerToNat' is undefined
-      -- when 'x' is negative.
-      -- addSideCondition "integer to nat" (asBase v .>= 0)
-      return $ case v of
-                 SMTName _ n -> SMTName NatTypeMap n
-                 SMTExpr _ e -> SMTExpr NatTypeMap e
-
     IntegerToReal xe -> do
       x <- mkExpr xe
       return $ SMTExpr RealTypeMap (termIntegerToReal (asBase x))
@@ -2678,11 +2617,6 @@ appSMTExpr ae = do
       let r = termIntegerToReal (asBase nm)
       addSideCondition "ceiling" $ (x .<= r) .&& (r .< x + 1)
       return nm
-
-    BVToNat xe -> do
-      checkLinearSupport i
-      x <- mkExpr xe
-      freshBoundTerm NatTypeMap $ bvIntTerm (bvWidth xe) (asBase x)
 
     BVToInteger xe -> do
       checkLinearSupport i
@@ -2955,7 +2889,7 @@ smtIndicesTerms tps vals = Ctx.forIndexRange 0 sz f []
         f i l = (r:l)
          where GVW v = vals Ctx.! i
                r = case tps Ctx.! i of
-                      NatTypeMap -> rationalTerm (fromIntegral v)
+                      IntegerTypeMap -> rationalTerm (fromInteger v)
                       BVTypeMap w -> bvTerm w v
                       _ -> error "Do not yet support other index types."
 
@@ -2972,11 +2906,6 @@ getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
 getSolverVal _ smtFns (FloatTypeMap fpp) tm =
   bfFromBits (fppOpts fpp RNE) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
 getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
-getSolverVal _ smtFns NatTypeMap    tm = do
-  r <- smtEvalReal smtFns tm
-  when (denominator r /= 1 && numerator r < 0) $ do
-    fail $ "Expected natural number from solver."
-  return (fromInteger (numerator r))
 getSolverVal _ smtFns IntegerTypeMap tm = do
   r <- smtEvalReal smtFns tm
   when (denominator r /= 1) $ fail "Expected integer value."

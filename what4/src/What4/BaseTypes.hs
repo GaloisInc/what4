@@ -36,7 +36,6 @@ module What4.BaseTypes
     -- ** Constructors for kind BaseType
   , BaseBoolType
   , BaseIntegerType
-  , BaseNatType
   , BaseRealType
   , BaseStringType
   , BaseBVType
@@ -117,8 +116,6 @@ type Unicode = 'Unicode -- ^ @:: 'StringInfo'@.
 data BaseType
      -- | @BaseBoolType@ denotes Boolean values.
    = BaseBoolType
-     -- | @BaseNatType@ denotes a natural number.
-   | BaseNatType
      -- | @BaseIntegerType@ denotes an integer.
    | BaseIntegerType
      -- | @BaseRealType@ denotes a real number.
@@ -144,7 +141,6 @@ data BaseType
 
 type BaseBoolType    = 'BaseBoolType    -- ^ @:: 'BaseType'@.
 type BaseIntegerType = 'BaseIntegerType -- ^ @:: 'BaseType'@.
-type BaseNatType     = 'BaseNatType     -- ^ @:: 'BaseType'@.
 type BaseRealType    = 'BaseRealType    -- ^ @:: 'BaseType'@.
 type BaseBVType      = 'BaseBVType      -- ^ @:: 'TypeNats.Nat' -> 'BaseType'@.
 type BaseFloatType   = 'BaseFloatType   -- ^ @:: 'FloatPrecision' -> 'BaseType'@.
@@ -180,7 +176,6 @@ type Prec128 = FloatingPointPrecision 15 113
 data BaseTypeRepr (bt::BaseType) :: Type where
    BaseBoolRepr    :: BaseTypeRepr BaseBoolType
    BaseBVRepr      :: (1 <= w) => !(NatRepr w) -> BaseTypeRepr (BaseBVType w)
-   BaseNatRepr     :: BaseTypeRepr BaseNatType
    BaseIntegerRepr :: BaseTypeRepr BaseIntegerType
    BaseRealRepr    :: BaseTypeRepr BaseRealType
    BaseFloatRepr   :: !(FloatPrecisionRepr fpp) -> BaseTypeRepr (BaseFloatType fpp)
@@ -236,8 +231,6 @@ instance KnownRepr BaseTypeRepr BaseBoolType where
   knownRepr = BaseBoolRepr
 instance KnownRepr BaseTypeRepr BaseIntegerType where
   knownRepr = BaseIntegerRepr
-instance KnownRepr BaseTypeRepr BaseNatType where
-  knownRepr = BaseNatRepr
 instance KnownRepr BaseTypeRepr BaseRealType where
   knownRepr = BaseRealRepr
 instance KnownRepr StringInfoRepr si => KnownRepr BaseTypeRepr (BaseStringType si) where

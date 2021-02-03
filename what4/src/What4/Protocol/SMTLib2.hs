@@ -359,7 +359,6 @@ class Show a => SMTLib2Tweaks a where
 
 asSMT2Type :: forall a tp . SMTLib2Tweaks a => TypeMap tp -> SMT2.Sort
 asSMT2Type BoolTypeMap    = SMT2.boolSort
-asSMT2Type NatTypeMap     = SMT2.intSort
 asSMT2Type IntegerTypeMap = SMT2.intSort
 asSMT2Type RealTypeMap    = SMT2.realSort
 asSMT2Type (BVTypeMap w)  = SMT2.bvSort (natValue w)

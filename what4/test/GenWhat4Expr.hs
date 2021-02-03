@@ -86,13 +86,13 @@ pdesc s = "(" <> desc s <> ")"
 -- trying to return 'x' or 'y', which is a 'SymNat sym' instead.
 
 data TestExpr = TE_Bool PredTestExpr
-              | TE_Nat NatTestExpr
+--              | TE_Nat NatTestExpr
               | TE_BV8 BV8TestExpr
               | TE_BV16 BV16TestExpr
               | TE_BV32 BV32TestExpr
               | TE_BV64 BV64TestExpr
 
-isBoolTestExpr, isNatTestExpr,
+isBoolTestExpr, -- isNatTestExpr,
   isBV8TestExpr, isBV16TestExpr, isBV32TestExpr, isBV64TestExpr
   :: TestExpr -> Bool
 
@@ -100,9 +100,11 @@ isBoolTestExpr = \case
   TE_Bool _ -> True
   _ -> False
 
+{-
 isNatTestExpr = \case
   TE_Nat _ -> True
   _ -> False
+-}
 
 isBV8TestExpr = \case
   TE_BV8 _ -> True
@@ -142,7 +144,7 @@ genBoolCond = Gen.recursive Gen.choice
   ]
   $
   let boolTerm = IGen.filterT isBoolTestExpr genBoolCond
-      natTerm = IGen.filterT isNatTestExpr genNatTestExpr
+--      natTerm = IGen.filterT isNatTestExpr genNatTestExpr
       bv8Term = IGen.filterT isBV8TestExpr genBV8TestExpr
       bv16Term = IGen.filterT isBV16TestExpr genBV16TestExpr
       bv32Term = IGen.filterT isBV32TestExpr genBV32TestExpr
@@ -151,7 +153,7 @@ genBoolCond = Gen.recursive Gen.choice
                          (\(TE_Bool x) (TE_Bool y) -> TE_Bool $ gen x y)
       subBoolTerm3 gen = Gen.subterm3 boolTerm boolTerm boolTerm
                          (\(TE_Bool x) (TE_Bool y) (TE_Bool z) -> TE_Bool $ gen x y z)
-      subNatTerms2 gen = Gen.subterm2 natTerm natTerm (\(TE_Nat x) (TE_Nat y) -> TE_Bool $ gen x y)
+--      subNatTerms2 gen = Gen.subterm2 natTerm natTerm (\(TE_Nat x) (TE_Nat y) -> TE_Bool $ gen x y)
       -- subBV16Terms2 gen = Gen.subterm2 bv16Term bv16Term (\(TE_BV16 x) (TE_BV16 y) -> TE_Bool $ gen x y)
       -- subBV8Terms2 gen = Gen.subterm2 bv8Term bv8Term (\(TE_BV8 x) (TE_BV8 y) -> TE_Bool $ gen x y)
   in
@@ -207,6 +209,7 @@ genBoolCond = Gen.recursive Gen.choice
                    itePred sym c' x' y'
        ))
 
+{-
   , subNatTerms2
     (\x y ->
         PredTest ("natEq " <> pdesc x <> " " <> pdesc y)
@@ -248,6 +251,7 @@ genBoolCond = Gen.recursive Gen.choice
       (pdesc v <> "[" <> show ival <> "]")
       (testBit (testval v) (fromEnum ival))
       (\sym -> testBitBV sym ival =<< bvexpr v sym))
+-}
 
   ]
   ++ bvPredExprs bv8Term (\(TE_BV8 x) -> x) bv8expr 8
@@ -386,6 +390,7 @@ bvPredExprs bvTerm projTE expr width =
 
 ----------------------------------------------------------------------
 
+{-
 data NatTestExpr = NatTestExpr { natdesc :: String
                                , natval  :: Natural
                                , natexpr :: forall sym. (IsExprBuilder sym) => sym -> IO (SymNat sym)
@@ -468,7 +473,7 @@ genNatTestExpr = Gen.recursive Gen.choice
                   natIte sym c' x' y'
       ))
   ]
-
+-}
 
 ----------------------------------------------------------------------
 
@@ -894,6 +899,7 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
                          y' <- expr y sym
                          bvXorBits sym x' y'))
 
+{-
   , let natTerm = IGen.filterT isNatTestExpr genNatTestExpr
         boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in
@@ -911,6 +917,7 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
            (\sym -> do bv' <- expr bv sym
                        b' <- predexp b sym
                        bvSet sym bv' nval b')
+-}
 
   , let boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in

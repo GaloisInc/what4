@@ -183,7 +183,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Void
-import           Numeric.Natural
 import           System.IO ( Handle, hPutStr )
 import           System.IO.Error ( ioeGetErrorString )
 
@@ -748,10 +747,6 @@ checkOptSetResult res =
 instance Opt (BaseStringType Unicode) Text where
   getMaybeOpt x = fmap (fromUnicodeLit . fromConcreteString) <$> getOption x
   trySetOpt x v = setOption x (ConcreteString (UnicodeLiteral v))
-
-instance Opt BaseNatType Natural where
-  getMaybeOpt x = fmap fromConcreteNat <$> getOption x
-  trySetOpt x v = setOption x (ConcreteNat v)
 
 instance Opt BaseIntegerType Integer where
   getMaybeOpt x = fmap fromConcreteInteger <$> getOption x

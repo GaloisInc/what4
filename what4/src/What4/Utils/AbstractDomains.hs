@@ -47,6 +47,8 @@ module What4.Utils.AbstractDomains
   , asSingleRange
   , rangeCheckEq
   , rangeCheckLe
+  , rangeMin
+  , rangeMax
     -- * integer range operations
   , intAbsRange
   , intDivRange
@@ -54,6 +56,8 @@ module What4.Utils.AbstractDomains
     -- * Boolean abstract value
   , absAnd
   , absOr
+
+{-
     -- * NatValueRange
   , NatValueRange(..)
   , natRange
@@ -74,6 +78,8 @@ module What4.Utils.AbstractDomains
   , natRangeMin
   , natRangeSub
   , intRangeToNatRange
+-}
+
     -- * RealAbstractValue
   , RealAbstractValue(..)
   , ravUnbounded
@@ -119,7 +125,6 @@ import           Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio (denominator)
-import           Numeric.Natural
 
 import           What4.BaseTypes
 import           What4.Utils.BVDomain (BVDomain)
@@ -486,6 +491,7 @@ absOr x (Just False) = x
 absOr _ (Just True)  = Just True
 absOr Nothing Nothing = Nothing
 
+{-
 data NatValueRange
   = NatSingleRange !Natural
   | NatMultiRange !Natural !(ValueBound Natural)
@@ -635,6 +641,36 @@ natRangeSub :: NatValueRange -> NatValueRange -> NatValueRange
 natRangeSub x y =
   intRangeToNatRange $ addRange (natRangeToRange x) (negateRange (natRangeToRange y))
 
+-}
+
+rangeMax :: Ord a => ValueRange a -> ValueRange a -> ValueRange a
+rangeMax x y = valueRange lo hi
+ where
+ lo = case (rangeLowBound x, rangeLowBound y) of
+        (Unbounded, b) -> b
+        (a, Unbounded) -> a
+        (Inclusive a, Inclusive b) -> Inclusive (max a b)
+
+ hi = case (rangeHiBound x, rangeHiBound y) of
+         (Unbounded, _) -> Unbounded
+         (_, Unbounded) -> Unbounded
+         (Inclusive a, Inclusive b) -> Inclusive (max a b)
+
+
+rangeMin :: Ord a => ValueRange a -> ValueRange a -> ValueRange a
+rangeMin x y = valueRange lo hi
+ where
+ lo = case (rangeLowBound x, rangeLowBound y) of
+        (Unbounded, _) -> Unbounded
+        (_, Unbounded) -> Unbounded
+        (Inclusive a, Inclusive b) -> Inclusive (min a b)
+
+ hi = case (rangeHiBound x, rangeHiBound y) of
+         (Unbounded, b) -> b
+         (a, Unbounded) -> a
+         (Inclusive a, Inclusive b) -> Inclusive (min a b)
+
+
 ------------------------------------------------------
 -- String abstract domain
 
@@ -642,42 +678,42 @@ natRangeSub x y =
 --   range for the length of the string.
 newtype StringAbstractValue =
   StringAbs
-  { _stringAbsLength :: NatValueRange
+  { _stringAbsLength :: ValueRange Integer
      -- ^ The length of the string falls in this range
   }
 
 stringAbsTop :: StringAbstractValue
-stringAbsTop = StringAbs unboundedNatRange
+stringAbsTop = StringAbs (MultiRange (Inclusive 0) Unbounded)
 
 stringAbsEmpty :: StringAbstractValue
-stringAbsEmpty = StringAbs (natSingleRange 0)
+stringAbsEmpty = StringAbs (singleRange 0)
 
 stringAbsJoin :: StringAbstractValue -> StringAbstractValue -> StringAbstractValue
-stringAbsJoin (StringAbs lenx) (StringAbs leny) = StringAbs (natJoinRange lenx leny)
+stringAbsJoin (StringAbs lenx) (StringAbs leny) = StringAbs (joinRange lenx leny)
 
 stringAbsSingle :: StringLiteral si -> StringAbstractValue
-stringAbsSingle lit = StringAbs (natSingleRange (stringLitLength lit))
+stringAbsSingle lit = StringAbs (singleRange (toInteger (stringLitLength lit)))
 
 stringAbsOverlap :: StringAbstractValue -> StringAbstractValue -> Bool
-stringAbsOverlap (StringAbs lenx) (StringAbs leny) = avOverlap BaseNatRepr lenx leny
+stringAbsOverlap (StringAbs lenx) (StringAbs leny) = rangeOverlap lenx leny
 
 stringAbsCheckEq :: StringAbstractValue -> StringAbstractValue -> Maybe Bool
 stringAbsCheckEq (StringAbs lenx) (StringAbs leny)
-  | Just 0 <- asSingleNatRange lenx
-  , Just 0 <- asSingleNatRange leny
+  | Just 0 <- asSingleRange lenx
+  , Just 0 <- asSingleRange leny
   = Just True
 
-  | not (avOverlap BaseNatRepr lenx leny)
+  | not (rangeOverlap lenx leny)
   = Just False
 
   | otherwise
   = Nothing
 
 stringAbsConcat :: StringAbstractValue -> StringAbstractValue -> StringAbstractValue
-stringAbsConcat (StringAbs lenx) (StringAbs leny) = StringAbs (natRangeAdd lenx leny)
+stringAbsConcat (StringAbs lenx) (StringAbs leny) = StringAbs (addRange lenx leny)
 
-stringAbsSubstring :: StringAbstractValue -> NatValueRange -> NatValueRange -> StringAbstractValue
-stringAbsSubstring (StringAbs s) off len = StringAbs (natRangeMin len (natRangeSub s off))
+stringAbsSubstring :: StringAbstractValue -> ValueRange Integer -> ValueRange Integer -> StringAbstractValue
+stringAbsSubstring (StringAbs s) off len = StringAbs (rangeMin len (addRange s (negateRange off)))
 
 stringAbsContains :: StringAbstractValue -> StringAbstractValue -> Maybe Bool
 stringAbsContains = couldContain
@@ -690,27 +726,24 @@ stringAbsIsSuffixOf = flip couldContain
 
 couldContain :: StringAbstractValue -> StringAbstractValue -> Maybe Bool
 couldContain (StringAbs lenx) (StringAbs leny)
-  | Just False <- natCheckLe leny lenx = Just False
+  | Just False <- rangeCheckLe leny lenx = Just False
   | otherwise = Nothing
 
-stringAbsIndexOf :: StringAbstractValue -> StringAbstractValue -> NatValueRange -> ValueRange Integer
+stringAbsIndexOf :: StringAbstractValue -> StringAbstractValue -> ValueRange Integer -> ValueRange Integer
 stringAbsIndexOf (StringAbs lenx) (StringAbs leny) k
-  | Just False <- natCheckLe (natRangeAdd leny k) lenx = SingleRange (-1)
+  | Just False <- rangeCheckLe (addRange leny k) lenx = SingleRange (-1)
   | otherwise = MultiRange (Inclusive (-1)) (rangeHiBound rng)
+
   where
-  lenx' = natRangeToRange lenx
-  leny' = natRangeToRange leny
-
   -- possible values that the final offset could have if the substring exists anywhere
-  rng = addRange lenx' (negateRange leny')
+  rng = addRange lenx (negateRange leny)
 
-stringAbsLength :: StringAbstractValue -> NatValueRange
+stringAbsLength :: StringAbstractValue -> ValueRange Integer
 stringAbsLength (StringAbs len) = len
 
 -- | An abstract value represents a disjoint st of values.
 type family AbstractValue (tp::BaseType) :: Type where
   AbstractValue BaseBoolType = Maybe Bool
-  AbstractValue BaseNatType = NatValueRange
   AbstractValue BaseIntegerType = ValueRange Integer
   AbstractValue BaseRealType = RealAbstractValue
   AbstractValue (BaseStringType si) = StringAbstractValue
@@ -730,7 +763,6 @@ newtype AbstractValueWrapper tp
 
 type family ConcreteValue (tp::BaseType) :: Type where
   ConcreteValue BaseBoolType = Bool
-  ConcreteValue BaseNatType = Natural
   ConcreteValue BaseIntegerType = Integer
   ConcreteValue BaseRealType = Rational
   ConcreteValue (BaseStringType si) = StringLiteral si
@@ -748,7 +780,6 @@ avTop :: BaseTypeRepr tp -> AbstractValue tp
 avTop tp =
   case tp of
     BaseBoolRepr    -> Nothing
-    BaseNatRepr     -> unboundedNatRange
     BaseIntegerRepr -> unboundedRange
     BaseRealRepr    -> ravUnbounded
     BaseComplexRepr -> ravUnbounded :+ ravUnbounded
@@ -763,7 +794,6 @@ avSingle :: BaseTypeRepr tp -> ConcreteValue tp -> AbstractValue tp
 avSingle tp =
   case tp of
     BaseBoolRepr -> Just
-    BaseNatRepr -> natSingleRange
     BaseIntegerRepr -> singleRange
     BaseRealRepr -> ravSingle
     BaseStringRepr _ -> stringAbsSingle
@@ -815,12 +845,6 @@ instance Abstractable (BaseStringType si) where
   avJoin _     = stringAbsJoin
   avOverlap _  = stringAbsOverlap
   avCheckEq _  = stringAbsCheckEq
-
--- Natural numbers have a lower and upper bound associated with them.
-instance Abstractable BaseNatType where
-  avJoin _ = natJoinRange
-  avOverlap _ x y = rangeOverlap (natRangeToRange x) (natRangeToRange y)
-  avCheckEq _ = natCheckEq
 
 -- Integers have a lower and upper bound associated with them.
 instance Abstractable BaseIntegerType where
@@ -890,7 +914,6 @@ withAbstractable bt k =
   case bt of
     BaseBoolRepr -> k
     BaseBVRepr _w -> k
-    BaseNatRepr -> k
     BaseIntegerRepr -> k
     BaseStringRepr _ -> k
     BaseRealRepr -> k

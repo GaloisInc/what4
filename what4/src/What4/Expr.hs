@@ -24,7 +24,6 @@ module What4.Expr
 
     -- * Type abbreviations
   , BoolExpr
-  , NatExpr
   , IntegerExpr
   , RealExpr
   , BVExpr
