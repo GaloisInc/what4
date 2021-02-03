@@ -83,21 +83,19 @@ calcBoolIte itc =
               Else -> True
     return (asConcrete i, ConcreteBool e, desc itc, show c)
 
-{-
--- | Create an ITE whose type is Nat and return the concrete value,
+-- | Create an ITE whose type is Integer and return the concrete value,
 -- the expected value, and the string description
-calcNatIte :: ITETestCond -> CalcReturn BaseNatType
-calcNatIte itc =
+calcIntIte :: ITETestCond -> CalcReturn BaseIntegerType
+calcIntIte itc =
   withTestSolver $ \sym -> do
-  l <- natLit sym 1
-  r <- natLit sym 2
+  l <- intLit sym 1
+  r <- intLit sym 2
   c <- cond itc sym
   i <- baseTypeIte sym c l r
   let e = case expect itc of
             Then -> 1
             Else -> 2
-  return (asConcrete i, ConcreteNat e, desc itc, show c)
--}
+  return (asConcrete i, ConcreteInteger e, desc itc, show c)
 
 -- | Create an ITE whose type is BV and return the concrete value, the
 -- expected value, and the string description
@@ -156,13 +154,11 @@ checkIte itc =
          Just v -> v @?= e
          Nothing -> assertBool ("no concrete ITE Bool result for " <> what) False
 
-{-
-  , testCase ("concrete Nat " <> what) $
-    do (i,e,_,_) <- calcNatIte  itc
+  , testCase ("concrete Integer " <> what) $
+    do (i,e,_,_) <- calcIntIte  itc
        case i of
          Just v -> v @?= e
-         Nothing -> assertBool ("no concrete ITE Nat result for " <> what) False
--}
+         Nothing -> assertBool ("no concrete ITE Integer result for " <> what) False
 
   , testCase ("concrete BV " <> what) $
     do (i,e,_,_) <- calcBVIte  itc
@@ -315,17 +311,15 @@ testConcretePredProps = testGroup "generated concrete predicates" $
                              cover 2 "eq cases" $ "eq" `isInfixOf` (desc itc)
                              cover 2 "xor cases" $ "xor" `isInfixOf` (desc itc)
                              cover 2 "not cases" $ "not" `isInfixOf` (desc itc)
-{-
-                             cover 2 "natEq cases" $ "natEq" `isInfixOf` (desc itc)
-                             cover 2 "natLe cases" $ "nat.<=" `isInfixOf` (desc itc)
-                             cover 2 "natLt cases" $ "nat.< " `isInfixOf` (desc itc)
-                             cover 2 "natAdd cases" $ "nat.+" `isInfixOf` (desc itc)
-                             cover 2 "natSub cases" $ "nat.-" `isInfixOf` (desc itc)
-                             cover 2 "natMul cases" $ "nat.*" `isInfixOf` (desc itc)
-                             cover 2 "natDiv cases" $ "nat./" `isInfixOf` (desc itc)
-                             cover 2 "natMod cases" $ "nat.mod" `isInfixOf` (desc itc)
-                             cover 2 "natIte cases" $ "nat.?" `isInfixOf` (desc itc)
--}
+                             cover 2 "intEq cases"  $ "intEq" `isInfixOf` (desc itc)
+                             cover 2 "intLe cases"  $ "int.<=" `isInfixOf` (desc itc)
+                             cover 2 "intLt cases"  $ "int.< " `isInfixOf` (desc itc)
+                             cover 2 "intAdd cases" $ "int.+" `isInfixOf` (desc itc)
+                             cover 2 "intSub cases" $ "int.-" `isInfixOf` (desc itc)
+                             cover 2 "intMul cases" $ "int.*" `isInfixOf` (desc itc)
+                             cover 2 "intDiv cases" $ "int./" `isInfixOf` (desc itc)
+                             cover 2 "intMod cases" $ "int.mod" `isInfixOf` (desc itc)
+                             cover 2 "intIte cases" $ "int.?" `isInfixOf` (desc itc)
                              cover 2 "bvCount... cases" $ "bvCount" `isInfixOf` (desc itc)
                              annotateShow itc
                              (i, e, c, ac) <- liftIO $ f itc
@@ -334,7 +328,7 @@ testConcretePredProps = testGroup "generated concrete predicates" $
   in
   [
     tt "bool" calcBoolIte
---  , tt "nat" calcNatIte
+  , tt "int"  calcIntIte
   , tt "bv16" calcBVIte
   , tt "struct" calcStructIte
   , tt "array" calcArrayIte
