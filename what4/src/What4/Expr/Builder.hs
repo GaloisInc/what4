@@ -209,7 +209,6 @@ import           Data.Ratio (numerator, denominator)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified LibBF as BF
-import           Numeric.Natural
 
 import           What4.BaseTypes
 import           What4.Concrete
