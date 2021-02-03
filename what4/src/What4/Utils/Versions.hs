@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -21,6 +22,11 @@ import Paths_what4( getDataFileName )
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Lift
+
+#if !MIN_VERSION_template_haskell(2,15,0)
+import Data.List.NonEmpty as NEL
+deriving instance Lift a => Lift (NEL.NonEmpty a)
+#endif
 
 -- NB, orphan instances :-(
 deriving instance Lift Versions.VUnit
