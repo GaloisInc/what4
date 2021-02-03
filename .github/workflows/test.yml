@@ -2,6 +2,16 @@ name: What4 CI
 on:
   - push
   - pull_request
+
+# The CACHE_VERSION can be updated to force the use of a new cache if
+# the current cache contents become corrupted/invalid.  This can
+# sometimes happen when (for example) the OS version is changed but
+# older .so files are cached, which can have various effects
+# (e.g. cabal complains it can't find a valid version of the "happy"
+# tool).
+env:
+  CACHE_VERSION: 1
+
 jobs:
   linux:
     name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }}
@@ -29,9 +39,9 @@ jobs:
             ~/.cabal/store
             dist-newstyle
           key: |
-            cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
+            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
           restore-keys: |
-            cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-
+            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-
       - name: Cabal update
         shell: bash
         run: nix-shell -p cabal-install --run 'cabal update'
@@ -40,10 +50,13 @@ jobs:
         run: |
           cd what4
           nix-shell -p cabal-install --run 'cabal check'
-      - name: GHC Version
+      - name: Setup Environment Vars
         run: |
-          echo GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
+          GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
+          echo GHC=$GHC >> $GITHUB_ENV
+          echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
           echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
+          echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
       - name: Cabal configure
         shell: bash
         # Note: the explicit LD_LIBRARY_PATH is needed for GHC 8.6.5
@@ -52,22 +65,23 @@ jobs:
         # LD_LIBRARY_PATH manipulation may be removed for all steps.
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC gmp zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
+          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
       - name: Build
         shell: bash
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC gmp zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal build --extra-lib-dirs="$ZLIB_LOC"'
+          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal build --extra-lib-dirs="$ZLIB_LOC"'
       - name: Test
         shell: bash
         run: |
+          cd what4
           echo Boolector version $(nix eval nixpkgs.boolector.version)
           echo CVC4 version $(nix eval nixpkgs.cvc4.version)
           echo Yices version $(nix eval nixpkgs.yices.version)
           echo Z3 version $(nix eval nixpkgs.z3.version)
-          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 yices z3 --run 'cabal test what4'
+          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
       - name: Documentation
         shell: bash
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal haddock what4 --extra-lib-dirs="$ZLIB_LOC"'
+          nix-shell -p cabal-install $GHC zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal haddock what4 --extra-lib-dirs="$ZLIB_LOC"'

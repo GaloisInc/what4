@@ -24,6 +24,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -73,6 +74,7 @@ module What4.Protocol.SMTLib2
   , checkSolverVersion
   , checkSolverVersion'
   , queryErrorBehavior
+  , defaultSolverBounds
     -- * Re-exports
   , SMTWriter.WriterConn
   , SMTWriter.assume
@@ -141,6 +143,7 @@ import           What4.Protocol.SMTWriter hiding (assume, Term)
 import           What4.SatResult
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
+import           What4.Utils.Versions
 import           What4.Solver.Adapter
 
 -- | Set the logic to all supported logics.
@@ -1150,26 +1153,10 @@ shutdownSolver _solver p = do
 -----------------------------------------------------------------
 -- Checking solver version bounds
 
-mkChunks :: [Word] -> [Versions.VChunk]
-mkChunks = map ((:[]) . Versions.Digits)
 
--- | The minimum (inclusive) version bound for a given solver.
---
--- The keys come from @'smtWriterName'@ in @'WriterConn'@.
--- See also https://github.com/GaloisInc/crucible/issues/194
-solverMinVersions :: Map String Version
-solverMinVersions =
-  [ -- TODO: Why is this verion required?
-    ( "Yices"
-    , Version { _vEpoch = Nothing, _vChunks = mkChunks [2, 6, 1], _vRel = []}
-    )
-  ]
-
--- | The maximum (non-inclusive) version bound for a given solver.
---
--- The keys come from @'smtWriterName'@ in @'WriterConn'@.
-solverMaxVersions :: Map String Version
-solverMaxVersions = []
+-- | Solver version bounds computed from \"solverBounds.config\"
+defaultSolverBounds :: Map Text SolverBounds
+defaultSolverBounds = Map.fromList $(computeDefaultSolverBounds)
 
 -- | Things that can go wrong while checking which solver version we've got
 data SolverVersionCheckError =
@@ -1189,18 +1176,16 @@ ppSolverVersionCheckError err =
 
 data SolverVersionError =
   SolverVersionError
-  { vMin :: Maybe Version
-  , vMax :: Maybe Version
+  { vBounds :: SolverBounds
   , vActual :: Version
   }
-  deriving (Eq, Ord)
 
 ppSolverVersionError :: SolverVersionError -> PP.Doc ann
 ppSolverVersionError err =
   PP.vsep
   [ "Solver did not meet version bound restrictions:"
-  , "Lower bound (inclusive):" PP.<+> na (vMin err)
-  , "Upper bound (non-inclusive):" PP.<+> na (vMax err)
+  , "Lower bound (inclusive):" PP.<+> na (lower (vBounds err))
+  , "Upper bound (non-inclusive):" PP.<+> na (upper (vBounds err))
   , "Actual version:" PP.<+> PP.viaShow (vActual err)
   ]
   where na (Just s) = PP.viaShow s
@@ -1241,7 +1226,7 @@ versionResult _ s =
   in
     tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
       \case
-        Right (SApp [SAtom ":version", SString ver]) -> pure ver
+        Right (SApp [SAtom ":version", SString v]) -> pure v
         Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
         Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
         Left (SomeException e) ->
@@ -1249,42 +1234,34 @@ versionResult _ s =
 
 -- | Ensure the solver's version falls within a known-good range.
 checkSolverVersion' :: SMTLib2Tweaks solver =>
-  Map String Version {- ^ min version bounds (inclusive) -} ->
-  Map String Version {- ^ max version bounds (non-inclusive) -} ->
+  Map Text SolverBounds ->
   SolverProcess scope (Writer solver) ->
   IO (Either SolverVersionCheckError (Maybe SolverVersionError))
-checkSolverVersion' mins maxes proc =
+checkSolverVersion' boundsMap proc =
   let conn = solverConn proc
       name = smtWriterName conn
-      min0 = Map.lookup name mins
-      max0 = Map.lookup name maxes
-      verr = pure . Right . Just . SolverVersionError min0 max0
       done = pure (Right Nothing)
-  in
-    case (min0, max0) of
-      (Nothing, Nothing) -> done
-      (p, q) -> do
-        getVersion conn
-        res <- versionResult conn (solverResponse proc)
-        case Versions.version res of
-          Left e -> pure (Left (UnparseableVersion e))
-          Right actualVer ->
-            case (p, q) of
-              -- This case is handled in the above case block
-              (Nothing, Nothing) -> error "What4/SMTLIB2: Impossible"
-              (Nothing, Just maxVer) ->
-                if actualVer < maxVer then done else verr actualVer
-              (Just minVer, Nothing) ->
-                if minVer <= actualVer then done else verr actualVer
-              (Just minVer, Just maxVer) ->
-                if minVer <= actualVer && actualVer < maxVer
-                then done
-                else verr actualVer
+      verr bnds actual = pure (Right (Just (SolverVersionError bnds actual))) in
+  case Map.lookup (Text.pack name) boundsMap of
+    Nothing -> done
+    Just bnds ->
+      do getVersion conn
+         res <- versionResult conn (solverResponse proc)
+         case Versions.version res of
+           Left e -> pure (Left (UnparseableVersion e))
+           Right actualVer ->
+             case (lower bnds, upper bnds) of
+               (Nothing, Nothing) -> done
+               (Nothing, Just maxVer) ->
+                 if actualVer < maxVer then done else verr bnds actualVer
+               (Just minVer, Nothing) ->
+                 if minVer <= actualVer then done else verr bnds actualVer
+               (Just minVer, Just maxVer) ->
+                 if minVer <= actualVer && actualVer < maxVer then done else verr bnds actualVer
 
 
 -- | Ensure the solver's version falls within a known-good range.
 checkSolverVersion :: SMTLib2Tweaks solver =>
   SolverProcess scope (Writer solver) ->
   IO (Either SolverVersionCheckError (Maybe SolverVersionError))
-checkSolverVersion =
-  checkSolverVersion' solverMinVersions solverMaxVersions
+checkSolverVersion = checkSolverVersion' defaultSolverBounds

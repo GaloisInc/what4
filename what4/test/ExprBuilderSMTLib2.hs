@@ -9,6 +9,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
 import Test.Tasty
@@ -20,10 +21,8 @@ import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
 import qualified Data.Binary.IEEE754 as IEEE754
+import qualified Data.Map as Map
 import           Data.Foldable
-import qualified Data.Map as Map (empty, singleton)
-import           Data.Versions (Version(Version))
-import qualified Data.Versions as Versions
 
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
@@ -43,6 +42,7 @@ import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
 import What4.Utils.StringLiteral
+import What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
 data State t = State
 data SomePred = forall t . SomePred (BoolExpr t)
@@ -900,10 +900,8 @@ testSolverInfo = testGroup "solver info queries" $
 testSolverVersion :: TestTree
 testSolverVersion = testCase "test solver version bounds" $
   withOnlineZ3 $ \_ proc -> do
-    let v = Version { _vEpoch = Nothing
-                    , _vChunks = [[Versions.Digits 0]]
-                    , _vRel = [] }
-    checkSolverVersion' (Map.singleton "Z3" v) Map.empty proc >> return ()
+    let bnd = emptySolverBounds{ lower = Just $(ver "0") }
+    checkSolverVersion' (Map.singleton "Z3" bnd) proc >> return ()
 
 testBVDomainArithScale :: TestTree
 testBVDomainArithScale = testCase "bv domain arith scale" $
