@@ -21,6 +21,7 @@ import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
 import qualified Data.Binary.IEEE754 as IEEE754
+import qualified Data.Map as Map
 import           Data.Foldable
 
 import qualified Data.Parameterized.Context as Ctx
