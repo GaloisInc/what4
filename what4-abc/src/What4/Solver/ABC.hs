@@ -69,7 +69,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Foreign.C.Types
-import           Numeric.Natural
 import           Prettyprinter
 import           System.Directory
 import           System.IO
@@ -159,7 +158,6 @@ genericSatAdapter =
 type family LitValue s (tp :: BaseType) where
   LitValue s BaseBoolType     = GIA.Lit s
   LitValue s (BaseBVType n)   = AIG.BV (GIA.Lit s)
-  LitValue s BaseNatType      = Natural
   LitValue s BaseIntegerType  = Integer
   LitValue s BaseRealType     = Rational
   LitValue s (BaseStringType si) = StringLiteral si
@@ -169,7 +167,6 @@ type family LitValue s (tp :: BaseType) where
 data NameType s (tp :: BaseType) where
   B  :: GIA.Lit s -> NameType s BaseBoolType
   BV :: NatRepr n -> AIG.BV (GIA.Lit s) -> NameType s (BaseBVType n)
-  GroundNat :: Natural -> NameType s BaseNatType
   GroundInt :: Integer -> NameType s BaseIntegerType
   GroundRat :: Rational -> NameType s BaseRealType
   GroundString :: StringLiteral si -> NameType s (BaseStringType si)
@@ -212,7 +209,6 @@ memoExprNonce ntk n ev = do
 eval :: Network t s -> Expr t tp -> IO (NameType s tp)
 eval _ (BoolExpr b _) =
   return $! if b then B GIA.true else B GIA.false
-eval _ (SemiRingLiteral SemiRingNatRepr n _) = return (GroundNat n)
 eval _ (SemiRingLiteral SemiRingIntegerRepr n _) = return (GroundInt n)
 eval _ (SemiRingLiteral SemiRingRealRepr r _) = return (GroundRat r)
 eval ntk (SemiRingLiteral (SemiRingBVRepr _ w) bv _) =
@@ -242,7 +238,6 @@ eval' ntk e = do
   case r of
     B l -> return l
     BV _ v -> return v
-    GroundNat c -> return c
     GroundInt c -> return c
     GroundRat c -> return c
     GroundComplex c -> return c
@@ -280,8 +275,6 @@ bitblastPred h e = do
 bitblastExpr :: forall t s tp . Network t s -> AppExpr t tp -> IO (NameType s tp)
 bitblastExpr h ae = do
   let g = gia h
-  let natFail :: IO a
-      natFail = failTerm (AppExpr ae) "natural number expression"
   let intFail :: IO a
       intFail = failTerm (AppExpr ae) "integer expression"
   let realFail :: IO a
@@ -296,14 +289,6 @@ bitblastExpr h ae = do
       stringFail = failTerm (AppExpr ae) "string expression"
 
   case appExprApp ae of
-
-    ------------------------------------------------------------------------
-    -- Nat operations
-
-    SemiRingLe OrderedSemiRingNatRepr _ _ -> natFail
-
-    NatDiv{} -> natFail
-    NatMod{} -> natFail
 
     ------------------------------------------------------------------------
     -- Integer operations
@@ -344,7 +329,6 @@ bitblastExpr h ae = do
         BaseBVRepr w ->
            do c' <- eval' h c
               BV w <$> AIG.iteM g c' (eval' h x) (eval' h y)
-        BaseNatRepr  -> natFail
         BaseIntegerRepr -> intFail
         BaseRealRepr -> realFail
         BaseComplexRepr -> realFail
@@ -357,7 +341,6 @@ bitblastExpr h ae = do
       case bt of
         BaseBoolRepr -> B <$> join (AIG.eq g <$> eval' h x <*> eval' h y)
         BaseBVRepr _ -> B <$> join (AIG.bvEq g <$> eval' h x <*> eval' h y)
-        BaseNatRepr  -> natFail
         BaseIntegerRepr -> intFail
         BaseRealRepr -> realFail
         BaseComplexRepr -> realFail
@@ -416,7 +399,6 @@ bitblastExpr h ae = do
           smul c e = AIG.zipWithM (AIG.lAnd' g) (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c)) =<< eval' h e
           cnst c   = pure (AIG.bvFromInteger g (widthVal w) (BV.asUnsigned c))
 
-        SemiRingNatRepr -> natFail
         SemiRingIntegerRepr -> intFail
         SemiRingRealRepr -> realFail
 
@@ -429,7 +411,6 @@ bitblastExpr h ae = do
           maybe (BV w (AIG.bvFromInteger g (widthVal w) (maxUnsigned w))) (BV w) <$>
             WSum.prodEvalM (AIG.zipWithM (AIG.lAnd' g)) (eval' h) pd
 
-        SemiRingNatRepr -> natFail
         SemiRingIntegerRepr -> intFail
         SemiRingRealRepr -> realFail
 
@@ -529,10 +510,7 @@ bitblastExpr h ae = do
     -- Conversions.
 
     RealIsInteger{} -> realFail
-
-    NatToInteger{}  -> intFail
     IntegerToReal{} -> realFail
-    BVToNat{} -> natFail
     BVToInteger{} -> intFail
     SBVToInteger{} -> intFail
 
@@ -542,7 +520,6 @@ bitblastExpr h ae = do
     CeilReal{}  -> realFail
     RealToInteger{} -> intFail
 
-    IntegerToNat{} -> natFail
     IntegerToBV{}  -> intFail
 
     ------------------------------------------------------------------------
@@ -608,7 +585,6 @@ evalNonce ntk n eval_fn fallback = do
         Just Refl -> return bv'
         Nothing -> panic "What4.Solver.ABC.evalNonce"
                    ["Got back bitvector with wrong width"]
-    Just (GroundNat x) -> return x
     Just (GroundInt x) -> return x
     Just (GroundRat x) -> return x
     Just (GroundComplex c) -> return c
@@ -668,7 +644,6 @@ outputExpr h e = do
   case r of
     B l -> addOutput h l
     BV _ v -> Fold.traverse_ (addOutput h) v
-    GroundNat _ -> fail $ "Cannot bitblast nat values."
     GroundInt _ -> fail $ "Cannot bitblast integer values."
     GroundRat _ -> fail $ "Cannot bitblast real values."
     GroundComplex _ -> fail $ "Cannot bitblast complex values."
@@ -872,7 +847,6 @@ freshBinding ntk n l tp mbnds = do
                    BVD.BVDBitwise b -> between g (B.bitbounds b) bv
         return (BVBinding w n bv cond)
 
-    BaseNatRepr     -> failAt l "Natural number variables are not supported by ABC."
     BaseIntegerRepr -> failAt l "Integer variables are not supported by ABC."
     BaseRealRepr    -> failAt l "Real variables are not supported by ABC."
     BaseStringRepr _ -> failAt l "String variables are not supported by ABC."
