@@ -1,14 +1,14 @@
 {-|
-Module           : What4.Utils.OnlyNatRepr
+Module           : What4.Utils.OnlyIntRepr
 Copyright        : (c) Galois, Inc. 2020
 License          : BSD3
 Maintainer       : Joe Hendrix <jhendrix@galois.com>
 
-Defines a GADT for indicating a base type must be a natural number.  Used for
+Defines a GADT for indicating a base type must be an integer.  Used for
 restricting index types in MATLAB arrays.
 -}
 {-# LANGUAGE GADTs #-}
-module What4.Utils.OnlyNatRepr
+module What4.Utils.OnlyIntRepr
   ( OnlyIntRepr(..)
   , toBaseTypeRepr
   ) where

@@ -50,7 +50,7 @@ import           Prettyprinter
 import           What4.BaseTypes
 import           What4.Interface
 import           What4.Utils.Complex
-import           What4.Utils.OnlyNatRepr
+import           What4.Utils.OnlyIntRepr
 
 ------------------------------------------------------------------------
 -- MatlabSolverFn

@@ -172,7 +172,7 @@ library
     What4.Utils.FloatHelpers
     What4.Utils.LeqMap
     What4.Utils.MonadST
-    What4.Utils.OnlyNatRepr
+    What4.Utils.OnlyIntRepr
     What4.Utils.Process
     What4.Utils.Streams
     What4.Utils.StringLiteral
