@@ -58,6 +58,9 @@ The canonical implementation of these interface classes is found in "What4.Expr.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+
+{-# LANGUAGE UndecidableInstances #-}
+
 module What4.Interface
   ( -- * Interface classes
     -- ** Type Families
@@ -121,6 +124,7 @@ module What4.Interface
   , realToNat
   , freshBoundedNat
   , freshNat
+  , printSymNat
 
     -- * Array utility types
   , IndexLit(..)
@@ -519,6 +523,18 @@ freshBoundedNat sym s lo hi = SymNat <$> (freshBoundedInt sym s lo' hi')
 -- | Create a fresh natural number constant.
 freshNat :: IsSymExprBuilder sym => sym -> SolverSymbol -> IO (SymNat sym)
 freshNat sym s = freshBoundedNat sym s (Just 0) Nothing
+
+printSymNat :: IsExpr (SymExpr sym) => SymNat sym -> Doc ann
+printSymNat (SymNat x) = printSymExpr x
+
+instance TestEquality (SymExpr sym) => Eq (SymNat sym) where
+  SymNat x == SymNat y = isJust (testEquality x y)
+
+instance OrdF (SymExpr sym) => Ord (SymNat sym) where
+  compare (SymNat x) (SymNat y) = toOrdering (compareF x y)
+
+instance HashableF (SymExpr sym) => Hashable (SymNat sym) where
+  hashWithSalt s (SymNat x) = hashWithSaltF s x
 
 ------------------------------------------------------------------------
 -- IsExprBuilder
