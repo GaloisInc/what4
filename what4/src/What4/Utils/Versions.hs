@@ -18,8 +18,6 @@ import qualified Data.Text.IO as Text
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
 
-import Paths_what4( getDataFileName )
-
 import Language.Haskell.TH
 import Language.Haskell.TH.Lift
 
@@ -89,4 +87,4 @@ parseSolverBounds fname =
 
 computeDefaultSolverBounds :: Q Exp
 computeDefaultSolverBounds =
-  lift =<< (liftIO (parseSolverBounds =<< getDataFileName "solverBounds.config"))
+  lift =<< (liftIO (parseSolverBounds "solverBounds.config"))

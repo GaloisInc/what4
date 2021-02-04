@@ -178,7 +178,6 @@ library
 
   other-modules:
     What4.Expr.App
-    Paths_what4
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
   -- ghc-prof-options: -fprof-auto-top
