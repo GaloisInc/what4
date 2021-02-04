@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -9,22 +8,18 @@
 module What4.Utils.Versions where
 
 import qualified Config as Config
-import           Control.Monad.IO.Class
 import           Control.Exception (throw, throwIO)
 import           Control.Monad (foldM)
+import           Control.Monad.IO.Class
 import           Data.List (find)
 import           Data.Text (Text)
 import qualified Data.Text.IO as Text
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
+import           Instances.TH.Lift ()
 
-import Language.Haskell.TH
-import Language.Haskell.TH.Lift
-
-#if !MIN_VERSION_template_haskell(2,15,0)
-import Data.List.NonEmpty as NEL
-deriving instance Lift a => Lift (NEL.NonEmpty a)
-#endif
+import           Language.Haskell.TH
+import           Language.Haskell.TH.Lift
 
 -- NB, orphan instances :-(
 deriving instance Lift Versions.VUnit
