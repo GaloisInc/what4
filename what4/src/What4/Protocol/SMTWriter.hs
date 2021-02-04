@@ -130,6 +130,7 @@ import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder (decimal)
 import qualified Data.Text.Lazy as Lazy
 import           Data.Word
+import           LibBF (BigFloat, bfFromBits)
 
 import           Numeric.Natural
 import           Prettyprinter hiding (Unbounded)
@@ -153,6 +154,7 @@ import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
+import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
 
 ------------------------------------------------------------------------
@@ -385,11 +387,7 @@ class Num v => SupportTermOps v where
   bvSumExpr w [] = bvTerm w (BV.zero w)
   bvSumExpr _ (h:r) = foldl bvAdd h r
 
-  floatPZero :: FloatPrecisionRepr fpp -> v
-  floatNZero :: FloatPrecisionRepr fpp  -> v
-  floatNaN   :: FloatPrecisionRepr fpp  -> v
-  floatPInf  :: FloatPrecisionRepr fpp -> v
-  floatNInf  :: FloatPrecisionRepr fpp -> v
+  floatTerm  :: FloatPrecisionRepr fpp -> BigFloat -> v
 
   floatNeg  :: v -> v
   floatAbs  :: v -> v
@@ -400,9 +398,6 @@ class Num v => SupportTermOps v where
   floatMul :: RoundingMode -> v -> v -> v
   floatDiv :: RoundingMode -> v -> v -> v
   floatRem :: v -> v -> v
-  floatMin :: v -> v -> v
-  floatMax :: v -> v -> v
-
   floatFMA :: RoundingMode -> v -> v -> v -> v
 
   floatEq   :: v -> v -> v
@@ -1723,6 +1718,9 @@ mkExpr t@(SemiRingLiteral SR.SemiRingRealRepr r _) = do
 mkExpr t@(SemiRingLiteral (SR.SemiRingBVRepr _flv w) x _) = do
   checkBitvectorSupport t
   return $ SMTExpr (BVTypeMap w) $ bvTerm w x
+mkExpr t@(FloatExpr fpp f _) = do
+  checkFloatSupport t
+  return $ SMTExpr (FloatTypeMap fpp) $ floatTerm fpp f
 mkExpr t@(StringExpr l _) =
   case l of
     Char8Literal bs -> do
@@ -2392,16 +2390,7 @@ appSMTExpr ae = do
 
     ------------------------------------------
     -- Floating-point operations
-    FloatPZero fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatPZero fpp
-    FloatNZero fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNZero fpp
-    FloatNaN fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNaN fpp
-    FloatPInf fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatPInf fpp
-    FloatNInf fpp ->
-      freshBoundTerm (FloatTypeMap fpp) $ floatNInf fpp
+
     FloatNeg fpp x -> do
       xe <- mkBaseExpr x
       freshBoundTerm (FloatTypeMap fpp) $ floatNeg xe
@@ -2431,14 +2420,6 @@ appSMTExpr ae = do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
       freshBoundTerm (FloatTypeMap fpp) $ floatRem xe ye
-    FloatMin fpp x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm (FloatTypeMap fpp) $ floatMin xe ye
-    FloatMax fpp x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm (FloatTypeMap fpp) $ floatMax xe ye
     FloatFMA fpp r x y z -> do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
@@ -2448,13 +2429,6 @@ appSMTExpr ae = do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
       freshBoundTerm BoolTypeMap $ floatFpEq xe ye
-    FloatFpNe x y -> do
-      xe <- mkBaseExpr x
-      ye <- mkBaseExpr y
-      freshBoundTerm BoolTypeMap $
-        notExpr (floatEq xe ye)
-        .&& notExpr (floatIsNaN xe)
-        .&& notExpr (floatIsNaN ye)
     FloatLe x y -> do
       xe <- mkBaseExpr x
       ye <- mkBaseExpr y
@@ -2995,7 +2969,8 @@ getSolverVal :: forall h t tp
 getSolverVal _ smtFns BoolTypeMap   tm = smtEvalBool smtFns tm
 getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns w tm
 getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
-getSolverVal _ smtFns (FloatTypeMap fpp) tm = smtEvalFloat smtFns fpp tm
+getSolverVal _ smtFns (FloatTypeMap fpp) tm =
+  bfFromBits (fppOpts fpp RNE) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
 getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
 getSolverVal _ smtFns NatTypeMap    tm = do
   r <- smtEvalReal smtFns tm
@@ -3062,7 +3037,7 @@ smtExprGroundEvalFn conn smtFns = do
                 getSolverVal conn smtFns tp (fromText nm)
 
               Just (SMTExpr tp expr) ->
-                runMaybeT (tryEvalGroundExpr cachedEval e) >>= \case
+                runMaybeT (tryEvalGroundExpr (lift . cachedEval) e) >>= \case
                   Just x  -> return x
                   -- If we cannot compute the value ourself, query the
                   -- value from the solver directly instead.

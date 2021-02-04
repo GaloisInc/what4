@@ -159,12 +159,8 @@ appTheory a0 =
     BVFill{} -> BitvectorTheory
 
     ----------------------------
-    -- Bitvector operations
-    FloatPZero{}      -> FloatingPointTheory
-    FloatNZero{}      -> FloatingPointTheory
-    FloatNaN{}        -> FloatingPointTheory
-    FloatPInf{}       -> FloatingPointTheory
-    FloatNInf{}       -> FloatingPointTheory
+    -- Float operations
+
     FloatNeg{}        -> FloatingPointTheory
     FloatAbs{}        -> FloatingPointTheory
     FloatSqrt{}       -> FloatingPointTheory
@@ -173,11 +169,8 @@ appTheory a0 =
     FloatMul{}        -> FloatingPointTheory
     FloatDiv{}        -> FloatingPointTheory
     FloatRem{}        -> FloatingPointTheory
-    FloatMin{}        -> FloatingPointTheory
-    FloatMax{}        -> FloatingPointTheory
     FloatFMA{}        -> FloatingPointTheory
     FloatFpEq{}       -> FloatingPointTheory
-    FloatFpNe{}       -> FloatingPointTheory
     FloatLe{}         -> FloatingPointTheory
     FloatLt{}         -> FloatingPointTheory
     FloatIsNaN{}      -> FloatingPointTheory

@@ -218,6 +218,7 @@ eval _ (SemiRingLiteral SemiRingRealRepr r _) = return (GroundRat r)
 eval ntk (SemiRingLiteral (SemiRingBVRepr _ w) bv _) =
     return $ BV w $ AIG.bvFromInteger (gia ntk) (widthVal w) (BV.asUnsigned bv)
 eval _ (StringExpr s _) = return (GroundString s)
+eval _ e@FloatExpr{} = failTerm e "floating-point expression"
 
 eval ntk (NonceAppExpr e) = do
   memoExprNonce ntk (nonceExprId e) $ do
@@ -475,11 +476,6 @@ bitblastExpr h ae = do
     ------------------------------------------------------------------------
     -- Floating point operations
 
-    FloatPZero{} -> floatFail
-    FloatNZero{} -> floatFail
-    FloatNaN{}   -> floatFail
-    FloatPInf{}  -> floatFail
-    FloatNInf{}  -> floatFail
     FloatNeg{}  -> floatFail
     FloatAbs{}  -> floatFail
     FloatSqrt{}  -> floatFail
@@ -488,11 +484,8 @@ bitblastExpr h ae = do
     FloatMul{}  -> floatFail
     FloatDiv{}  -> floatFail
     FloatRem{}  -> floatFail
-    FloatMin{}  -> floatFail
-    FloatMax{}  -> floatFail
     FloatFMA{}  -> floatFail
     FloatFpEq{}  -> floatFail
-    FloatFpNe{}  -> floatFail
     FloatLe{}  -> floatFail
     FloatLt{}  -> floatFail
     FloatIsNaN{}  -> floatFail

@@ -58,6 +58,7 @@ exprToVerilogExpr e = do
         doNotSupportError "non-bit-vector literals"
       BoolExpr b _   -> litBool b
       StringExpr _ _ -> doNotSupportError "strings"
+      FloatExpr{} -> doNotSupportError "floating-point values"
       AppExpr app -> appExprVerilogExpr app
       NonceAppExpr n -> nonceAppExprVerilogExpr n
       BoundVarExpr x ->
@@ -305,11 +306,6 @@ appVerilogExpr app =
       doNotSupportError "bit vector count leading zeros" -- TODO
 
     -- Float operations
-    FloatPZero _ -> doNotSupportError "floats"
-    FloatNZero _ -> doNotSupportError "floats"
-    FloatNaN _ -> doNotSupportError "floats"
-    FloatPInf _ -> doNotSupportError "floats"
-    FloatNInf _ -> doNotSupportError "floats"
     FloatNeg _ _ -> doNotSupportError "floats"
     FloatAbs _ _ -> doNotSupportError "floats"
     FloatSqrt _ _ _ -> doNotSupportError "floats"
@@ -318,11 +314,8 @@ appVerilogExpr app =
     FloatMul  _ _ _ _ -> doNotSupportError "floats"
     FloatDiv _ _ _ _ -> doNotSupportError "floats"
     FloatRem _ _ _ -> doNotSupportError "floats"
-    FloatMin _ _ _ -> doNotSupportError "floats"
-    FloatMax _ _ _ -> doNotSupportError "floats"
     FloatFMA _ _ _ _ _ -> doNotSupportError "floats"
     FloatFpEq _ _ -> doNotSupportError "floats"
-    FloatFpNe _ _ -> doNotSupportError "floats"
     FloatLe _ _ -> doNotSupportError "floats"
     FloatLt _ _ -> doNotSupportError "floats"
 

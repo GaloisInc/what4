@@ -73,6 +73,7 @@ library
     hashtables >= 1.2.3,
     io-streams >= 1.5,
     lens >= 4.18,
+    libBF >= 0.6 && < 0.7,
     mtl >= 2.2.1,
     panic >= 0.3,
     parameterized-utils >= 2.1 && < 2.2,
@@ -115,10 +116,12 @@ library
     What4.SatResult
     What4.SemiRing
     What4.Symbol
+    What4.SFloat
     What4.SWord
     What4.WordMap
 
     What4.Expr
+    What4.Expr.App
     What4.Expr.ArrayUpdateMap
     What4.Expr.AppTheory
     What4.Expr.BoolMap
@@ -166,6 +169,7 @@ library
     What4.Utils.Environment
     What4.Utils.HandleReader
     What4.Utils.IncrHash
+    What4.Utils.FloatHelpers
     What4.Utils.LeqMap
     What4.Utils.MonadST
     What4.Utils.OnlyNatRepr
@@ -176,9 +180,6 @@ library
     What4.Utils.Versions
 
     Test.Verification
-
-  other-modules:
-    What4.Expr.App
 
   ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
   -- ghc-prof-options: -fprof-auto-top
@@ -272,6 +273,7 @@ test-suite expr-builder-smtlib2
     bytestring,
     containers,
     data-binary-ieee754,
+    libBF,
     parameterized-utils,
     tasty >= 0.10,
     tasty-hunit >= 0.9,
@@ -353,6 +355,25 @@ test-suite bvdomain_tests_hh
   other-modules:  VerifyBindings
 
   build-depends: base
+               , parameterized-utils
+               , tasty >= 0.10
+               , tasty-hedgehog
+               , hedgehog >= 1.0.2
+               , transformers
+               , what4
+
+  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+
+test-suite template_tests
+  type: exitcode-stdio-1.0
+  default-language: Haskell2010
+
+  hs-source-dirs: test
+  main-is : TestTemplate.hs
+
+  build-depends: base
+               , bv-sized
+               , libBF
                , parameterized-utils
                , tasty >= 0.10
                , tasty-hedgehog

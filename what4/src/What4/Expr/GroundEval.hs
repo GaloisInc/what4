@@ -36,6 +36,7 @@ module What4.Expr.GroundEval
   , evalGroundApp
   , evalGroundNonceApp
   , defaultValueForType
+  , groundEq
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -55,6 +56,8 @@ import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           Numeric.Natural
+import           LibBF (BigFloat)
+import qualified LibBF as BF
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -68,6 +71,7 @@ import qualified What4.Expr.UnaryBV as UnaryBV
 
 import           What4.Utils.Arithmetic ( roundAway )
 import           What4.Utils.Complex
+import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
 
 
@@ -77,7 +81,7 @@ type family GroundValue (tp :: BaseType) where
   GroundValue BaseIntegerType       = Integer
   GroundValue BaseRealType          = Rational
   GroundValue (BaseBVType w)        = BV.BV w
-  GroundValue (BaseFloatType fpp)   = BV.BV (FloatPrecisionBits fpp)
+  GroundValue (BaseFloatType fpp)   = BigFloat
   GroundValue BaseComplexType       = Complex Rational
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
@@ -136,7 +140,7 @@ defaultValueForType tp =
     BaseStringRepr si -> stringLitEmpty si
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
-    BaseFloatRepr (FloatingPointPrecisionRepr eb sb) -> BV.zero (addNat eb sb)
+    BaseFloatRepr _fpp -> BF.bfPosZero
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -146,9 +150,17 @@ evalGroundExpr :: (forall u . Expr t u -> IO (GroundValue u))
               -> Expr t tp
               -> IO (GroundValue tp)
 evalGroundExpr f e =
- runMaybeT (tryEvalGroundExpr f e) >>= \case
-    Nothing -> fail $ unwords ["evalGroundExpr: could not evaluate expression:", show e]
-    Just x  -> return x
+ runMaybeT (tryEvalGroundExpr (lift . f) e) >>= \case
+    Just x -> return x
+
+    Nothing
+      | BoundVarExpr v <- e ->
+          case bvarKind v of
+            QuantifierVarKind -> fail $ "The ground evaluator does not support bound variables."
+            LatchVarKind      -> return $! defaultValueForType (bvarType v)
+            UninterpVarKind   -> return $! defaultValueForType (bvarType v)
+      | otherwise -> fail $ unwords ["evalGroundExpr: could not evaluate expression:", show e]
+
 
 {-# INLINABLE tryEvalGroundExpr #-}
 -- | Evaluate an element, when given an evaluation function for
@@ -160,22 +172,19 @@ evalGroundExpr f e =
 --   the solver.  In these cases, this function will return `Nothing`
 --   in the `MaybeT IO` monad.  In these cases, the caller should instead
 --   query the solver directly to evaluate the expression, if possible.
-tryEvalGroundExpr :: (forall u . Expr t u -> IO (GroundValue u))
+tryEvalGroundExpr :: (forall u . Expr t u -> MaybeT IO (GroundValue u))
                  -> Expr t tp
                  -> MaybeT IO (GroundValue tp)
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingNatRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingIntegerRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
-tryEvalGroundExpr _ (StringExpr x _) = return x
-tryEvalGroundExpr _ (BoolExpr b _) = return b
-tryEvalGroundExpr f (NonceAppExpr a0) = evalGroundNonceApp (lift . f) (nonceExprApp a0)
+tryEvalGroundExpr _ (StringExpr x _)  = return x
+tryEvalGroundExpr _ (BoolExpr b _)    = return b
+tryEvalGroundExpr _ (FloatExpr _ f _) = return f
+tryEvalGroundExpr f (NonceAppExpr a0) = evalGroundNonceApp f (nonceExprApp a0)
 tryEvalGroundExpr f (AppExpr a0)      = evalGroundApp f (appExprApp a0)
-tryEvalGroundExpr _ (BoundVarExpr v) =
-  case bvarKind v of
-    QuantifierVarKind -> fail $ "The ground evaluator does not support bound variables."
-    LatchVarKind      -> return $! defaultValueForType (bvarType v)
-    UninterpVarKind   -> return $! defaultValueForType (bvarType v)
+tryEvalGroundExpr _ (BoundVarExpr _)  = mzero
 
 {-# INLINABLE evalGroundNonceApp #-}
 -- | Helper function for evaluating @NonceApp@ expressions.
@@ -215,37 +224,38 @@ mand = MAnd . Just
 coerceMAnd :: MAnd a -> MAnd b
 coerceMAnd (MAnd x) = MAnd x
 
-
-groundEq :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> MAnd z
-groundEq bt x y = case bt of
-  BaseBoolRepr    -> mand $ x == y
-  BaseRealRepr    -> mand $ x == y
-  BaseIntegerRepr -> mand $ x == y
-  BaseNatRepr     -> mand $ x == y
-  BaseBVRepr _    -> mand $ x == y
-  BaseFloatRepr _ -> mand $ x == y
-  BaseStringRepr _ -> mand $ x == y
-  BaseComplexRepr -> mand $ x == y
-  BaseStructRepr flds ->
-    coerceMAnd (Ctx.traverseWithIndex
-      (\i tp -> groundEq tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
-  BaseArrayRepr{} -> MAnd Nothing
+groundEq :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> Maybe Bool
+groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
+  where
+    f :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> MAnd z
+    f bt x y = case bt of
+      BaseBoolRepr     -> mand $ x == y
+      BaseRealRepr     -> mand $ x == y
+      BaseIntegerRepr  -> mand $ x == y
+      BaseNatRepr      -> mand $ x == y
+      BaseBVRepr _     -> mand $ x == y
+      -- NB, don't use (==) for BigFloat, which is the wrong equality
+      BaseFloatRepr _  -> mand $ BF.bfCompare x y == EQ
+      BaseStringRepr _ -> mand $ x == y
+      BaseComplexRepr  -> mand $ x == y
+      BaseStructRepr flds ->
+        coerceMAnd (Ctx.traverseWithIndex
+          (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
+      BaseArrayRepr{} -> MAnd Nothing
 
 -- | Helper function for evaluating @App@ expressions.
 --
 --   This function is intended for implementers of symbolic backends.
 evalGroundApp :: forall t tp
-               . (forall u . Expr t u -> IO (GroundValue u))
+               . (forall u . Expr t u -> MaybeT IO (GroundValue u))
               -> App (Expr t) tp
               -> MaybeT IO (GroundValue tp)
-evalGroundApp f0 a0 = do
-  let f :: forall u . Expr t u -> MaybeT IO (GroundValue u)
-      f = lift . f0
+evalGroundApp f a0 = do
   case a0 of
     BaseEq bt x y ->
       do x' <- f x
          y' <- f y
-         MaybeT (return (unMAnd (groundEq bt x' y')))
+         MaybeT (return (groundEq bt x' y'))
 
     BaseIte _ _ x y z -> do
       xv <- f x
@@ -263,7 +273,7 @@ evalGroundApp f0 a0 = do
           foldl' (&&) <$> pol t <*> mapM pol ts
 
     RealIsInteger x -> (\xv -> denominator xv == 1) <$> f x
-    BVTestBit i x -> 
+    BVTestBit i x ->
         BV.testBit' i <$> f x
     BVSlt x y -> BV.slt w <$> f x <*> f y
       where w = bvWidth x
@@ -398,50 +408,71 @@ evalGroundApp f0 a0 = do
 
     ------------------------------------------------------------------------
     -- Floating point Operations
-    FloatPZero{}      -> MaybeT $ return Nothing
-    FloatNZero{}      -> MaybeT $ return Nothing
-    FloatNaN{}        -> MaybeT $ return Nothing
-    FloatPInf{}       -> MaybeT $ return Nothing
-    FloatNInf{}       -> MaybeT $ return Nothing
-    FloatNeg{}        -> MaybeT $ return Nothing
-    FloatAbs{}        -> MaybeT $ return Nothing
-    FloatSqrt{}       -> MaybeT $ return Nothing
-    FloatAdd{}        -> MaybeT $ return Nothing
-    FloatSub{}        -> MaybeT $ return Nothing
-    FloatMul{}        -> MaybeT $ return Nothing
-    FloatDiv{}        -> MaybeT $ return Nothing
-    FloatRem{}        -> MaybeT $ return Nothing
-    FloatMin{}        -> MaybeT $ return Nothing
-    FloatMax{}        -> MaybeT $ return Nothing
-    FloatFMA{}        -> MaybeT $ return Nothing
-    FloatFpEq{}       -> MaybeT $ return Nothing
-    FloatFpNe{}       -> MaybeT $ return Nothing
-    FloatLe{}         -> MaybeT $ return Nothing
-    FloatLt{}         -> MaybeT $ return Nothing
-    FloatIsNaN{}      -> MaybeT $ return Nothing
-    FloatIsInf{}      -> MaybeT $ return Nothing
-    FloatIsZero{}     -> MaybeT $ return Nothing
-    FloatIsPos{}      -> MaybeT $ return Nothing
-    FloatIsNeg{}      -> MaybeT $ return Nothing
-    FloatIsSubnorm{}  -> MaybeT $ return Nothing
-    FloatIsNorm{}     -> MaybeT $ return Nothing
-    FloatCast{}       -> MaybeT $ return Nothing
-    FloatRound{}      -> MaybeT $ return Nothing
-    FloatFromBinary _ x -> f x
-    FloatToBinary{}   -> MaybeT $ return Nothing
-    BVToFloat{}       -> MaybeT $ return Nothing
-    SBVToFloat{}      -> MaybeT $ return Nothing
-    RealToFloat{}     -> MaybeT $ return Nothing
-    FloatToBV{}       -> MaybeT $ return Nothing
-    FloatToSBV{}      -> MaybeT $ return Nothing
-    FloatToReal{}     -> MaybeT $ return Nothing
+
+    FloatNeg _fpp x    -> BF.bfNeg <$> f x
+    FloatAbs _fpp x    -> BF.bfAbs <$> f x
+    FloatSqrt fpp r x  -> bfStatus . BF.bfSqrt (fppOpts fpp r) <$> f x
+    FloatRound fpp r x -> floatRoundToInt fpp r <$> f x
+
+    FloatAdd fpp r x y -> bfStatus <$> (BF.bfAdd (fppOpts fpp r) <$> f x <*> f y)
+    FloatSub fpp r x y -> bfStatus <$> (BF.bfSub (fppOpts fpp r) <$> f x <*> f y)
+    FloatMul fpp r x y -> bfStatus <$> (BF.bfMul (fppOpts fpp r) <$> f x <*> f y)
+    FloatDiv fpp r x y -> bfStatus <$> (BF.bfDiv (fppOpts fpp r) <$> f x <*> f y)
+    FloatRem fpp   x y -> bfStatus <$> (BF.bfRem (fppOpts fpp RNE) <$> f x <*> f y)
+    FloatFMA fpp r x y z -> bfStatus <$> (BF.bfFMA (fppOpts fpp r) <$> f x <*> f y <*> f z)
+
+    FloatFpEq x y      -> (==) <$> f x <*> f y -- NB, IEEE754 equality
+    FloatLe   x y      -> (<=) <$> f x <*> f y
+    FloatLt   x y      -> (<)  <$> f x <*> f y
+
+    FloatIsNaN  x -> BF.bfIsNaN  <$> f x
+    FloatIsZero x -> BF.bfIsZero <$> f x
+    FloatIsInf  x -> BF.bfIsInf  <$> f x
+    FloatIsPos  x -> BF.bfIsPos  <$> f x
+    FloatIsNeg  x -> BF.bfIsNeg  <$> f x
+
+    FloatIsNorm x ->
+      case exprType x of
+        BaseFloatRepr fpp ->
+          BF.bfIsNormal (fppOpts fpp RNE) <$> f x
+
+    FloatIsSubnorm x ->
+      case exprType x of
+        BaseFloatRepr fpp ->
+          BF.bfIsSubnormal (fppOpts fpp RNE) <$> f x
+
+    FloatFromBinary fpp x ->
+      BF.bfFromBits (fppOpts fpp RNE) . BV.asUnsigned <$> f x
+
+    FloatToBinary fpp@(FloatingPointPrecisionRepr eb sb) x ->
+      BV.mkBV (addNat eb sb) . BF.bfToBits (fppOpts fpp RNE) <$> f x
+
+    FloatCast fpp r x -> bfStatus . BF.bfRoundFloat (fppOpts fpp r) <$> f x
+
+    RealToFloat fpp r x -> floatFromRational (fppOpts fpp r) <$> f x
+    BVToFloat   fpp r x -> floatFromInteger (fppOpts fpp r) . BV.asUnsigned <$> f x
+    SBVToFloat  fpp r x -> floatFromInteger (fppOpts fpp r) . BV.asSigned (bvWidth x) <$> f x
+
+    FloatToReal x -> MaybeT . pure . floatToRational =<< f x
+
+    FloatToBV w r x ->
+      do z <- floatToInteger r <$> f x
+         case z of
+           Just i | 0 <= i && i <= maxUnsigned w -> pure (BV.mkBV w i)
+           _ -> mzero
+
+    FloatToSBV w r x ->
+      do z <- floatToInteger r <$> f x
+         case z of
+           Just i | minSigned w <= i && i <= maxSigned w -> pure (BV.mkBV w i)
+           _ -> mzero
 
     ------------------------------------------------------------------------
     -- Array Operations
 
-    ArrayMap idx_types _ m def -> lift $ do
-      m' <- traverse f0 (AUM.toMap m)
-      h <- f0 def
+    ArrayMap idx_types _ m def -> do
+      m' <- traverse f (AUM.toMap m)
+      h <- f def
       return $ case h of
         ArrayMapping h' -> ArrayMapping $ \idx ->
           case (`Map.lookup` m') =<< Ctx.zipWithM asIndexLit idx_types idx of
@@ -451,8 +482,8 @@ evalGroundApp f0 a0 = do
           -- Map.union is left-biased
           ArrayConcrete d (Map.union m' m'')
 
-    ConstantArray _ _ v -> lift $ do
-      val <- f0 v
+    ConstantArray _ _ v -> do
+      val <- f v
       return $ ArrayConcrete val Map.empty
 
     SelectArray _ a i -> do
@@ -465,9 +496,10 @@ evalGroundApp f0 a0 = do
     UpdateArray _ idx_tps a i v -> do
       arr <- f a
       idx <- traverseFC (\e -> GVW <$> f e) i
+      v'  <- f v
       case arr of
         ArrayMapping arr' -> return . ArrayMapping $ \x ->
-          if indicesEq idx_tps idx x then f0 v else arr' x
+          if indicesEq idx_tps idx x then pure v' else arr' x
         ArrayConcrete d m -> do
           val <- f v
           let idx' = fromMaybe (error "UpdateArray only supported on Nat and BV") $ Ctx.zipWithM asIndexLit idx_tps idx

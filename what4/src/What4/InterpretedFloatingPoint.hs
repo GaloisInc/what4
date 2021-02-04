@@ -222,7 +222,7 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
   iFloatNInf :: sym -> FloatInfoRepr fi -> IO (SymInterpretedFloat sym fi)
 
   -- | Create a floating point literal from a rational literal.
-  iFloatLit
+  iFloatLitRational
     :: sym -> FloatInfoRepr fi -> Rational -> IO (SymInterpretedFloat sym fi)
 
   -- | Create a (single precision) floating point literal.
@@ -334,8 +334,8 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
     -> SymInterpretedFloat sym fi
     -> IO (Pred sym)
 
-  -- | Check IEEE non-equality of two floating point numbers.
-  iFloatFpNe
+  -- | Check IEEE apartness of two floating point numbers.
+  iFloatFpApart
     :: sym
     -> SymInterpretedFloat sym fi
     -> SymInterpretedFloat sym fi

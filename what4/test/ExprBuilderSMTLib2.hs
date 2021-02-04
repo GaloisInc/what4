@@ -20,7 +20,6 @@ import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
-import qualified Data.Binary.IEEE754 as IEEE754
 import qualified Data.Map as Map
 import           Data.Foldable
 
@@ -28,6 +27,7 @@ import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 import           System.IO
+import           LibBF
 
 import What4.BaseTypes
 import What4.Config
@@ -129,7 +129,7 @@ iFloatTestPred
      )
 iFloatTestPred sym = do
   x  <- freshFloatConstant sym (userSymbol' "x") SingleFloatRepr
-  e0 <- iFloatLit sym SingleFloatRepr 2.0
+  e0 <- iFloatLitSingle sym 2.0
   e1 <- iFloatAdd @_ @SingleFloat sym RNE x e0
   e2 <- iFloatAdd @_ @SingleFloat sym RTZ e1 e1
   y  <- freshFloatBoundVar sym (userSymbol' "y") SingleFloatRepr
@@ -169,13 +169,10 @@ testFloatUninterpreted = testCase "Float uninterpreted" $ do
     rne_rm           <- natLit sym $ fromIntegral $ fromEnum RNE
     rtz_rm           <- natLit sym $ fromIntegral $ fromEnum RTZ
     x                <- freshConstant sym (userSymbol' "x") knownRepr
-    real_to_float_fn <- freshTotalUninterpFn
-      sym
-      (userSymbol' "uninterpreted_real_to_float")
-      (Ctx.empty Ctx.:> BaseNatRepr Ctx.:> BaseRealRepr)
-      bvtp
-    e0 <- realLit sym 2.0
-    e1 <- applySymFn sym real_to_float_fn $ Ctx.empty Ctx.:> rne_rm Ctx.:> e0
+
+    -- Floating point literal: 2.0
+    e1 <- bvLit sym knownRepr (BV.mkBV knownRepr (bfToBits (float32 NearEven) (bfFromInt 2)))
+
     add_fn <- freshTotalUninterpFn
       sym
       (userSymbol' "uninterpreted_float_add")
@@ -197,7 +194,7 @@ testInterpretedFloatIEEE = testCase "Float interpreted as IEEE float" $ do
   actual   <- withSym FloatIEEERepr iFloatTestPred
   expected <- withSym FloatIEEERepr $ \sym -> do
     x  <- freshConstant sym (userSymbol' "x") knownRepr
-    e0 <- floatLit sym floatSinglePrecision 2.0
+    e0 <- floatLitRational sym floatSinglePrecision 2.0
     e1 <- floatAdd sym RNE x e0
     e2 <- floatAdd sym RTZ e1 e1
     y  <- freshBoundVar sym (userSymbol' "y") knownRepr
@@ -209,8 +206,8 @@ testInterpretedFloatIEEE = testCase "Float interpreted as IEEE float" $ do
 testFloatUnsat0 :: TestTree
 testFloatUnsat0 = testCase "Unsat float formula" $ withZ3 $ \sym s -> do
   x  <- freshConstant sym (userSymbol' "x") knownRepr
-  e0 <- floatLit sym floatSinglePrecision 0.5
-  e1 <- floatLit sym knownRepr 1.5
+  e0 <- floatLitRational sym floatSinglePrecision 0.5
+  e1 <- floatLitRational sym knownRepr 1.5
   p0 <- floatLe sym x e0
   p1 <- floatGe sym x e1
   assume (sessionWriter s) p0
@@ -246,31 +243,31 @@ testFloatUnsat2 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
 testFloatSat0 :: TestTree
 testFloatSat0 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   x <- freshConstant sym (userSymbol' "x") knownRepr
-  e0 <- floatLit sym floatSinglePrecision 2.5
+  e0 <- floatLitRational sym floatSinglePrecision 2.5
   p0 <- floatEq sym x e0
   y <- freshConstant sym (userSymbol' "y") knownRepr
   e1 <- floatPInf sym floatSinglePrecision
   p1 <- floatEq sym y e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    (@?=) (BV.word32 $ IEEE754.floatToWord 2.5) =<< groundEval x
-    y_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval y
+    (@?=) (bfFromDouble 2.5) =<< groundEval x
+    y_val <- groundEval y
     assertBool ("expected y = +infinity, actual y = " ++ show y_val) $
-      isInfinite y_val && 0 < y_val
+      bfIsInf y_val && bfIsPos y_val
 
 -- x >= 0.5 && x <= 1.5
 testFloatSat1 :: TestTree
 testFloatSat1 = testCase "Sat float formula" $ withZ3 $ \sym s -> do
   x  <- freshConstant sym (userSymbol' "x") knownRepr
-  e0 <- floatLit sym floatSinglePrecision 0.5
-  e1 <- floatLit sym knownRepr 1.5
+  e0 <- floatLitRational sym floatSinglePrecision 0.5
+  e1 <- floatLitRational sym knownRepr 1.5
   p0 <- floatGe sym x e0
   p1 <- floatLe sym x e1
   p2 <- andPred sym p0 p1
   withModel s p2 $ \groundEval -> do
-    x_val <- IEEE754.wordToFloat . fromInteger . BV.asUnsigned <$> groundEval x
+    x_val <- groundEval x
     assertBool ("expected x in [0.5, 1.5], actual x = " ++ show x_val) $
-      0.5 <= x_val && x_val <= 1.5
+      bfFromDouble 0.5 <= x_val && x_val <= bfFromDouble 1.5
 
 testFloatToBinary :: TestTree
 testFloatToBinary = testCase "float to binary" $ withZ3 $ \sym s -> do

@@ -68,6 +68,8 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           LibBF (BigFloat)
+import qualified LibBF as BF
 import           Numeric.Natural
 import           Prettyprinter hiding (Unbounded)
 
@@ -143,6 +145,7 @@ data AppExpr t (tp :: BaseType)
 data Expr t (tp :: BaseType) where
   SemiRingLiteral :: !(SR.SemiRingRepr sr) -> !(SR.Coefficient sr) -> !ProgramLoc -> Expr t (SR.SemiRingBase sr)
   BoolExpr :: !Bool -> !ProgramLoc -> Expr t BaseBoolType
+  FloatExpr :: !(FloatPrecisionRepr fpp) -> !BigFloat -> !ProgramLoc -> Expr t (BaseFloatType fpp)
   StringExpr :: !(StringLiteral si) -> !ProgramLoc -> Expr t (BaseStringType si)
   -- Application
   AppExpr :: {-# UNPACK #-} !(AppExpr t tp) -> Expr t tp
@@ -166,6 +169,7 @@ asNonceApp _ = Nothing
 exprLoc :: Expr t tp -> ProgramLoc
 exprLoc (SemiRingLiteral _ _ l) = l
 exprLoc (BoolExpr _ l) = l
+exprLoc (FloatExpr _ _ l) = l
 exprLoc (StringExpr _ l) = l
 exprLoc (NonceAppExpr a)  = nonceExprLoc a
 exprLoc (AppExpr a)   = appExprLoc a
@@ -186,6 +190,7 @@ mkExpr n l a v = AppExpr $ AppExprCtor { appExprId  = n
 
 type BoolExpr t = Expr t BaseBoolType
 type NatExpr  t = Expr t BaseNatType
+type FloatExpr t fpp = Expr t (BaseFloatType fpp)
 type BVExpr t n = Expr t (BaseBVType n)
 type IntegerExpr t = Expr t BaseIntegerType
 type RealExpr t = Expr t BaseRealType
@@ -218,12 +223,16 @@ instance IsExpr (Expr t) where
 
   rationalBounds x = ravRange $ exprAbsValue x
 
+  asFloat (FloatExpr _fpp bf _) = Just bf
+  asFloat _ = Nothing
+
   asComplex e
     | Just (Cplx c) <- asApp e = traverse asRational c
     | otherwise = Nothing
 
   exprType (SemiRingLiteral sr _ _) = SR.semiRingBase sr
   exprType (BoolExpr _ _) = BaseBoolRepr
+  exprType (FloatExpr fpp _ _) = BaseFloatRepr fpp
   exprType (StringExpr s _) = BaseStringRepr (stringLiteralInfo s)
   exprType (NonceAppExpr e)  = nonceAppType (nonceExprApp e)
   exprType (AppExpr e) = appType (appExprApp e)
@@ -348,6 +357,7 @@ exprAbsValue (SemiRingLiteral sr x _) =
     SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
 
 exprAbsValue (StringExpr l _) = stringAbsSingle l
+exprAbsValue (FloatExpr _ _ _) = ()
 exprAbsValue (BoolExpr b _)   = Just b
 exprAbsValue (NonceAppExpr e) = nonceExprAbsValue e
 exprAbsValue (AppExpr e)      = appExprAbsValue e
@@ -390,6 +400,15 @@ compareExpr _ StringExpr{} = GTF
 compareExpr (BoolExpr x _) (BoolExpr y _) = fromOrdering (compare x y)
 compareExpr BoolExpr{} _ = LTF
 compareExpr _ BoolExpr{} = GTF
+
+compareExpr (FloatExpr rx x _) (FloatExpr ry y _) =
+   case compareF rx ry of
+     LTF -> LTF
+     EQF -> fromOrdering (BF.bfCompare x y) -- NB, don't use `compare`, which is IEEE754 comaprison
+     GTF -> GTF
+
+compareExpr FloatExpr{} _ = LTF
+compareExpr _ FloatExpr{} = GTF
 
 compareExpr (NonceAppExpr x) (NonceAppExpr y) = compareF x y
 compareExpr NonceAppExpr{} _ = LTF
@@ -452,10 +471,11 @@ instance Hashable (Expr t tp) where
       SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
       SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
 
-  hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (5::Int)) x
-  hashWithSalt s (AppExpr x)      = hashWithSalt (hashWithSalt s (6::Int)) (appExprId x)
-  hashWithSalt s (NonceAppExpr x) = hashWithSalt (hashWithSalt s (7::Int)) (nonceExprId x)
-  hashWithSalt s (BoundVarExpr x) = hashWithSalt (hashWithSalt s (8::Int)) x
+  hashWithSalt s (FloatExpr fr x _) = hashWithSalt (hashWithSaltF (hashWithSalt s (5::Int)) fr) x
+  hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (6::Int)) x
+  hashWithSalt s (AppExpr x)      = hashWithSalt (hashWithSalt s (7::Int)) (appExprId x)
+  hashWithSalt s (NonceAppExpr x) = hashWithSalt (hashWithSalt s (8::Int)) (nonceExprId x)
+  hashWithSalt s (BoundVarExpr x) = hashWithSalt (hashWithSalt s (9::Int)) x
 
 instance PH.HashableF (Expr t) where
   hashWithSaltF = hashWithSalt
@@ -787,6 +807,8 @@ ppExpr' e0 o = do
 
       getBindings (StringExpr x _) =
         return $ stringPPExpr $ (show x)
+      getBindings (FloatExpr _ f _) =
+        return $ stringPPExpr (show f)
       getBindings (BoolExpr b _) =
         return $ stringPPExpr (if b then "true" else "false")
       getBindings (NonceAppExpr e) =
@@ -1258,11 +1280,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   --------------------------------
   -- Float operations
 
-  FloatPZero :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNZero :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNaN :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatPInf :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
-  FloatNInf :: !(FloatPrecisionRepr fpp) -> App e (BaseFloatType fpp)
   FloatNeg
     :: !(FloatPrecisionRepr fpp)
     -> !(e (BaseFloatType fpp))
@@ -1305,16 +1322,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     -> !(e (BaseFloatType fpp))
     -> !(e (BaseFloatType fpp))
     -> App e (BaseFloatType fpp)
-  FloatMin
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatMax
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
   FloatFMA
     :: !(FloatPrecisionRepr fpp)
     -> !RoundingMode
@@ -1323,10 +1330,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     -> !(e (BaseFloatType fpp))
     -> App e (BaseFloatType fpp)
   FloatFpEq
-    :: !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e BaseBoolType
-  FloatFpNe
     :: !(e (BaseFloatType fpp))
     -> !(e (BaseFloatType fpp))
     -> App e BaseBoolType
@@ -1585,11 +1588,6 @@ appType a =
     BVSext  w _ -> BaseBVRepr w
     BVFill w _ -> BaseBVRepr w
 
-    FloatPZero fpp -> BaseFloatRepr fpp
-    FloatNZero fpp -> BaseFloatRepr fpp
-    FloatNaN fpp -> BaseFloatRepr fpp
-    FloatPInf fpp -> BaseFloatRepr fpp
-    FloatNInf fpp -> BaseFloatRepr fpp
     FloatNeg fpp _ -> BaseFloatRepr fpp
     FloatAbs fpp _ -> BaseFloatRepr fpp
     FloatSqrt fpp _ _ -> BaseFloatRepr fpp
@@ -1598,11 +1596,8 @@ appType a =
     FloatMul fpp _ _ _ -> BaseFloatRepr fpp
     FloatDiv fpp _ _ _ -> BaseFloatRepr fpp
     FloatRem fpp _ _ -> BaseFloatRepr fpp
-    FloatMin fpp _ _ -> BaseFloatRepr fpp
-    FloatMax fpp _ _ -> BaseFloatRepr fpp
     FloatFMA fpp _ _ _ _ -> BaseFloatRepr fpp
     FloatFpEq{} -> knownRepr
-    FloatFpNe{} -> knownRepr
     FloatLe{} -> knownRepr
     FloatLt{} -> knownRepr
     FloatIsNaN{} -> knownRepr
@@ -1748,11 +1743,6 @@ abstractEval f a0 = do
     BVCountLeadingZeros w x -> BVD.clz w (f x)
     BVCountTrailingZeros w x -> BVD.ctz w (f x)
 
-    FloatPZero{} -> ()
-    FloatNZero{} -> ()
-    FloatNaN{} -> ()
-    FloatPInf{} -> ()
-    FloatNInf{} -> ()
     FloatNeg{} -> ()
     FloatAbs{} -> ()
     FloatSqrt{} -> ()
@@ -1761,11 +1751,8 @@ abstractEval f a0 = do
     FloatMul{} -> ()
     FloatDiv{} -> ()
     FloatRem{} -> ()
-    FloatMin{} -> ()
-    FloatMax{} -> ()
     FloatFMA{} -> ()
     FloatFpEq{} -> Nothing
-    FloatFpNe{} -> Nothing
     FloatLe{} -> Nothing
     FloatLt{} -> Nothing
     FloatIsNaN{} -> Nothing
@@ -1939,11 +1926,6 @@ reduceApp sym unary a0 = do
     BVCountLeadingZeros _ x -> bvCountLeadingZeros sym x
     BVCountTrailingZeros _ x -> bvCountTrailingZeros sym x
 
-    FloatPZero fpp -> floatPZero sym fpp
-    FloatNZero fpp -> floatNZero sym fpp
-    FloatNaN   fpp -> floatNaN sym fpp
-    FloatPInf  fpp -> floatPInf sym fpp
-    FloatNInf  fpp -> floatNInf sym fpp
     FloatNeg _ x -> floatNeg sym x
     FloatAbs _ x -> floatAbs sym x
     FloatSqrt _ r x -> floatSqrt sym r x
@@ -1952,11 +1934,8 @@ reduceApp sym unary a0 = do
     FloatMul _ r x y -> floatMul sym r x y
     FloatDiv _ r x y -> floatDiv sym r x y
     FloatRem _ x y -> floatRem sym x y
-    FloatMin _ x y -> floatMin sym x y
-    FloatMax _ x y -> floatMax sym x y
     FloatFMA _ r x y z -> floatFMA sym r x y z
     FloatFpEq x y -> floatFpEq sym x y
-    FloatFpNe x y -> floatFpNe sym x y
     FloatLe   x y -> floatLe sym x y
     FloatLt   x y -> floatLt sym x y
     FloatIsNaN     x -> floatIsNaN sym x
@@ -2246,11 +2225,7 @@ ppApp' a0 = do
 
     --------------------------------
     -- Float operations
-    FloatPZero _ -> prettyApp "floatPZero" []
-    FloatNZero _ -> prettyApp "floatNZero" []
-    FloatNaN _ -> prettyApp "floatNaN" []
-    FloatPInf _ -> prettyApp "floatPInf" []
-    FloatNInf _ -> prettyApp "floatNInf" []
+
     FloatNeg _ x -> ppSExpr "floatNeg" [x]
     FloatAbs _ x -> ppSExpr "floatAbs" [x]
     FloatSqrt _ r x -> ppSExpr (Text.pack $ "floatSqrt " <> show r) [x]
@@ -2259,11 +2234,8 @@ ppApp' a0 = do
     FloatMul _ r x y -> ppSExpr (Text.pack $ "floatMul " <> show r) [x, y]
     FloatDiv _ r x y -> ppSExpr (Text.pack $ "floatDiv " <> show r) [x, y]
     FloatRem _ x y -> ppSExpr "floatRem" [x, y]
-    FloatMin _ x y -> ppSExpr "floatMin" [x, y]
-    FloatMax _ x y -> ppSExpr "floatMax" [x, y]
     FloatFMA _ r x y z -> ppSExpr (Text.pack $ "floatFMA " <> show r) [x, y, z]
     FloatFpEq x y -> ppSExpr "floatFpEq" [x, y]
-    FloatFpNe x y -> ppSExpr "floatFpNe" [x, y]
     FloatLe x y -> ppSExpr "floatLe" [x, y]
     FloatLt x y -> ppSExpr "floatLt" [x, y]
     FloatIsNaN x -> ppSExpr "floatIsNaN" [x]

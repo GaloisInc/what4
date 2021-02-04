@@ -46,6 +46,7 @@ module What4.Protocol.SMTLib2
   , getName
   , nameResult
   , setProduceModels
+  , smtLibEvalFuns
     -- * Logic
   , SMT2.Logic(..)
   , SMT2.qf_bv
@@ -124,6 +125,7 @@ import qualified System.IO.Streams.Attoparsec.Text as Streams
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
 import qualified Prettyprinter as PP
+import           LibBF( bfToBits )
 
 import           Prelude hiding (writeFile)
 
@@ -141,6 +143,7 @@ import qualified What4.Protocol.SMTLib2.Syntax as SMT2 hiding (Term)
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Protocol.SMTWriter hiding (assume, Term)
 import           What4.SatResult
+import           What4.Utils.FloatHelpers (fppOpts)
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
 import           What4.Utils.Versions
@@ -491,12 +494,6 @@ instance SupportTermOps Term where
   bvExtract _ b n x | n > 0 = SMT2.extract (b+n-1) b x
                     | otherwise = error $ "bvExtract given non-positive width " ++ show n
 
-  floatPZero fpp = term_app (mkFloatSymbol "+zero" (asSMTFloatPrecision fpp)) []
-  floatNZero fpp = term_app (mkFloatSymbol "-zero" (asSMTFloatPrecision fpp)) []
-  floatNaN fpp   = term_app (mkFloatSymbol "NaN"   (asSMTFloatPrecision fpp)) []
-  floatPInf fpp  = term_app (mkFloatSymbol "+oo"   (asSMTFloatPrecision fpp)) []
-  floatNInf fpp  = term_app (mkFloatSymbol "-oo"   (asSMTFloatPrecision fpp)) []
-
   floatNeg  = un_app "fp.neg"
   floatAbs  = un_app "fp.abs"
   floatSqrt r = un_app $ mkRoundingOp "fp.sqrt " r
@@ -506,8 +503,6 @@ instance SupportTermOps Term where
   floatMul r = bin_app $ mkRoundingOp "fp.mul" r
   floatDiv r = bin_app $ mkRoundingOp "fp.div" r
   floatRem = bin_app "fp.rem"
-  floatMin = bin_app "fp.min"
-  floatMax = bin_app "fp.max"
 
   floatFMA r x y z = term_app (mkRoundingOp "fp.fma" r) [x, y, z]
 
@@ -523,6 +518,12 @@ instance SupportTermOps Term where
   floatIsNeg      = un_app "fp.isNegative"
   floatIsSubnorm  = un_app "fp.isSubnormal"
   floatIsNorm     = un_app "fp.isNormal"
+
+  floatTerm fpp@(FloatingPointPrecisionRepr eb sb) bf =
+      un_app (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) (bvTerm w bv)
+    where
+      w = addNat eb sb
+      bv = BV.mkBV w (bfToBits (fppOpts fpp RNE) bf)
 
   floatCast fpp r = un_app $ mkRoundingOp (mkFloatSymbol "to_fp" (asSMTFloatPrecision fpp)) r
   floatRound r = un_app $ mkRoundingOp "fp.roundToIntegral" r

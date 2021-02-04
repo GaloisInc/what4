@@ -341,6 +341,7 @@ recordExprVars _ (SemiRingLiteral sr _ _) =
     SR.SemiRingBVRepr _ _ -> addFeatures useBitvectors
     _                     -> addFeatures useLinearArithmetic
 recordExprVars _ StringExpr{} = addFeatures useStrings
+recordExprVars _ FloatExpr{} = addFeatures useFloatingPoint
 recordExprVars _ BoolExpr{} = return ()
 recordExprVars scope (NonceAppExpr e0) = do
   memoExprVars (nonceExprId e0) $ do
