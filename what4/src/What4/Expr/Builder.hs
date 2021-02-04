@@ -64,7 +64,6 @@ module What4.Expr.Builder
 
     -- * Specialized representations
   , bvUnary
---  , natSum
   , intSum
   , realSum
   , bvSum
@@ -101,7 +100,6 @@ module What4.Expr.Builder
   , nonceExprApp
     -- ** Type abbreviations
   , BoolExpr
---  , NatExpr
   , IntegerExpr
   , RealExpr
   , FloatExpr
@@ -3025,21 +3023,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   ----------------------------------------------------------------------
   -- Lossless (injective) conversions
 
-{-
-  natToInteger sym x
-    | SemiRingLiteral SR.SemiRingNatRepr n l <- x = return $! SemiRingLiteral SR.SemiRingIntegerRepr (toInteger n) l
-    | Just (IntegerToNat y) <- asApp x = return y
-    | otherwise = sbMakeExpr sym (NatToInteger x)
-
-  integerToNat sb x
-    | SemiRingLiteral SR.SemiRingIntegerRepr i l <- x
-    , 0 <= i
-    = return $! SemiRingLiteral SR.SemiRingNatRepr (fromIntegral i) l
-    | Just (NatToInteger y) <- asApp x = return y
-    | otherwise =
-      sbMakeExpr sb (IntegerToNat x)
--}
-
   integerToReal sym x
     | SemiRingLiteral SR.SemiRingIntegerRepr i l <- x = return $! SemiRingLiteral SR.SemiRingRealRepr (toRational i) l
     | Just (RealToInteger y) <- asApp x = return y
@@ -3053,13 +3036,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Static case
     | otherwise =
       sbMakeExpr sym (RealToInteger x)
-
-{-
-  bvToNat sym x
-    | Just xv <- asBV x =
-      natLit sym (BV.asNatural xv)
-    | otherwise = sbMakeExpr sym (BVToNat x)
--}
 
   bvToInteger sym x
     | Just xv <- asBV x =
@@ -3978,23 +3954,6 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
    absVal (Just lo) Nothing = Just $! RAV (MultiRange (Inclusive lo) Unbounded) Nothing
    absVal Nothing (Just hi) = Just $! RAV (MultiRange Unbounded (Inclusive hi)) Nothing
    absVal (Just lo) (Just hi) = Just $! RAV (MultiRange (Inclusive lo) (Inclusive hi)) Nothing
-
-{-
-  freshBoundedNat sym nm mlo mhi =
-    do unless (boundsOK mlo mhi) (Ex.throwIO (InvalidRange BaseNatRepr mlo mhi))
-       v <- sbMakeBoundVar sym nm BaseNatRepr UninterpVarKind (absVal mlo mhi)
-       updateVarBinding sym nm (VarSymbolBinding v)
-       return $! BoundVarExpr v
-   where
-   boundsOK (Just lo) (Just hi) = lo <= hi
-   boundsOK _ _ = True
-
-   absVal Nothing Nothing = Nothing
-   absVal (Just lo) Nothing = Just $! natRange lo Unbounded
-   absVal Nothing (Just hi) = Just $! natRange 0 (Inclusive hi)
-   absVal (Just lo) (Just hi) = Just $! natRange lo (Inclusive hi)
--}
-
 
   freshLatch sym nm tp = do
     v <- sbMakeBoundVar sym nm tp LatchVarKind Nothing

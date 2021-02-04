@@ -107,7 +107,6 @@ fromConcreteBV (ConcreteBV _w x) = x
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
 concreteType = \case
   ConcreteBool{}     -> BaseBoolRepr
---  ConcreteNat{}      -> BaseNatRepr
   ConcreteInteger{}  -> BaseIntegerRepr
   ConcreteReal{}     -> BaseRealRepr
   ConcreteString s   -> BaseStringRepr (stringLiteralInfo s)
@@ -150,7 +149,6 @@ ppRational = PP.viaShow
 ppConcrete :: ConcreteVal tp -> PP.Doc ann
 ppConcrete = \case
   ConcreteBool x -> PP.pretty x
---  ConcreteNat x -> PP.pretty x
   ConcreteInteger x -> PP.pretty x
   ConcreteReal x -> ppRational x
   ConcreteString x -> PP.viaShow x

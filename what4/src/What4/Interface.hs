@@ -2922,7 +2922,6 @@ asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
     BaseBoolRepr    -> ConcreteBool <$> asConstantPred x
---    BaseNatRepr    -> ConcreteNat <$> asNat x
     BaseIntegerRepr -> ConcreteInteger <$> asInteger x
     BaseRealRepr    -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
@@ -2942,7 +2941,6 @@ concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym t
 concreteToSym sym = \case
    ConcreteBool True    -> return (truePred sym)
    ConcreteBool False   -> return (falsePred sym)
---   ConcreteNat x        -> natLit sym x
    ConcreteInteger x    -> intLit sym x
    ConcreteReal x       -> realLit sym x
    ConcreteString x     -> stringLit sym x
