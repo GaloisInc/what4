@@ -547,12 +547,12 @@ instance HashableF (SymExpr sym) => Hashable (SymNat sym) where
 -- Note: Some methods in this class represent operations that are
 -- partial functions on their domain (e.g., division by 0).
 -- Such functions will have documentation strings indicating that they
--- are undefined under some conditions.
---
--- The behavior of these functions is generally to throw an error
--- if it is concretely obvious that the function results in an undefined
--- value; but otherwise they will silently produce an unspecified value
--- of the expected type.
+-- are undefined under some conditions.  When partial functions are applied
+-- outside their defined domains, they will silently produce an unspecified
+-- value of the expected type.  The unspecified value returned as the result
+-- of an undefined function is _not_ guaranteed to be equivalant to a free
+-- constant, and no guarantees are made about what properties such values
+-- will satisfy.
 class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
       , TestEquality (SymAnnotation sym), OrdF (SymAnnotation sym)
       , HashableF (SymAnnotation sym)
@@ -1674,7 +1674,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | @stringSubstring s off len@ extracts the substring of @s@ starting at index @off@ and
   --   having length @len@.  The result of this operation is undefined if @off@ and @len@
-  --   do not specify a valid substring of @s@; in particular, we must have @off+len <= length(s)@.
+  --   do not specify a valid substring of @s@; in particular, we must have
+  --   0 <= off@, @0 <= len@ and @off+len <= length(s)@.
   stringSubstring :: sym -> SymString sym si -> SymInteger sym -> SymInteger sym -> IO (SymString sym si)
 
   ----------------------------------------------------------------------
