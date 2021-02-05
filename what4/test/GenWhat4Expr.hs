@@ -887,7 +887,6 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
                          y' <- expr y sym
                          bvXorBits sym x' y'))
 
-{-
   , let intTerm = IGen.filterT isIntTestExpr genIntTestExpr
         boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in
@@ -895,7 +894,7 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
       -- see Note [natTerm]
       \bvt (TE_Int n) (TE_Bool b) ->
         let bv = projTE bvt
-            nval = fromInteger (testval n) `mod` width
+            nval = fromInteger (testval n `mod` toInteger width)
             ival = fromIntegral nval :: Int
         in conTE $ teSubCon
            (pdesc bv <> "[" <> show nval <> "]" <> pfx ":=" <> pdesc b)
@@ -905,7 +904,6 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
            (\sym -> do bv' <- expr bv sym
                        b' <- predexp b sym
                        bvSet sym bv' nval b')
--}
 
   , let boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in
