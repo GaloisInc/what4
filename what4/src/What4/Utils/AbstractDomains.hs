@@ -539,7 +539,8 @@ stringAbsConcat :: StringAbstractValue -> StringAbstractValue -> StringAbstractV
 stringAbsConcat (StringAbs lenx) (StringAbs leny) = StringAbs (addRange lenx leny)
 
 stringAbsSubstring :: StringAbstractValue -> ValueRange Integer -> ValueRange Integer -> StringAbstractValue
-stringAbsSubstring (StringAbs s) off len = StringAbs (rangeMin len (addRange s (negateRange off)))
+stringAbsSubstring (StringAbs s) off len =
+  StringAbs (rangeMin len (rangeMax (singleRange 0) (addRange s (negateRange off))))
 
 stringAbsContains :: StringAbstractValue -> StringAbstractValue -> Maybe Bool
 stringAbsContains = couldContain
@@ -562,7 +563,7 @@ stringAbsIndexOf (StringAbs lenx) (StringAbs leny) k
 
   where
   -- possible values that the final offset could have if the substring exists anywhere
-  rng = addRange lenx (negateRange leny)
+  rng = rangeMax (singleRange 0) (addRange lenx (negateRange leny))
 
 stringAbsLength :: StringAbstractValue -> ValueRange Integer
 stringAbsLength (StringAbs len) = len
