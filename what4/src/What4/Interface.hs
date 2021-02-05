@@ -496,6 +496,12 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   --   returned.
   annotateTerm :: sym -> SymExpr sym tp -> IO (SymAnnotation sym tp, SymExpr sym tp)
 
+  -- | Project an annotation from an expression
+  --
+  -- It should be the case that using 'getAnnotation' on a term returned by
+  -- 'annotateTerm' returns the same annotation that 'annotateTerm' did.
+  getAnnotation :: sym -> SymExpr sym tp -> Maybe (SymAnnotation sym tp)
+
   ----------------------------------------------------------------------
   -- Boolean operations.
 

@@ -1602,6 +1602,11 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         e' <- sbNonceExpr sym (Annotation tpr n e)
         return (n, e')
 
+  getAnnotation _sym e =
+    case e of
+      NonceAppExpr (nonceExprApp -> Annotation _ n _) -> Just n
+      _ -> Nothing
+
   ----------------------------------------------------------------------
   -- Program location operations
 
