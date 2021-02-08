@@ -166,8 +166,8 @@ testFloatUninterpreted = testCase "Float uninterpreted" $ do
   actual   <- withSym FloatUninterpretedRepr iFloatTestPred
   expected <- withSym FloatUninterpretedRepr $ \sym -> do
     let bvtp = BaseBVRepr $ knownNat @32
-    rne_rm           <- natLit sym $ fromIntegral $ fromEnum RNE
-    rtz_rm           <- natLit sym $ fromIntegral $ fromEnum RTZ
+    rne_rm           <- intLit sym $ toInteger $ fromEnum RNE
+    rtz_rm           <- intLit sym $ toInteger $ fromEnum RTZ
     x                <- freshConstant sym (userSymbol' "x") knownRepr
 
     -- Floating point literal: 2.0
@@ -176,7 +176,7 @@ testFloatUninterpreted = testCase "Float uninterpreted" $ do
     add_fn <- freshTotalUninterpFn
       sym
       (userSymbol' "uninterpreted_float_add")
-      (Ctx.empty Ctx.:> BaseNatRepr Ctx.:> bvtp Ctx.:> bvtp)
+      (Ctx.empty Ctx.:> BaseIntegerRepr Ctx.:> bvtp Ctx.:> bvtp)
       bvtp
     e2    <- applySymFn sym add_fn $ Ctx.empty Ctx.:> rne_rm Ctx.:> x Ctx.:> e1
     e3    <- applySymFn sym add_fn $ Ctx.empty Ctx.:> rtz_rm Ctx.:> e2 Ctx.:> e2
@@ -456,7 +456,7 @@ testSymbolPrimeCharZ3 = testCase "z3 symbol prime (') char" $
   withZ3 $ \sym s -> do
     x <- freshConstant sym (userSymbol' "x'") knownRepr
     y <- freshConstant sym (userSymbol' "y'") knownRepr
-    p <- natLt sym x y
+    p <- intLt sym x y
     assume (sessionWriter s) p
     runCheckSat s $ \res -> isSat res @? "sat"
 
@@ -642,8 +642,8 @@ stringTest1 sym solver =
 
      l <- stringLength sym s'
 
-     n <- natLit sym 25
-     p <- natEq sym n l
+     n <- intLit sym 25
+     p <- intEq sym n l
 
      checkSatisfiableWithModel solver "test" p $ \case
        Sat fn ->
@@ -656,7 +656,7 @@ stringTest1 sym solver =
 
        _ -> fail "expected satisfiable model"
 
-     p2 <- natEq sym l =<< natLit sym 20
+     p2 <- intEq sym l =<< intLit sym 20
      checkSatisfiableWithModel solver "test" p2 $ \case
        Unsat () -> return ()
        _ -> fail "expected unsatifiable model"
@@ -687,10 +687,10 @@ stringTest2 sym solver =
      bzw <- stringConcat sym b zw
 
      l <- stringLength sym zw
-     n <- natLit sym 7
+     n <- intLit sym 7
 
      p1 <- stringEq sym ax bzw
-     p2 <- natLt sym l n
+     p2 <- intLt sym l n
      p  <- andPred sym p1 p2
 
      checkSatisfiableWithModel solver "test" p $ \case
@@ -729,11 +729,11 @@ stringTest3 sym solver =
      lenb <- stringLength sym b
      lenc <- stringLength sym c
 
-     n <- natLit sym 9
+     n <- intLit sym 9
 
-     rnga <- natEq sym lena n
-     rngb <- natEq sym lenb n
-     rngc <- natEq sym lenc =<< natLit sym 6
+     rnga <- intEq sym lena n
+     rngb <- intEq sym lenb n
+     rngc <- intEq sym lenc =<< intLit sym 6
      rng  <- andPred sym rnga =<< andPred sym rngb rngc
 
      p <- andPred sym pfx =<<
@@ -762,7 +762,7 @@ stringTest4 sym solver =
   do let bsx = "str"
      x <- stringLit sym (Char8Literal bsx)
      a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr Char8Repr)
-     i <- stringIndexOf sym a x =<< natLit sym 5
+     i <- stringIndexOf sym a x =<< intLit sym 5
 
      zero <- intLit sym 0
      p <- intLe sym zero i
@@ -779,8 +779,8 @@ stringTest4 sym solver =
 
      np <- notPred sym p
      lena <- stringLength sym a
-     fv <- natLit sym 10
-     plen <- natLe sym fv lena
+     fv <- intLit sym 10
+     plen <- intLe sym fv lena
      q <- andPred sym np plen
 
      checkSatisfiableWithModel solver "test" q $ \case
@@ -800,18 +800,18 @@ stringTest5 ::
   IO ()
 stringTest5 sym solver =
   do a <- freshConstant sym (userSymbol' "a") (BaseStringRepr Char8Repr)
-     off <- freshConstant sym (userSymbol' "off") BaseNatRepr
-     len <- freshConstant sym (userSymbol' "len") BaseNatRepr
+     off <- freshConstant sym (userSymbol' "off") BaseIntegerRepr
+     len <- freshConstant sym (userSymbol' "len") BaseIntegerRepr
 
-     n5 <- natLit sym 5
-     n20 <- natLit sym 20
+     n5 <- intLit sym 5
+     n20 <- intLit sym 20
 
      let qlit = "qwerty"
 
      sub <- stringSubstring sym a off len
      p1 <- stringEq sym sub =<< stringLit sym (Char8Literal qlit)
-     p2 <- natLe sym n5 off
-     p3 <- natLe sym n20 =<< stringLength sym a
+     p2 <- intLe sym n5 off
+     p3 <- intLe sym n20 =<< stringLength sym a
 
      p <- andPred sym p1 =<< andPred sym p2 p3
 

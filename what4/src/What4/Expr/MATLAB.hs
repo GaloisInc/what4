@@ -50,7 +50,7 @@ import           Prettyprinter
 import           What4.BaseTypes
 import           What4.Interface
 import           What4.Utils.Complex
-import           What4.Utils.OnlyNatRepr
+import           What4.Utils.OnlyIntRepr
 
 ------------------------------------------------------------------------
 -- MatlabSolverFn
@@ -208,28 +208,17 @@ data MatlabSolverFn (f :: BaseType -> Type) args ret where
   -- Returns true if the real value is an integer.
   IsIntegerFn :: MatlabSolverFn f (EmptyCtx ::> BaseRealType) BaseBoolType
 
-  -- Return true if first nat is less than or equal to second.
-  NatLeFn :: MatlabSolverFn f (EmptyCtx ::> BaseNatType ::> BaseNatType) BaseBoolType
-
   -- Return true if first value is less than or equal to second.
   IntLeFn :: MatlabSolverFn f (EmptyCtx ::> BaseIntegerType ::> BaseIntegerType) BaseBoolType
 
-  -- A function for mapping a unsigned bitvector to a natural number.
-  BVToNatFn :: (1 <= w)
+  -- A function for mapping a unsigned bitvector to an integer.
+  BVToIntegerFn :: (1 <= w)
             => !(NatRepr w)
-            ->  MatlabSolverFn f (EmptyCtx ::> BaseBVType w) BaseNatType
+            ->  MatlabSolverFn f (EmptyCtx ::> BaseBVType w) BaseIntegerType
   -- A function for mapping a signed bitvector to a integer.
   SBVToIntegerFn :: (1 <= w)
                  => !(NatRepr w)
                  -> MatlabSolverFn f (EmptyCtx ::> BaseBVType w) BaseIntegerType
-
-  -- A function for mapping a natural number to an integer.
-  NatToIntegerFn :: MatlabSolverFn f (EmptyCtx ::> BaseNatType) BaseIntegerType
-
-  -- A function for mapping an integer to equivalent nat.
-  --
-  -- Function may return any value if input is negative.
-  IntegerToNatFn :: MatlabSolverFn f (EmptyCtx ::> BaseIntegerType) BaseNatType
 
   -- A function for mapping an integer to equivalent real.
   IntegerToRealFn :: MatlabSolverFn f (EmptyCtx ::> BaseIntegerType) BaseRealType
@@ -243,19 +232,19 @@ data MatlabSolverFn (f :: BaseType -> Type) args ret where
   -- (either 0 for false, or 1 for true)
   PredToIntegerFn :: MatlabSolverFn f (EmptyCtx ::> BaseBoolType) BaseIntegerType
 
-  -- 'NatSeqFn base c' denotes the function '\i _ -> base + c*i
-  NatSeqFn :: !(f BaseNatType)
-           -> !(f BaseNatType)
-           -> MatlabSolverFn f (EmptyCtx ::> BaseNatType ::> BaseNatType) BaseNatType
+  -- 'IntSeqFn base c' denotes the function '\i _ -> base + c*i
+  IntSeqFn :: !(f BaseIntegerType)
+           -> !(f BaseIntegerType)
+           -> MatlabSolverFn f (EmptyCtx ::> BaseIntegerType ::> BaseIntegerType) BaseIntegerType
 
   -- 'RealSeqFn base c' denotes the function '\_ i -> base + c*i
   RealSeqFn :: !(f BaseRealType)
             -> !(f BaseRealType)
-            -> MatlabSolverFn f (EmptyCtx ::> BaseNatType ::> BaseNatType) BaseRealType
+            -> MatlabSolverFn f (EmptyCtx ::> BaseIntegerType ::> BaseIntegerType) BaseRealType
 
   -- 'IndicesInRange tps upper_bounds' returns a predicate that is true if all the arguments
   -- (which must be natural numbers) are between 1 and the given upper bounds (inclusive).
-  IndicesInRange :: !(Assignment OnlyNatRepr (idx ::> itp))
+  IndicesInRange :: !(Assignment OnlyIntRepr (idx ::> itp))
                  -> !(Assignment f (idx ::> itp))
                     -- Upper bounds on indices
                  -> MatlabSolverFn f (idx ::> itp) BaseBoolType
@@ -473,16 +462,13 @@ traverseMatlabSolverFn f fn_id =
   case fn_id of
     BoolOrFn             -> pure $ BoolOrFn
     IsIntegerFn          -> pure $ IsIntegerFn
-    NatLeFn              -> pure $ NatLeFn
     IntLeFn              -> pure $ IntLeFn
-    BVToNatFn w          -> pure $ BVToNatFn w
+    BVToIntegerFn w      -> pure $ BVToIntegerFn w
     SBVToIntegerFn w     -> pure $ SBVToIntegerFn w
-    NatToIntegerFn       -> pure $ NatToIntegerFn
-    IntegerToNatFn       -> pure $ IntegerToNatFn
     IntegerToRealFn      -> pure $ IntegerToRealFn
     RealToIntegerFn      -> pure $ RealToIntegerFn
     PredToIntegerFn      -> pure $ PredToIntegerFn
-    NatSeqFn  b i        -> NatSeqFn <$> f b <*> f i
+    IntSeqFn  b i        -> IntSeqFn <$> f b <*> f i
     RealSeqFn b i        -> RealSeqFn <$> f b <*> f i
     IndicesInRange tps a -> IndicesInRange tps <$> traverseFC f a
     IsEqFn tp            -> pure $ IsEqFn tp
@@ -544,16 +530,13 @@ matlabSolverArgTypes f =
   case f of
     BoolOrFn             -> knownRepr
     IsIntegerFn          -> knownRepr
-    NatLeFn              -> knownRepr
     IntLeFn              -> knownRepr
-    BVToNatFn w          -> Ctx.singleton (BaseBVRepr w)
+    BVToIntegerFn w      -> Ctx.singleton (BaseBVRepr w)
     SBVToIntegerFn w     -> Ctx.singleton (BaseBVRepr w)
-    NatToIntegerFn       -> knownRepr
-    IntegerToNatFn       -> knownRepr
     IntegerToRealFn      -> knownRepr
     RealToIntegerFn      -> knownRepr
     PredToIntegerFn      -> knownRepr
-    NatSeqFn{}           -> knownRepr
+    IntSeqFn{}           -> knownRepr
     IndicesInRange tps _ -> fmapFC toBaseTypeRepr tps
     RealSeqFn _ _        -> knownRepr
     IsEqFn tp            -> binCtx tp
@@ -607,16 +590,13 @@ matlabSolverReturnType f =
   case f of
     BoolOrFn             -> knownRepr
     IsIntegerFn          -> knownRepr
-    NatLeFn              -> knownRepr
     IntLeFn              -> knownRepr
-    BVToNatFn{}          -> knownRepr
+    BVToIntegerFn{}      -> knownRepr
     SBVToIntegerFn{}     -> knownRepr
-    NatToIntegerFn       -> knownRepr
-    IntegerToNatFn       -> knownRepr
     IntegerToRealFn      -> knownRepr
     RealToIntegerFn      -> knownRepr
     PredToIntegerFn      -> knownRepr
-    NatSeqFn{}           -> knownRepr
+    IntSeqFn{}           -> knownRepr
     IndicesInRange{}     -> knownRepr
     RealSeqFn _ _        -> knownRepr
     IsEqFn{}             -> knownRepr
@@ -669,16 +649,13 @@ ppMatlabSolverFn f =
   case f of
     BoolOrFn             -> pretty "bool_or"
     IsIntegerFn          -> pretty "is_integer"
-    NatLeFn              -> pretty "nat_le"
     IntLeFn              -> pretty "int_le"
-    BVToNatFn w          -> parens $ pretty "bv_to_nat" <+> ppNatRepr w
+    BVToIntegerFn w      -> parens $ pretty "bv_to_int" <+> ppNatRepr w
     SBVToIntegerFn w     -> parens $ pretty "sbv_to_int" <+> ppNatRepr w
-    NatToIntegerFn       -> pretty "nat_to_integer"
-    IntegerToNatFn       -> pretty "integer_to_nat"
     IntegerToRealFn      -> pretty "integer_to_real"
     RealToIntegerFn      -> pretty "real_to_integer"
     PredToIntegerFn      -> pretty "pred_to_integer"
-    NatSeqFn  b i        -> parens $ pretty "nat_seq"  <+> printSymExpr b <+> printSymExpr i
+    IntSeqFn  b i        -> parens $ pretty "nat_seq"  <+> printSymExpr b <+> printSymExpr i
     RealSeqFn b i        -> parens $ pretty "real_seq" <+> printSymExpr b <+> printSymExpr i
     IndicesInRange _ bnds ->
       parens (pretty "indices_in_range" <+> sep (toListFC printSymExpr bnds))
@@ -754,8 +731,8 @@ testSolverFnEq = $(structuralTypeEquality [t|MatlabSolverFn|]
                    ]
                   )
 
-instance ( Hashable (f BaseNatType)
-         , Hashable (f BaseRealType)
+instance ( Hashable (f BaseRealType)
+         , Hashable (f BaseIntegerType)
          , HashableF f
          )
          => Hashable (MatlabSolverFn f args tp) where
@@ -775,23 +752,20 @@ evalMatlabSolverFn f sym =
     BoolOrFn         -> uncurryAssignment $ orPred sym
 
     IsIntegerFn      -> uncurryAssignment $ isInteger sym
-    NatLeFn          -> uncurryAssignment $ natLe sym
     IntLeFn          -> uncurryAssignment $ intLe sym
-    BVToNatFn{}      -> uncurryAssignment $ bvToNat sym
+    BVToIntegerFn{}  -> uncurryAssignment $ bvToInteger sym
     SBVToIntegerFn{} -> uncurryAssignment $ sbvToInteger sym
-    NatToIntegerFn   -> uncurryAssignment $ natToInteger sym
-    IntegerToNatFn   -> uncurryAssignment $ integerToNat sym
     IntegerToRealFn  -> uncurryAssignment $ integerToReal sym
     RealToIntegerFn  -> uncurryAssignment $ realToInteger sym
     PredToIntegerFn  -> uncurryAssignment $ \p ->
       iteM intIte sym p (intLit sym 1) (intLit sym 0)
-    NatSeqFn b inc   -> uncurryAssignment $ \idx _ -> do
-      natAdd sym b =<< natMul sym inc idx
+    IntSeqFn b inc   -> uncurryAssignment $ \idx _ -> do
+      intAdd sym b =<< intMul sym inc idx
     RealSeqFn b inc -> uncurryAssignment $ \_ idx -> do
-      realAdd sym b =<< realMul sym inc =<< natToReal sym idx
+      realAdd sym b =<< realMul sym inc =<< integerToReal sym idx
     IndicesInRange tps0 bnds0 -> \args ->
         Ctx.forIndex (Ctx.size tps0) (g tps0 bnds0 args) (pure (truePred sym))
-      where g :: Assignment OnlyNatRepr ctx
+      where g :: Assignment OnlyIntRepr ctx
               -> Assignment (SymExpr sym) ctx
               -> Assignment (SymExpr sym) ctx
               -> IO (Pred sym)
@@ -799,11 +773,11 @@ evalMatlabSolverFn f sym =
               -> IO (Pred sym)
             g tps bnds args m i = do
               case tps Ctx.! i of
-                OnlyNatRepr -> do
+                OnlyIntRepr -> do
                   let v = args ! i
                   let bnd = bnds ! i
-                  one <- natLit sym 1
-                  p <- join $ andPred sym <$> natLe sym one v <*> natLe sym v bnd
+                  one <- intLit sym 1
+                  p <- join $ andPred sym <$> intLe sym one v <*> intLe sym v bnd
                   andPred sym p =<< m
     IsEqFn{} -> Ctx.uncurryAssignment $ \x y -> do
       isEq sym x y

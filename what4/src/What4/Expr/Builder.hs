@@ -64,7 +64,6 @@ module What4.Expr.Builder
 
     -- * Specialized representations
   , bvUnary
-  , natSum
   , intSum
   , realSum
   , bvSum
@@ -101,7 +100,6 @@ module What4.Expr.Builder
   , nonceExprApp
     -- ** Type abbreviations
   , BoolExpr
-  , NatExpr
   , IntegerExpr
   , RealExpr
   , FloatExpr
@@ -209,7 +207,6 @@ import           Data.Ratio (numerator, denominator)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified LibBF as BF
-import           Numeric.Natural
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -628,7 +625,6 @@ sbMakeExpr sym a = do
   case appType a of
     -- Check if abstract interpretation concludes this is a constant.
     BaseBoolRepr | Just b <- v -> return $ backendPred sym b
-    BaseNatRepr  | Just c <- asSingleNatRange v -> natLit sym c
     BaseIntegerRepr | Just c <- asSingleRange v -> intLit sym c
     BaseRealRepr | Just c <- asSingleRange (ravRange v) -> realLit sym c
     BaseBVRepr w | Just x <- BVD.asSingleton v -> bvLit sym w (BV.mkBV w x)
@@ -852,7 +848,7 @@ asConcreteIndices = traverseFC f
   where f :: IsExpr e => e tp -> Maybe (IndexLit tp)
         f x =
           case exprType x of
-            BaseNatRepr  -> NatIndexLit . fromIntegral <$> asNat x
+            BaseIntegerRepr  -> IntIndexLit <$> asInteger x
             BaseBVRepr w -> BVIndexLit w <$> asBV x
             _ -> Nothing
 
@@ -863,7 +859,7 @@ symbolicIndices :: forall sym ctx
                 -> IO (Ctx.Assignment (SymExpr sym) ctx)
 symbolicIndices sym = traverseFC f
   where f :: IndexLit tp -> IO (SymExpr sym tp)
-        f (NatIndexLit n)  = natLit sym n
+        f (IntIndexLit n)  = intLit sym n
         f (BVIndexLit w i) = bvLit sym w i
 
 -- | This evaluate a symbolic function against a set of arguments.
@@ -1109,10 +1105,6 @@ sbConcreteLookup sym arr0 mcidx idx
 
 ----------------------------------------------------------------------
 -- Expression builder instances
-
--- | Evaluate a weighted sum of natural number values.
-natSum :: ExprBuilder t st fs -> WeightedSum (Expr t) SR.SemiRingNat -> IO (NatExpr t)
-natSum sym s = semiRingSum sym s
 
 -- | Evaluate a weighted sum of integer values.
 intSum :: ExprBuilder t st fs -> WeightedSum (Expr t) SR.SemiRingInteger -> IO (IntegerExpr t)
@@ -1500,44 +1492,47 @@ concreteArrayEntries = foldlFC' f Set.empty
             Set.union s (AUM.keysSet m)
           | otherwise = s
 
-data NatLit tp = (tp ~ BaseNatType) => NatLit Natural
 
-asNatBounds :: Ctx.Assignment (Expr t) idx -> Maybe (Ctx.Assignment NatLit idx)
-asNatBounds = traverseFC f
-  where f :: Expr t tp -> Maybe (NatLit tp)
-        f (SemiRingLiteral SR.SemiRingNatRepr n _) = Just (NatLit n)
+
+data IntLit tp = (tp ~ BaseIntegerType) => IntLit Integer
+
+asIntBounds :: Ctx.Assignment (Expr t) idx -> Maybe (Ctx.Assignment IntLit idx)
+asIntBounds = traverseFC f
+  where f :: Expr t tp -> Maybe (IntLit tp)
+        f (SemiRingLiteral SR.SemiRingIntegerRepr n _) = Just (IntLit n)
         f _ = Nothing
 
-foldBoundLeM :: (r -> Natural -> IO r) -> r -> Natural -> IO r
-foldBoundLeM _ r 0 = pure r
-foldBoundLeM f r n = do
-  r' <- foldBoundLeM f r (n-1)
-  f r' n
+foldBoundLeM :: (r -> Integer -> IO r) -> r -> Integer -> IO r
+foldBoundLeM f r n
+  | n <= 0 = pure r
+  | otherwise =
+      do r' <- foldBoundLeM f r (n-1)
+         f r' n
 
 foldIndicesInRangeBounds :: forall sym idx r
                          .  IsExprBuilder sym
                          => sym
                          -> (r -> Ctx.Assignment (SymExpr sym) idx -> IO r)
                          -> r
-                         -> Ctx.Assignment NatLit idx
+                         -> Ctx.Assignment IntLit idx
                          -> IO r
 foldIndicesInRangeBounds sym f0 a0 bnds0 = do
   case bnds0 of
     Ctx.Empty -> f0 a0 Ctx.empty
-    bnds Ctx.:> NatLit b -> foldIndicesInRangeBounds sym (g f0) a0 bnds
-      where g :: (r -> Ctx.Assignment (SymExpr sym) (idx0 ::> BaseNatType) -> IO r)
+    bnds Ctx.:> IntLit b -> foldIndicesInRangeBounds sym (g f0) a0 bnds
+      where g :: (r -> Ctx.Assignment (SymExpr sym) (idx0 ::> BaseIntegerType) -> IO r)
               -> r
               -> Ctx.Assignment (SymExpr sym) idx0
               -> IO r
             g f a i = foldBoundLeM (h f i) a b
 
-            h :: (r -> Ctx.Assignment (SymExpr sym) (idx0 ::> BaseNatType) -> IO r)
+            h :: (r -> Ctx.Assignment (SymExpr sym) (idx0 ::> BaseIntegerType) -> IO r)
               -> Ctx.Assignment (SymExpr sym) idx0
               -> r
-              -> Natural
+              -> Integer
               -> IO r
             h f i a j = do
-              je <- natLit sym j
+              je <- intLit sym j
               f a (i Ctx.:> je)
 
 -- | Examine the list of terms, and determine if any one of them
@@ -1746,58 +1741,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         sbMakeExpr sb $ BaseIte BaseBoolRepr sz c x y
 
   ----------------------------------------------------------------------
-  -- Nat operations.
-
-  natLit sym n = semiRingLit sym SR.SemiRingNatRepr n
-
-  natAdd sym x y = semiRingAdd sym SR.SemiRingNatRepr x y
-
-  natSub sym x y = do
-    xr <- natToInteger sym x
-    yr <- natToInteger sym y
-    integerToNat sym =<< intSub sym xr yr
-
-  natMul sym x y = semiRingMul sym SR.SemiRingNatRepr x y
-
-  natDiv sym x y
-    | Just m <- asNat x, Just n <- asNat y, n /= 0 = do
-      natLit sym (m `div` n)
-      -- 0 / y
-    | Just 0 <- asNat x = do
-      return x
-      -- x / 1
-    | Just 1 <- asNat y = do
-      return x
-    | otherwise = do
-      sbMakeExpr sym (NatDiv x y)
-
-  natMod sym x y
-    | Just m <- asNat x, Just n <- asNat y, n /= 0 = do
-      natLit sym (m `mod` n)
-    | Just 0 <- asNat x = do
-      natLit sym 0
-    | Just 1 <- asNat y = do
-      natLit sym 0
-    | otherwise = do
-      sbMakeExpr sym (NatMod x y)
-
-  natIte sym c x y = semiRingIte sym SR.SemiRingNatRepr c x y
-
-  natEq sym x y
-    | Just b <- natCheckEq (exprAbsValue x) (exprAbsValue y)
-    = return (backendPred sym b)
-
-    | otherwise
-    = semiRingEq sym SR.SemiRingNatRepr (natEq sym) x y
-
-  natLe sym x y
-    | Just b <- natCheckLe (exprAbsValue x) (exprAbsValue y)
-    = return (backendPred sym b)
-
-    | otherwise
-    = semiRingLe sym SR.OrderedSemiRingNatRepr (natLe sym) x y
-
-  ----------------------------------------------------------------------
   -- Integer operations.
 
   intLit sym n = semiRingLit sym SR.SemiRingIntegerRepr n
@@ -1973,8 +1916,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   intDiv sym x y
       -- Div by 1.
     | Just 1 <- asInteger y = return x
-      -- Div 0 by anything is zero.
-    | Just 0 <- asInteger x = intLit sym 0
       -- As integers.
     | Just xi <- asInteger x, Just yi <- asInteger y, yi /= 0 =
       if yi >= 0 then
@@ -1988,8 +1929,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   intMod sym x y
       -- Mod by 1.
     | Just 1 <- asInteger y = intLit sym 0
-      -- Mod 0 by anything is zero.
-    | Just 0 <- asInteger x = intLit sym 0
       -- As integers.
     | Just xi <- asInteger x, Just yi <- asInteger y, yi /= 0 =
         intLit sym (xi `mod` abs yi)
@@ -2801,7 +2740,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   stringIndexOf sym x y k
     | Just x' <- asString x
     , Just y' <- asString y
-    , Just k' <- asNat k
+    , Just k' <- asInteger k
     = intLit sym $! stringLitIndexOf x' y' k'
   stringIndexOf sym x y k
     = sbMakeExpr sym $ StringIndexOf x y k
@@ -2839,8 +2778,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   stringSubstring sym x off len
     | Just x' <- asString x
-    , Just off' <- asNat off
-    , Just len' <- asNat len
+    , Just off' <- asInteger off
+    , Just len' <- asInteger len
+    , 0 <= off', 0 <= len'
+    , off' + len' <= stringLitLength x'
     = stringLit sym $! stringLitSubstring x' off' len'
 
     | otherwise
@@ -2873,12 +2814,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   stringLength sym x
     | Just x' <- asString x
-    = natLit sym (stringLitLength x')
+    = intLit sym (stringLitLength x')
 
     | Just (StringAppend _si xs) <- asApp x
-    = do let f sm (SSeq.StringSeqLiteral l) = natAdd sym sm =<< natLit sym (stringLitLength l)
-             f sm (SSeq.StringSeqTerm t)    = natAdd sym sm =<< sbMakeExpr sym (StringLength t)
-         z  <- natLit sym 0
+    = do let f sm (SSeq.StringSeqLiteral l) = intAdd sym sm =<< intLit sym (stringLitLength l)
+             f sm (SSeq.StringSeqTerm t)    = intAdd sym sm =<< sbMakeExpr sym (StringLength t)
+         z  <- intLit sym 0
          foldM f z (SSeq.toList xs)
 
     | otherwise
@@ -3012,7 +2953,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just True <- exprAbsValue a =
       return $ truePred sym
     | Just (IndicesInRange _ bnds) <- asMatlabSolverFn f
-    , Just v <- asNatBounds bnds = do
+    , Just v <- asIntBounds bnds = do
       let h :: Expr t (BaseArrayType (i::>it) BaseBoolType)
             -> BoolExpr t
             -> Ctx.Assignment (Expr t) (i::>it)
@@ -3025,19 +2966,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   ----------------------------------------------------------------------
   -- Lossless (injective) conversions
-
-  natToInteger sym x
-    | SemiRingLiteral SR.SemiRingNatRepr n l <- x = return $! SemiRingLiteral SR.SemiRingIntegerRepr (toInteger n) l
-    | Just (IntegerToNat y) <- asApp x = return y
-    | otherwise = sbMakeExpr sym (NatToInteger x)
-
-  integerToNat sb x
-    | SemiRingLiteral SR.SemiRingIntegerRepr i l <- x
-    , 0 <= i
-    = return $! SemiRingLiteral SR.SemiRingNatRepr (fromIntegral i) l
-    | Just (NatToInteger y) <- asApp x = return y
-    | otherwise =
-      sbMakeExpr sb (IntegerToNat x)
 
   integerToReal sym x
     | SemiRingLiteral SR.SemiRingIntegerRepr i l <- x = return $! SemiRingLiteral SR.SemiRingRealRepr (toRational i) l
@@ -3052,11 +2980,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Static case
     | otherwise =
       sbMakeExpr sym (RealToInteger x)
-
-  bvToNat sym x
-    | Just xv <- asBV x =
-      natLit sym (BV.asNatural xv)
-    | otherwise = sbMakeExpr sym (BVToNat x)
 
   bvToInteger sym x
     | Just xv <- asBV x =
@@ -3240,7 +3163,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         sqrt_dbl = sqrt
     case x of
       SemiRingLiteral SR.SemiRingRealRepr r _
-        | r <= 0 -> realLit sym 0
+        | r < 0 -> sbMakeExpr sym (RealSqrt x)
         | Just w <- tryRationalSqrt r -> realLit sym w
         | sbFloatReduce sym -> realLit sym (toRational (sqrt_dbl (fromRational r)))
       _ -> sbMakeExpr sym (RealSqrt x)
@@ -3266,7 +3189,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   realAtan2 sb y x = do
     case (asRational y, asRational x) of
       (Just 0, _) -> realLit sb 0
-      (Just yc, Just xc) | sbFloatReduce sb -> do
+      (Just yc, Just xc) | xc /= 0, sbFloatReduce sb -> do
         realLit sb (toRational (atan2 (toDouble yc) (toDouble xc)))
       _ -> sbMakeExpr sb (RealATan2 y x)
 
@@ -3289,7 +3212,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   realLog sym x =
     case asRational x of
-      Just c | sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
+      Just c | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
       _ -> sbMakeExpr sym (RealLog x)
 
   ----------------------------------------------------------------------
@@ -3720,7 +3643,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
   iFloatMax = floatUninterpArithBinOp "uninterpreted_float_max"
   iFloatFMA sym r x y z = do
     let ret_type = exprType x
-    r_arg <- roundingModeToSymNat sym r
+    r_arg <- roundingModeToSymInt sym r
     mkUninterpFnApp sym
                     "uninterpreted_float_fma"
                     (Ctx.empty Ctx.:> r_arg Ctx.:> x Ctx.:> y Ctx.:> z)
@@ -3779,7 +3702,7 @@ floatUninterpArithBinOpR
   -> IO (e bt)
 floatUninterpArithBinOpR fn sym r x y = do
   let ret_type = exprType x
-  r_arg <- roundingModeToSymNat sym r
+  r_arg <- roundingModeToSymInt sym r
   mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x Ctx.:> y) ret_type
 
 floatUninterpArithUnOp
@@ -3796,7 +3719,7 @@ floatUninterpArithUnOpR
   -> IO (e bt)
 floatUninterpArithUnOpR fn sym r x = do
   let ret_type = exprType x
-  r_arg <- roundingModeToSymNat sym r
+  r_arg <- roundingModeToSymInt sym r
   mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x) ret_type
 
 floatUninterpArithCt
@@ -3836,12 +3759,12 @@ floatUninterpCastOp
   -> e bt'
   -> IO (e bt)
 floatUninterpCastOp fn sym ret_type r x = do
-  r_arg <- roundingModeToSymNat sym r
+  r_arg <- roundingModeToSymInt sym r
   mkUninterpFnApp sym fn (Ctx.empty Ctx.:> r_arg Ctx.:> x) ret_type
 
-roundingModeToSymNat
-  :: (sym ~ ExprBuilder t st fs) => sym -> RoundingMode -> IO (SymNat sym)
-roundingModeToSymNat sym = natLit sym . fromIntegral . fromEnum
+roundingModeToSymInt
+  :: (sym ~ ExprBuilder t st fs) => sym -> RoundingMode -> IO (SymInteger sym)
+roundingModeToSymInt sym = intLit sym . toInteger . fromEnum
 
 
 type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatIEEE)) fi =
@@ -3975,20 +3898,6 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
    absVal (Just lo) Nothing = Just $! RAV (MultiRange (Inclusive lo) Unbounded) Nothing
    absVal Nothing (Just hi) = Just $! RAV (MultiRange Unbounded (Inclusive hi)) Nothing
    absVal (Just lo) (Just hi) = Just $! RAV (MultiRange (Inclusive lo) (Inclusive hi)) Nothing
-
-  freshBoundedNat sym nm mlo mhi =
-    do unless (boundsOK mlo mhi) (Ex.throwIO (InvalidRange BaseNatRepr mlo mhi))
-       v <- sbMakeBoundVar sym nm BaseNatRepr UninterpVarKind (absVal mlo mhi)
-       updateVarBinding sym nm (VarSymbolBinding v)
-       return $! BoundVarExpr v
-   where
-   boundsOK (Just lo) (Just hi) = lo <= hi
-   boundsOK _ _ = True
-
-   absVal Nothing Nothing = Nothing
-   absVal (Just lo) Nothing = Just $! natRange lo Unbounded
-   absVal Nothing (Just hi) = Just $! natRange 0 (Inclusive hi)
-   absVal (Just lo) (Just hi) = Just $! natRange lo (Inclusive hi)
 
   freshLatch sym nm tp = do
     v <- sbMakeBoundVar sym nm tp LatchVarKind Nothing

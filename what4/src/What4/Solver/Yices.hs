@@ -360,7 +360,6 @@ fnType args tp = YicesType $ app "->" (unType `fmap` (args ++ [tp]))
 
 yicesType :: TypeMap tp -> YicesType
 yicesType BoolTypeMap    = boolType
-yicesType NatTypeMap     = intType
 yicesType IntegerTypeMap = intType
 yicesType RealTypeMap    = realType
 yicesType (BVTypeMap w)  = YicesType (app "bitvector" [fromString (show w)])

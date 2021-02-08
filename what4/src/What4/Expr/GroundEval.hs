@@ -55,7 +55,6 @@ import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import           Numeric.Natural
 import           LibBF (BigFloat)
 import qualified LibBF as BF
 
@@ -77,7 +76,6 @@ import           What4.Utils.StringLiteral
 
 type family GroundValue (tp :: BaseType) where
   GroundValue BaseBoolType          = Bool
-  GroundValue BaseNatType           = Natural
   GroundValue BaseIntegerType       = Integer
   GroundValue BaseRealType          = Rational
   GroundValue (BaseBVType w)        = BV.BV w
@@ -116,8 +114,8 @@ lookupArray tps (ArrayConcrete base m) i = return $ fromMaybe base (Map.lookup i
   where i' = fromMaybe (error "lookupArray: not valid indexLits") $ Ctx.zipWithM asIndexLit tps i
 
 asIndexLit :: BaseTypeRepr tp -> GroundValueWrapper tp -> Maybe (IndexLit tp)
-asIndexLit BaseNatRepr    (GVW v) = return $ NatIndexLit v
-asIndexLit (BaseBVRepr w) (GVW v) = return $ BVIndexLit w v
+asIndexLit BaseIntegerRepr (GVW v) = return $ IntIndexLit v
+asIndexLit (BaseBVRepr w)  (GVW v) = return $ BVIndexLit w v
 asIndexLit _ _ = Nothing
 
 -- | Convert a real standardmodel val to a double.
@@ -132,7 +130,6 @@ defaultValueForType :: BaseTypeRepr tp -> GroundValue tp
 defaultValueForType tp =
   case tp of
     BaseBoolRepr    -> False
-    BaseNatRepr     -> 0
     BaseBVRepr w    -> BV.zero w
     BaseIntegerRepr -> 0
     BaseRealRepr    -> 0
@@ -175,7 +172,6 @@ evalGroundExpr f e =
 tryEvalGroundExpr :: (forall u . Expr t u -> MaybeT IO (GroundValue u))
                  -> Expr t tp
                  -> MaybeT IO (GroundValue tp)
-tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingNatRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingIntegerRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
@@ -232,7 +228,6 @@ groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
       BaseBoolRepr     -> mand $ x == y
       BaseRealRepr     -> mand $ x == y
       BaseIntegerRepr  -> mand $ x == y
-      BaseNatRepr      -> mand $ x == y
       BaseBVRepr _     -> mand $ x == y
       -- NB, don't use (==) for BigFloat, which is the wrong equality
       BaseFloatRepr _  -> mand $ BF.bfCompare x y == EQ
@@ -279,14 +274,6 @@ evalGroundApp f a0 = do
       where w = bvWidth x
     BVUlt x y -> BV.ult <$> f x <*> f y
 
-    NatDiv x y -> g <$> f x <*> f y
-      where g _ 0 = 0
-            g u v = u `div` v
-
-    NatMod x y -> g <$> f x <*> f y
-      where g _ 0 = 0
-            g u v = u `mod` v
-
     IntDiv x y -> g <$> f x <*> f y
       where
       g u v | v == 0    = 0
@@ -306,12 +293,9 @@ evalGroundApp f a0 = do
 
     SemiRingLe SR.OrderedSemiRingRealRepr    x y -> (<=) <$> f x <*> f y
     SemiRingLe SR.OrderedSemiRingIntegerRepr x y -> (<=) <$> f x <*> f y
-    SemiRingLe SR.OrderedSemiRingNatRepr     x y -> (<=) <$> f x <*> f y
 
     SemiRingSum s ->
       case WSum.sumRepr s of
-        SR.SemiRingNatRepr -> WSum.evalM (\x y -> pure (x+y)) smul pure s
-           where smul sm e = (sm *) <$> f e
         SR.SemiRingIntegerRepr -> WSum.evalM (\x y -> pure (x+y)) smul pure s
            where smul sm e = (sm *) <$> f e
         SR.SemiRingRealRepr -> WSum.evalM (\x y -> pure (x+y)) smul pure s
@@ -327,7 +311,6 @@ evalGroundApp f a0 = do
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
-        SR.SemiRingNatRepr     -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingIntegerRepr -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingRealRepr    -> fromMaybe 1 <$> WSum.prodEvalM (\x y -> pure (x*y)) f pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
@@ -515,16 +498,14 @@ evalGroundApp f a0 = do
                    GVW yj = y Ctx.! j
                    tp = tps Ctx.! j
                in case tp of
-                    BaseNatRepr  -> xj == yj
-                    BaseBVRepr _ -> xj == yj
+                    BaseIntegerRepr -> xj == yj
+                    BaseBVRepr _    -> xj == yj
                     _ -> error $ "We do not yet support UpdateArray on " ++ show tp ++ " indices."
 
     ------------------------------------------------------------------------
     -- Conversions
 
-    NatToInteger x -> toInteger <$> f x
     IntegerToReal x -> toRational <$> f x
-    BVToNat x      -> BV.asNatural <$> f x
     BVToInteger x  -> BV.asUnsigned <$> f x
     SBVToInteger x -> BV.asSigned (bvWidth x) <$> f x
 
@@ -535,7 +516,6 @@ evalGroundApp f a0 = do
 
     RealToInteger x -> floor <$> f x
 
-    IntegerToNat x -> fromInteger . max 0 <$> f x
     IntegerToBV x w -> BV.mkBV w <$> f x
 
     ------------------------------------------------------------------------

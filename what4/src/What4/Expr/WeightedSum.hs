@@ -92,14 +92,12 @@ import           What4.Utils.IncrHash
 --------------------------------------------------------------------------------
 
 data SRAbsValue :: SR.SemiRing -> Type where
-  SRAbsNatAdd  :: !AD.NatValueRange         -> SRAbsValue SR.SemiRingNat
   SRAbsIntAdd  :: !(AD.ValueRange Integer)  -> SRAbsValue SR.SemiRingInteger
   SRAbsRealAdd :: !AD.RealAbstractValue     -> SRAbsValue SR.SemiRingReal
   SRAbsBVAdd   :: (1 <= w) => !(A.Domain w) -> SRAbsValue (SR.SemiRingBV SR.BVArith w)
   SRAbsBVXor   :: (1 <= w) => !(X.Domain w) -> SRAbsValue (SR.SemiRingBV SR.BVBits w)
 
 instance Semigroup (SRAbsValue sr) where
-  SRAbsNatAdd  x <> SRAbsNatAdd  y = SRAbsNatAdd  (AD.natRangeAdd x y)
   SRAbsIntAdd  x <> SRAbsIntAdd  y = SRAbsIntAdd  (AD.addRange x y)
   SRAbsRealAdd x <> SRAbsRealAdd y = SRAbsRealAdd (AD.ravAdd x y)
   SRAbsBVAdd   x <> SRAbsBVAdd   y = SRAbsBVAdd   (A.add x y)
@@ -107,7 +105,6 @@ instance Semigroup (SRAbsValue sr) where
 
 
 (.**) :: SRAbsValue sr -> SRAbsValue sr -> SRAbsValue sr
-SRAbsNatAdd  x .** SRAbsNatAdd  y = SRAbsNatAdd  (AD.natRangeMul x y)
 SRAbsIntAdd  x .** SRAbsIntAdd  y = SRAbsIntAdd  (AD.mulRange x y)
 SRAbsRealAdd x .** SRAbsRealAdd y = SRAbsRealAdd (AD.ravMul x y)
 SRAbsBVAdd   x .** SRAbsBVAdd   y = SRAbsBVAdd   (A.mul x y)
@@ -118,7 +115,6 @@ abstractTerm ::
   SR.SemiRingRepr sr -> SR.Coefficient sr -> f (SR.SemiRingBase sr) -> SRAbsValue sr
 abstractTerm sr c e =
   case sr of
-    SR.SemiRingNatRepr     -> SRAbsNatAdd (AD.natRangeScalarMul c (AD.getAbsValue e))
     SR.SemiRingIntegerRepr -> SRAbsIntAdd (AD.rangeScalarMul c (AD.getAbsValue e))
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.ravScalarMul c (AD.getAbsValue e))
     SR.SemiRingBVRepr fv w ->
@@ -131,7 +127,6 @@ abstractTerm sr c e =
 abstractVal :: AD.HasAbsValue f => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRAbsValue sr
 abstractVal sr e =
   case sr of
-    SR.SemiRingNatRepr     -> SRAbsNatAdd (AD.getAbsValue e)
     SR.SemiRingIntegerRepr -> SRAbsIntAdd (AD.getAbsValue e)
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.getAbsValue e)
     SR.SemiRingBVRepr fv _w ->
@@ -143,7 +138,6 @@ abstractScalar ::
   SR.SemiRingRepr sr -> SR.Coefficient sr -> SRAbsValue sr
 abstractScalar sr c =
   case sr of
-    SR.SemiRingNatRepr     -> SRAbsNatAdd (AD.natSingleRange c)
     SR.SemiRingIntegerRepr -> SRAbsIntAdd (AD.SingleRange c)
     SR.SemiRingRealRepr    -> SRAbsRealAdd (AD.ravSingle c)
     SR.SemiRingBVRepr fv w ->
@@ -155,7 +149,6 @@ fromSRAbsValue ::
   SRAbsValue sr -> AD.AbstractValue (SR.SemiRingBase sr)
 fromSRAbsValue v =
   case v of
-    SRAbsNatAdd  x -> x
     SRAbsIntAdd  x -> x
     SRAbsRealAdd x -> x
     SRAbsBVAdd   x -> BVD.BVDArith x

@@ -58,6 +58,9 @@ The canonical implementation of these interface classes is found in "What4.Expr.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+
+{-# LANGUAGE UndecidableInstances #-}
+
 module What4.Interface
   ( -- * Interface classes
     -- ** Type Families
@@ -92,7 +95,6 @@ module What4.Interface
 
     -- * Type Aliases
   , Pred
-  , SymNat
   , SymInteger
   , SymReal
   , SymFloat
@@ -101,6 +103,28 @@ module What4.Interface
   , SymStruct
   , SymBV
   , SymArray
+
+    -- * Natural numbers
+  , SymNat
+  , asNat
+  , natLit
+  , natAdd
+  , natSub
+  , natMul
+  , natDiv
+  , natMod
+  , natIte
+  , natEq
+  , natLe
+  , natLt
+  , natToInteger
+  , bvToNat
+  , natToReal
+  , integerToNat
+  , realToNat
+  , freshBoundedNat
+  , freshNat
+  , printSymNat
 
     -- * Array utility types
   , IndexLit(..)
@@ -153,7 +177,6 @@ module What4.Interface
   , What4.Symbol.emptySymbol
   , What4.Symbol.userSymbol
   , What4.Symbol.safeSymbol
-  , NatValueRange(..)
   , ValueRange(..)
   , StringLiteral(..)
   , stringLiteralInfo
@@ -205,9 +228,6 @@ import           What4.Utils.StringLiteral
 
 -- | Symbolic boolean values, AKA predicates.
 type Pred sym = SymExpr sym BaseBoolType
-
--- | Symbolic natural numbers.
-type SymNat sym = SymExpr sym BaseNatType
 
 -- | Symbolic integers.
 type SymInteger sym = SymExpr sym BaseIntegerType
@@ -279,13 +299,6 @@ class HasAbsValue e => IsExpr e where
   -- | Evaluate if predicate is constant.
   asConstantPred :: e BaseBoolType -> Maybe Bool
   asConstantPred _ = Nothing
-
-  -- | Return nat if this is a constant natural number.
-  asNat :: e BaseNatType -> Maybe Natural
-  asNat _ = Nothing
-
-  -- | Return any bounding information we have about the term
-  natBounds :: e BaseNatType -> NatValueRange
 
   -- | Return integer if this is a constant integer.
   asInteger :: e BaseIntegerType -> Maybe Integer
@@ -390,6 +403,140 @@ data SolverEvent
  deriving (Show, Generic)
 
 ------------------------------------------------------------------------
+-- SymNat
+
+-- | Symbolic natural numbers.
+newtype SymNat sym =
+  SymNat
+  { -- Internal Invariant: the value in a SymNat is always nonnegative
+    _symNat :: SymExpr sym BaseIntegerType
+  }
+
+-- | Return nat if this is a constant natural number.
+asNat :: IsExpr (SymExpr sym) => SymNat sym -> Maybe Natural
+asNat (SymNat x) = fromInteger . max 0 <$> asInteger x
+
+-- | A natural number literal.
+natLit :: IsExprBuilder sym => sym -> Natural -> IO (SymNat sym)
+-- @Natural@ input is necessarily nonnegative
+natLit sym x = SymNat <$> intLit sym (toInteger x)
+
+-- | Add two natural numbers.
+natAdd :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+-- Integer addition preserves nonnegative values
+natAdd sym (SymNat x) (SymNat y) = SymNat <$> intAdd sym x y
+
+-- | Subtract one number from another.
+--
+-- The result is 0 if the subtraction would otherwise be negative.
+natSub :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+natSub sym (SymNat x) (SymNat y) =
+  do z <- intSub sym x y
+     SymNat <$> (intMax sym z =<< intLit sym 0)
+
+-- | Multiply one number by another.
+natMul :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+-- Integer multiplication preserves nonnegative values
+natMul sym (SymNat x) (SymNat y) = SymNat <$> intMul sym x y
+
+-- | @'natDiv' sym x y@ performs division on naturals.
+--
+-- The result is undefined if @y@ equals @0@.
+--
+-- 'natDiv' and 'natMod' satisfy the property that given
+--
+-- @
+--   d <- natDiv sym x y
+--   m <- natMod sym x y
+-- @
+--
+--  and @y > 0@, we have that @y * d + m = x@ and @m < y@.
+natDiv :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+-- Integer division preserves nonnegative values.
+natDiv sym (SymNat x) (SymNat y) = SymNat <$> intDiv sym x y
+
+-- | @'natMod' sym x y@ returns @x@ mod @y@.
+--
+-- See 'natDiv' for a description of the properties the return
+-- value is expected to satisfy.
+natMod :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+-- Integer modulus preserves nonnegative values.
+natMod sym (SymNat x) (SymNat y) = SymNat <$> intMod sym x y
+
+-- | If-then-else applied to natural numbers.
+natIte :: IsExprBuilder sym => sym -> Pred sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
+-- ITE preserves nonnegative values.
+natIte sym p (SymNat x) (SymNat y) = SymNat <$> intIte sym p x y
+
+-- | Equality predicate for natural numbers.
+natEq :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
+natEq sym (SymNat x) (SymNat y) = intEq sym x y
+
+-- | @'natLe' sym x y@ returns @true@ if @x <= y@.
+natLe :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
+natLe sym (SymNat x) (SymNat y) = intLe sym x y
+
+-- | @'natLt' sym x y@ returns @true@ if @x < y@.
+natLt :: IsExprBuilder sym => sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
+natLt sym x y = notPred sym =<< natLe sym y x
+
+-- | Convert a natural number to an integer.
+natToInteger :: IsExprBuilder sym => sym -> SymNat sym -> IO (SymInteger sym)
+natToInteger _sym (SymNat x) = pure x
+
+-- | Convert the unsigned value of a bitvector to a natural.
+bvToNat :: (IsExprBuilder sym, 1 <= w) => sym -> SymBV sym w -> IO (SymNat sym)
+-- The unsigned value of a bitvector is always nonnegative
+bvToNat sym x = SymNat <$> bvToInteger sym x
+
+-- | Convert a natural number to a real number.
+natToReal :: IsExprBuilder sym => sym -> SymNat sym -> IO (SymReal sym)
+natToReal sym = natToInteger sym >=> integerToReal sym
+
+-- | Convert an integer to a natural number.
+--
+-- For negative integers, the result is clamped to 0.
+integerToNat :: IsExprBuilder sym => sym -> SymInteger sym -> IO (SymNat sym)
+integerToNat sym x = SymNat <$> (intMax sym x =<< intLit sym 0)
+
+-- | Convert a real number to a natural number.
+--
+-- The result is undefined if the given real number does not represent a natural number.
+realToNat :: IsExprBuilder sym => sym -> SymReal sym -> IO (SymNat sym)
+realToNat sym r = realToInteger sym r >>= integerToNat sym
+
+-- | Create a fresh natural number constant with optional lower and upper bounds.
+--   If provided, the bounds are inclusive.
+--   If inconsistent bounds are given, an InvalidRange exception will be thrown.
+freshBoundedNat ::
+  IsSymExprBuilder sym =>
+  sym ->
+  SolverSymbol ->
+  Maybe Natural {- ^ lower bound -} ->
+  Maybe Natural {- ^ upper bound -} ->
+  IO (SymNat sym)
+freshBoundedNat sym s lo hi = SymNat <$> (freshBoundedInt sym s lo' hi')
+ where
+   lo' = Just (maybe 0 toInteger lo)
+   hi' = toInteger <$> hi
+
+-- | Create a fresh natural number constant.
+freshNat :: IsSymExprBuilder sym => sym -> SolverSymbol -> IO (SymNat sym)
+freshNat sym s = freshBoundedNat sym s (Just 0) Nothing
+
+printSymNat :: IsExpr (SymExpr sym) => SymNat sym -> Doc ann
+printSymNat (SymNat x) = printSymExpr x
+
+instance TestEquality (SymExpr sym) => Eq (SymNat sym) where
+  SymNat x == SymNat y = isJust (testEquality x y)
+
+instance OrdF (SymExpr sym) => Ord (SymNat sym) where
+  compare (SymNat x) (SymNat y) = toOrdering (compareF x y)
+
+instance HashableF (SymExpr sym) => Hashable (SymNat sym) where
+  hashWithSalt s (SymNat x) = hashWithSaltF s x
+
+------------------------------------------------------------------------
 -- IsExprBuilder
 
 -- | This class allows the simulator to build symbolic expressions.
@@ -400,12 +547,12 @@ data SolverEvent
 -- Note: Some methods in this class represent operations that are
 -- partial functions on their domain (e.g., division by 0).
 -- Such functions will have documentation strings indicating that they
--- are undefined under some conditions.
---
--- The behavior of these functions is generally to throw an error
--- if it is concretely obvious that the function results in an undefined
--- value; but otherwise they will silently produce an unspecified value
--- of the expected type.
+-- are undefined under some conditions.  When partial functions are applied
+-- outside their defined domains, they will silently produce an unspecified
+-- value of the expected type.  The unspecified value returned as the result
+-- of an undefined function is _not_ guaranteed to be equivalant to a free
+-- constant, and no guarantees are made about what properties such values
+-- will satisfy.
 class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
       , TestEquality (SymAnnotation sym), OrdF (SymAnnotation sym)
       , HashableF (SymAnnotation sym)
@@ -452,7 +599,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     case exprType x of
       BaseBoolRepr     -> eqPred sym x y
       BaseBVRepr{}     -> bvEq sym x y
-      BaseNatRepr      -> natEq sym x y
       BaseIntegerRepr  -> intEq sym x y
       BaseRealRepr     -> realEq sym x y
       BaseFloatRepr{}  -> floatEq sym x y
@@ -474,7 +620,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     case exprType x of
       BaseBoolRepr     -> itePred   sym c x y
       BaseBVRepr{}     -> bvIte     sym c x y
-      BaseNatRepr      -> natIte    sym c x y
       BaseIntegerRepr  -> intIte    sym c x y
       BaseRealRepr     -> realIte   sym c x y
       BaseFloatRepr{}  -> floatIte  sym c x y
@@ -536,56 +681,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   itePred :: sym -> Pred sym -> Pred sym -> Pred sym -> IO (Pred sym)
 
   ----------------------------------------------------------------------
-  -- Nat operations.
-
-  -- | A natural number literal.
-  natLit :: sym -> Natural -> IO (SymNat sym)
-
-  -- | Add two natural numbers.
-  natAdd :: sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | Subtract one number from another.
-  --
-  -- The result is undefined if this would result in a negative number.
-  natSub :: sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | Multiply one number by another.
-  natMul :: sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | @'natDiv' sym x y@ performs division on naturals.
-  --
-  -- The result is undefined if @y@ equals @0@.
-  --
-  -- 'natDiv' and 'natMod' satisfy the property that given
-  --
-  -- @
-  --   d <- natDiv sym x y
-  --   m <- natMod sym x y
-  -- @
-  --
-  --  and @y > 0@, we have that @y * d + m = x@ and @m < y@.
-  natDiv :: sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | @'natMod' sym x y@ returns @x@ mod @y@.
-  --
-  -- See 'natDiv' for a description of the properties the return
-  -- value is expected to satisfy.
-  natMod :: sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | If-then-else applied to natural numbers.
-  natIte :: sym -> Pred sym -> SymNat sym -> SymNat sym -> IO (SymNat sym)
-
-  -- | Equality predicate for natural numbers.
-  natEq :: sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
-
-  -- | @'natLe' sym x y@ returns @true@ if @x <= y@.
-  natLe :: sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
-
-  -- | @'natLt' sym x y@ returns @true@ if @x < y@.
-  natLt :: sym -> SymNat sym -> SymNat sym -> IO (Pred sym)
-  natLt sym x y = notPred sym =<< natLe sym y x
-
-  ----------------------------------------------------------------------
   -- Integer operations
 
   -- | Create an integer literal.
@@ -603,6 +698,18 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | Multiply one integer by another.
   intMul :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
+
+  -- | Return the minimum value of two integers.
+  intMin :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
+  intMin sym x y =
+    do p <- intLe sym x y
+       intIte sym p x y
+
+  -- | Return the maximum value of two integers.
+  intMax :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
+  intMax sym x y =
+    do p <- intLe sym x y
+       intIte sym p y x
 
   -- | If-then-else applied to integers.
   intIte :: sym -> Pred sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
@@ -1331,14 +1438,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   ----------------------------------------------------------------------
   -- Lossless (injective) conversions
 
-  -- | Convert a natural number to an integer.
-  natToInteger :: sym -> SymNat sym -> IO (SymInteger sym)
-
   -- | Convert an integer to a real number.
   integerToReal :: sym -> SymInteger sym -> IO (SymReal sym)
-
-  -- | Convert the unsigned value of a bitvector to a natural.
-  bvToNat :: (1 <= w) => sym -> SymBV sym w -> IO (SymNat sym)
 
   -- | Return the unsigned value of the given bitvector as an integer.
   bvToInteger :: (1 <= w) => sym -> SymBV sym w -> IO (SymInteger sym)
@@ -1351,10 +1452,6 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   ----------------------------------------------------------------------
   -- Lossless combinators
-
-  -- | Convert a natural number to a real number.
-  natToReal :: sym -> SymNat sym -> IO (SymReal sym)
-  natToReal sym = natToInteger sym >=> integerToReal sym
 
   -- | Convert an unsigned bitvector to a real number.
   uintToReal :: (1 <= w) => sym -> SymBV sym w -> IO (SymReal sym)
@@ -1408,21 +1505,10 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   ----------------------------------------------------------------------
   -- Lossy (non-injective) combinators
 
-  -- | Convert an integer to a natural number.
-  --
-  -- For negative integers, the result is undefined.
-  integerToNat :: sym -> SymInteger sym -> IO (SymNat sym)
-
   -- | Convert a real number to an integer.
   --
   -- The result is undefined if the given real number does not represent an integer.
   realToInteger :: sym -> SymReal sym -> IO (SymInteger sym)
-
-  -- | Convert a real number to a natural number.
-  --
-  -- The result is undefined if the given real number does not represent a natural number.
-  realToNat :: sym -> SymReal sym -> IO (SymNat sym)
-  realToNat sym r = realToInteger sym r >>= integerToNat sym
 
   -- | Convert a real number to an unsigned bitvector.
   --
@@ -1579,15 +1665,16 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Return the first position at which the second string can be found as a substring
   --   in the first string, starting from the given index.
   --   If no such position exists, return a negative value.
-  stringIndexOf :: sym -> SymString sym si -> SymString sym si -> SymNat sym -> IO (SymInteger sym)
+  stringIndexOf :: sym -> SymString sym si -> SymString sym si -> SymInteger sym -> IO (SymInteger sym)
 
   -- | Compute the length of a string
-  stringLength :: sym -> SymString sym si -> IO (SymNat sym)
+  stringLength :: sym -> SymString sym si -> IO (SymInteger sym)
 
   -- | @stringSubstring s off len@ extracts the substring of @s@ starting at index @off@ and
   --   having length @len@.  The result of this operation is undefined if @off@ and @len@
-  --   do not specify a valid substring of @s@; in particular, we must have @off+len <= length(s)@.
-  stringSubstring :: sym -> SymString sym si -> SymNat sym -> SymNat sym -> IO (SymString sym si)
+  --   do not specify a valid substring of @s@; in particular, we must have
+  --   0 <= off@, @0 <= len@ and @off+len <= length(s)@.
+  stringSubstring :: sym -> SymString sym si -> SymInteger sym -> SymInteger sym -> IO (SymString sym si)
 
   ----------------------------------------------------------------------
   -- Real operations
@@ -1628,6 +1715,18 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
 
   -- | If-then-else on real numbers.
   realIte :: sym -> Pred sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+
+  -- | Return the minimum of two real numbers.
+  realMin :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+  realMin sym x y =
+    do p <- realLe sym x y
+       realIte sym p x y
+
+  -- | Return the maxmimum of two real numbers.
+  realMax :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+  realMax sym x y =
+    do p <- realLe sym x y
+       realIte sym p y x
 
   -- | Negate a real number.
   realNeg :: sym -> SymReal sym -> IO (SymReal sym)
@@ -2392,7 +2491,7 @@ bvBitreverse sym v = do
 
 -- | Create a literal from an 'IndexLit'.
 indexLit :: IsExprBuilder sym => sym -> IndexLit idx -> IO (SymExpr sym idx)
-indexLit sym (NatIndexLit i)  = natLit sym i
+indexLit sym (IntIndexLit i)  = intLit sym i
 indexLit sym (BVIndexLit w v) = bvLit sym w v
 
 -- | A utility combinator for combining actions
@@ -2474,7 +2573,6 @@ instance Exception InvalidRange
 instance Show InvalidRange where
   show (InvalidRange bt mlo mhi) =
     case bt of
-      BaseNatRepr     -> unwords ["invalid natural range", show mlo, show mhi]
       BaseIntegerRepr -> unwords ["invalid integer range", show mlo, show mhi]
       BaseRealRepr    -> unwords ["invalid real range", show mlo, show mhi]
       BaseBVRepr w    -> unwords ["invalid bitvector range", show w ++ "-bit", show mlo, show mhi]
@@ -2517,16 +2615,6 @@ class ( IsExprBuilder sym
     Maybe Integer {- ^ lower bound -} ->
     Maybe Integer {- ^ upper bound -} ->
     IO (SymBV sym w)
-
-  -- | Create a fresh natural number constant with optional lower and upper bounds.
-  --   If provided, the bounds are inclusive.
-  --   If inconsistent bounds are given, an InvalidRange exception will be thrown.
-  freshBoundedNat ::
-    sym ->
-    SolverSymbol ->
-    Maybe Natural {- ^ lower bound -} ->
-    Maybe Natural {- ^ upper bound -} ->
-    IO (SymNat sym)
 
   -- | Create a fresh integer constant with optional lower and upper bounds.
   --   If provided, the bounds are inclusive.
@@ -2645,7 +2733,6 @@ baseIsConcrete :: forall e bt
 baseIsConcrete x =
   case exprType x of
     BaseBoolRepr    -> isJust $ asConstantPred x
-    BaseNatRepr     -> isJust $ asNat x
     BaseIntegerRepr -> isJust $ asInteger x
     BaseBVRepr _    -> isJust $ asBV x
     BaseRealRepr    -> isJust $ asRational x
@@ -2673,7 +2760,6 @@ baseDefaultValue :: forall sym bt
 baseDefaultValue sym bt =
   case bt of
     BaseBoolRepr    -> return $! falsePred sym
-    BaseNatRepr     -> natLit sym 0
     BaseIntegerRepr -> intLit sym 0
     BaseBVRepr w    -> bvLit sym w (BV.zero w)
     BaseRealRepr    -> return $! realZero sym
@@ -2847,7 +2933,6 @@ asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
     BaseBoolRepr    -> ConcreteBool <$> asConstantPred x
-    BaseNatRepr    -> ConcreteNat <$> asNat x
     BaseIntegerRepr -> ConcreteInteger <$> asInteger x
     BaseRealRepr    -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
@@ -2867,7 +2952,6 @@ concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym t
 concreteToSym sym = \case
    ConcreteBool True    -> return (truePred sym)
    ConcreteBool False   -> return (falsePred sym)
-   ConcreteNat x        -> natLit sym x
    ConcreteInteger x    -> intLit sym x
    ConcreteReal x       -> realLit sym x
    ConcreteString x     -> stringLit sym x

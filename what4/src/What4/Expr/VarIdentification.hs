@@ -162,7 +162,6 @@ addFeaturesForVarType tp =
   case tp of
     BaseBoolRepr     -> return ()
     BaseBVRepr _     -> addFeatures useBitvectors
-    BaseNatRepr      -> addFeatures useIntegerArithmetic
     BaseIntegerRepr  -> addFeatures useIntegerArithmetic
     BaseRealRepr     -> addFeatures useLinearArithmetic
     BaseComplexRepr  -> addFeatures useLinearArithmetic

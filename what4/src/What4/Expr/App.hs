@@ -189,7 +189,6 @@ mkExpr n l a v = AppExpr $ AppExprCtor { appExprId  = n
 
 
 type BoolExpr t = Expr t BaseBoolType
-type NatExpr  t = Expr t BaseNatType
 type FloatExpr t fpp = Expr t (BaseFloatType fpp)
 type BVExpr t n = Expr t (BaseBVType n)
 type IntegerExpr t = Expr t BaseIntegerType
@@ -207,11 +206,6 @@ iteSize e =
 
 instance IsExpr (Expr t) where
   asConstantPred = exprAbsValue
-
-  asNat (SemiRingLiteral SR.SemiRingNatRepr n _) = Just n
-  asNat _ = Nothing
-
-  natBounds x = exprAbsValue x
 
   asInteger (SemiRingLiteral SR.SemiRingIntegerRepr n _) = Just n
   asInteger _ = Nothing
@@ -245,10 +239,6 @@ instance IsExpr (Expr t) where
   signedBVBounds x = Just $ BVD.sbounds (bvWidth x) $ exprAbsValue x
 
   asAffineVar e = case exprType e of
-    BaseNatRepr
-      | Just (a, x, b) <- WSum.asAffineVar $
-          asWeightedSum SR.SemiRingNatRepr e ->
-        Just (ConcreteNat a, x, ConcreteNat b)
     BaseIntegerRepr
       | Just (a, x, b) <- WSum.asAffineVar $
           asWeightedSum SR.SemiRingIntegerRepr e ->
@@ -351,7 +341,6 @@ asNegAtom x                           = (x, Negative)
 exprAbsValue :: Expr t tp -> AbstractValue tp
 exprAbsValue (SemiRingLiteral sr x _) =
   case sr of
-    SR.SemiRingNatRepr  -> natSingleRange x
     SR.SemiRingIntegerRepr  -> singleRange x
     SR.SemiRingRealRepr -> ravSingle x
     SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
@@ -466,7 +455,6 @@ instance Hashable (Expr t tp) where
   hashWithSalt s (BoolExpr b _) = hashWithSalt (hashWithSalt s (0::Int)) b
   hashWithSalt s (SemiRingLiteral sr x _) =
     case sr of
-      SR.SemiRingNatRepr     -> hashWithSalt (hashWithSalt s (1::Int)) x
       SR.SemiRingIntegerRepr -> hashWithSalt (hashWithSalt s (2::Int)) x
       SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
       SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
@@ -792,8 +780,6 @@ ppExpr' e0 o = do
       getBindings :: Expr t u -> ST s (PPExpr ann)
       getBindings (SemiRingLiteral sr x l) =
         case sr of
-          SR.SemiRingNatRepr ->
-            return $ stringPPExpr (show x)
           SR.SemiRingIntegerRepr ->
             return $ stringPPExpr (show x)
           SR.SemiRingRealRepr -> cacheResult (RatPPIndex x) l app
@@ -1118,10 +1104,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
 
   RealIsInteger :: !(e BaseRealType) -> App e BaseBoolType
 
-  -- This does natural number division rounded to zero.
-  NatDiv :: !(e BaseNatType)  -> !(e BaseNatType) -> App e BaseNatType
-  NatMod :: !(e BaseNatType)  -> !(e BaseNatType) -> App e BaseNatType
-
   IntDiv :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
   IntMod :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
   IntAbs :: !(e BaseIntegerType)  -> App e BaseIntegerType
@@ -1433,11 +1415,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   ------------------------------------------------------------------------
   -- Conversions.
 
-  NatToInteger  :: !(e BaseNatType)  -> App e BaseIntegerType
-  -- Converts non-negative integer to nat.
-  -- Not defined on negative values.
-  IntegerToNat :: !(e BaseIntegerType) -> App e BaseNatType
-
   IntegerToReal :: !(e BaseIntegerType) -> App e BaseRealType
 
   -- Convert a real value to an integer
@@ -1445,7 +1422,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   -- Not defined on non-integral reals.
   RealToInteger :: !(e BaseRealType) -> App e BaseIntegerType
 
-  BVToNat       :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseNatType
   BVToInteger   :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
   SBVToInteger  :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
 
@@ -1481,13 +1457,13 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
 
   StringIndexOf :: !(e (BaseStringType si))
                 -> !(e (BaseStringType si))
-                -> !(e BaseNatType)
+                -> !(e BaseIntegerType)
                 -> App e BaseIntegerType
 
   StringSubstring :: !(StringInfoRepr si)
                   -> !(e (BaseStringType si))
-                  -> !(e BaseNatType)
-                  -> !(e BaseNatType)
+                  -> !(e BaseIntegerType)
+                  -> !(e BaseIntegerType)
                   -> App e (BaseStringType si)
 
   StringAppend :: !(StringInfoRepr si)
@@ -1495,7 +1471,7 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
                -> App e (BaseStringType si)
 
   StringLength :: !(e (BaseStringType si))
-               -> App e BaseNatType
+               -> App e BaseIntegerType
 
   ------------------------------------------------------------------------
   -- Structs
@@ -1537,9 +1513,6 @@ appType a =
     BVTestBit{} -> knownRepr
     BVSlt{}   -> knownRepr
     BVUlt{}   -> knownRepr
-
-    NatDiv{} -> knownRepr
-    NatMod{} -> knownRepr
 
     IntDiv{} -> knownRepr
     IntMod{} -> knownRepr
@@ -1623,13 +1596,10 @@ appType a =
     SelectArray b _ _       -> b
     UpdateArray b itp _ _ _     -> BaseArrayRepr itp b
 
-    NatToInteger{} -> knownRepr
     IntegerToReal{} -> knownRepr
-    BVToNat{} -> knownRepr
     BVToInteger{} -> knownRepr
     SBVToInteger{} -> knownRepr
 
-    IntegerToNat{} -> knownRepr
     IntegerToBV _ w -> BaseBVRepr w
 
     RealToInteger{} -> knownRepr
@@ -1695,10 +1665,6 @@ abstractEval f a0 = do
 
     ------------------------------------------------------------------------
     -- Arithmetic operations
-
-    NatDiv x y -> natRangeDiv (f x) (f y)
-    NatMod x y -> natRangeMod (f x) (f y)
-
     IntAbs x -> intAbsRange (f x)
     IntDiv x y -> intDivRange (f x) (f y)
     IntMod x y -> intModRange (f x) (f y)
@@ -1784,10 +1750,7 @@ abstractEval f a0 = do
     SelectArray _bRepr a _i -> f a  -- FIXME?
     UpdateArray bRepr _ a _i v -> withAbstractable bRepr $ avJoin bRepr (f a) (f v)
 
-    NatToInteger x -> natRangeToRange (f x)
     IntegerToReal x -> RAV (mapRange toRational (f x)) (Just True)
-    BVToNat x -> natRange (fromInteger lx) (Inclusive (fromInteger ux))
-      where (lx, ux) = BVD.ubounds (f x)
     BVToInteger x -> valueRange (Inclusive lx) (Inclusive ux)
       where (lx, ux) = BVD.ubounds (f x)
     SBVToInteger x -> valueRange (Inclusive lx) (Inclusive ux)
@@ -1796,7 +1759,6 @@ abstractEval f a0 = do
     RoundEvenReal x -> mapRange round (ravRange (f x))
     FloorReal x -> mapRange floor (ravRange (f x))
     CeilReal x  -> mapRange ceiling (ravRange (f x))
-    IntegerToNat x -> intRangeToNatRange (f x)
     IntegerToBV x w -> BVD.range w l u
       where rng = f x
             l = case rangeLowBound rng of
@@ -1849,8 +1811,6 @@ reduceApp sym unary a0 = do
 
     SemiRingSum s ->
       case WSum.sumRepr s of
-        SR.SemiRingNatRepr ->
-          WSum.evalM (natAdd sym) (\c x -> natMul sym x =<< natLit sym c) (natLit sym) s
         SR.SemiRingIntegerRepr ->
           WSum.evalM (intAdd sym) (\c x -> intMul sym x =<< intLit sym c) (intLit sym) s
         SR.SemiRingRealRepr ->
@@ -1862,8 +1822,6 @@ reduceApp sym unary a0 = do
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
-        SR.SemiRingNatRepr ->
-          maybe (natLit sym 1) return =<< WSum.prodEvalM (natMul sym) return pd
         SR.SemiRingIntegerRepr ->
           maybe (intLit sym 1) return =<< WSum.prodEvalM (intMul sym) return pd
         SR.SemiRingRealRepr ->
@@ -1875,12 +1833,8 @@ reduceApp sym unary a0 = do
 
     SemiRingLe SR.OrderedSemiRingRealRepr x y -> realLe sym x y
     SemiRingLe SR.OrderedSemiRingIntegerRepr x y -> intLe sym x y
-    SemiRingLe SR.OrderedSemiRingNatRepr x y -> natLe sym x y
 
     RealIsInteger x -> isInteger sym x
-
-    NatDiv x y -> natDiv sym x y
-    NatMod x y -> natMod sym x y
 
     IntDiv x y -> intDiv sym x y
     IntMod x y -> intMod sym x y
@@ -1962,12 +1916,9 @@ reduceApp sym unary a0 = do
     SelectArray _ a i     -> arrayLookup sym a i
     UpdateArray _ _ a i v -> arrayUpdate sym a i v
 
-    NatToInteger x -> natToInteger sym x
-    IntegerToNat x -> integerToNat sym x
     IntegerToReal x -> integerToReal sym x
     RealToInteger x -> realToInteger sym x
 
-    BVToNat x       -> bvToNat sym x
     BVToInteger x   -> bvToInteger sym x
     SBVToInteger x  -> sbvToInteger sym x
     IntegerToBV x w -> integerToBV sym x w
@@ -2022,7 +1973,6 @@ instance ShowF (ExprBoundVar t)
 ppVarTypeCode :: BaseTypeRepr tp -> String
 ppVarTypeCode tp =
   case tp of
-    BaseNatRepr     -> "n"
     BaseBoolRepr    -> "b"
     BaseBVRepr _    -> "bv"
     BaseIntegerRepr -> "i"
@@ -2113,9 +2063,6 @@ ppApp' a0 = do
     BVUlt x y -> ppSExpr "bvUlt" [x, y]
     BVSlt x y -> ppSExpr "bvSlt" [x, y]
 
-    NatDiv x y -> ppSExpr "natDiv" [x, y]
-    NatMod x y -> ppSExpr "natMod" [x, y]
-
     IntAbs x   -> prettyApp "intAbs" [exprPrettyArg x]
     IntDiv x y -> prettyApp "intDiv" [exprPrettyArg x, exprPrettyArg y]
     IntMod x y -> prettyApp "intMod" [exprPrettyArg x, exprPrettyArg y]
@@ -2125,7 +2072,6 @@ ppApp' a0 = do
       case sr of
         SR.OrderedSemiRingRealRepr    -> ppSExpr "realLe" [x, y]
         SR.OrderedSemiRingIntegerRepr -> ppSExpr "intLe" [x, y]
-        SR.OrderedSemiRingNatRepr     -> ppSExpr "natLe" [x, y]
 
     SemiRingSum s ->
       case WSum.sumRepr s of
@@ -2144,12 +2090,6 @@ ppApp' a0 = do
                 ppConstant c = [ stringPrettyArg (show c) ]
                 ppEntry 1 e  = [ exprPrettyArg e ]
                 ppEntry sm e = [ PrettyFunc "intMul" [stringPrettyArg (show sm), exprPrettyArg e ] ]
-
-        SR.SemiRingNatRepr -> prettyApp "natSum" (WSum.eval (++) ppEntry ppConstant s)
-          where ppConstant 0 = []
-                ppConstant c = [ stringPrettyArg (show c) ]
-                ppEntry 1 e  = [ exprPrettyArg e ]
-                ppEntry sm e = [ PrettyFunc "natMul" [stringPrettyArg (show sm), exprPrettyArg e ] ]
 
         SR.SemiRingBVRepr SR.BVArithRepr w -> prettyApp "bvSum" (WSum.eval (++) ppEntry ppConstant s)
           where ppConstant (BV.BV 0) = []
@@ -2173,8 +2113,6 @@ ppApp' a0 = do
           prettyApp "realProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
         SR.SemiRingIntegerRepr ->
           prettyApp "intProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
-        SR.SemiRingNatRepr ->
-          prettyApp "natProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
         SR.SemiRingBVRepr SR.BVArithRepr _w ->
           prettyApp "bvProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
         SR.SemiRingBVRepr SR.BVBitsRepr _w ->
@@ -2272,9 +2210,7 @@ ppApp' a0 = do
     ------------------------------------------------------------------------
     -- Conversions.
 
-    NatToInteger x  -> ppSExpr "natToInteger" [x]
     IntegerToReal x -> ppSExpr "integerToReal" [x]
-    BVToNat x       -> ppSExpr "bvToNat" [x]
     BVToInteger  x  -> ppSExpr "bvToInteger" [x]
     SBVToInteger x  -> ppSExpr "sbvToInteger" [x]
 
@@ -2283,7 +2219,6 @@ ppApp' a0 = do
     FloorReal x -> ppSExpr "floor" [x]
     CeilReal  x -> ppSExpr "ceil"  [x]
 
-    IntegerToNat x   -> ppSExpr "integerToNat" [x]
     IntegerToBV x w -> prettyApp "integerToBV" [exprPrettyArg x, showPrettyArg w]
 
     RealToInteger x   -> ppSExpr "realToInteger" [x]
@@ -2445,8 +2380,6 @@ isNonLinearApp app = case app of
     | SR.SemiRingBVRepr SR.BVBitsRepr _ <- WSum.prodRepr pd -> False
     | otherwise -> True
 
-  NatDiv {} -> True
-  NatMod {} -> True
   IntDiv {} -> True
   IntMod {} -> True
   IntDivisible {} -> True

@@ -44,27 +44,28 @@ withTestSolver f = withIONonceGenerator $ \nonce_gen ->
 
 -- | Test natDiv and natMod properties described at their declaration
 -- site in What4.Interface
-testNatDivModProps :: TestTree
-testNatDivModProps =
-  testProperty "d <- natDiv sym x y; m <- natMod sym x y ===> y * d + m == x and m < y" $
+testIntDivModProps :: TestTree
+testIntDivModProps =
+  testProperty "d <- intDiv sym x y; m <- intMod sym x y ===> y * d + m == x and 0 <= m < y" $
   property $ do
-    xn <- forAll $ Gen.integral $ Range.linear 0 1000
-    yn <- forAll $ Gen.integral $ Range.linear 1 2000  -- no zero; avoid div-by-zero
+    xn <- forAll $ Gen.integral $ Range.linear (negate 1000) (1000 :: Integer)
+    -- no zero; avoid div-by-zero
+    yn <- forAll $ (Gen.choice [ Gen.integral $ Range.linear 1 (2000 :: Integer)
+                               , Gen.integral $ Range.linear (-2000) (-1)])
     dm <- liftIO $ withTestSolver $ \sym -> do
-      x <- natLit sym xn
-      y <- natLit sym yn
-      d <- natDiv sym x y
-      m <- natMod sym x y
+      x <- intLit sym xn
+      y <- intLit sym yn
+      d <- intDiv sym x y
+      m <- intMod sym x y
       return (asConcrete d, asConcrete m)
     case dm of
       (Just dnc, Just mnc) -> do
-        let dn = fromConcreteNat dnc
-        let mn = fromConcreteNat mnc
+        let dn = fromConcreteInteger dnc
+        let mn = fromConcreteInteger mnc
         annotateShow (xn, yn, dn, mn)
         yn * dn + mn === xn
-        diff mn (<) yn
+        diff mn (\m y -> 0 <= m && m < abs y) yn
       _ -> failure
-
 
 testInt :: TestTree
 testInt = testGroup "int operators"
@@ -235,12 +236,6 @@ testInjectiveConversions = testGroup "injective conversion"
       r_lit <- realLit sym (fromIntegral i)
       rti <- realToInteger sym r_lit
       Just i @=? (fromConcreteInteger <$> asConcrete rti)
-  , testProperty "bvToNat" $ property $ do
-    i <- forAll $ Gen.integral $ Range.linear 0 255
-    liftIO $ withTestSolver $ \sym -> do
-      b_lit <- bvLit sym knownRepr (BV.mkBV (knownNat @8) (fromIntegral i))
-      nat <- bvToNat sym b_lit
-      Just i @=? (fromConcreteNat <$> asConcrete nat)
   , testProperty "bvToInteger" $ property $ do
     i <- forAll $ Gen.integral $ Range.linear 0 255
     liftIO $ withTestSolver $ \sym -> do
@@ -325,7 +320,7 @@ testIntegerToBV = testGroup "integerToBV"
 main :: IO ()
 main = defaultMain $ testGroup "What4 Expressions"
   [
-    testNatDivModProps
+    testIntDivModProps
   , testBvIsNeg
   , testInt
   , testProperty "stringEmpty" $ property $ do

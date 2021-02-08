@@ -86,13 +86,13 @@ pdesc s = "(" <> desc s <> ")"
 -- trying to return 'x' or 'y', which is a 'SymNat sym' instead.
 
 data TestExpr = TE_Bool PredTestExpr
-              | TE_Nat NatTestExpr
-              | TE_BV8 BV8TestExpr
+              | TE_Int  IntTestExpr
+              | TE_BV8  BV8TestExpr
               | TE_BV16 BV16TestExpr
               | TE_BV32 BV32TestExpr
               | TE_BV64 BV64TestExpr
 
-isBoolTestExpr, isNatTestExpr,
+isBoolTestExpr, isIntTestExpr,
   isBV8TestExpr, isBV16TestExpr, isBV32TestExpr, isBV64TestExpr
   :: TestExpr -> Bool
 
@@ -100,8 +100,8 @@ isBoolTestExpr = \case
   TE_Bool _ -> True
   _ -> False
 
-isNatTestExpr = \case
-  TE_Nat _ -> True
+isIntTestExpr = \case
+  TE_Int _ -> True
   _ -> False
 
 isBV8TestExpr = \case
@@ -142,7 +142,7 @@ genBoolCond = Gen.recursive Gen.choice
   ]
   $
   let boolTerm = IGen.filterT isBoolTestExpr genBoolCond
-      natTerm = IGen.filterT isNatTestExpr genNatTestExpr
+      intTerm = IGen.filterT isIntTestExpr genIntTestExpr
       bv8Term = IGen.filterT isBV8TestExpr genBV8TestExpr
       bv16Term = IGen.filterT isBV16TestExpr genBV16TestExpr
       bv32Term = IGen.filterT isBV32TestExpr genBV32TestExpr
@@ -151,7 +151,7 @@ genBoolCond = Gen.recursive Gen.choice
                          (\(TE_Bool x) (TE_Bool y) -> TE_Bool $ gen x y)
       subBoolTerm3 gen = Gen.subterm3 boolTerm boolTerm boolTerm
                          (\(TE_Bool x) (TE_Bool y) (TE_Bool z) -> TE_Bool $ gen x y z)
-      subNatTerms2 gen = Gen.subterm2 natTerm natTerm (\(TE_Nat x) (TE_Nat y) -> TE_Bool $ gen x y)
+      subIntTerms2 gen = Gen.subterm2 intTerm intTerm (\(TE_Int x) (TE_Int y) -> TE_Bool $ gen x y)
       -- subBV16Terms2 gen = Gen.subterm2 bv16Term bv16Term (\(TE_BV16 x) (TE_BV16 y) -> TE_Bool $ gen x y)
       -- subBV8Terms2 gen = Gen.subterm2 bv8Term bv8Term (\(TE_BV8 x) (TE_BV8 y) -> TE_Bool $ gen x y)
   in
@@ -207,34 +207,34 @@ genBoolCond = Gen.recursive Gen.choice
                    itePred sym c' x' y'
        ))
 
-  , subNatTerms2
+  , subIntTerms2
     (\x y ->
-        PredTest ("natEq " <> pdesc x <> " " <> pdesc y)
+        PredTest ("intEq " <> pdesc x <> " " <> pdesc y)
         (testval x == testval y)
-        (\sym -> do x' <- natexpr x sym
-                    y' <- natexpr y sym
-                    natEq sym x' y'
+        (\sym -> do x' <- intexpr x sym
+                    y' <- intexpr y sym
+                    intEq sym x' y'
         ))
 
-  , subNatTerms2
+  , subIntTerms2
     (\x y ->
-        PredTest (pdesc x <> " nat.<= " <> pdesc y)
+        PredTest (pdesc x <> " int.<= " <> pdesc y)
         (testval x <= testval y)
-        (\sym -> do x' <- natexpr x sym
-                    y' <- natexpr y sym
-                    natLe sym x' y'
+        (\sym -> do x' <- intexpr x sym
+                    y' <- intexpr y sym
+                    intLe sym x' y'
         ))
 
-  , subNatTerms2
+  , subIntTerms2
     (\x y ->
-        PredTest (pdesc x <> " nat.< " <> pdesc y)
+        PredTest (pdesc x <> " int.< " <> pdesc y)
         (testval x < testval y)
-        (\sym -> do x' <- natexpr x sym
-                    y' <- natexpr y sym
-                    natLt sym x' y'
+        (\sym -> do x' <- intexpr x sym
+                    y' <- intexpr y sym
+                    intLt sym x' y'
         ))
 
-  , Gen.subterm2 natTerm bv16Term
+  , Gen.subterm2 intTerm bv16Term
     -- Note [natTerm]: natTerm is used as the index into
     -- bv16term. This is somewhat inefficient, but saves the
     -- administrative overhead of another TestExpr member.  However,
@@ -242,8 +242,8 @@ genBoolCond = Gen.recursive Gen.choice
     -- result if necessary.  Also note that the testBitBV uses an
     -- actual Natural, not a What4 Nat, so the natval is used and the
     -- natexpr is ignored.
-    (\(TE_Nat i) (TE_BV16 v) -> TE_Bool $  -- KWQ: bvsized
-      let ival = testval i `mod` 16 in
+    (\(TE_Int i) (TE_BV16 v) -> TE_Bool $  -- KWQ: bvsized
+      let ival = fromInteger (testval i `mod` 16) in
       PredTest
       (pdesc v <> "[" <> show ival <> "]")
       (testBit (testval v) (fromEnum ival))
@@ -386,89 +386,82 @@ bvPredExprs bvTerm projTE expr width =
 
 ----------------------------------------------------------------------
 
-data NatTestExpr = NatTestExpr { natdesc :: String
-                               , natval  :: Natural
-                               , natexpr :: forall sym. (IsExprBuilder sym) => sym -> IO (SymNat sym)
+data IntTestExpr = IntTestExpr { intdesc :: String
+                               , intval  :: Integer
+                               , intexpr :: forall sym. (IsExprBuilder sym) => sym -> IO (SymInteger sym)
                                }
 
-instance IsTestExpr NatTestExpr where
-  type HaskellTy NatTestExpr = Natural
-  desc = natdesc
-  testval = natval
+instance IsTestExpr IntTestExpr where
+  type HaskellTy IntTestExpr = Integer
+  desc = intdesc
+  testval = intval
 
-genNatTestExpr :: Monad m => GenT m TestExpr
-genNatTestExpr = Gen.recursive Gen.choice
+genIntTestExpr :: Monad m => GenT m TestExpr
+genIntTestExpr = Gen.recursive Gen.choice
   [
-    do n <- Gen.integral $ Range.constant 0 6  -- keep the range small, or will never see dup values for natEq
-       return $ TE_Nat $ NatTestExpr (show n) n $ \sym -> natLit sym n
+    do n <- Gen.integral $ Range.constant (-3) 3  -- keep the range small, or will never see dup values for natEq
+       return $ TE_Int $ IntTestExpr (show n) n $ \sym -> intLit sym n
   ]
   $
-  let natTerm = IGen.filterT isNatTestExpr genNatTestExpr
-      natTermNZ = IGen.filterT isNatNZTestExpr genNatTestExpr
-      isNatNZTestExpr = \case
-        TE_Nat n -> testval n > 0
+  let intTerm = IGen.filterT isIntTestExpr genIntTestExpr
+      intTermNZ = IGen.filterT isIntNZTestExpr genIntTestExpr
+      isIntNZTestExpr = \case
+        TE_Int n -> testval n /= 0
         _ -> False
-      subNatTerms2 gen = Gen.subterm2 natTerm natTerm (\(TE_Nat x) (TE_Nat y) -> TE_Nat $ gen x y)
-      subNatTerms2nz gen = Gen.subterm2 natTerm natTermNZ
-                           (\(TE_Nat x) (TE_Nat y) -> TE_Nat $ gen x y)
+      subIntTerms2 gen = Gen.subterm2 intTerm intTerm (\(TE_Int x) (TE_Int y) -> TE_Int $ gen x y)
+      subIntTerms2nz gen = Gen.subterm2 intTerm intTermNZ
+                           (\(TE_Int x) (TE_Int y) -> TE_Int $ gen x y)
   in
   [
-    subNatTerms2 (\x y -> NatTestExpr (pdesc x <> " nat.+ " <> pdesc y)
+    subIntTerms2 (\x y -> IntTestExpr (pdesc x <> " int.+ " <> pdesc y)
                           (testval x + testval y)
-                          (\sym -> do x' <- natexpr x sym
-                                      y' <- natexpr y sym
-                                      natAdd sym x' y'
+                          (\sym -> do x' <- intexpr x sym
+                                      y' <- intexpr y sym
+                                      intAdd sym x' y'
                           ))
-  , subNatTerms2
-    (\x y ->
-       -- avoid creating an invalid negative Nat
-        if testval x > testval y
-        then NatTestExpr (pdesc x <> " nat.- " <> pdesc y)
+  , subIntTerms2
+    (\x y -> IntTestExpr (pdesc x <> " int.- " <> pdesc y)
              (testval x - testval y)
-             (\sym -> do x' <- natexpr x sym
-                         y' <- natexpr y sym
-                         natSub sym x' y'
-             )
-        else NatTestExpr (pdesc y <> " nat.- " <> pdesc x)
-             (testval y - testval x)
-             (\sym -> do x' <- natexpr x sym
-                         y' <- natexpr y sym
-                         natSub sym y' x'
+             (\sym -> do x' <- intexpr x sym
+                         y' <- intexpr y sym
+                         intSub sym x' y'
              ))
-  , subNatTerms2
-    (\x y -> NatTestExpr (pdesc x <> " nat.* " <> pdesc y)
+  , subIntTerms2
+    (\x y -> IntTestExpr (pdesc x <> " int.* " <> pdesc y)
              (testval x * testval y)
-             (\sym -> do x' <- natexpr x sym
-                         y' <- natexpr y sym
-                         natMul sym x' y'
+             (\sym -> do x' <- intexpr x sym
+                         y' <- intexpr y sym
+                         intMul sym x' y'
              ))
-  , subNatTerms2nz  -- nz on 2nd to avoid divide-by-zero
-    (\x y -> NatTestExpr (pdesc x <> " nat./ " <> pdesc y)
-             (testval x `div` testval y)
-             (\sym -> do x' <- natexpr x sym
-                         y' <- natexpr y sym
-                         natDiv sym x' y'
+  , subIntTerms2nz  -- nz on 2nd to avoid divide-by-zero
+    (\x y -> IntTestExpr (pdesc x <> " int./ " <> pdesc y)
+             (if testval y >= 0 then
+                 testval x `div` testval y
+              else
+                 negate (testval x `div` negate (testval y)))
+             (\sym -> do x' <- intexpr x sym
+                         y' <- intexpr y sym
+                         intDiv sym x' y'
              ))
-  , subNatTerms2nz  -- nz on 2nd to avoid divide-by-zero
-    (\x y -> NatTestExpr (pdesc x <> " nat.mod " <> pdesc y)
-             (testval x `mod` testval y)
-             (\sym -> do x' <- natexpr x sym
-                         y' <- natexpr y sym
-                         natMod sym x' y'
+  , subIntTerms2nz  -- nz on 2nd to avoid divide-by-zero
+    (\x y -> IntTestExpr (pdesc x <> " int.mod " <> pdesc y)
+             (testval x `mod` abs (testval y))
+             (\sym -> do x' <- intexpr x sym
+                         y' <- intexpr y sym
+                         intMod sym x' y'
              ))
   , Gen.subterm3
     (IGen.filterT isBoolTestExpr genBoolCond)
-    natTerm natTerm
-    (\(TE_Bool c) (TE_Nat x) (TE_Nat y) -> TE_Nat $ NatTestExpr
-      (pdesc c <> " nat.? " <> pdesc x <> " : " <> pdesc y)
+    intTerm intTerm
+    (\(TE_Bool c) (TE_Int x) (TE_Int y) -> TE_Int $ IntTestExpr
+      (pdesc c <> " int.? " <> pdesc x <> " : " <> pdesc y)
       (if testval c then testval x else testval y)
       (\sym -> do c' <- predexp c sym
-                  x' <- natexpr x sym
-                  y' <- natexpr y sym
-                  natIte sym c' x' y'
+                  x' <- intexpr x sym
+                  y' <- intexpr y sym
+                  intIte sym c' x' y'
       ))
   ]
-
 
 ----------------------------------------------------------------------
 
@@ -894,17 +887,17 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
                          y' <- expr y sym
                          bvXorBits sym x' y'))
 
-  , let natTerm = IGen.filterT isNatTestExpr genNatTestExpr
+  , let intTerm = IGen.filterT isIntTestExpr genIntTestExpr
         boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in
-      Gen.subterm3 bvTerm natTerm boolTerm $
+      Gen.subterm3 bvTerm intTerm boolTerm $
       -- see Note [natTerm]
-      \bvt (TE_Nat n) (TE_Bool b) ->
+      \bvt (TE_Int n) (TE_Bool b) ->
         let bv = projTE bvt
-            nval = testval n `mod` width
-            ival = fromIntegral nval
+            nval = fromInteger (testval n `mod` toInteger width)
+            ival = fromIntegral nval :: Int
         in conTE $ teSubCon
-           (pdesc bv <> "[" <> show ival <> "]" <> pfx ":=" <> pdesc b)
+           (pdesc bv <> "[" <> show nval <> "]" <> pfx ":=" <> pdesc b)
            (if testval b
             then setBit (testval bv) ival
             else clearBit (testval bv) ival)

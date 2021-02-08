@@ -6,7 +6,6 @@ module What4.IndexLit where
 
 import qualified Data.BitVector.Sized as BV
 import Data.Parameterized.Classes
-import Numeric.Natural
 
 import What4.BaseTypes
 
@@ -16,14 +15,14 @@ import What4.BaseTypes
 -- | This represents a concrete index value, and is used for creating
 -- arrays.
 data IndexLit idx where
-  NatIndexLit :: !Natural -> IndexLit BaseNatType
+  IntIndexLit :: !Integer -> IndexLit BaseIntegerType
   BVIndexLit :: (1 <= w) => !(NatRepr w) -> !(BV.BV w) ->  IndexLit (BaseBVType w)
 
 instance Eq (IndexLit tp) where
   x == y = isJust (testEquality x y)
 
 instance TestEquality IndexLit where
-  testEquality (NatIndexLit x) (NatIndexLit y) =
+  testEquality (IntIndexLit x) (IntIndexLit y) =
     if x == y then
      Just Refl
      else
@@ -35,9 +34,9 @@ instance TestEquality IndexLit where
     Nothing
 
 instance OrdF IndexLit where
-  compareF (NatIndexLit x) (NatIndexLit y) = fromOrdering (compare x y)
-  compareF NatIndexLit{} _ = LTF
-  compareF _ NatIndexLit{} = GTF
+  compareF (IntIndexLit x) (IntIndexLit y) = fromOrdering (compare x y)
+  compareF IntIndexLit{} _ = LTF
+  compareF _ IntIndexLit{} = GTF
   compareF (BVIndexLit wx x) (BVIndexLit wy y) =
     case compareF wx wy of
       LTF -> LTF
@@ -50,7 +49,7 @@ instance Hashable (IndexLit tp) where
 
 
 hashIndexLit :: Int -> IndexLit idx -> Int
-s `hashIndexLit` (NatIndexLit i) =
+s `hashIndexLit` (IntIndexLit i) =
     s `hashWithSalt` (0::Int)
       `hashWithSalt` i
 s `hashIndexLit` (BVIndexLit w i) =
@@ -62,7 +61,7 @@ instance HashableF IndexLit where
   hashWithSaltF = hashIndexLit
 
 instance Show (IndexLit tp) where
-  showsPrec p (NatIndexLit i) s = showsPrec p i s
+  showsPrec p (IntIndexLit i) s = showsPrec p i s
   showsPrec p (BVIndexLit w i) s = showsPrec p i ("::[" ++ shows w (']' : s))
 
 instance ShowF IndexLit
