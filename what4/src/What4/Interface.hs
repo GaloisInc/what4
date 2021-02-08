@@ -1716,6 +1716,18 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | If-then-else on real numbers.
   realIte :: sym -> Pred sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
 
+  -- | Return the minimum of two real numbers.
+  realMin :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+  realMin sym x y =
+    do p <- realLe sym x y
+       realIte sym p x y
+
+  -- | Return the maxmimum of two real numbers.
+  realMax :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+  realMax sym x y =
+    do p <- realLe sym x y
+       realIte sym p y x
+
   -- | Negate a real number.
   realNeg :: sym -> SymReal sym -> IO (SymReal sym)
 
