@@ -1,15 +1,15 @@
 Name:          what4
-Version:       1.0.0.0.99
+Version:       1.1
 Author:        Galois Inc.
 Maintainer:    jhendrix@galois.com, rdockins@galois.com
-Copyright:     (c) Galois, Inc 2014-2020
+Copyright:     (c) Galois, Inc 2014-2021
 License:       BSD3
 License-file:  LICENSE
 Build-type:    Simple
 Cabal-version: 1.18
 Homepage:      https://github.com/GaloisInc/what4
 Bug-reports:   https://github.com/GaloisInc/what4/issues
-Tested-with:   GHC==8.6.5, GHC==8.8.3, GHC==8.10.1
+Tested-with:   GHC==8.6.5, GHC==8.8.4, GHC==8.10.3
 Category:      Formal Methods, Theorem Provers, Symbolic Computation, SMT
 Synopsis:      Solver-agnostic symbolic values support for issuing queries
 Description:
