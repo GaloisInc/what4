@@ -699,15 +699,13 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Multiply one integer by another.
   intMul :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
 
-  -- | Return the minimum value of two integers
-  --   TODO, make this primitive
+  -- | Return the minimum value of two integers.
   intMin :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
   intMin sym x y =
     do p <- intLe sym x y
        intIte sym p x y
 
-  -- | Return the maximum value of two integers
-  --   TODO, make this primitive
+  -- | Return the maximum value of two integers.
   intMax :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
   intMax sym x y =
     do p <- intLe sym x y
