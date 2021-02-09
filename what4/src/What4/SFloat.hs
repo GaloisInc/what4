@@ -12,11 +12,15 @@ module What4.SFloat
   , fpReprOf
   , fpSize
   , fpRepr
+  , fpAsLit
+  , fpIte
 
     -- * Constants
   , fpFresh
   , fpNaN
   , fpPosInf
+  , fpNegInf
+  , fpFromLit
   , fpFromRationalLit
 
     -- * Interchange formats
@@ -33,10 +37,15 @@ module What4.SFloat
     -- * Arithmetic
   , SFloatBinArith
   , fpNeg
+  , fpAbs
+  , fpSqrt
   , fpAdd
   , fpSub
   , fpMul
   , fpDiv
+  , fpMin
+  , fpMax
+  , fpFMA
 
     -- * Conversions
   , fpRound
@@ -47,7 +56,12 @@ module What4.SFloat
   , fpFromInteger
 
     -- * Queries
-  , fpIsInf, fpIsNaN
+  , fpIsInf
+  , fpIsNaN
+  , fpIsZero
+  , fpIsNeg
+  , fpIsSubnorm
+  , fpIsNorm
 
   -- * Exceptions
   , UnsupportedFloat(..)
@@ -55,6 +69,7 @@ module What4.SFloat
   ) where
 
 import Control.Exception
+import LibBF (BigFloat)
 
 import Data.Parameterized.Some
 import Data.Parameterized.NatRepr
@@ -135,6 +150,8 @@ fpSize (SFloat f) =
   case exprType f of
     BaseFloatRepr (FloatingPointPrecisionRepr e p) -> (intValue e, intValue p)
 
+fpAsLit :: SFloat sym -> Maybe BigFloat
+fpAsLit (SFloat f) = asFloat f
 
 --------------------------------------------------------------------------------
 -- Constants
@@ -174,7 +191,31 @@ fpPosInf sym e p
   | Just (Some fpp) <- fpRepr e p = SFloat <$> floatPInf sym fpp
   | otherwise = unsupported "fpPosInf" e p
 
--- | A floating point number corresponding to the given rations.
+-- | Negative infinity
+fpNegInf ::
+  IsExprBuilder sym =>
+  sym ->
+  Integer {- ^ Exponent width -} ->
+  Integer {- ^ Precision width -} ->
+  IO (SFloat sym)
+fpNegInf sym e p
+  | Just (Some fpp) <- fpRepr e p = SFloat <$> floatNInf sym fpp
+  | otherwise = unsupported "fpNegInf" e p
+
+
+-- | A floating point number corresponding to the given BigFloat.
+fpFromLit ::
+  IsExprBuilder sym =>
+  sym ->
+  Integer {- ^ Exponent width -} ->
+  Integer {- ^ Precision width -} ->
+  BigFloat ->
+  IO (SFloat sym)
+fpFromLit sym e p f
+  | Just (Some fpp) <- fpRepr e p = SFloat <$> floatLit sym fpp f
+  | otherwise = unsupported "fpFromLit" e p
+
+-- | A floating point number corresponding to the given rational.
 fpFromRationalLit ::
   IsExprBuilder sym =>
   sym ->
@@ -184,7 +225,7 @@ fpFromRationalLit ::
   IO (SFloat sym)
 fpFromRationalLit sym e p r
   | Just (Some fpp) <- fpRepr e p = SFloat <$> floatLitRational sym fpp r
-  | otherwise = unsupported "fpFromRational" e p
+  | otherwise = unsupported "fpFromRationalLit" e p
 
 
 -- | Make a floating point number with the given bit representation.
@@ -223,6 +264,12 @@ fpToBinary sym (SFloat f)
 fpNeg :: IsExprBuilder sym => sym -> SFloat sym -> IO (SFloat sym)
 fpNeg sym (SFloat fl) = SFloat <$> floatNeg sym fl
 
+fpAbs :: IsExprBuilder sym => sym -> SFloat sym -> IO (SFloat sym)
+fpAbs sym (SFloat fl) = SFloat <$> floatAbs sym fl
+
+fpSqrt :: IsExprBuilder sym => sym -> RoundingMode -> SFloat sym -> IO (SFloat sym)
+fpSqrt sym r (SFloat fl) = SFloat <$> floatSqrt sym r fl
+
 fpBinArith ::
   IsExprBuilder sym =>
   (forall t.
@@ -256,8 +303,45 @@ fpMul = fpBinArith floatMul
 fpDiv :: IsExprBuilder sym => SFloatBinArith sym
 fpDiv = fpBinArith floatDiv
 
+fpMin :: IsExprBuilder sym => sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
+fpMin sym (SFloat x) (SFloat y) =
+  let t1 = sym `fpReprOf` x
+      t2 = sym `fpReprOf` y
+  in
+  case testEquality t1 t2 of
+    Just Refl -> SFloat <$> floatMin sym x y
+    _         -> fpTypeError t1 t2
 
+fpMax :: IsExprBuilder sym => sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
+fpMax sym (SFloat x) (SFloat y) =
+  let t1 = sym `fpReprOf` x
+      t2 = sym `fpReprOf` y
+  in
+  case testEquality t1 t2 of
+    Just Refl -> SFloat <$> floatMax sym x y
+    _         -> fpTypeError t1 t2
 
+fpFMA :: IsExprBuilder sym =>
+  sym -> RoundingMode -> SFloat sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
+fpFMA sym r (SFloat x) (SFloat y) (SFloat z) =
+  let t1 = sym `fpReprOf` x
+      t2 = sym `fpReprOf` y
+      t3 = sym `fpReprOf` z
+   in
+   case (testEquality t1 t2, testEquality t2 t3) of
+     (Just Refl, Just Refl) -> SFloat <$> floatFMA sym r x y z
+     (Nothing, _) -> fpTypeError t1 t2
+     (_, Nothing) -> fpTypeError t2 t3
+
+fpIte :: IsExprBuilder sym =>
+  sym -> Pred sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
+fpIte sym p (SFloat x) (SFloat y) =
+  let t1 = sym `fpReprOf` x
+      t2 = sym `fpReprOf` y
+  in
+  case testEquality t1 t2 of
+    Just Refl -> SFloat <$> floatIte sym p x y
+    _         -> fpTypeError t1 t2
 
 --------------------------------------------------------------------------------
 
@@ -357,3 +441,15 @@ fpIsInf sym (SFloat x) = floatIsInf sym x
 
 fpIsNaN :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
 fpIsNaN sym (SFloat x) = floatIsNaN sym x
+
+fpIsZero :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
+fpIsZero sym (SFloat x) = floatIsZero sym x
+
+fpIsNeg :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
+fpIsNeg sym (SFloat x) = floatIsNeg sym x
+
+fpIsSubnorm :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
+fpIsSubnorm sym (SFloat x) = floatIsSubnorm sym x
+
+fpIsNorm :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
+fpIsNorm sym (SFloat x) = floatIsNorm sym x
