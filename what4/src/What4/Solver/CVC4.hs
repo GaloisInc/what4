@@ -154,7 +154,7 @@ instance SMT2.SMTLib2GenericSolver CVC4 where
     let extraOpts = case timeout of
                       Just (ConcreteInteger n) | n > 0 -> ["--tlimit-per=" ++ show n]
                       _ -> []
-    return $ ["--lang", "smt2", "--incremental", "--strings-exp"] ++ extraOpts
+    return $ ["--lang", "smt2", "--incremental", "--strings-exp", "--fp-exp"] ++ extraOpts
 
   getErrorBehavior _ = SMT2.queryErrorBehavior
 
