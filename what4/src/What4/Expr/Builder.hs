@@ -2301,11 +2301,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     -- Push some equalities under if/then/else
     | SemiRingLiteral _ _ _ <- x
     , Just (BaseIte _ _ c a b) <- asApp y
+    , isJust (asBV a) || isJust (asBV b) -- avoid loss of sharing
     = join (itePred sym c <$> bvEq sym x a <*> bvEq sym x b)
 
     -- Push some equalities under if/then/else
     | Just (BaseIte _ _ c a b) <- asApp x
     , SemiRingLiteral _ _ _ <- y
+    , isJust (asBV a) || isJust (asBV b) -- avoid loss of sharing
     = join (itePred sym c <$> bvEq sym a y <*> bvEq sym b y)
 
     | Just (Some flv) <- inSameBVSemiRing x y
