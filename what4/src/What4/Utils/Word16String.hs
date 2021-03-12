@@ -53,7 +53,6 @@ instance Semigroup Word16String where
 
 instance Monoid Word16String where
   mempty = empty
-  mappend = append
 
 instance Eq Word16String where
   (Word16String xs) == (Word16String ys) = xs == ys

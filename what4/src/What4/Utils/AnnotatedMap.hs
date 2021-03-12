@@ -84,7 +84,6 @@ instance (Ord k, Semigroup v) => Semigroup (Tag k v) where
 
 instance (Ord k, Semigroup v) => Monoid (Tag k v) where
   mempty  = NoTag
-  mappend = unionTag
 
 unionTag :: (Ord k, Semigroup v) => Tag k v -> Tag k v -> Tag k v
 unionTag x NoTag = x
