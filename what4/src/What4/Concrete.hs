@@ -46,7 +46,7 @@ module What4.Concrete
   , fromConcreteComplex
   ) where
 
-import           Data.List
+import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Numeric as N
@@ -154,14 +154,14 @@ ppConcrete = \case
   ConcreteString x -> PP.viaShow x
   ConcreteBV w x -> PP.pretty ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
   ConcreteComplex (r :+ i) -> PP.pretty "complex(" PP.<> ppRational r PP.<> PP.pretty ", " PP.<> ppRational i PP.<> PP.pretty ")"
-  ConcreteStruct xs -> PP.pretty "struct(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.pretty ")"
+  ConcreteStruct xs -> PP.pretty "struct(" PP.<> PP.cat (List.intersperse PP.comma (toListFC ppConcrete xs)) PP.<> PP.pretty ")"
   ConcreteArray _ def xs0 -> go (Map.toAscList xs0) (PP.pretty "constArray(" PP.<> ppConcrete def PP.<> PP.pretty ")")
     where
     go  [] doc = doc
     go ((i,x):xs) doc = ppUpd i x (go xs doc)
 
     ppUpd i x doc =
-       PP.pretty "update(" PP.<> PP.cat (intersperse PP.comma (toListFC ppConcrete i))
+       PP.pretty "update(" PP.<> PP.cat (List.intersperse PP.comma (toListFC ppConcrete i))
                          PP.<> PP.comma
                          PP.<> ppConcrete x
                          PP.<> PP.comma
