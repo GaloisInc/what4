@@ -71,7 +71,7 @@ instance Applicative Or where
   pure _ = Or False
   (Or a) <*> (Or b) = Or (a || b)
 
-norm' :: forall t st fs tp . PH.HashableF (Expr t) => NormCache t st fs -> Expr t tp -> IO (Expr t tp)
+norm' :: forall t st fs tp . NormCache t st fs -> Expr t tp -> IO (Expr t tp)
 norm' nc (AppExpr a0) = do
   let sb = ncBuilder nc
   case appExprApp a0 of
