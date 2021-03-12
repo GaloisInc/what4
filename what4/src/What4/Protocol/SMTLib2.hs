@@ -1192,7 +1192,7 @@ ppSolverVersionError err =
         na Nothing  = "n/a"
 
 -- | Get the result of a version query
-nameResult :: SMTReadWriter h => f h -> Streams.InputStream Text -> IO Text
+nameResult :: f h -> Streams.InputStream Text -> IO Text
 nameResult _ s =
   let cmd = SMT2.getName
   in
@@ -1220,7 +1220,7 @@ queryErrorBehavior conn resp =
 
 
 -- | Get the result of a version query
-versionResult :: SMTReadWriter h => f h -> Streams.InputStream Text -> IO Text
+versionResult :: f h -> Streams.InputStream Text -> IO Text
 versionResult _ s =
   let cmd = SMT2.getVersion
   in

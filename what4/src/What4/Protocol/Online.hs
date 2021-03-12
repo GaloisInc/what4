@@ -266,7 +266,7 @@ pop p =
 -- | Pop a previous solver assumption frame, but don't communicate
 --   the pop command to the solver.  This is really only useful in
 --   error recovery code when we know the solver has already exited.
-popStackOnly :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+popStackOnly :: SolverProcess scope solver -> IO ()
 popStackOnly p =
   readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
