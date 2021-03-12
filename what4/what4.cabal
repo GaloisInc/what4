@@ -64,7 +64,7 @@ common testdefs
   build-depends: base
                , parameterized-utils
                , tasty >= 0.10
-               , what4:what4
+               , what4
 
 common testdefs-quickcheck
   import: testdefs
