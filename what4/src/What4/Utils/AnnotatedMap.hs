@@ -86,7 +86,7 @@ instance (Ord k, Semigroup v) => Monoid (Tag k v) where
   mempty  = NoTag
   mappend = unionTag
 
-unionTag :: (Ord k, Semigroup v) => Tag k v -> Tag k v -> Tag k v
+unionTag :: (Semigroup v) => Tag k v -> Tag k v -> Tag k v
 unionTag x NoTag = x
 unionTag NoTag y = y
 unionTag (Tag ix _ vx) (Tag iy ky vy) =
@@ -287,7 +287,7 @@ mapMaybe f (AnnotatedMap ft) =
   where g (Entry k v a) = Entry k v <$> f a
 
 traverseMaybeWithKey ::
-  (Applicative f, Ord k, Semigroup v1, Semigroup v2) =>
+  (Applicative f, Ord k, Semigroup v2) =>
   (k -> v1 -> a1 -> f (Maybe (v2, a2))) ->
   AnnotatedMap k v1 a1 -> f (AnnotatedMap k v2 a2)
 traverseMaybeWithKey f (AnnotatedMap ft) =
