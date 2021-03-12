@@ -1,12 +1,12 @@
+Cabal-version: 3.0
 Name:          what4
 Version:       1.1.0.0.99
 Author:        Galois Inc.
 Maintainer:    jhendrix@galois.com, rdockins@galois.com
 Copyright:     (c) Galois, Inc 2014-2021
-License:       BSD3
+License:       BSD-3-Clause
 License-file:  LICENSE
 Build-type:    Simple
-Cabal-version: 1.18
 Homepage:      https://github.com/GaloisInc/what4
 Bug-reports:   https://github.com/GaloisInc/what4/issues
 Tested-with:   GHC==8.6.5, GHC==8.8.4, GHC==8.10.3
@@ -51,7 +51,36 @@ flag STPTestDisable
   manual: True
   default: False
 
+common bldflags
+  default-language: Haskell2010
+  ghc-options: -Wall
+               -Werror=incomplete-patterns
+               -Werror=missing-methods
+               -Werror=overlapping-patterns
+
+common testdefs
+  hs-source-dirs: test
+  build-depends: base
+               , parameterized-utils
+               , tasty >= 0.10
+               , what4:what4
+
+common testdefs-quickcheck
+  import: testdefs
+  build-depends: tasty-quickcheck >= 0.10
+               , QuickCheck >= 2.12
+
+common testdefs-hedgehog
+  import: testdefs
+  build-depends: hedgehog >= 1.0.2
+               , tasty-hedgehog
+
+common testdefs-hunit
+  import: testdefs
+  build-depends: tasty-hunit >= 0.9
+
 library
+  import: bldflags
   build-depends:
     base >= 4.8 && < 5,
     attoparsec >= 0.13,
@@ -94,7 +123,6 @@ library
     zenc >= 0.1.0 && < 0.2.0,
     ghc-prim >= 0.5.2
 
-  default-language: Haskell2010
   default-extensions:
      NondecreasingIndentation
 
@@ -181,8 +209,6 @@ library
 
     Test.Verification
 
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  -- ghc-prof-options: -fprof-auto-top
   if impl(ghc >= 8.6)
     default-extensions: NoStarIsType
 
@@ -196,10 +222,9 @@ executable quickstart
     what4
 
 test-suite adapter-test
+  import: bldflags, testdefs-hunit
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test
   main-is: AdapterTest.hs
 
   if flag(solverTests)
@@ -212,28 +237,20 @@ test-suite adapter-test
     buildable: False
 
   build-depends:
-    base,
     bv-sized,
     bytestring,
     containers,
     data-binary-ieee754,
     lens,
     mtl >= 2.2.1,
-    parameterized-utils,
     process,
-    tasty >= 0.10,
-    tasty-hunit >= 0.9,
     text,
-    versions,
-    what4
-
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+    versions
 
 test-suite online-solver-test
+  import: bldflags, testdefs-hunit
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test
   main-is: OnlineSolverTest.hs
 
   if flag(solverTests)
@@ -244,141 +261,84 @@ test-suite online-solver-test
     buildable: False
 
   build-depends:
-    base,
     bv-sized,
     bytestring,
     containers,
     data-binary-ieee754,
     lens,
-    parameterized-utils,
     process,
-    tasty >= 0.10,
-    tasty-hunit >= 0.9,
     text,
-    versions,
-    what4
-
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+    versions
 
 test-suite expr-builder-smtlib2
+  import: bldflags, testdefs-hunit
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test
   main-is: ExprBuilderSMTLib2.hs
 
   build-depends:
-    base,
     bv-sized,
     bytestring,
     containers,
     data-binary-ieee754,
     libBF,
-    parameterized-utils,
-    tasty >= 0.10,
-    tasty-hunit >= 0.9,
     text,
-    versions,
-    what4
+    versions
 
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
 test-suite exprs_tests
+  import: bldflags, testdefs-hedgehog, testdefs-hunit
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test
   main-is: ExprsTest.hs
 
   other-modules:
     GenWhat4Expr
 
-  build-depends: base
-               , bv-sized
-               , hedgehog >= 1.0.2
-               , parameterized-utils
-               , tasty >= 0.10
-               , tasty-hunit >= 0.9
-               , tasty-hedgehog
-               , what4
+  build-depends: bv-sized
 
-  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
 test-suite iteexprs_tests
+  import: bldflags, testdefs-hedgehog, testdefs-hunit
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test
   main-is: IteExprs.hs
 
   other-modules:
     GenWhat4Expr
 
-  build-depends: base
-               , bv-sized
-               , hedgehog >= 1.0.2
-               , parameterized-utils
-               , tasty >= 0.10
-               , tasty-hunit >= 0.9
-               , tasty-hedgehog
+  build-depends: bv-sized
                , containers >= 0.5.0.0
-               , what4
 
-  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
 test-suite bvdomain_tests
+  import: bldflags, testdefs-quickcheck
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test, test/QC
+  hs-source-dirs: test/QC
   main-is: BVDomTests.hs
 
   other-modules:  VerifyBindings
 
-  build-depends: base
-               , parameterized-utils
-               , tasty >= 0.10
-               , tasty-quickcheck >= 0.10
-               , QuickCheck >= 2.12
-               , transformers
-               , what4
+  build-depends: transformers
 
-  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
 test-suite bvdomain_tests_hh
+  import: bldflags, testdefs-hedgehog
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
 
-  hs-source-dirs: test, test/HH
+  hs-source-dirs: test/HH
   main-is: BVDomTests.hs
 
   other-modules:  VerifyBindings
 
-  build-depends: base
-               , parameterized-utils
-               , tasty >= 0.10
-               , tasty-hedgehog
-               , hedgehog >= 1.0.2
-               , transformers
-               , what4
+  build-depends: transformers
 
-  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
 test-suite template_tests
+  import: bldflags, testdefs-hedgehog
   type: exitcode-stdio-1.0
-  default-language: Haskell2010
-
-  hs-source-dirs: test
   main-is : TestTemplate.hs
-
-  build-depends: base
-               , bv-sized
+  build-depends: bv-sized
                , libBF
-               , parameterized-utils
-               , tasty >= 0.10
-               , tasty-hedgehog
-               , hedgehog >= 1.0.2
                , transformers
-               , what4
-
-  ghc-options: -Wall -Wcompat -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
