@@ -59,13 +59,13 @@ filterFingerTree p =
   foldl' (\xs x -> if p x then xs FT.|> x else xs) FT.empty
 
 mapMaybeFingerTree ::
-  (FT.Measured v1 a1, FT.Measured v2 a2) =>
+  (FT.Measured v2 a2) =>
   (a1 -> Maybe a2) -> FT.FingerTree v1 a1 -> FT.FingerTree v2 a2
 mapMaybeFingerTree f =
   foldl' (\xs x -> maybe xs (xs FT.|>) (f x)) FT.empty
 
 traverseMaybeFingerTree ::
-  (Applicative f, FT.Measured v1 a1, FT.Measured v2 a2) =>
+  (Applicative f, FT.Measured v2 a2) =>
   (a1 -> f (Maybe a2)) -> FT.FingerTree v1 a1 -> f (FT.FingerTree v2 a2)
 traverseMaybeFingerTree f =
    foldl' (\m x -> rebuild <$> m <*> f x) (pure FT.empty)
