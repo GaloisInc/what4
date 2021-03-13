@@ -57,6 +57,26 @@ jobs:
           echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
           echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
           echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
+
+      - name: Cabal/GHC compatibility
+        shell: bash
+        run: |
+          cd what4
+          if [ ! -f Setup.hs ] ; then
+            echo import Distribution.Simple > DefaultSetup.hs
+            echo main = defaultMain >> DefaultSetup.hs
+            nix-shell -p $GHC --run 'ghc -o setup.${{ matrix.ghc }} DefaultSetup.hs'
+          else
+            nix-shell -p $GHC --run 'ghc -o setup.${{ matrix.ghc }} Setup.hs'
+          fi
+          # Using setup will use the cabal library installed with GHC
+          # instead of the cabal library of the Cabal-install tool to
+          # verify the cabal file is compatible with the associated
+          # GHC cabal library version.  Cannot run configure or build,
+          # because dependencies aren't present, but a clean is
+          # sufficient to cause parsing/validation of the cabal file.
+          ./setup.${{ matrix.ghc }} clean
+
       - name: Cabal configure
         shell: bash
         # Note: the explicit LD_LIBRARY_PATH is needed for GHC 8.6.5
