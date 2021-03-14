@@ -58,24 +58,22 @@ jobs:
           echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
           echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
 
-      - name: Cabal/GHC compatibility
+      - name: Package's Cabal/GHC compatibility
         shell: bash
+        # Using setup will use the cabal library installed with GHC
+        # instead of the cabal library of the Cabal-install tool to
+        # verify the cabal file is compatible with the associated
+        # GHC cabal library version.  Cannot run configure or build,
+        # because dependencies aren't present, but a clean is
+        # sufficient to cause parsing/validation of the cabal file.
         run: |
-          cd what4
-          if [ ! -f Setup.hs ] ; then
-            echo import Distribution.Simple > DefaultSetup.hs
-            echo main = defaultMain >> DefaultSetup.hs
-            nix-shell -p $GHC --run 'ghc -o setup.${{ matrix.ghc }} DefaultSetup.hs'
-          else
-            nix-shell -p $GHC --run 'ghc -o setup.${{ matrix.ghc }} Setup.hs'
-          fi
-          # Using setup will use the cabal library installed with GHC
-          # instead of the cabal library of the Cabal-install tool to
-          # verify the cabal file is compatible with the associated
-          # GHC cabal library version.  Cannot run configure or build,
-          # because dependencies aren't present, but a clean is
-          # sufficient to cause parsing/validation of the cabal file.
-          ./setup.${{ matrix.ghc }} clean
+          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
+          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
+          setup_bin() { echo setup.${{ matrix.ghc }}; }
+          with_ghc()  { nix-shell -p $GHC --run "$(echo ${@})"; }
+          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
 
       - name: Cabal configure
         shell: bash
