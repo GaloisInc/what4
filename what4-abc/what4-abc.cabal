@@ -1,12 +1,12 @@
+Cabal-version: 2.2
 Name:          what4-abc
 Version:       0.1
 Author:        Galois Inc.
 Maintainer:    jhendrix@galois.com
-Copyright:     (c) Galois, Inc 2014-2020
-License:       BSD3
+Copyright:     (c) Galois, Inc 2014-2021
+License:       BSD-3-Clause
 License-file:  LICENSE
 Build-type:    Simple
-Cabal-version: >= 1.9.2
 Category:      Language
 Synopsis:      What4 bindings to ABC
 Description:
@@ -40,5 +40,10 @@ library
   exposed-modules:
     What4.Solver.ABC
 
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  ghc-prof-options: -fprof-auto-top
+  ghc-options: -Wall
+               -Werror=incomplete-patterns
+               -Werror=missing-methods
+               -Werror=overlapping-patterns
+  ghc-prof-options: -fprof-auto-export
+
+  default-language: Haskell2010
