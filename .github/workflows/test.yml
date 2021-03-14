@@ -75,6 +75,13 @@ jobs:
           (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
           (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
 
+      - name: Cabal check
+        shell: bash
+        run: |
+          (cd what4;     $NS 'cabal check')
+          (cd what4-abc; $NS 'cabal check')
+          (cd what4-blt; $NS 'cabal check')
+
       - name: Cabal configure
         shell: bash
         # Note: the explicit LD_LIBRARY_PATH is needed for GHC 8.6.5
