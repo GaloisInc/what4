@@ -1192,8 +1192,8 @@ ppSolverVersionError err =
         na Nothing  = "n/a"
 
 -- | Get the result of a version query
-nameResult :: f h -> Streams.InputStream Text -> IO Text
-nameResult _ s =
+nameResult :: Streams.InputStream Text -> IO Text
+nameResult s =
   let cmd = SMT2.getName
   in
     tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
@@ -1220,8 +1220,8 @@ queryErrorBehavior conn resp =
 
 
 -- | Get the result of a version query
-versionResult :: f h -> Streams.InputStream Text -> IO Text
-versionResult _ s =
+versionResult :: Streams.InputStream Text -> IO Text
+versionResult s =
   let cmd = SMT2.getVersion
   in
     tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
@@ -1246,7 +1246,7 @@ checkSolverVersion' boundsMap proc =
     Nothing -> done
     Just bnds ->
       do getVersion conn
-         res <- versionResult conn (solverResponse proc)
+         res <- versionResult (solverResponse proc)
          case Versions.version res of
            Left e -> pure (Left (UnparseableVersion e))
            Right actualVer ->
