@@ -59,13 +59,13 @@ filterFingerTree p =
   foldl' (\xs x -> if p x then xs FT.|> x else xs) FT.empty
 
 mapMaybeFingerTree ::
-  (FT.Measured v1 a1, FT.Measured v2 a2) =>
+  (FT.Measured v2 a2) =>
   (a1 -> Maybe a2) -> FT.FingerTree v1 a1 -> FT.FingerTree v2 a2
 mapMaybeFingerTree f =
   foldl' (\xs x -> maybe xs (xs FT.|>) (f x)) FT.empty
 
 traverseMaybeFingerTree ::
-  (Applicative f, FT.Measured v1 a1, FT.Measured v2 a2) =>
+  (Applicative f, FT.Measured v2 a2) =>
   (a1 -> f (Maybe a2)) -> FT.FingerTree v1 a1 -> f (FT.FingerTree v2 a2)
 traverseMaybeFingerTree f =
    foldl' (\m x -> rebuild <$> m <*> f x) (pure FT.empty)
@@ -85,7 +85,7 @@ instance (Ord k, Semigroup v) => Semigroup (Tag k v) where
 instance (Ord k, Semigroup v) => Monoid (Tag k v) where
   mempty  = NoTag
 
-unionTag :: (Ord k, Semigroup v) => Tag k v -> Tag k v -> Tag k v
+unionTag :: (Semigroup v) => Tag k v -> Tag k v -> Tag k v
 unionTag x NoTag = x
 unionTag NoTag y = y
 unionTag (Tag ix _ vx) (Tag iy ky vy) =
@@ -286,7 +286,7 @@ mapMaybe f (AnnotatedMap ft) =
   where g (Entry k v a) = Entry k v <$> f a
 
 traverseMaybeWithKey ::
-  (Applicative f, Ord k, Semigroup v1, Semigroup v2) =>
+  (Applicative f, Ord k, Semigroup v2) =>
   (k -> v1 -> a1 -> f (Maybe (v2, a2))) ->
   AnnotatedMap k v1 a1 -> f (AnnotatedMap k v2 a2)
 traverseMaybeWithKey f (AnnotatedMap ft) =
