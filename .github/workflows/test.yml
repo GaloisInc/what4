@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        ghc: [8.10.3, 8.8.4, 8.6.5]
+        ghc: [8.10.4, 8.8.4, 8.6.5]
         allow-failure: [false]
       fail-fast: false
     steps:
@@ -57,6 +57,31 @@ jobs:
           echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
           echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
           echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
+
+      - name: Package's Cabal/GHC compatibility
+        shell: bash
+        # Using setup will use the cabal library installed with GHC
+        # instead of the cabal library of the Cabal-install tool to
+        # verify the cabal file is compatible with the associated
+        # GHC cabal library version.  Cannot run configure or build,
+        # because dependencies aren't present, but a clean is
+        # sufficient to cause parsing/validation of the cabal file.
+        run: |
+          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
+          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
+          setup_bin() { echo setup.${{ matrix.ghc }}; }
+          with_ghc()  { nix-shell -p $GHC --run "$(echo ${@})"; }
+          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+
+      - name: Cabal check
+        shell: bash
+        run: |
+          (cd what4;     $NS 'cabal check')
+          (cd what4-abc; $NS 'cabal check')
+          (cd what4-blt; $NS 'cabal check')
+
       - name: Cabal configure
         shell: bash
         # Note: the explicit LD_LIBRARY_PATH is needed for GHC 8.6.5

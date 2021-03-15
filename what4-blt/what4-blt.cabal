@@ -1,12 +1,12 @@
+Cabal-version: 2.2
 Name:          what4-blt
 Version:       0.2
 Author:        Galois Inc.
 Maintainer:    rdockins@galois.com
-Copyright:     (c) Galois, Inc 2014-2020
-License:       BSD3
+Copyright:     (c) Galois, Inc 2014-2021
+License:       BSD-3-Clause
 License-file:  LICENSE
 Build-type:    Simple
-Cabal-version: >= 1.10
 Category:      Language
 Synopsis:      What4 bindings to BLT
 Description:
@@ -15,7 +15,16 @@ Description:
   provides support for lowering Crucible formulae to linear systems
   of the sort understood by BLT, and for executing the underlying solver.
 
+common bldflags
+  ghc-options: -Wall
+               -Werror=incomplete-patterns
+               -Werror=missing-methods
+               -Werror=overlapping-patterns
+  ghc-prof-options: -fprof-auto-export
+  default-language: Haskell2010
+
 library
+  import: bldflags
   build-depends:
     base >= 4.7 && < 4.15,
     blt >= 0.12.1,
@@ -32,27 +41,19 @@ library
   exposed-modules:
     What4.Solver.BLT
 
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  ghc-prof-options: -fprof-auto-top
-
-  default-language: Haskell2010
-
 test-suite test
+  import: bldflags
   type: exitcode-stdio-1.0
   hs-source-dirs: test
-
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
 
   main-is: Test.hs
 
   build-depends:
-    base             >= 4.7,
+    base,
     containers,
     what4-blt,
     QuickCheck,
     tasty            >= 0.10,
     tasty-hunit      >= 0.9,
     tasty-quickcheck >= 0.8,
-    blt              >= 0.12
-
-  default-language: Haskell2010
+    blt
