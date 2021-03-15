@@ -325,7 +325,7 @@ unfilteredSum ::
 unfilteredSum sr m c = WeightedSum m c sr
 
 -- | Retrieve the mapping from terms to coefficients.
-sumMap :: HashableF f => Lens' (WeightedSum f sr) (SumMap f sr)
+sumMap :: Lens' (WeightedSum f sr) (SumMap f sr)
 sumMap = lens _sumMap (\w m -> w{ _sumMap = m })
 
 -- | Retrieve the constant addend of the weighted sum.
@@ -637,7 +637,7 @@ prodContains pd x = isJust $ AM.lookup (WrapF x) (_prodMap pd)
 
 -- | Produce a product map from a raw map of terms to occurrences.
 --   PRECONDITION: the occurrence value for each term should be non-zero.
-mkProd :: HashableF f => SR.SemiRingRepr sr -> ProdMap f sr -> SemiRingProduct f sr
+mkProd :: SR.SemiRingRepr sr -> ProdMap f sr -> SemiRingProduct f sr
 mkProd sr m = SemiRingProduct m sr
 
 -- | Produce a product representing the single given term.
