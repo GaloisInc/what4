@@ -885,12 +885,12 @@ testSolverInfo = testGroup "solver info queries" $
   [ testCase "test get solver version" $ withOnlineZ3 $ \_ proc -> do
       let conn = solverConn proc
       getVersion conn
-      _ <- versionResult conn (solverResponse proc)
+      _ <- versionResult (solverResponse proc)
       pure ()
   , testCase "test get solver name" $ withOnlineZ3 $ \_ proc -> do
       let conn = solverConn proc
       getName conn
-      nm <- nameResult conn (solverResponse proc)
+      nm <- nameResult (solverResponse proc)
       nm @?= "Z3"
   ]
 
