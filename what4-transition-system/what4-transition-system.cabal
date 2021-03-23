@@ -5,7 +5,7 @@ synopsis:      Generates transition systems from What4 descriptions
 description:   Generates transition systems from What4 descriptions
 author:        Valentin Robert <val@galois.com>
 maintainer:    Valentin Robert <val@galois.com>
-copyright:     Galois, Inc. 2020
+copyright:     Galois, Inc. 2020-2021
 license:       BSD-3-Clause
 license-file:  LICENSE
 build-type:    Simple
@@ -13,7 +13,7 @@ build-type:    Simple
 common dependencies
   build-depends:
     , ansi-wl-pprint       ^>=0.6
-    , base                 >=4.13 && <4.15
+    , base                 >=4.12 && <4.15
     , bytestring
     , containers           ^>=0.6
     , io-streams
@@ -22,11 +22,14 @@ common dependencies
     , mtl
     , parameterized-utils  >=2.0  && <2.2
     , text
-    , what4
+    , what4                ^>=1.1
 
 library
   import:           dependencies
-  exposed-modules:  What4.TransitionSystem
+  exposed-modules:
+    What4.TransitionSystem
+    What4.TransitionSystem.Exporter.Sally
+
   other-modules:    Paths_what4_transition_system
   hs-source-dirs:   src
   ghc-options:
@@ -35,14 +38,15 @@ library
 
   default-language: Haskell2010
 
-test-suite transition-system-tests
+test-suite what4-transition-system-tests
   import:           dependencies
   type:             exitcode-stdio-1.0
-  main-is:          TransitionSystemTest.hs
+  main-is:          Main.hs
   other-modules:    Paths_what4_transition_system
   hs-source-dirs:   test
   ghc-options:
     -Wall -Werror=incomplete-patterns -Werror=missing-methods
     -Werror=overlapping-patterns
 
+  build-depends:    what4-transition-system
   default-language: Haskell2010

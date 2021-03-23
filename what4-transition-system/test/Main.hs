@@ -10,23 +10,29 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- |
--- Module      : TransitionSystemTest
--- Copyright   : (c) Galois Inc, 2020
+-- Module      : Main
+-- Copyright   : (c) Galois Inc, 2020-2021
 -- License     : BSD3
--- Maintainer  : valentin.robert.42@gmail.com
+-- Maintainer  : val@galois.com
 -- |
 module Main where
 
 import qualified Control.Lens as L
 import Control.Monad (join)
+import Data.Parameterized (knownRepr)
 import qualified Data.Parameterized.Context as Ctx
-import Data.Parameterized.Nonce
-import Language.Sally
-import What4.BaseTypes
+import Data.Parameterized.Nonce (withIONonceGenerator)
+import Language.Sally (Name, sexpOfSally, sexpToCompactDoc)
+import qualified What4.BaseTypes as BaseTypes
 import What4.Expr
-import What4.Expr.Builder
+  ( ExprBuilder,
+    FloatModeRepr (FloatIEEERepr),
+    newExprBuilder,
+  )
+import What4.Expr.Builder (SymbolBinding (..))
 import qualified What4.Interface as What4
-import What4.TransitionSystem
+import What4.TransitionSystem (TransitionSystem (..), userSymbol')
+import qualified What4.TransitionSystem.Exporter.Sally as Sally
 import Prelude hiding (init)
 
 showBinding :: SymbolBinding t -> String
@@ -40,7 +46,7 @@ displayTransitionSystem ::
   IO ()
 displayTransitionSystem sym transitionSystem =
   do
-    sts <- transitionSystemToSally sym mySallyNames transitionSystem
+    sts <- Sally.exportTransitionSystem sym Sally.mySallyNames transitionSystem
     sexp <- sexpOfSally sym sts
     print . sexpToCompactDoc $ sexp
 
@@ -62,7 +68,7 @@ data State t = State
 makeFieldNames ::
   forall stateType.
   [What4.SolverSymbol] ->
-  Ctx.Assignment BaseTypeRepr stateType ->
+  Ctx.Assignment BaseTypes.BaseTypeRepr stateType ->
   Ctx.Assignment (L.Const What4.SolverSymbol) stateType
 makeFieldNames fields rep = Ctx.generate (Ctx.size rep) generator
   where
@@ -72,7 +78,7 @@ makeFieldNames fields rep = Ctx.generate (Ctx.size rep) generator
 --
 -- Example 1: a simple counter
 --
-type CounterStateType = Ctx.EmptyCtx Ctx.::> BaseBoolType Ctx.::> BaseNatType
+type CounterStateType = Ctx.EmptyCtx Ctx.::> BaseTypes.BaseBoolType Ctx.::> BaseTypes.BaseIntegerType
 
 counterStateFields :: [What4.SolverSymbol]
 counterStateFields = userSymbol' <$> ["counterIsEven", "counter"]
@@ -80,10 +86,10 @@ counterStateFields = userSymbol' <$> ["counterIsEven", "counter"]
 counterFieldNames :: Ctx.Assignment (L.Const What4.SolverSymbol) CounterStateType
 counterFieldNames = makeFieldNames counterStateFields knownRepr
 
-counterIsEven :: Ctx.Index CounterStateType BaseBoolType
+counterIsEven :: Ctx.Index CounterStateType BaseTypes.BaseBoolType
 counterIsEven = Ctx.natIndex @0
 
-counter :: Ctx.Index CounterStateType BaseNatType
+counter :: Ctx.Index CounterStateType BaseTypes.BaseIntegerType
 counter = Ctx.natIndex @1
 
 -- | Example initial state predicate, this one constrains the `bool` field to be
@@ -98,8 +104,8 @@ counterInitial sym init =
   do
     initCounterIsEven <- What4.structField sym init counterIsEven
     initCounter <- What4.structField sym init counter
-    nZero <- What4.natLit sym 0
-    natCond <- What4.natEq sym initCounter nZero
+    nZero <- What4.intLit sym 0
+    natCond <- What4.intEq sym initCounter nZero
     andCond <- What4.andPred sym initCounterIsEven natCond
     return andCond
 
@@ -122,9 +128,9 @@ counterTransitions sym state next =
     nextCounterIsEven <- What4.structField sym next counterIsEven
     nextCounter <- What4.structField sym next counter
     -- (= next.counter (+ 1 state.counter))
-    nOne <- What4.natLit sym 1
-    nStatePlusOne <- What4.natAdd sym nOne stateCounter
-    natCond <- What4.natEq sym nextCounter nStatePlusOne
+    nOne <- What4.intLit sym 1
+    nStatePlusOne <- What4.intAdd sym nOne stateCounter
+    natCond <- What4.intEq sym nextCounter nStatePlusOne
     -- (= next.counterIsEven (not state.counterIsEven))
     bStateNeg <- What4.notPred sym stateCounterIsEven
     boolCond <- What4.eqPred sym nextCounterIsEven bStateNeg
@@ -154,9 +160,9 @@ counterTransitionSystem sym =
 
 type RealsStateType =
   Ctx.EmptyCtx
-    Ctx.::> BaseRealType
-    Ctx.::> BaseRealType
-    Ctx.::> BaseRealType
+    Ctx.::> BaseTypes.BaseRealType
+    Ctx.::> BaseTypes.BaseRealType
+    Ctx.::> BaseTypes.BaseRealType
 
 realsStateFields :: [What4.SolverSymbol]
 realsStateFields = userSymbol' <$> ["P", "x", "n"]
@@ -164,13 +170,13 @@ realsStateFields = userSymbol' <$> ["P", "x", "n"]
 realsFieldNames :: Ctx.Assignment (L.Const What4.SolverSymbol) RealsStateType
 realsFieldNames = makeFieldNames realsStateFields knownRepr
 
-pReals :: Ctx.Index RealsStateType BaseRealType
+pReals :: Ctx.Index RealsStateType BaseTypes.BaseRealType
 pReals = Ctx.natIndex @0
 
-xReals :: Ctx.Index RealsStateType BaseRealType
+xReals :: Ctx.Index RealsStateType BaseTypes.BaseRealType
 xReals = Ctx.natIndex @1
 
-nReals :: Ctx.Index RealsStateType BaseRealType
+nReals :: Ctx.Index RealsStateType BaseTypes.BaseRealType
 nReals = Ctx.natIndex @2
 
 realsInitial ::

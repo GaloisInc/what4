@@ -7,9 +7,6 @@
 [submodule "dependencies/blt"]
 	path = dependencies/blt
 	url = https://github.com/GaloisInc/blt
-[submodule "dependencies/parameterized-utils"]
-	path = dependencies/parameterized-utils
-	url = https://github.com/GaloisInc/parameterized-utils
 [submodule "dependencies/language-sally"]
 	path = dependencies/language-sally
 	url = https://github.com/GaloisInc/language-sally.git
