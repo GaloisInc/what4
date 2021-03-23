@@ -1,63 +1,48 @@
-cabal-version: 1.12
+cabal-version: 3.0
+name:          what4-transition-system
+version:       0.0.3.0
+synopsis:      Generates transition systems from What4 descriptions
+description:   Generates transition systems from What4 descriptions
+author:        Valentin Robert <val@galois.com>
+maintainer:    Valentin Robert <val@galois.com>
+copyright:     Galois, Inc. 2020
+license:       BSD-3-Clause
+license-file:  LICENSE
+build-type:    Simple
 
--- This file has been generated from package.yaml by hpack version 0.34.2.
---
--- see: https://github.com/sol/hpack
---
--- hash: 962c45929ee60827138ddd7bb54e11f0c7c760ffb0661c504cfce5253c8ce4d6
-
-name:           what4-transition-system
-version:        0.0.2.0
-synopsis:       Generates transition systems from What4 descriptions
-description:    Generates transition systems from What4 descriptions
-author:         Valentin Robert <valentin.robert.42@gmail.com>
-maintainer:     Valentin Robert <valentin.robert.42@gmail.com>
-copyright:      Galois, Inc. 2020
-license:        BSD3
-license-file:   LICENSE
-build-type:     Simple
-
-library
-  exposed-modules:
-      What4.TransitionSystem
-  other-modules:
-      Paths_what4_transition_system
-  hs-source-dirs:
-      src
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
+common dependencies
   build-depends:
-      ansi-wl-pprint >=0.6 && <0.7
-    , base >=4.13 && <4.14
+    , ansi-wl-pprint       ^>=0.6
+    , base                 >=4.13 && <4.15
     , bytestring
-    , containers >=0.6 && <0.7
+    , containers           ^>=0.6
     , io-streams
-    , language-sally >=0.2.1.0 && <0.3
+    , language-sally       ^>=0.3
     , lens
     , mtl
-    , parameterized-utils >=2.0 && <2.1
+    , parameterized-utils  >=2.0  && <2.2
     , text
     , what4
+
+library
+  import:           dependencies
+  exposed-modules:  What4.TransitionSystem
+  other-modules:    Paths_what4_transition_system
+  hs-source-dirs:   src
+  ghc-options:
+    -Wall -Werror=incomplete-patterns -Werror=missing-methods
+    -Werror=overlapping-patterns
+
   default-language: Haskell2010
 
 test-suite transition-system-tests
-  type: exitcode-stdio-1.0
-  main-is: TransitionSystemTest.hs
-  other-modules:
-      Paths_what4_transition_system
-  hs-source-dirs:
-      test
-  ghc-options: -Wall -Werror=incomplete-patterns -Werror=missing-methods -Werror=overlapping-patterns
-  build-depends:
-      ansi-wl-pprint >=0.6 && <0.7
-    , base >=4.13 && <4.14
-    , bytestring
-    , containers >=0.6 && <0.7
-    , io-streams
-    , language-sally >=0.2.1.0 && <0.3
-    , lens
-    , mtl
-    , parameterized-utils >=2.0 && <2.1
-    , text
-    , what4
-    , what4-transition-system
+  import:           dependencies
+  type:             exitcode-stdio-1.0
+  main-is:          TransitionSystemTest.hs
+  other-modules:    Paths_what4_transition_system
+  hs-source-dirs:   test
+  ghc-options:
+    -Wall -Werror=incomplete-patterns -Werror=missing-methods
+    -Werror=overlapping-patterns
+
   default-language: Haskell2010

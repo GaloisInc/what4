@@ -140,11 +140,6 @@ sideConditions sym stateReprs state =
   where
     sideConditionsForIndex :: Ctx.Index state tp -> BaseTypeRepr tp -> IO [S.SallyPred t]
     sideConditionsForIndex _ BaseBoolRepr = return []
-    sideConditionsForIndex i BaseNatRepr =
-      do
-        nZ <- What4.natLit sym 0
-        natFieldValue <- What4.structField sym state i
-        (: []) <$> What4.natLe sym nZ natFieldValue
     sideConditionsForIndex _ BaseIntegerRepr = return []
     sideConditionsForIndex _ BaseRealRepr = return []
     sideConditionsForIndex _ (BaseBVRepr _) = return []
