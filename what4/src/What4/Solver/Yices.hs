@@ -1113,10 +1113,10 @@ runYicesInOverride sym logData conditions resultFn = do
   logCallbackVerbose logData 2 "Calling Yices to check sat"
   -- Check Problem features
   logSolverEvent sym
-    SolverStartSATQuery
+    (SolverStartSATQuery $ SolverStartSATQueryRec
     { satQuerySolverName = "Yices"
     , satQueryReason = logReason logData
-    }
+    })
   features <- checkSupportedByYices condition
   enableMCSat <- getOpt =<< getOptionSetting yicesEnableMCSat cfg
   goalTimeout <- SolverGoalTimeout <$> (getOpt =<< getOptionSetting yicesGoalTimeout cfg)
@@ -1168,10 +1168,10 @@ runYicesInOverride sym logData conditions resultFn = do
                              }
       sat_result <- getSatResult yp
       logSolverEvent sym
-        SolverEndSATQuery
+        (SolverEndSATQuery $ SolverEndSATQueryRec
         { satQueryResult = sat_result
         , satQueryError  = Nothing
-        }
+        })
       r <-
          case sat_result of
            Sat () -> resultFn . Sat =<< getModel yp

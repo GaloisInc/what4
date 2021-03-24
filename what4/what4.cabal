@@ -58,6 +58,7 @@ common bldflags
                -Werror=missing-methods
                -Werror=overlapping-patterns
                -Wcompat
+               -Wpartial-fields
 
 common testdefs
   hs-source-dirs: test
