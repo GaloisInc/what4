@@ -275,10 +275,10 @@ runDRealInOverride sym logData ps modelFn = do
   p <- andAllOf sym folded ps
   solver_path <- findSolverPath drealPath (getConfiguration sym)
   logSolverEvent sym
-    SolverStartSATQuery
+    (SolverStartSATQuery $ SolverStartSATQueryRec
     { satQuerySolverName = "dReal"
     , satQueryReason = logReason logData
-    }
+    })
   withProcessHandles solver_path ["--model", "--in", "--format", "smt2"] Nothing $ \(in_h, out_h, err_h, ph) -> do
 
       -- Log stderr to output.
@@ -338,10 +338,10 @@ runDRealInOverride sym logData ps modelFn = do
           logCallbackVerbose logData 2 "dReal terminated."
 
           logSolverEvent sym
-             SolverEndSATQuery
+             (SolverEndSATQuery $ SolverEndSATQueryRec
              { satQueryResult = forgetModelAndCore res
              , satQueryError  = Nothing
-             }
+             })
 
           return r
         ExitFailure exit_code ->

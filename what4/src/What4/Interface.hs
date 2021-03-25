@@ -79,6 +79,8 @@ module What4.Interface
   , IsExprBuilder(..)
   , IsSymExprBuilder(..)
   , SolverEvent(..)
+  , SolverStartSATQuery(..)
+  , SolverEndSATQuery(..)
 
     -- ** Bitvector operations
   , bvJoinVector
@@ -392,11 +394,17 @@ instance HashableF e => HashableF (ArrayResultWrapper e idx) where
 --   installed via @setSolverLogListener@ whenever an interesting
 --   event occurs.
 data SolverEvent
-  = SolverStartSATQuery
+  = SolverStartSATQuery SolverStartSATQuery
+  | SolverEndSATQuery SolverEndSATQuery
+ deriving (Show, Generic)
+
+data SolverStartSATQuery = SolverStartSATQueryRec
     { satQuerySolverName :: !String
     , satQueryReason     :: !String
     }
-  | SolverEndSATQuery
+ deriving (Show, Generic)
+
+data SolverEndSATQuery = SolverEndSATQueryRec
     { satQueryResult     :: !(SatResult () ())
     , satQueryError      :: !(Maybe String)
     }

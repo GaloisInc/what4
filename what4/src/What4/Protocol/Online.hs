@@ -58,7 +58,9 @@ import           System.Process
                    (ProcessHandle, terminateProcess, waitForProcess)
 
 import           What4.Expr
-import           What4.Interface (SolverEvent(..))
+import           What4.Interface (SolverEvent(..)
+                                 , SolverStartSATQuery(..)
+                                 , SolverEndSATQuery(..) )
 import           What4.ProblemFeatures
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
@@ -320,17 +322,17 @@ checkWithAssumptions proc rsn ps =
          do tms <- forM ps (mkFormula conn)
             nms <- forM tms (freshBoundVarName conn EqualityDefinition [] BoolTypeMap)
             solverLogFn proc
-              SolverStartSATQuery
+              (SolverStartSATQuery $ SolverStartSATQueryRec
               { satQuerySolverName = solverName proc
               , satQueryReason = rsn
-              }
+              })
             addCommands conn (checkWithAssumptionsCommands conn nms)
             sat_result <- getSatResult proc
             solverLogFn proc
-              SolverEndSATQuery
+              (SolverEndSATQuery $ SolverEndSATQueryRec
               { satQueryResult = sat_result
               , satQueryError = Nothing
-              }
+              })
             return (nms, sat_result)
 
 checkWithAssumptionsAndModel ::
@@ -355,17 +357,17 @@ check p rsn =
     Nothing ->
       do let c = solverConn p
          solverLogFn p
-           SolverStartSATQuery
+           (SolverStartSATQuery $ SolverStartSATQueryRec
            { satQuerySolverName = solverName p
            , satQueryReason = rsn
-           }
+           })
          addCommands c (checkCommands c)
          sat_result <- getSatResult p
          solverLogFn p
-           SolverEndSATQuery
+           (SolverEndSATQuery $ SolverEndSATQueryRec
            { satQueryResult = sat_result
            , satQueryError = Nothing
-           }
+           })
          return sat_result
 
 -- | Send a check command to the solver and get the model in the case of a SAT result.

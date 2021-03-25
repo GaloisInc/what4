@@ -1051,10 +1051,10 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     -> IO b
   runSolverInOverride solver ack feats sym logData predicates cont = do
     I.logSolverEvent sym
-      I.SolverStartSATQuery
+      (I.SolverStartSATQuery $ I.SolverStartSATQueryRec
         { I.satQuerySolverName = show solver
         , I.satQueryReason     = logReason logData
-        }
+        })
     path <- defaultSolverPath solver sym
     withSolver solver ack feats sym path (logData{logVerbosity=2}) $ \session -> do
       -- Assume the predicates hold.
@@ -1062,10 +1062,10 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
       -- Run check SAT and get the model back.
       runCheckSat session $ \result -> do
         I.logSolverEvent sym
-          I.SolverEndSATQuery
+          (I.SolverEndSATQuery $ I.SolverEndSATQueryRec
             { I.satQueryResult = forgetModelAndCore result
             , I.satQueryError  = Nothing
-            }
+            })
         cont result
 
 -- | A default method for writing SMTLib2 problems without any
