@@ -16,6 +16,7 @@ module What4.Protocol.VerilogWriter
   ) where
 
 import Control.Monad.Except
+import Data.Parameterized.Some (Some(..), traverseSome)
 import Prettyprinter
 import What4.Expr.Builder (Expr, SymExpr)
 import What4.Interface (IsExprBuilder)
@@ -30,7 +31,7 @@ import What4.Protocol.VerilogWriter.Backend
 exprsVerilog ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->
-  [Expr n tp] ->
+  [Some (Expr n)] ->
   Doc () ->
   ExceptT String IO (Doc ())
 exprsVerilog sym es name = fmap (\m -> moduleDoc m name) (exprsToModule sym es)
@@ -40,6 +41,6 @@ exprsVerilog sym es name = fmap (\m -> moduleDoc m name) (exprsToModule sym es)
 exprsToModule ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
   sym ->
-  [Expr n tp] ->
+  [Some (Expr n)] ->
   ExceptT String IO (Module sym n)
-exprsToModule sym es = mkModule sym $ map exprToVerilogExpr es
+exprsToModule sym es = mkModule sym $ map (traverseSome exprToVerilogExpr) es
