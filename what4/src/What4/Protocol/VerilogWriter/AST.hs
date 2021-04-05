@@ -304,12 +304,13 @@ newtype Module sym n = Module (ModuleState sym n)
 -- that corresponds to the module's output.
 mkModule ::
   sym ->
-  VerilogM sym n (IExp tp) ->
+  [VerilogM sym n (IExp tp)] ->
   ExceptT String IO (Module sym n)
-mkModule sym op = fmap Module $ execVerilogM sym $ do
-    e <- op
-    out <- freshIdentifier "out"
-    addOutput (iexpType e) out (IExp e)
+mkModule sym ops = fmap Module $ execVerilogM sym $ do
+    es <- sequence ops
+    forM_ es $ \e ->
+      do out <- freshIdentifier "out"
+         addOutput (iexpType e) out (IExp e)
 
 initModuleState :: sym -> IO (ModuleState sym n)
 initModuleState sym = do
