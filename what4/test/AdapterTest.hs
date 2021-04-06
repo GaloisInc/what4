@@ -25,6 +25,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Data.Parameterized.Nonce
+import Data.Parameterized.Some
 
 import What4.Config
 import What4.Interface
@@ -165,7 +166,7 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
      one <- bvLit sym w (mkBV w 1)
      add <- bvAdd sym x one
      r <- notPred sym =<< bvEq sym x add
-     edoc <- runExceptT (exprVerilog sym r "f")
+     edoc <- runExceptT (exprsVerilog sym [Some r] "f")
      case edoc of
        Left err -> fail $ "Failed to translate to Verilog: " ++ err
        Right doc ->

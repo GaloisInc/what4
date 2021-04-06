@@ -20,7 +20,7 @@ import           Control.Monad.State (MonadState(), StateT(..), get, put, modify
 import qualified What4.BaseTypes as WT
 import           What4.Expr.Builder
 import           Data.Parameterized.Classes (OrderingF(..), compareF)
-import           Data.Parameterized.Some (Some(..))
+import           Data.Parameterized.Some (Some(..), viewSome)
 import           Data.Parameterized.Pair
 import           GHC.TypeNats ( type (<=) )
 
@@ -304,12 +304,13 @@ newtype Module sym n = Module (ModuleState sym n)
 -- that corresponds to the module's output.
 mkModule ::
   sym ->
-  VerilogM sym n (IExp tp) ->
+  [VerilogM sym n (Some IExp)] ->
   ExceptT String IO (Module sym n)
-mkModule sym op = fmap Module $ execVerilogM sym $ do
-    e <- op
-    out <- freshIdentifier "out"
-    addOutput (iexpType e) out (IExp e)
+mkModule sym ops = fmap Module $ execVerilogM sym $ do
+    es <- sequence ops
+    forM_ es $ \se ->
+      do out <- freshIdentifier "out"
+         viewSome (\e -> addOutput (iexpType e) out (IExp e)) se
 
 initModuleState :: sym -> IO (ModuleState sym n)
 initModuleState sym = do
