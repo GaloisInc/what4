@@ -13,6 +13,7 @@ returned by SMT solvers.
 module What4.Protocol.SExp
   ( SExp(..)
   , parseSExp
+  , parseSExpBody
   , stringToSExp
   , parseNextWord
   , asAtomList
@@ -61,15 +62,28 @@ isTokenChar c = not (isSpace c)
 readToken :: Parser Text
 readToken = takeWhile1 isTokenChar
 
+-- | Parses an SExp.  If the input is a string (recognized by the
+-- 'readString' argument), return that as an 'SString'; if the input
+-- is a single token, return that as an 'SAtom'.
+
 parseSExp ::
   Parser Text {- ^ A parser for string literals -} ->
   Parser SExp
 parseSExp readString = do
   skipSpaceOrNewline
-  msum [ char '(' *> skipSpaceOrNewline *> (SApp <$> many (parseSExp readString)) <* skipSpaceOrNewline <* char ')'
+  msum [ char '(' *> parseSExpBody readString
        , SString <$> readString
        , SAtom <$> readToken
        ]
+
+-- | Parses the body of an SExp after the opening '(' has already been
+-- parsed.
+
+parseSExpBody ::
+  Parser Text {- ^ A parser for string literals -} ->
+  Parser SExp
+parseSExpBody readString =
+  skipSpaceOrNewline *> (SApp <$> many (parseSExp readString)) <* skipSpaceOrNewline <* char ')'
 
 stringToSExp :: MonadFail m =>
   Parser Text {- ^ A parser for string literals -} ->

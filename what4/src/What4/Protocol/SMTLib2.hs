@@ -907,6 +907,7 @@ data SMTLib2Exception
   = SMTLib2Unsupported SMT2.Command
   | SMTLib2Error SMT2.Command Text
   | SMTLib2ParseError [SMT2.Command] Text
+  | SMTLib2ResponseUnrecognized SMT2.Command Text
 
 instance Show SMTLib2Exception where
   show (SMTLib2Unsupported (SMT2.Cmd cmd)) =
@@ -929,21 +930,67 @@ instance Show SMTLib2Exception where
        ] ++ map cmdToString cmds
        where cmdToString (SMT2.Cmd cmd) =
                "  " ++ Lazy.unpack (Builder.toLazyText cmd)
+  show (SMTLib2ResponseUnrecognized (SMT2.Cmd cmd) rsp) =
+    unlines [ "Unrecognized response from solver:"
+            , "  " <> Text.unpack rsp
+            , "in response to command:"
+            , "  " <> Lazy.unpack (Builder.toLazyText cmd)
+            ]
 
 instance Exception SMTLib2Exception
 
+----------------------------------------------------------------------
+-- SMTLIB2 response parsing, based on
+-- https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2017-07-18.pdf,
+-- page 47, Figure 3.9
+
+data SMTResponse = AckSuccess
+                 | AckUnsupported
+                 | AckError Text
+                 | AckSuccessSExp SExp
+                 deriving Show
+
+getSolverResponse :: WriterConn t h -> IO (Either SomeException SMTResponse)
+getSolverResponse conn = do
+  let ackParser :: AT.Parser SMTResponse
+      ackParser = skipSpaceOrNewline *>
+                  ((AckSuccess <$ AT.string "success") <|>
+                   (AckUnsupported <$ AT.string "unsupported") <|>
+                   (AT.char '(' *>
+                    (errParser <|>
+                      (AckSuccessSExp <$> parseSExpBody parseSMTLib2String)
+                    ))
+                  )
+      errParser = skipSpaceOrNewline *>
+                  AT.string "error" *> skipSpaceOrNewline *>
+                  (AckError . Text.intercalate " & " <$> many parseSMTLib2String) <*
+                  skipSpaceOrNewline <* AT.char ')'
+  mb <- tryJust filterAsync
+        (Streams.parseFromStream ackParser (connInputHandle conn))
+  return mb
+
 smtAckResult :: AcknowledgementAction t (Writer a)
-smtAckResult = AckAction $ \conn cmd ->
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) (connInputHandle conn))
-     case mb of
-       Right (SAtom "success") -> return ()
-       Right (SAtom "unsupported") -> throw (SMTLib2Unsupported cmd)
-       Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-       Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-       Left (SomeException e) -> throw $ SMTLib2ParseError [cmd] $ Text.pack $
-               unlines [ "Could not parse acknowledgement result."
-                       , "*** Exception: " ++ displayException e
-                       ]
+smtAckResult = AckAction $ \conn cmd -> do
+  mb <- getSolverResponse conn
+  let ackDispatch = \case
+        AckSuccess -> return ()
+        AckUnsupported -> throw (SMTLib2Unsupported cmd)
+        (AckError msg) -> throw (SMTLib2Error cmd msg)
+        (AckSuccessSExp sexp) ->
+          throw $ SMTLib2ResponseUnrecognized cmd (Text.pack $ show sexp)
+  case mb of
+    Right rsp -> ackDispatch rsp
+    Left (SomeException e) -> do
+      curInp <- Streams.read (connInputHandle conn)
+      throw $ SMTLib2ParseError [cmd] $ Text.pack $
+        unlines [ "Could not parse acknowledgement result."
+                , "*** Exception: " ++ displayException e
+                , "Attempting to parse input:"
+                , show curInp
+                ]
+
+
+----------------------------------------------------------------------
 
 smtLibEvalFuns ::
   forall t a. SMTLib2Tweaks a => Session t a -> SMTEvalFunctions (Writer a)
