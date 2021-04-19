@@ -103,11 +103,10 @@ iexpDoc (Ident _ name) = identDoc name
 
 -- NB: special pretty-printer because ABC has a hack to detect this specific syntax
 rotateDoc :: String -> String -> NatRepr w -> IExp tp -> BV w -> Doc ()
-rotateDoc op1 op2 wr@(intValue -> w) e n =
-  parens (v <+> fromString op1 <+> nd) <+> "|" <+>
-  parens (v <+> fromString op2 <+> parens (pretty w <+> "-" <+> nd))
+rotateDoc op1 op2 (intValue -> w) e (asUnsigned -> n) =
+  parens (v <+> fromString op1 <+> pretty n) <+> "|" <+>
+  parens (v <+> fromString op2 <+> pretty (w - n))
     where v = iexpDoc e
-          nd = decDoc wr n
 
 expDoc :: Exp tp -> Doc ()
 expDoc (IExp e) = iexpDoc e
