@@ -69,7 +69,7 @@ z3Options =
       integerOptSty
       (Just "Per-check timeout in milliseconds (zero is none)")
       (Just (ConcreteInteger 0))
-  ]
+  ] <> SMT2.smtlib2Options
 
 z3Adapter :: SolverAdapter st
 z3Adapter =

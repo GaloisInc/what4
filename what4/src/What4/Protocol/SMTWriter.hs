@@ -57,6 +57,7 @@ module What4.Protocol.SMTWriter
               , supportFunctionArguments
               , supportQuantifiers
               , supportedFeatures
+              , strictParsing
               , connHandle
               , connInputHandle
               , smtWriterName
@@ -82,6 +83,7 @@ module What4.Protocol.SMTWriter
   , assumeFormulaWithFreshName
   , DefineStyle(..)
   , AcknowledgementAction(..)
+  , ResponseStrictness(..)
   , nullAcknowledgementAction
     -- * SMTWriter operations
   , assume
@@ -613,6 +615,9 @@ data WriterConn t (h :: Type) =
                -- indices.
              , supportQuantifiers :: !Bool
                -- ^ Allow the SMT writer to generate problems with quantifiers.
+             , strictParsing :: !ResponseStrictness
+               -- ^ Be strict in parsing SMTLib2 responses; no
+               -- verbosity or variants allowed
              , supportedFeatures :: !ProblemFeatures
                -- ^ Indicates features supported by the solver.
              , entryStack :: !(IORef [StackEntry t h])
@@ -702,6 +707,8 @@ newWriterConn :: OutputStream Text
               -- ^ An action to consume solver acknowledgement responses
               -> String
               -- ^ Name of solver for reporting purposes.
+              -> ResponseStrictness
+              -- ^ Be strict in parsing responses?
               -> ProblemFeatures
               -- ^ Indicates what features are supported by the solver.
               -> SymbolVarBimap t
@@ -709,7 +716,7 @@ newWriterConn :: OutputStream Text
               -- canonical name (if any).
               -> cs -- ^ State information specific to the type of connection
               -> IO (WriterConn t cs)
-newWriterConn h in_h ack solver_name features bindings cs = do
+newWriterConn h in_h ack solver_name beStrict features bindings cs = do
   entry <- newStackEntry
   stk_ref <- newIORef [entry]
   r <- newIORef emptyState
@@ -719,6 +726,7 @@ newWriterConn h in_h ack solver_name features bindings cs = do
                        , supportFunctionDefs      = False
                        , supportFunctionArguments = False
                        , supportQuantifiers       = False
+                       , strictParsing            = beStrict
                        , supportedFeatures        = features
                        , entryStack   = stk_ref
                        , stateRef     = r
@@ -726,6 +734,12 @@ newWriterConn h in_h ack solver_name features bindings cs = do
                        , connState    = cs
                        , consumeAcknowledgement = ack
                        }
+
+-- | Strictness level for parsing solver responses
+data ResponseStrictness
+  = Lenient
+  | Strict
+  deriving (Eq)
 
 -- | Status to indicate when term value will be uncached.
 data TermLifetime

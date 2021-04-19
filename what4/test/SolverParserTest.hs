@@ -23,6 +23,8 @@ sugarCube :: CUBE
 sugarCube = mkCUBE { inputDir = "test/responses"
                    , rootName = "*.rsp"
                    , expectedSuffix = ".exp"
+                   , validParams = [ ("parsing", Just ["strict", "lenient"])
+                                   ]
                    }
 
 ingredients :: [Ingredient]
@@ -40,6 +42,14 @@ main = do testSweets <- findSugar sugarCube
 mkTest :: Sweets -> Natural -> Expectation -> IO [TestTree]
 mkTest s n e = do
   expect <- readFile $ expectedFile e
+  let strictness =
+        let strictVal pmtch =
+              if paramMatchVal "strict" pmtch
+              then Strict
+              else if paramMatchVal "lenient" pmtch
+                   then Lenient
+                   else error "Invalid strictness specification"
+        in maybe Strict strictVal $ lookup "parsing" $ expParamsMatch e
   return
     [
       testCase (rootMatchName s <> " #" <> show n) $ do
@@ -50,6 +60,7 @@ mkTest s n e = do
              inpStrm
              (AckAction $ undefined)
              "test-solver"
+             strictness
              noFeatures
              emptySymbolVarBimap
              ()

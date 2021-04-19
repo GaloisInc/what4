@@ -53,7 +53,7 @@ abcOptions =
       executablePathOptSty
       (Just "ABC executable path")
       (Just (ConcreteString "abc"))
-  ]
+  ] <> SMT2.smtlib2Options
 
 externalABCAdapter :: SolverAdapter st
 externalABCAdapter =

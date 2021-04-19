@@ -451,7 +451,7 @@ newConnection stream in_stream ack reqFeatures timeout bindings = do
                      , yicesTimeout = timeout
                      , yicesUnitDeclared = unitRef
                      }
-  conn <- newWriterConn stream in_stream (ack earlyUnsatRef) nm features' bindings c
+  conn <- newWriterConn stream in_stream (ack earlyUnsatRef) nm Strict features' bindings c
   return $! conn { supportFunctionDefs = True
                  , supportFunctionArguments = True
                  , supportQuantifiers = efSolver
