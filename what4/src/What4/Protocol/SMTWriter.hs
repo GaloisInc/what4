@@ -98,7 +98,7 @@ module What4.Protocol.SMTWriter
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
+import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Exception
@@ -109,8 +109,8 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
-import qualified Data.Bits as Bits
 import qualified Data.BitVector.Sized as BV
+import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
@@ -125,10 +125,10 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Lazy as Lazy
 import           Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder (decimal)
-import qualified Data.Text.Lazy as Lazy
 import           Data.Word
 import           LibBF (BigFloat, bfFromBits)
 
@@ -138,15 +138,15 @@ import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (RoundingMode(..), stringInfo)
-import           What4.ProblemFeatures
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import qualified What4.Expr.StringSeq as SSeq
-import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.UnaryBV as UnaryBV
+import qualified What4.Expr.WeightedSum as WSum
+import           What4.Interface (RoundingMode(..), stringInfo)
+import           What4.ProblemFeatures
 import           What4.ProgramLoc
 import           What4.SatResult
 import qualified What4.SemiRing as SR
