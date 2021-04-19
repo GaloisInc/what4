@@ -72,6 +72,9 @@ data SMTResponse = AckSuccess
                  | RspName Text
                  | RspVersion Text
                  | RspErrBehavior Text
+                 | RspOutOfMemory
+                 | RspRsnIncomplete
+                 | RspUnkReason SExp
                  | AckSuccessSExp SExp
                  | AckSkipped Text SMTResponse
                  deriving (Eq, Show)
@@ -127,43 +130,57 @@ rspParser :: SMTWriter.ResponseStrictness -> AT.Parser SMTResponse
 rspParser strictness =
   let lexeme p = skipSpaceOrNewline *> p
       parens p = AT.char '(' *> p <* AT.char ')'
-      errParser = parens $ lexeme (AT.string "error") *>
-                  (AckError <$> lexeme parseSMTLib2String)
+      errParser = parens $ lexeme (AT.string "error")
+                  *> (AckError <$> lexeme parseSMTLib2String)
       specific_success_response = check_sat_response <|> get_info_response
-      check_sat_response = (AckSat <$ AT.string "sat") <|>
-                           (AckUnsat <$ AT.string "unsat") <|>
-                           (AckUnknown <$ AT.string "unknown")
+      check_sat_response = (AckSat <$ AT.string "sat")
+                           <|> (AckUnsat <$ AT.string "unsat")
+                           <|> (AckUnknown <$ AT.string "unknown")
       get_info_response = parens info_response
-      info_response = errBhvParser <|> nameParser <|> versionParser
-      nameParser = lexeme (AT.string ":name") *>
-                   lexeme (RspName <$> parseSMTLib2String)
-      versionParser = lexeme (AT.string ":version") *>
-                   lexeme (RspVersion <$> parseSMTLib2String)
-      errBhvParser = lexeme (AT.string ":error-behavior") *>
-                     lexeme (RspErrBehavior <$>
-                             (AT.string "continued-execution" <|>
-                              AT.string "immediate-exit") <|>
-                              -- Explicit error instead of generic
-                              -- fallback since :error-behavior was
-                              -- matched but behavior type was not.
-                             throw (SMTLib2ResponseUnrecognized
-                                    SMT2.getErrorBehavior
-                                     "bad error-behavior value")
-                            )
+      info_response = errBhvParser
+                      <|> nameParser
+                      <|> unkReasonParser
+                      <|> versionParser
+      nameParser = lexeme (AT.string ":name")
+                   *> lexeme (RspName <$> parseSMTLib2String)
+      versionParser = lexeme (AT.string ":version")
+                      *> lexeme (RspVersion <$> parseSMTLib2String)
+      errBhvParser = lexeme (AT.string ":error-behavior")
+                     *> lexeme (RspErrBehavior <$>
+                                (AT.string "continued-execution"
+                                 <|> AT.string "immediate-exit")
+                                 -- Explicit error instead of generic
+                                 -- fallback since :error-behavior was
+                                 -- matched but behavior type was not.
+                                 <|> throw (SMTLib2ResponseUnrecognized
+                                            SMT2.getErrorBehavior
+                                            "bad :error-behavior value")
+                               )
+      unkReasonParser =
+        lexeme (AT.string ":reason-unknown")
+        *> lexeme (RspOutOfMemory <$ AT.string "memout"
+                    <|> RspRsnIncomplete <$ AT.string "incomplete"
+                    <|> (AT.char '(' *> (RspUnkReason <$> parseSExpBody parseSMTLib2String))
+                    -- already matched :reason-unknown, so any other
+                    -- arguments to that are errors.
+                    <|> throw (SMTLib2ResponseUnrecognized
+                               (SMT2.Cmd "reason?")
+                               "bad :reason-unknown value")
+                  )
   in skipSpaceOrNewline *>
-     ((AckSuccess <$ AT.string "success") <|>
-      (AckUnsupported <$ AT.string "unsupported") <|>
-      specific_success_response <|>
-      errParser <|>
-      (AT.char '(' *> (AckSuccessSExp <$> parseSExpBody parseSMTLib2String)) <|>
+     ((AckSuccess <$ AT.string "success")
+      <|> (AckUnsupported <$ AT.string "unsupported")
+      <|> specific_success_response
+      <|> errParser
+      <|> (AT.char '(' *> (AckSuccessSExp <$> parseSExpBody parseSMTLib2String))
       -- sometimes verbose output mode will generate interim text
       -- before the actual ack; the following skips lines of input
       -- that aren't recognized.
-      (case strictness of
-         SMTWriter.Strict -> empty
-         SMTWriter.Lenient -> AckSkipped
-                              <$> AT.takeWhile1 (not . AT.isEndOfLine)
-                              <*> (rspParser strictness))
+       <|> (case strictness of
+              SMTWriter.Strict -> empty
+              SMTWriter.Lenient -> AckSkipped
+                                   <$> AT.takeWhile1 (not . AT.isEndOfLine)
+                                   <*> (rspParser strictness))
      )
 
 parseSMTLib2String :: AT.Parser Text
