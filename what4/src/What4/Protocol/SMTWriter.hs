@@ -589,6 +589,7 @@ data StackEntry t (h :: Type) = StackEntry
 data WriterConn t (h :: Type) =
   WriterConn { smtWriterName :: !String
                -- ^ Name of writer for error reporting purposes.
+
              , connHandle :: !(OutputStream Text)
                -- ^ Handle to write to
 

@@ -18,6 +18,8 @@ module What4.Protocol.Online
   ( OnlineSolver(..)
   , AnOnlineSolver(..)
   , SolverProcess(..)
+  , solverStdin
+  , solverResponse
   , SolverGoalTimeout(..)
   , getGoalTimeoutInSeconds
   , ErrorBehavior(..)
@@ -134,12 +136,6 @@ data SolverProcess scope solver = SolverProcess
   , solverHandle :: !ProcessHandle
     -- ^ Handle to the solver process
 
-  , solverStdin :: !(Streams.OutputStream Text)
-    -- ^ Standard in for the solver process.
-
-  , solverResponse :: !(Streams.InputStream Text)
-    -- ^ Wrap the solver's stdout, for easier parsing of responses.
-
   , solverErrorBehavior :: !ErrorBehavior
     -- ^ Indicate this solver's behavior following an error response
 
@@ -174,6 +170,15 @@ data SolverProcess scope solver = SolverProcess
     -- trying to satisfy any particular goal before giving up.  A
     -- value of zero indicates no time limit.
   }
+
+
+-- | Standard input stream for the solver process.
+solverStdin :: (SolverProcess t solver) -> (Streams.OutputStream Text)
+solverStdin = connHandle . solverConn
+
+-- | The solver's stdout, for easier parsing of responses.
+solverResponse :: (SolverProcess t solver) -> (Streams.InputStream Text)
+solverResponse = connInputHandle . solverConn
 
 
 -- | An impolite way to shut down a solver.  Prefer to use

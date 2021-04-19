@@ -693,10 +693,8 @@ yicesStartSolver features auxOutput sym = do -- FIXME
 
   return $! SolverProcess { solverConn   = conn
                           , solverCleanupCallback = cleanupProcess hdls
-                          , solverStdin  = in_stream'
                           , solverStderr = err_reader
                           , solverHandle = ph
-                          , solverResponse = out_stream
                           , solverErrorBehavior = ContinueOnError
                           , solverEvalFuns = smtEvalFuns conn out_stream
                           , solverLogFn = logSolverEvent sym
@@ -1155,8 +1153,6 @@ runYicesInOverride sym logData conditions resultFn = do
       let yp = SolverProcess { solverConn = c
                              , solverCleanupCallback = cleanupProcess hdls
                              , solverHandle = ph
-                             , solverStdin  = in_stream
-                             , solverResponse = out_stream
                              , solverErrorBehavior = ImmediateExit
                              , solverStderr = err_reader
                              , solverEvalFuns = smtEvalFuns c out_stream

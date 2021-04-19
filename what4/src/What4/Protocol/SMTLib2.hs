@@ -1126,11 +1126,9 @@ startSolver solver ack setup feats auxOutput sym = do
   return $! SolverProcess
             { solverConn     = writer
             , solverCleanupCallback = cleanupProcess hdls
-            , solverStdin    = in_stream
             , solverStderr   = err_reader
             , solverHandle   = ph
             , solverErrorBehavior = errBeh
-            , solverResponse = out_stream
             , solverEvalFuns = smtEvalFuns writer out_stream
             , solverLogFn    = I.logSolverEvent sym
             , solverName     = show solver
