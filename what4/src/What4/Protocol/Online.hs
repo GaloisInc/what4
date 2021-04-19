@@ -401,7 +401,7 @@ getUnsatAssumptions proc =
      unless (supportedFeatures conn `hasProblemFeature` useUnsatAssumptions) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT assumption lists"
      addCommandNoAck conn (getUnsatAssumptionsCommand conn)
-     smtUnsatAssumptionsResult conn (solverResponse proc)
+     smtUnsatAssumptionsResult conn conn
 
 -- | After an unsatisfiable check-sat command, compute a set of the named assertions
 --   that (together with all the unnamed assertions) form an unsatisfiable core.
@@ -412,13 +412,13 @@ getUnsatCore proc =
      unless (supportedFeatures conn `hasProblemFeature` useUnsatCores) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT cores"
      addCommandNoAck conn (getUnsatCoreCommand conn)
-     smtUnsatCoreResult conn (solverResponse proc)
+     smtUnsatCoreResult conn conn
 
 -- | Get the sat result from a previous SAT command.
 getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
-  sat_result <- tryJust filterAsync (smtSatResult yp (solverResponse yp))
+  sat_result <- tryJust filterAsync (smtSatResult yp (solverConn yp))
   case sat_result of
     Right ok -> return ok
 
