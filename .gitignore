@@ -13,3 +13,6 @@ stack.yaml
 cabal.project.local
 *.tix
 .ghc.environment.*
+_darcs
+*~
+.boring
