@@ -177,6 +177,7 @@ library
     What4.Protocol.Online
     What4.Protocol.SMTLib2
     What4.Protocol.SMTLib2.Parse
+    What4.Protocol.SMTLib2.Response
     What4.Protocol.SMTLib2.Syntax
     What4.Protocol.SMTWriter
     What4.Protocol.ReadDecimal
@@ -344,3 +345,15 @@ test-suite template_tests
   build-depends: bv-sized
                , libBF
                , transformers
+
+
+test-suite solver_parsing_tests
+  import: bldflags, testdefs-hunit
+  type: exitcode-stdio-1.0
+  main-is : SolverParserTest.hs
+  build-depends: contravariant
+               , exceptions
+               , io-streams
+               , lumberjack
+               , tasty-sugar >= 1.1 && < 1.2
+               , text

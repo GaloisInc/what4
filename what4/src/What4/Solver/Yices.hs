@@ -561,7 +561,7 @@ instance SMTReadWriter Connection where
   smtSatResult _ = getSatResponse
 
   smtUnsatAssumptionsResult _ s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) s)
+    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle s))
        let cmd = safeCmd "(show-unsat-assumptions)"
        case mb of
          Right (asNegAtomList -> Just as) -> return as
@@ -573,7 +573,7 @@ instance SMTReadWriter Connection where
                          ]
 
   smtUnsatCoreResult _ s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) s)
+    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle s))
        let cmd = safeCmd "(show-unsat-core)"
        case mb of
          Right (asAtomList -> Just nms) -> return nms
@@ -764,9 +764,9 @@ getAckResponse resps =
 
 -- | Get the sat result from a previous SAT command.
 -- Throws an exception if something goes wrong.
-getSatResponse :: Streams.InputStream Text -> IO (SatResult () ())
-getSatResponse resps =
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) resps)
+getSatResponse :: WriterConn t Connection -> IO (SatResult () ())
+getSatResponse conn =
+  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle conn))
      case mb of
        Right (SAtom "unsat")   -> return (Unsat ())
        Right (SAtom "sat")     -> return (Sat ())

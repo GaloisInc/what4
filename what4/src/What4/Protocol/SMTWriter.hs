@@ -2865,16 +2865,16 @@ class SMTWriter h => SMTReadWriter h where
     WriterConn t h -> Streams.InputStream Text -> SMTEvalFunctions h
 
   -- | Parse a set result from the solver's response.
-  smtSatResult :: f h -> Streams.InputStream Text -> IO (SatResult () ())
+  smtSatResult :: f h -> WriterConn t h -> IO (SatResult () ())
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   These correspond to previously-named assertions.
-  smtUnsatCoreResult :: f h -> Streams.InputStream Text -> IO [Text]
+  smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary
   --   atom, false for a negated atom.
-  smtUnsatAssumptionsResult :: f h -> Streams.InputStream Text -> IO [(Bool,Text)]
+  smtUnsatAssumptionsResult :: f h -> WriterConn t h -> IO [(Bool,Text)]
 
 
 -- | Return the terms associated with the given ground index variables.
