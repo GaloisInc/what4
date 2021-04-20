@@ -47,6 +47,7 @@ module What4.Protocol.SMTLib2
   , nameResult
   , setProduceModels
   , smtLibEvalFuns
+  , smtlib2Options
     -- * Logic
   , SMT2.Logic(..)
   , SMT2.qf_bv
@@ -128,6 +129,8 @@ import           LibBF( bfToBits )
 import           Prelude hiding (writeFile)
 
 import           What4.BaseTypes
+import qualified What4.Concrete as BC
+import qualified What4.Config as CFG
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import qualified What4.Interface as I
@@ -152,6 +155,10 @@ import           What4.Solver.Adapter
 all_supported :: SMT2.Logic
 all_supported = SMT2.allSupported
 {-# DEPRECATED all_supported "Use allSupported" #-}
+
+
+smtlib2Options :: [CFG.ConfigDesc]
+smtlib2Options = smtParseOptions
 
 ------------------------------------------------------------------------
 -- Floating point
@@ -564,6 +571,8 @@ newWriter :: a
               --   (may be the @nullInput@ stream if no responses are expected)
           -> AcknowledgementAction t (Writer a)
              -- ^ Action to run for consuming acknowledgement messages
+          -> ResponseStrictness
+             -- ^ Be strict in parsing SMT solver responses?
           -> String
              -- ^ Name of solver for reporting purposes.
           -> Bool
@@ -576,13 +585,13 @@ newWriter :: a
           -> B.SymbolVarBimap t
              -- ^ Variable bindings for names.
           -> IO (WriterConn t (Writer a))
-newWriter _ h in_h ack solver_name permitDefineFun arithOption quantSupport bindings = do
+newWriter _ h in_h ack isStrict solver_name permitDefineFun arithOption quantSupport bindings = do
   r <- newIORef Set.empty
   let initWriter =
         Writer
         { declaredTuples = r
         }
-  conn <- newWriterConn h in_h ack solver_name arithOption bindings initWriter
+  conn <- newWriterConn h in_h ack solver_name isStrict arithOption bindings initWriter
   return $! conn { supportFunctionDefs = permitDefineFun
                  , supportQuantifiers = quantSupport
                  }
@@ -926,8 +935,12 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
        Streams.OutputStream Text ->
        Streams.InputStream Text ->
        IO (WriterConn t (Writer a))
-  newDefaultWriter solver ack feats sym h in_h =
-    newWriter solver h in_h ack (show solver) True feats True
+  newDefaultWriter solver ack feats sym h in_h = do
+    let cfg = I.getConfiguration sym
+    strictness <- maybe Strict
+                  (\c -> if BC.fromConcreteBool c then Strict else Lenient) <$>
+                  (CFG.getOption =<< CFG.getOptionSetting strictSMTParsing cfg)
+    newWriter solver h in_h ack strictness (show solver) True feats True
       =<< B.getSymbolVarBimap sym
 
   -- | Run the solver in a session.
@@ -1017,7 +1030,11 @@ writeDefaultSMT2 a nm feat sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   null_in <- Streams.nullInput
-  c <- newWriter a str null_in nullAcknowledgementAction nm True feat True bindings
+  let cfg = I.getConfiguration sym
+  strictness <- maybe Strict
+                (\c -> if BC.fromConcreteBool c then Strict else Lenient) <$>
+                (CFG.getOption =<< CFG.getOptionSetting strictSMTParsing cfg)
+  c <- newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
   writeCheckSat c

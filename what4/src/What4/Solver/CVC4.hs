@@ -45,6 +45,7 @@ import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import qualified What4.Protocol.SMTLib2.Response as RSP
 import qualified What4.Protocol.SMTLib2.Syntax as Syntax
 import           What4.Protocol.SMTWriter
 import           What4.Utils.Process
@@ -78,7 +79,7 @@ cvc4Options =
           integerOptSty
           (Just "Per-check timeout in milliseconds (zero is none)")
           (Just (ConcreteInteger 0))
-  ]
+  ] <> SMT2.smtlib2Options
 
 cvc4Adapter :: SolverAdapter st
 cvc4Adapter =
@@ -130,7 +131,11 @@ writeMultiAsmpCVC4SMT2File sym h ps = do
   bindings <- getSymbolVarBimap sym
   out_str  <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   in_str <- Streams.nullInput
-  c <- SMT2.newWriter CVC4 out_str in_str nullAcknowledgementAction "CVC4"
+  let cfg = getConfiguration sym
+  strictness <- maybe Strict
+                (\c -> if fromConcreteBool c then Strict else Lenient) <$>
+                (getOption =<< getOptionSetting RSP.strictSMTParsing cfg)
+  c <- SMT2.newWriter CVC4 out_str in_str nullAcknowledgementAction strictness "CVC4"
          True cvc4Features True bindings
   SMT2.setLogic c SMT2.allSupported
   SMT2.setProduceModels c True

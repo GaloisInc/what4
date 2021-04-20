@@ -56,6 +56,7 @@ import           What4.SatResult
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import qualified What4.Protocol.SMTLib2 as SMT2
+import qualified What4.Protocol.SMTLib2.Response as RSP
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Utils.Process
 import           What4.Utils.Streams (logErrorStream)
@@ -74,7 +75,7 @@ drealOptions =
       executablePathOptSty
       (Just "Path to dReal executable")
       (Just (ConcreteString "dreal"))
-  ]
+  ] <> SMT2.smtlib2Options
 
 drealAdapter :: SolverAdapter st
 drealAdapter =
@@ -106,7 +107,13 @@ writeDRealSMT2File sym h ps = do
   bindings <- getSymbolVarBimap sym
   out_str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   in_str <- Streams.nullInput
-  c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction "dReal"
+  let cfg = getConfiguration sym
+  strictness <- maybe SMTWriter.Strict
+                (\c -> if fromConcreteBool c
+                       then SMTWriter.Strict
+                       else SMTWriter.Lenient) <$>
+                (getOption =<< getOptionSetting RSP.strictSMTParsing cfg)
+  c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction strictness "dReal"
           False useComputableReals False bindings
   SMT2.setProduceModels c True
   SMT2.setLogic c (SMT2.Logic "QF_NRA")
@@ -299,7 +306,14 @@ runDRealInOverride sym logData ps modelFn = do
 
       in_str <- Streams.nullInput
 
-      c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction "dReal"
+      let cfg = getConfiguration sym
+      strictness <- maybe SMTWriter.Strict
+                    (\c -> if fromConcreteBool c
+                           then SMTWriter.Strict
+                           else SMTWriter.Lenient) <$>
+                    (getOption =<< getOptionSetting RSP.strictSMTParsing cfg)
+
+      c <- SMT2.newWriter DReal out_str in_str SMTWriter.nullAcknowledgementAction strictness "dReal"
              False useComputableReals False bindings
 
       -- Set the dReal default logic

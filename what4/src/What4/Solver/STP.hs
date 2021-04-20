@@ -57,7 +57,7 @@ stpOptions =
           (Just "Path to STP executable.")
           (Just (ConcreteString "stp"))
   , intWithRangeOpt stpRandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
-  ]
+  ] <> SMT2.smtlib2Options
 
 stpAdapter :: SolverAdapter st
 stpAdapter =

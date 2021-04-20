@@ -58,7 +58,7 @@ boolectorOptions =
       executablePathOptSty
       (Just "Path to boolector executable")
       (Just (ConcreteString "boolector"))
-  ]
+  ] <> SMT2.smtlib2Options
 
 boolectorAdapter :: SolverAdapter st
 boolectorAdapter =

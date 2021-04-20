@@ -21,6 +21,8 @@ module What4.Protocol.SMTLib2.Response
   , SMTLib2Exception(..)
   , getSolverResponse
   , getLimitedSolverResponse
+  , smtParseOptions
+  , strictSMTParsing
   )
 where
 
@@ -31,13 +33,34 @@ import           Data.Text ( Text )
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy
 import qualified Data.Text.Lazy.Builder as Builder
+import qualified Prettyprinter.Util as PPU
 import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec.Text as AStreams
 
+import qualified What4.BaseTypes as BT
+import qualified What4.Concrete as BC
+import qualified What4.Config as CFG
 import           What4.Protocol.SExp
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Utils.Process ( filterAsync )
+
+
+strictSMTParsing :: CFG.ConfigOption BT.BaseBoolType
+strictSMTParsing = CFG.configOption BT.BaseBoolRepr "solver.strict_parsing"
+
+smtParseOptions :: [CFG.ConfigDesc]
+smtParseOptions =
+  [
+    CFG.mkOpt strictSMTParsing CFG.boolOptSty
+    (Just $ PPU.reflow $
+     Text.concat ["Strictly parse SMT responses and fail on"
+                 , "unrecognized data (the default)."
+                 , "This might need to be disabled when running"
+                 , "the SMT solver in verbose mode."
+                 ])
+    (Just (BC.ConcreteBool True))
+  ]
 
 
 data SMTResponse = AckSuccess
@@ -59,7 +82,9 @@ getSolverResponse :: SMTWriter.WriterConn t h
                   -> IO (Either SomeException SMTResponse)
 getSolverResponse conn = do
   mb <- tryJust filterAsync
-        (AStreams.parseFromStream rspParser (SMTWriter.connInputHandle conn))
+        (AStreams.parseFromStream
+          (rspParser (SMTWriter.strictParsing conn))
+          (SMTWriter.connInputHandle conn))
   return mb
 
 
@@ -98,8 +123,8 @@ getLimitedSolverResponse intent handleResponse conn cmd =
                 ]
 
 
-rspParser :: AT.Parser SMTResponse
-rspParser =
+rspParser :: SMTWriter.ResponseStrictness -> AT.Parser SMTResponse
+rspParser strictness =
   let lexeme p = skipSpaceOrNewline *> p
       parens p = AT.char '(' *> p <* AT.char ')'
       errParser = parens $ lexeme (AT.string "error") *>
@@ -134,7 +159,11 @@ rspParser =
       -- sometimes verbose output mode will generate interim text
       -- before the actual ack; the following skips lines of input
       -- that aren't recognized.
-      (AckSkipped <$> AT.takeWhile1 (not . AT.isEndOfLine) <*> rspParser)
+      (case strictness of
+         SMTWriter.Strict -> empty
+         SMTWriter.Lenient -> AckSkipped
+                              <$> AT.takeWhile1 (not . AT.isEndOfLine)
+                              <*> (rspParser strictness))
      )
 
 parseSMTLib2String :: AT.Parser Text
