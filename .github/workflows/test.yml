@@ -45,11 +45,6 @@ jobs:
       - name: Cabal update
         shell: bash
         run: nix-shell -p cabal-install --run 'cabal update'
-      - name: Cabal check
-        shell: bash
-        run: |
-          cd what4
-          nix-shell -p cabal-install --run 'cabal check'
       - name: Setup Environment Vars
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
