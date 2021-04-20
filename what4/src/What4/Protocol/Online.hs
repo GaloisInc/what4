@@ -413,7 +413,6 @@ getUnsatCore proc =
 getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
-  let err_reader = solverStderr yp
   sat_result <- tryJust filterAsync (smtSatResult yp (solverResponse yp))
   case sat_result of
     Right ok -> return ok
@@ -422,7 +421,7 @@ getSatResult yp = do
        do -- Interrupt process
           terminateProcess ph
 
-          txt <- readAllLines err_reader
+          txt <- readAllLines $ solverStderr yp
 
           -- Wait for process to end
           ec <- waitForProcess ph
