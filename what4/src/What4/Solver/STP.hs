@@ -83,9 +83,6 @@ instance SMT2.SMTLib2GenericSolver STP where
     SMT2.setProduceModels writer True
     SMT2.setLogic writer SMT2.qf_bv
 
-  newDefaultWriter solver ack feats sym h in_h =
-    SMT2.newWriter solver h in_h ack (show solver) True feats False
-      =<< getSymbolVarBimap sym
 
 stpFeatures :: ProblemFeatures
 stpFeatures = useIntegerArithmetic .|. useBitvectors
