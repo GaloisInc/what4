@@ -276,7 +276,7 @@ test-suite online-solver-test
     prettyprinter,
     process,
     tasty-expected-failure >= 0.12 && < 0.13,
-    tasty-checklist >= 0.1 && < 0.2,
+    tasty-checklist >= 0.1 && < 1.1,
     text,
     units,
     units-defs,
