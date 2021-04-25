@@ -1382,6 +1382,38 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
               -> Ctx.Assignment (SymExpr sym) (idx::>tp)
               -> IO (SymExpr sym b)
 
+  -- | Return element in array.
+  arrayCopy ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a ->
+    SymBV sym w ->
+    SymArray sym (SingleCtx (BaseBVType w)) a ->
+    SymBV sym w ->
+    SymBV sym w ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Return element in array.
+  arraySet ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a ->
+    SymBV sym w ->
+    SymExpr sym a ->
+    SymBV sym w ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Return element in array.
+  arrayRangeEq ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a ->
+    SymBV sym w ->
+    SymArray sym (SingleCtx (BaseBVType w)) a ->
+    SymBV sym w ->
+    SymBV sym w ->
+    IO (Pred sym)
+
   -- | Create an array from a map of concrete indices to values.
   --
   -- This is implemented, but designed to be overridden for efficiency.

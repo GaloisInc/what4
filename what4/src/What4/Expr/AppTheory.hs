@@ -201,6 +201,9 @@ appTheory a0 =
     ConstantArray{} -> ArrayTheory
     SelectArray{} -> ArrayTheory
     UpdateArray{} -> ArrayTheory
+    CopyArray{} -> ArrayTheory
+    SetArray{} -> ArrayTheory
+    EqualArrayRange{} -> ArrayTheory
 
     ---------------------
     -- String operations

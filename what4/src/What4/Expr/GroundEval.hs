@@ -498,6 +498,10 @@ evalGroundApp f a0 = do
                     BaseBVRepr _    -> xj == yj
                     _ -> error $ "We do not yet support UpdateArray on " ++ show tp ++ " indices."
 
+    CopyArray{} -> error "CopyArray: unsupported."
+    SetArray{} -> error "SetArray: unsupported."
+    EqualArrayRange{} -> error "EqualArrayRange: unsupported."
+
     ------------------------------------------------------------------------
     -- Conversions
 

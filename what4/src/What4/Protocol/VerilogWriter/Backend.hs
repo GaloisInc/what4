@@ -341,6 +341,9 @@ appVerilogExpr app =
     ConstantArray _ _ _ -> doNotSupportError "arrays"
     UpdateArray _ _ _ _ _ -> doNotSupportError "arrays"
     SelectArray _ _ _ -> doNotSupportError "arrays"
+    CopyArray _ _ _ _ _ _ _ _ _ -> doNotSupportError "arrays"
+    SetArray _ _ _ _ _ _ _ -> doNotSupportError "arrays"
+    EqualArrayRange _ _ _ _ _ _ _ _ _ -> doNotSupportError "arrays"
 
     -- Conversions
     IntegerToReal _ -> doNotSupportError "integers"
