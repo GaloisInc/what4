@@ -1141,12 +1141,13 @@ ppSolverVersionError err =
 
 -- | Get the result of a version query
 nameResult :: WriterConn t a -> IO Text
-nameResult =
-  flip (getLimitedSolverResponse "solver name" $
-        \case
-          RspName nm -> Just nm
-          _ -> Nothing
-       ) SMT2.getName
+nameResult conn =
+  getLimitedSolverResponse "solver name"
+  (\case
+      RspName nm -> Just nm
+      _ -> Nothing
+  )
+  conn SMT2.getName
 
 
 -- | Query the solver's error behavior setting
@@ -1167,12 +1168,13 @@ queryErrorBehavior conn =
 
 -- | Get the result of a version query
 versionResult :: WriterConn t a -> IO Text
-versionResult =
-  flip (getLimitedSolverResponse "solver version" $
-        \case
-          RspVersion v -> Just v
-          _ -> Nothing
-       ) SMT2.getVersion
+versionResult conn =
+  getLimitedSolverResponse "solver version"
+  (\case
+      RspVersion v -> Just v
+      _ -> Nothing
+  )
+  conn SMT2.getVersion
 
 
 -- | Ensure the solver's version falls within a known-good range.
