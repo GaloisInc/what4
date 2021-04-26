@@ -692,13 +692,29 @@ traverseSubtree ps0 f = go ps0 []
 
 -- | Add an option to the given @ConfigMap@ or throws an
 -- 'OptCreateFailure' exception on error.
-insertOption :: (MonadIO m, MonadThrow m) => ConfigDesc -> ConfigMap -> m ConfigMap
-insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p ps f m
+--
+-- Inserting an option multiple times is idempotent under equivalency
+-- modulo the opt_onset in the option's style, otherwise it is an
+-- error.
+insertOption :: (MonadIO m, MonadThrow m)
+             => ConfigMap -> ConfigDesc -> m ConfigMap
+insertOption m d@(ConfigDesc (ConfigOption _tp (p:|ps)) sty h) = adjustConfigMap p ps f m
   where
-  f Nothing  =
+  f Nothing =
        do ref <- liftIO (newMVar (opt_default_value sty))
           return (Just (ConfigLeaf sty ref h))
-  f (Just _) = throwM $ OptCreateFailure d "already exists"
+  f (Just existing@(ConfigLeaf sty' _ h')) =
+    case testEquality (opt_type sty) (opt_type sty') of
+      Just Refl ->
+        if and [ show (opt_help sty) == show (opt_help sty')
+               , opt_default_value sty == opt_default_value sty'
+               -- Note opt_onset in sty is ignored/dropped
+               , show h == show h'
+               ]
+        then return $ Just existing
+        else throwM $ OptCreateFailure d "already exists"
+      Nothing -> throwM $ OptCreateFailure d
+                 (pretty $ "already exists with type " <> show (opt_type sty'))
 
 data OptCreateFailure = OptCreateFailure ConfigDesc (Doc Void)
 instance Exception OptCreateFailure
@@ -731,7 +747,7 @@ extendConfig :: [ConfigDesc]
              -> Config
              -> IO ()
 extendConfig ts (Config cfg) =
-  modifyMVar_ cfg (\m -> foldM (flip insertOption) m ts)
+  modifyMVar_ cfg (\m -> foldM insertOption m ts)
 
 -- | Verbosity of the simulator.  This option controls how much
 --   informational and debugging output is generated.
