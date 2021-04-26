@@ -87,6 +87,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 module What4.Config
   ( -- * Names of properties
@@ -112,6 +113,7 @@ module What4.Config
   , optWarn
   , optErr
   , checkOptSetResult
+  , OptSetFailure(..)
 
     -- ** Option style templates
   , Bound(..)
@@ -165,21 +167,22 @@ import           Control.Applicative (Const(..))
 import           Control.Concurrent.MVar
 import           Control.Exception
 import           Control.Lens ((&))
-import           Control.Monad.Identity
+import qualified Control.Lens.Combinators as LC
 import           Control.Monad.IO.Class
+import           Control.Monad.Identity
 import           Control.Monad.Writer.Strict hiding ((<>))
-import           Data.Kind
-import           Data.Maybe
-import           Data.Typeable
 import           Data.Foldable (toList)
+import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe
+import           Data.Parameterized.Classes
 import           Data.Parameterized.Some
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Void
@@ -304,6 +307,12 @@ data OptionSetting (tp :: BaseType) =
   , setOption :: ConcreteVal tp -> IO OptionSetResult
   }
 
+
+instance Show (OptionSetting tp) where
+  show = (<> " option setting") .
+         LC.cons '\'' . flip LC.snoc '\'' .
+         show . optionSettingName
+instance ShowF OptionSetting
 
 -- | An option defines some metadata about how a configuration option behaves.
 --   It contains a base type representation, which defines the runtime type
@@ -728,7 +737,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
   -- | Set the value of an option.  Return any generated warnings.
   --   Throw an exception if a validation error occurs.
   setOpt :: OptionSetting tp -> a -> IO [Doc Void]
-  setOpt x v = trySetOpt x v >>= checkOptSetResult
+  setOpt x v = trySetOpt x v >>= checkOptSetResult x
 
   -- | Get the current value of an option.  Throw an exception
   --   if the option is not currently set.
@@ -738,11 +747,18 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
 
 -- | Throw an exception if the given @OptionSetResult@ indidcates
 --   an error.  Otherwise, return any generated warnings.
-checkOptSetResult :: OptionSetResult -> IO [Doc Void]
-checkOptSetResult res =
+checkOptSetResult :: OptionSetting tp -> OptionSetResult -> IO [Doc Void]
+checkOptSetResult optset res =
   case optionSetError res of
-    Just msg -> fail (show msg)
+    Just msg -> throwIO $ OptSetFailure (Some optset) msg
     Nothing -> return (toList (optionSetWarnings res))
+
+data OptSetFailure = OptSetFailure (Some OptionSetting) (Doc Void)
+instance Exception OptSetFailure
+instance Show OptSetFailure where
+  show (OptSetFailure optset msg) =
+    "Failed to set " <> show optset <> ": " <> show msg
+
 
 instance Opt (BaseStringType Unicode) Text where
   getMaybeOpt x = fmap (fromUnicodeLit . fromConcreteString) <$> getOption x
