@@ -101,6 +101,9 @@ module What4.Config
     -- * Option settings
   , OptionSetting(..)
   , Opt(..)
+  , setUnicodeOpt
+  , setIntegerOpt
+  , setBoolOpt
 
     -- * Defining option styles
   , OptionStyle(..)
@@ -795,6 +798,43 @@ instance Opt BaseIntegerType Integer where
 instance Opt BaseBoolType Bool where
   getMaybeOpt x = fmap fromConcreteBool <$> getOption x
   trySetOpt x v = setOption x (ConcreteBool v)
+
+-- | Given a unicode text value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not a unicode
+-- text valued option.
+setUnicodeOpt :: Some OptionSetting -> Text -> IO [Doc Void]
+setUnicodeOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt (BaseStringRepr UnicodeRepr) of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given an text string"
+
+-- | Given an integer value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not an integer
+-- valued option.
+setIntegerOpt :: Some OptionSetting -> Integer -> IO [Doc Void]
+setIntegerOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt BaseIntegerRepr of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given an integer"
+
+-- | Given a boolean value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not a boolean
+-- valued option.
+setBoolOpt :: Some OptionSetting -> Bool -> IO [Doc Void]
+setBoolOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt BaseBoolRepr of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given an boolean"
+
 
 -- | Given a @ConfigOption@ name, produce an @OptionSetting@
 --   object for accessing and setting the value of that option.
