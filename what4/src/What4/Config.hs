@@ -117,6 +117,8 @@ module What4.Config
   , optErr
   , checkOptSetResult
   , OptSetFailure(..)
+  , OptGetFailure(..)
+  , OptCreateFailure(..)
 
     -- ** Option style templates
   , Bound(..)
@@ -163,15 +165,11 @@ module What4.Config
   , verbosityLogger
   ) where
 
-#if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
-#endif
-
 import           Control.Applicative (Const(..))
 import           Control.Concurrent.MVar
-import           Control.Exception
 import           Control.Lens ((&))
 import qualified Control.Lens.Combinators as LC
+import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Identity
 import           Control.Monad.Writer.Strict hiding ((<>))
@@ -555,6 +553,9 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 data ConfigDesc where
   ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
 
+instance Show ConfigDesc where
+  show (ConfigDesc o _ _) = show o
+
 -- | The most general method for constructing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> OptionStyle tp      -- ^ Define the style of this option
@@ -689,16 +690,21 @@ traverseSubtree ps0 f = go ps0 []
      where g (ConfigTrie x m) = ConfigTrie x <$> go ps (p:revPath) m
 
 
--- | Add an option to the given @ConfigMap@.
-insertOption :: (MonadIO m, MonadFail m) => ConfigDesc -> ConfigMap -> m ConfigMap
+-- | Add an option to the given @ConfigMap@ or throws an
+-- 'OptCreateFailure' exception on error.
+insertOption :: (MonadIO m, MonadThrow m) => ConfigDesc -> ConfigMap -> m ConfigMap
 insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p ps f m
   where
   f Nothing  =
        do ref <- liftIO (newMVar (opt_default_value sty))
           return (Just (ConfigLeaf sty ref h))
-  f (Just _) = fail ("Option " ++ showPath ++ " already exists")
+  f (Just _) = throwM $ OptCreateFailure d "already exists"
 
-  showPath = Text.unpack (Text.intercalate "." (p:ps))
+data OptCreateFailure = OptCreateFailure ConfigDesc (Doc Void)
+instance Exception OptCreateFailure
+instance Show OptCreateFailure where
+  show (OptCreateFailure cfgdesc msg) =
+    "Failed to create option " <> show cfgdesc <> ": " <> show msg
 
 
 ------------------------------------------------------------------------
@@ -718,8 +724,9 @@ initialConfig initVerbosity ts = do
    extendConfig (builtInOpts initVerbosity ++ ts) cfg
    return cfg
 
--- | Extend an existing configuration with new options.  An error will be
---   raised if any of the given options clash with options that already exists.
+-- | Extend an existing configuration with new options.  An
+--   'OptCreateFailure' exception will be raised if any of the given
+--   options clash with options that already exists.
 extendConfig :: [ConfigDesc]
              -> Config
              -> IO ()
@@ -762,22 +769,22 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
   trySetOpt :: OptionSetting tp -> a -> IO OptionSetResult
 
   -- | Set the value of an option.  Return any generated warnings.
-  --   Throw an exception if a validation error occurs.
+  --   Throws an OptSetFailure exception if a validation error occurs.
   setOpt :: OptionSetting tp -> a -> IO [Doc Void]
   setOpt x v = trySetOpt x v >>= checkOptSetResult x
 
   -- | Get the current value of an option.  Throw an exception
   --   if the option is not currently set.
   getOpt :: OptionSetting tp -> IO a
-  getOpt x = maybe (fail msg) return =<< getMaybeOpt x
-    where msg = "Option is not set: " ++ show (optionSettingName x)
+  getOpt x = maybe (throwM $ OptGetFailure (OSet $ Some x) "not set") return
+             =<< getMaybeOpt x
 
 -- | Throw an exception if the given @OptionSetResult@ indidcates
 --   an error.  Otherwise, return any generated warnings.
 checkOptSetResult :: OptionSetting tp -> OptionSetResult -> IO [Doc Void]
 checkOptSetResult optset res =
   case optionSetError res of
-    Just msg -> throwIO $ OptSetFailure (Some optset) msg
+    Just msg -> throwM $ OptSetFailure (Some optset) msg
     Nothing -> return (toList (optionSetWarnings res))
 
 data OptSetFailure = OptSetFailure (Some OptionSetting) (Doc Void)
@@ -785,6 +792,19 @@ instance Exception OptSetFailure
 instance Show OptSetFailure where
   show (OptSetFailure optset msg) =
     "Failed to set " <> show optset <> ": " <> show msg
+
+data OptRef = OName Text | OSet (Some OptionSetting) | OCfg (Some ConfigOption)
+instance Show OptRef where
+  show = \case
+    OName t -> show t
+    OSet (Some s) -> show s
+    OCfg (Some c) -> show c
+
+data OptGetFailure = OptGetFailure OptRef (Doc Void)
+instance Exception OptGetFailure
+instance Show OptGetFailure where
+  show (OptGetFailure optref msg) =
+    "Failed to get " <> (show optref) <> ": " <> show msg
 
 
 instance Opt (BaseStringType Unicode) Text where
@@ -848,7 +868,7 @@ getOptionSetting ::
 getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
    readMVar cfg >>= getConst . adjustConfigMap p ps f
  where
-  f Nothing  = Const (fail $ "Option not found: " ++ show o)
+  f Nothing  = Const (throwM $ OptGetFailure (OCfg $ Some o) "not found")
   f (Just x) = Const (leafToSetting x)
 
   leafToSetting (ConfigLeaf sty ref _h)
@@ -861,8 +881,11 @@ getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
              let new = if (isJust (optionSetError res)) then old else (Just v)
              new `seq` return (new, res)
       }
-    | otherwise = fail ("Type mismatch retrieving option " ++ show o ++
-                         "\nExpected: " ++ show tp ++ " but found " ++ show (opt_type sty))
+    | otherwise = throwM $ OptGetFailure (OCfg $ Some o)
+                  (pretty $ "Type mismatch: " <>
+                    "expected '" <> show tp <>
+                    "' but found '" <> show (opt_type sty) <> "'"
+                  )
 
 -- | Given a text name, produce an @OptionSetting@
 --   object for accessing and setting the value of that option.
@@ -874,10 +897,12 @@ getOptionSettingFromText ::
   IO (Some OptionSetting)
 getOptionSettingFromText nm (Config cfg) =
    case splitPath nm of
-     Nothing -> fail "Illegal empty name for option"
+     Nothing -> throwM $ OptGetFailure (OName "") "Illegal empty name for option"
      Just (p:|ps) -> readMVar cfg >>= (getConst . adjustConfigMap p ps (f (p:|ps)))
   where
-  f (p:|ps) Nothing  = Const (fail $ "Option not found: " ++ (Text.unpack (Text.intercalate "." (p:ps))))
+  f (p:|ps) Nothing  = Const (throwM $ OptGetFailure
+                              (OName (Text.intercalate "." (p:ps)))
+                              "not found")
   f path (Just x) = Const (leafToSetting path x)
 
   leafToSetting path (ConfigLeaf sty ref _h) = return $
@@ -907,7 +932,8 @@ getConfigValues prefix (Config cfg) =
   do m <- readMVar cfg
      let ps = Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq ConfigValue) IO ConfigLeaf
-         f [] _ = fail $ "getConfigValues: illegal empty option name"
+         f [] _ = throwM $ OptGetFailure (OName prefix)
+                  "illegal empty option prefix name"
          f (p:path) l@(ConfigLeaf sty ref _h) =
             do liftIO (readMVar ref) >>= \case
                  Just x  -> tell (Seq.singleton (ConfigValue (ConfigOption (opt_type sty) (p:|path)) x))
