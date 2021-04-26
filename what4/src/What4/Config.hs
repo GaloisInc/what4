@@ -478,8 +478,8 @@ enumOptSty elts = stringOptSty & set_opt_onset vf
         vf _ (ConcreteString (UnicodeLiteral x))
          | x `Set.member` elts = return optOK
          | otherwise = return $ optErr $
-                            "invalid setting" <+> dquotes (pretty x) <+>
-                            ", expected one of:" <+>
+                            "invalid setting" <+> dquotes (pretty x) <>
+                            ", expected one of these enums:" <+>
                             align (sep (map pretty $ Set.toList elts))
 
 -- | A configuration syle for options that must be one of a fixed set of text values.
@@ -497,8 +497,8 @@ listOptSty values =  stringOptSty & set_opt_onset vf
         vf _ (ConcreteString (UnicodeLiteral x)) =
          fromMaybe
           (return $ optErr $
-            "invalid setting" <+> dquotes (pretty x) <+>
-            ", expected one of:" <+>
+            "invalid setting" <+> dquotes (pretty x) <>
+            ", expected one from this list:" <+>
             align (sep (map (pretty . fst) $ Map.toList values)))
           (Map.lookup x values)
 
