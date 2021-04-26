@@ -138,6 +138,7 @@ module What4.Config
   , optV
   , optU
   , optUV
+  , deprecatedOpt
 
     -- * Building and manipulating configurations
   , Config
@@ -502,6 +503,29 @@ listOptSty values =  stringOptSty & set_opt_onset vf
             align (sep (map (pretty . fst) $ Map.toList values)))
           (Map.lookup x values)
 
+
+-- | Used as a wrapper for an option that has been deprecated. If the
+-- option is actually set (as opposed to just using the default value)
+-- then this will emit a warning to stderr at that time, optionally
+-- mentioning the replacement option (if specified).
+
+deprecatedOpt :: Maybe ConfigDesc -> ConfigDesc -> ConfigDesc
+deprecatedOpt replOpt (ConfigDesc o sty desc) =
+  let oldVF = opt_onset sty
+      depF oldV newV = do
+        v <- oldVF oldV newV
+        return (v
+                <> optWarn (pretty $ "DEPRECATED CONFIG OPTION USED: " <> show o)
+                <> optWarn (pretty suggest)
+               )
+      suggest = case replOpt of
+                  Just (ConfigDesc r _ _) -> concat [ "  Suggest replacing '"
+                                                    , show o
+                                                    , "' with '", show r, "'"
+                                                     ]
+                  Nothing -> "  Option '" <> show o <> "' is no longer valid"
+      modDesc d = vsep [ d, "*** DEPRECATED! ***", pretty suggest ]
+  in ConfigDesc o (set_opt_onset depF sty) (modDesc <$> desc)
 
 -- | A configuration style for options that are expected to be paths to an executable
 --   image.  Configuration options with this style generate a warning message if set to a
