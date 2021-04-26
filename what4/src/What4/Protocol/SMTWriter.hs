@@ -735,10 +735,10 @@ newWriterConn h in_h ack solver_name beStrict features bindings cs = do
                        , consumeAcknowledgement = ack
                        }
 
--- | Strictness level for parsing solver responses
+-- | Strictness level for parsing solver responses.
 data ResponseStrictness
-  = Lenient
-  | Strict
+  = Lenient  -- ^ allows other output preceeding recognized solver responses
+  | Strict   -- ^ parse _only_ recognized solver responses; fail on anything else
   deriving (Eq)
 
 -- | Status to indicate when term value will be uncached.
