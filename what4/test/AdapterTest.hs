@@ -192,7 +192,12 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
 
 getSolverVersion :: String -> IO String
 getSolverVersion solver = do
-  try (readProcessWithExitCode (toLower <$> solver) ["--version"] "") >>= \case
+  let args = case toLower <$> solver of
+               -- n.b. abc will return a non-zero exit code if asked
+               -- for command usage.
+               "abc" -> ["s", "-q", "version;quit"]
+               _ -> ["--version"]
+  try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
     Right (r,o,e) ->
       if r == ExitSuccess
       then let ol = lines o in
