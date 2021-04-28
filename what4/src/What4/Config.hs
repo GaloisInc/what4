@@ -482,7 +482,7 @@ enumOptSty elts = stringOptSty & set_opt_onset vf
          | otherwise = return $ optErr $
                             "invalid setting" <+> dquotes (pretty x) <>
                             ", expected one of these enums:" <+>
-                            align (sep (map pretty $ Set.toList elts))
+                            align (sep (punctuate comma (map pretty $ Set.toList elts)))
 
 -- | A configuration syle for options that must be one of a fixed set of text values.
 --   Associated with each string is a validation/callback action that will be run
