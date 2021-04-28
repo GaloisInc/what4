@@ -1088,6 +1088,12 @@ getOptionSettingFromText nm (Config cfg) =
 data ConfigValue where
   ConfigValue :: ConfigOption tp -> ConcreteVal tp -> ConfigValue
 
+instance Pretty ConfigValue where
+  pretty (ConfigValue option val) =
+    ppSetting (configOptionNameParts option) (Just val)
+    <+> "::" <+> pretty (configOptionType option)
+
+
 -- | Given the name of a subtree, return all
 --   the currently-set configurtion values in that subtree.
 --
