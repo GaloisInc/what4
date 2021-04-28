@@ -1,12 +1,19 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 import           Control.Exception ( displayException, try, SomeException(..), fromException )
 import qualified Data.List as L
+import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
+import           Data.Void
+import           Prettyprinter
 
 import           Test.Tasty
+import           Test.Tasty.Checklist
 import           Test.Tasty.HUnit
 
 import           What4.BaseTypes
@@ -151,9 +158,89 @@ testDeprecated =
                "Expected OptSetFailure exception but got: " <>
                displayException err
 
+testHelp :: [TestTree]
+testHelp =
+  [
+    testCase "builtin-only config help" $
+    withChecklist "builtins" $ do
+      cfg <- initialConfig 0 []
+      help <- configHelp "" cfg
+      help `checkValues`
+        (Empty
+        :> Val "num" length 1
+        :> Val "verbosity" (L.isInfixOf "verbosity =" . show . head) True
+        )
+
+
+  , testCaseSteps "three item (1 deprecated) config help" $ \step ->
+      withChecklist "three items" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optnum"
+          o3 = configOption BaseIntegerRepr "foo.bar.baz.num"
+          o1' = mkOpt o1 stringOptSty (Just "some opt") Nothing
+          o2' = mkOpt o2 integerOptSty (Just "some other opt") Nothing
+          o3' = mkOpt o3 integerOptSty (Just "foo stuff") Nothing
+          helpIncludes txts = any (\h -> all (\t -> L.isInfixOf t (show h)) txts)
+      extendConfig [o2', deprecatedOpt [o2'] o1', o3'] cfg
+      setter2 <- getOptionSetting o2 cfg
+      setRes <- setOpt setter2 13
+      setRes `checkValues` (Empty :> Val "no warnings" null True)
+
+      step "all help"
+      help <- configHelp "" cfg
+      help `checkValues`
+        (Empty
+        :> Val "num" length 4
+        :> Val "verbosity" (helpIncludes ["verbosity ="]) True
+        :> Val "option 1" (helpIncludes ["optstr"
+                                        , "some opt"
+                                        , "DEPRECATED!"
+                                        , "Suggest"
+                                        , "to \"optnum\""
+                                        ]) True
+        :> Val "option 2" (helpIncludes ["optnum", "= 13", "some other opt"]) True
+        :> Val "option 3" (helpIncludes ["foo.bar.baz.num", "foo stuff"]) True
+        )
+
+      step "sub help"
+      subHelp <- configHelp "foo.bar" cfg
+      subHelp `checkValues`
+        (Empty
+        :> Val "num" length 1
+        :> Val "option 3" (helpIncludes ["foo.bar.baz.num", "foo stuff"]) True
+        )
+
+      step "specific help"
+      spec <- configHelp "optstr" cfg
+      spec `checkValues`
+        (Empty
+        :> Val "num" length 1
+        :> Val "spec name" (helpIncludes ["optstr"]) True
+        :> Val "spec opt help" (helpIncludes ["some opt"]) True
+        :> Val "spec opt help deprecated" (helpIncludes [ "DEPRECATED!"
+                                                        , "Suggest"
+                                                        , "to \"optnum\""
+                                                        ]) True
+        )
+
+      step "specific sub help"
+      subspec <- configHelp "foo.bar.baz.num" cfg
+      subspec `checkValues`
+        (Empty
+        :> Val "num" length 1
+        :> Val "option 3" (helpIncludes ["foo.bar.baz.num", "foo stuff"]) True
+        )
+
+  ]
+
+instance TestShow (Doc Void) where testShow = show
+instance TestShow [Doc Void] where testShow = testShowList
+
 
 main :: IO ()
 main = defaultMain $
        testGroup "ConfigTests"
        [ testGroup "Deprecated Configs" $ testDeprecated
+       , testGroup "Config help" $ testHelp
        ]

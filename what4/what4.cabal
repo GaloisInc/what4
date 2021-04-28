@@ -254,7 +254,9 @@ test-suite config-test
   import: bldflags, testdefs-hunit
   type: exitcode-stdio-1.0
   main-is: ConfigTest.hs
-  build-depends: prettyprinter
+  build-depends: parameterized-utils
+               , prettyprinter
+               , tasty-checklist >= 1.0 && < 1.1
                , text
 
 test-suite online-solver-test
