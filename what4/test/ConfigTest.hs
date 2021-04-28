@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,8 +10,10 @@
 import           Control.Exception ( displayException, try, SomeException(..), fromException )
 import qualified Data.List as L
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
+import           Data.Ratio ( (%) )
+import qualified Data.Set as Set
 import           Data.Void
-import           Prettyprinter
+import qualified Prettyprinter as PP
 
 import           Test.Tasty
 import           Test.Tasty.Checklist
@@ -20,6 +23,264 @@ import           What4.BaseTypes
 import           What4.Concrete
 import           What4.Config
 
+
+testSetAndGet :: [TestTree]
+testSetAndGet =
+  [
+    testCase "create multiple options" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optint"
+          o3 = configOption BaseBoolRepr "optbool"
+          o1' = mkOpt o1 stringOptSty Nothing Nothing
+          o2' = mkOpt o2 integerOptSty Nothing Nothing
+          o3' = mkOpt o3 boolOptSty Nothing Nothing
+      extendConfig [o3', o2', o1'] cfg
+
+  , testCase "create conflicting options" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "mainopt"
+          o2 = configOption BaseIntegerRepr "mainopt"
+          o1' = mkOpt o1 stringOptSty Nothing Nothing
+          o2' = mkOpt o2 integerOptSty Nothing Nothing
+      res <- try $ extendConfig [o2', o1'] cfg
+      wantOptCreateFailure "already exists with type" res
+
+  , testCase "create conflicting options at different levels" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "mainopt"
+          o2 = configOption BaseIntegerRepr "main.mainopt"
+          o1' = mkOpt o1 stringOptSty Nothing Nothing
+          o2' = mkOpt o2 integerOptSty Nothing Nothing
+      res <- try @SomeException $ extendConfig [o2', o1'] cfg
+      case res of
+        Right () -> return ()
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+  , testCase "create duplicate unicode options" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "mainopt"
+          o2 = configOption (BaseStringRepr UnicodeRepr) "mainopt"
+          o1' = mkOpt o1 stringOptSty Nothing Nothing
+          o2' = mkOpt o2 stringOptSty Nothing Nothing
+      res <- try @SomeException $ extendConfig [o2', o1'] cfg
+      case res of
+        Right () -> return ()
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+  , testCaseSteps "get unset value, no default" $ \step -> do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optint"
+          o3 = configOption BaseBoolRepr "optbool"
+          o1' = mkOpt o1 stringOptSty Nothing Nothing
+          o2' = mkOpt o2 integerOptSty Nothing Nothing
+          o3' = mkOpt o3 boolOptSty Nothing Nothing
+      extendConfig [o3', o2', o1'] cfg
+      access1 <- getOptionSetting o1 cfg
+      access2 <- getOptionSetting o2 cfg
+      access3 <- getOptionSetting o3 cfg
+
+      step "get unset string opt"
+      v1 <- getMaybeOpt access1
+      Nothing @=? v1
+      res1 <- try $ getOpt access1
+      wantOptGetFailure "not set" res1
+
+      step "get unset integer opt"
+      v2 <- getMaybeOpt access2
+      Nothing @=? v2
+      res2 <- try $ getOpt access2
+      wantOptGetFailure "not set" res2
+
+      step "get unset bool opt"
+      v3 <- getMaybeOpt access3
+      Nothing @=? v3
+      res3 <- try $ getOpt access3
+      wantOptGetFailure "not set" res3
+
+  , testCaseSteps "get unset value, with default" $ \step -> do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optint"
+          o3 = configOption BaseBoolRepr "optbool"
+          o1' = mkOpt o1 stringOptSty Nothing (Just $ ConcreteString "strval")
+          o2' = mkOpt o2 integerOptSty Nothing (Just $ ConcreteInteger 11)
+          o3' = mkOpt o3 boolOptSty Nothing (Just $ ConcreteBool True)
+      extendConfig [o3', o2', o1'] cfg
+      access1 <- getOptionSetting o1 cfg
+      access2 <- getOptionSetting o2 cfg
+      access3 <- getOptionSetting o3 cfg
+      step "get unset default string opt"
+      v1 <- getMaybeOpt access1
+      Just "strval" @=? v1
+      step "get unset default integer opt"
+      v2 <- getMaybeOpt access2
+      Just 11 @=? v2
+      step "get unset default bool opt"
+      v3 <- getMaybeOpt access3
+      Just True @=? v3
+
+  , testCaseSteps "get set value, with default" $ \step -> do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optint"
+          o3 = configOption BaseBoolRepr "optbool"
+          o1' = mkOpt o1 stringOptSty Nothing (Just $ ConcreteString "strval")
+          o2' = mkOpt o2 integerOptSty Nothing (Just $ ConcreteInteger 11)
+          o3' = mkOpt o3 boolOptSty Nothing (Just $ ConcreteBool True)
+      extendConfig [o3', o2', o1'] cfg
+      access1 <- getOptionSetting o1 cfg
+      access2 <- getOptionSetting o2 cfg
+      access3 <- getOptionSetting o3 cfg
+
+      step "set string opt"
+      res1 <- setOpt access1 "flibberty"
+      show <$> res1 @?= []
+
+      step "set bool opt"
+      res2 <- setOpt access3 False
+      show <$> res2 @?= []
+
+      step "set integer opt"
+      res3 <- setOpt access2 9945
+      show <$> res3 @?= []
+
+      step "get string opt"
+      v1 <- getMaybeOpt access1
+      Just "flibberty" @=? v1
+      step "get integer opt"
+      v2 <- getMaybeOpt access2
+      Just 9945 @=? v2
+      step "get bool opt"
+      v3 <- getMaybeOpt access3
+      Just False @=? v3
+
+  , testCaseSteps "set invalid values" $ \step -> do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "optstr"
+          o2 = configOption BaseIntegerRepr "optint"
+          o3 = configOption BaseRealRepr "optbool"
+          -- n.b. the default values are not checked by the style!
+          o1' = mkOpt o1 (enumOptSty
+                          (Set.fromList ["eeny", "meeny", "miny", "mo" ]))
+                Nothing (Just $ ConcreteString "strval")
+          o2' = mkOpt o2 (integerWithRangeOptSty Unbounded (Inclusive 10))
+                Nothing (Just $ ConcreteInteger 11)
+          o3' = mkOpt o3 (realWithMinOptSty (Exclusive 1.23))
+                Nothing (Just $ ConcreteReal 0.0)
+      extendConfig [o3', o2', o1'] cfg
+      access1 <- getOptionSetting o1 cfg
+      access2 <- getOptionSetting o2 cfg
+      access3 <- getOptionSetting o3 cfg
+
+      step "initial defaults"
+      getMaybeOpt access1 >>= (@?= Just "strval")
+      getMaybeOpt access2 >>= (@?= Just 11)
+      getMaybeOpt access3 >>= (@?= Just (0 % 1 :: Rational))
+
+      step "set string opt invalidly"
+      -- Note: the strong typing prevents both of the following
+      -- setOpt access1 32
+      -- setOpt access1 False
+      res1 <- try $ setOpt access1 "frobozz"
+      wantOptSetFailure "invalid setting \"frobozz\"" res1
+      wantOptSetFailure "eeny, meeny, miny, mo" res1
+      (try @SomeException $ setOpt access1 "meeny") >>= \case
+        Right [] -> return ()
+        Right w -> assertFailure $ "Unexpected warnings: " <> show w
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+      step "set integer opt invalidly"
+      wantOptSetFailure "out of range" =<< (try $ setOpt access2 11)
+      wantOptSetFailure "expected integer value in (-∞, 10]" =<< (try $ setOpt access2 11)
+      (try @SomeException $ setOpt access2 10) >>= \case
+        Right [] -> return ()
+        Right w -> assertFailure $ "Unexpected warnings: " <> show w
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+      (try @SomeException $ setOpt access2 (-3)) >>= \case
+        Right [] -> return ()
+        Right w -> assertFailure $ "Unexpected warnings: " <> show w
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+      step "set real opt invalidly"
+      wantOptSetFailure "out of range" =<< (try $ setOpt access3 (0 % 3))
+      wantOptSetFailure "expected real value in (123 % 100, +∞)"
+        =<< (try $ setOpt access3 (0 % 3))
+      wantOptSetFailure "out of range" =<< (try $ setOpt access3 (1229 % 1000))
+      wantOptSetFailure "out of range" =<< (try $ setOpt access3 (123 % 100))
+      (try @SomeException $ setOpt access3 (123001 % 100000)) >>= \case
+        Right [] -> return ()
+        Right w -> assertFailure $ "Unexpected warnings: " <> show w
+        Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+  , testCaseSteps "get multiple values at once" $ \step ->
+      withChecklist "multiple values" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "main.optstr"
+          o2 = configOption BaseIntegerRepr "main.set.cfg.optint"
+          o3 = configOption BaseBoolRepr "main.set.cfg.optbool"
+          o4 = configOption BaseIntegerRepr "alt.optint"
+          o1' = mkOpt o1 stringOptSty Nothing (Just $ ConcreteString "strval")
+          o2' = mkOpt o2 integerOptSty Nothing (Just $ ConcreteInteger 11)
+          o3' = mkOpt o3 boolOptSty Nothing (Just $ ConcreteBool True)
+          o4' = mkOpt o4 integerOptSty Nothing (Just $ ConcreteInteger 88)
+      extendConfig [o4', o3', o2', o1'] cfg
+      access1 <- getOptionSetting o1 cfg
+      access3 <- getOptionSetting o3 cfg
+      access4 <- getOptionSetting o4 cfg
+
+      step "set string opt"
+      res1 <- setOpt access1 "flibberty"
+      show <$> res1 @?= []
+
+      step "set bool opt"
+      res2 <- setOpt access3 False
+      show <$> res2 @?= []
+
+      step "set alt int opt"
+      res4 <- setOpt access4 789
+      show <$> res4 @?= []
+
+      step "get main config values"
+      res <- getConfigValues "main.set" cfg
+      let msg = show . PP.pretty <$> res
+      msg `checkValues`
+        (Empty
+        :> Val "num values" length 2
+        :> Val "bool" (any (L.isInfixOf "main.set.cfg.optbool = False")) True
+        :> Val "int" (any (L.isInfixOf "main.set.cfg.optint = 11")) True
+        )
+
+      step "get all config values"
+      resAll <- getConfigValues "" cfg
+      let msgAll = show . PP.pretty <$> resAll
+      msgAll `checkValues`
+        (Empty
+        :> Val "num values" length 5
+        :> Val "bool" (any (L.isInfixOf "main.set.cfg.optbool = False")) True
+        :> Val "int" (any (L.isInfixOf "main.set.cfg.optint = 11")) True
+        :> Val "alt int" (any (L.isInfixOf "alt.optint = 789")) True
+        :> Val "str" (any (L.isInfixOf "main.optstr = \"flibberty\"")) True
+        :> Val "verbosity" (any (L.isInfixOf "verbosity = 0")) True
+        )
+
+      step "get specific config value"
+      resOne <- getConfigValues "alt.optint" cfg
+      let msgOne = show . PP.pretty <$> resOne
+      msgOne `checkValues`
+        (Empty
+        :> Val "num values" length 1
+        :> Val "alt int" (any (L.isInfixOf "alt.optint = 789")) True
+        )
+
+      step "get unknown config value"
+      resNope <- getConfigValues "fargle.bargle" cfg
+      let msgNope = show . PP.pretty <$> resNope
+      msgNope `checkValues` (Empty :> Val "num values" length 0)
+
+
+  ]
 
 testDeprecated :: [TestTree]
 testDeprecated =
@@ -130,33 +391,6 @@ testDeprecated =
         Left (SomeException e) -> assertFailure $ show e
 
   ]
-  where
-    wantOptCreateFailure withText res = case res of
-      Right r ->
-        assertFailure ("Expected '" <> withText <>
-                       "' but completed successfully with: " <> show r)
-      Left err ->
-        case fromException err of
-          Just (e :: OptCreateFailure) ->
-            withText `L.isInfixOf` (show e) @?
-            ("Expected '" <> withText <> "' exception error but got: " <>
-             displayException e)
-          _ -> assertFailure $
-               "Expected OptCreateFailure exception but got: " <>
-               displayException err
-    wantOpSetFailure withText res = case res of
-      Right r ->
-        assertFailure ("Expected '" <> withText <>
-                       "' but completed successfully with: " <> show r)
-      Left err ->
-        case fromException err of
-          Just (e :: OptSetFailure) ->
-            withText `L.isInfixOf` (show e) @?
-            ("Expected '" <> withText <> "' exception error but got: " <>
-             displayException e)
-          _ -> assertFailure $
-               "Expected OptSetFailure exception but got: " <>
-               displayException err
 
 testHelp :: [TestTree]
 testHelp =
@@ -234,13 +468,60 @@ testHelp =
 
   ]
 
-instance TestShow (Doc Void) where testShow = show
-instance TestShow [Doc Void] where testShow = testShowList
+instance TestShow (PP.Doc Void) where testShow = show
+instance TestShow [PP.Doc Void] where testShow = testShowList
+instance TestShow [String] where testShow = testShowList
+
+wantOptCreateFailure :: Show a => String -> Either SomeException a -> IO ()
+wantOptCreateFailure withText res = case res of
+  Right r ->
+    assertFailure ("Expected '" <> withText <>
+                   "' but completed successfully with: " <> show r)
+  Left err ->
+    case fromException err of
+      Just (e :: OptCreateFailure) ->
+        withText `L.isInfixOf` (show e) @?
+        ("Expected '" <> withText <> "' exception error but got: " <>
+         displayException e)
+      _ -> assertFailure $
+           "Expected OptCreateFailure exception but got: " <>
+           displayException err
+
+wantOptSetFailure :: Show a => String -> Either SomeException a -> IO ()
+wantOptSetFailure withText res = case res of
+  Right r ->
+    assertFailure ("Expected '" <> withText <>
+                   "' but completed successfully with: " <> show r)
+  Left err ->
+    case fromException err of
+      Just (e :: OptSetFailure) ->
+        withText `L.isInfixOf` (show e) @?
+        ("Expected '" <> withText <> "' exception error but got: " <>
+         displayException e)
+      _ -> assertFailure $
+           "Expected OptSetFailure exception but got: " <>
+           displayException err
+
+wantOptGetFailure :: Show a => String -> Either SomeException a -> IO ()
+wantOptGetFailure withText res = case res of
+  Right r ->
+    assertFailure ("Expected '" <> withText <>
+                   "' but completed successfully with: " <> show r)
+  Left err ->
+    case fromException err of
+      Just (e :: OptGetFailure) ->
+        withText `L.isInfixOf` (show e) @?
+        ("Expected '" <> withText <> "' exception error but got: " <>
+         displayException e)
+      _ -> assertFailure $
+           "Expected OptGetFailure exception but got: " <>
+           displayException err
 
 
 main :: IO ()
 main = defaultMain $
        testGroup "ConfigTests"
-       [ testGroup "Deprecated Configs" $ testDeprecated
+       [ testGroup "Set and get" $ testSetAndGet
+       , testGroup "Deprecated Configs" $ testDeprecated
        , testGroup "Config help" $ testHelp
        ]
