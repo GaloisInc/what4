@@ -35,6 +35,7 @@ import           What4.Expr.GroundEval
 import           What4.Interface
 import           What4.ProblemFeatures
 import qualified What4.Protocol.SMTLib2 as SMT2
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
 import           What4.Solver.Adapter
@@ -44,16 +45,27 @@ data ExternalABC = ExternalABC deriving Show
 
 -- | Path to ABC
 abcPath :: ConfigOption (BaseStringType Unicode)
-abcPath = configOption knownRepr "abc_path"
+abcPath = configOption knownRepr "solver.abc.path"
+
+abcPathOLD :: ConfigOption (BaseStringType Unicode)
+abcPathOLD = configOption knownRepr "abc_path"
+
+-- | Control strict parsing for ABC solver responses (defaults
+-- to solver.strict-parsing option setting).
+abcStrictParsing :: ConfigOption BaseBoolType
+abcStrictParsing = configOption knownRepr "solver.abc.strict_parsing"
 
 abcOptions :: [ConfigDesc]
 abcOptions =
-  [ mkOpt
-      abcPath
-      executablePathOptSty
-      (Just "ABC executable path")
-      (Just (ConcreteString "abc"))
-  ]
+  let optPath co = mkOpt co
+                   executablePathOptSty
+                   (Just "ABC executable path")
+                   (Just (ConcreteString "abc"))
+      p = optPath abcPath
+  in [ p
+     , copyOpt (const $ configOptionText abcStrictParsing) strictSMTParseOpt
+     , deprecatedOpt [p] $ optPath abcPathOLD
+     ] <> SMT2.smtlib2Options
 
 externalABCAdapter :: SolverAdapter st
 externalABCAdapter =
@@ -95,6 +107,7 @@ writeABCSMT2File
    -> [BoolExpr t]
    -> IO ()
 writeABCSMT2File = SMT2.writeDefaultSMT2 ExternalABC "ABC" abcFeatures
+                   (Just abcStrictParsing)
 
 instance SMT2.SMTLib2GenericSolver ExternalABC where
   defaultSolverPath _ = findSolverPath abcPath . getConfiguration
@@ -114,3 +127,4 @@ runExternalABCInOverride
   -> IO a
 runExternalABCInOverride =
   SMT2.runSolverInOverride ExternalABC nullAcknowledgementAction abcFeatures
+  (Just abcStrictParsing)

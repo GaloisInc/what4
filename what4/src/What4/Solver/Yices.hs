@@ -64,7 +64,7 @@ module What4.Solver.Yices
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
+import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Applicative
@@ -102,25 +102,26 @@ import qualified System.IO.Streams.Attoparsec.Text as Streams
 import qualified Prettyprinter as PP
 
 import           What4.BaseTypes
-import           What4.Config
-import           What4.Solver.Adapter
 import           What4.Concrete
-import           What4.Interface
-import           What4.ProblemFeatures
-import           What4.SatResult
+import           What4.Config
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import           What4.Expr.VarIdentification
-import           What4.Protocol.SExp
-import           What4.Protocol.SMTLib2 (writeDefaultSMT2)
-import           What4.Protocol.SMTWriter as SMTWriter
+import           What4.Interface
+import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.PolyRoot as Root
+import           What4.Protocol.SExp
+import           What4.Protocol.SMTLib2 (writeDefaultSMT2)
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
+import           What4.Protocol.SMTWriter as SMTWriter
+import           What4.SatResult
+import           What4.Solver.Adapter
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
 
-import Prelude
-import GHC.Stack
+import           Prelude
+import           GHC.Stack
 
 -- | This is a tag used to indicate that a 'WriterConn' is a connection
 -- to a specific Yices process.
@@ -451,7 +452,7 @@ newConnection stream in_stream ack reqFeatures timeout bindings = do
                      , yicesTimeout = timeout
                      , yicesUnitDeclared = unitRef
                      }
-  conn <- newWriterConn stream in_stream (ack earlyUnsatRef) nm features' bindings c
+  conn <- newWriterConn stream in_stream (ack earlyUnsatRef) nm Strict features' bindings c
   return $! conn { supportFunctionDefs = True
                  , supportFunctionArguments = True
                  , supportQuantifiers = efSolver
@@ -561,7 +562,7 @@ instance SMTReadWriter Connection where
   smtSatResult _ = getSatResponse
 
   smtUnsatAssumptionsResult _ s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) s)
+    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle s))
        let cmd = safeCmd "(show-unsat-assumptions)"
        case mb of
          Right (asNegAtomList -> Just as) -> return as
@@ -573,7 +574,7 @@ instance SMTReadWriter Connection where
                          ]
 
   smtUnsatCoreResult _ s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) s)
+    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle s))
        let cmd = safeCmd "(show-unsat-core)"
        case mb of
          Right (asAtomList -> Just nms) -> return nms
@@ -693,10 +694,8 @@ yicesStartSolver features auxOutput sym = do -- FIXME
 
   return $! SolverProcess { solverConn   = conn
                           , solverCleanupCallback = cleanupProcess hdls
-                          , solverStdin  = in_stream'
                           , solverStderr = err_reader
                           , solverHandle = ph
-                          , solverResponse = out_stream
                           , solverErrorBehavior = ContinueOnError
                           , solverEvalFuns = smtEvalFuns conn out_stream
                           , solverLogFn = logSolverEvent sym
@@ -764,9 +763,9 @@ getAckResponse resps =
 
 -- | Get the sat result from a previous SAT command.
 -- Throws an exception if something goes wrong.
-getSatResponse :: Streams.InputStream Text -> IO (SatResult () ())
-getSatResponse resps =
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) resps)
+getSatResponse :: WriterConn t Connection -> IO (SatResult () ())
+getSatResponse conn =
+  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle conn))
      case mb of
        Right (SAtom "unsat")   -> return (Unsat ())
        Right (SAtom "sat")     -> return (Sat ())
@@ -905,49 +904,72 @@ yicesAdapter =
        runYicesInOverride sym logData ps
           (cont . runIdentity . traverseSatResult (\x -> pure (x,Nothing)) pure)
    , solver_adapter_write_smt2 =
-       writeDefaultSMT2 () "YICES" yicesSMT2Features
+       writeDefaultSMT2 () "YICES" yicesSMT2Features (Just yicesStrictParsing)
    }
 
 -- | Path to yices
 yicesPath :: ConfigOption (BaseStringType Unicode)
-yicesPath = configOption knownRepr "yices_path"
+yicesPath = configOption knownRepr "solver.yices.path"
+
+yicesPathOLD :: ConfigOption (BaseStringType Unicode)
+yicesPathOLD = configOption knownRepr "yices_path"
 
 -- | Enable the MC-SAT solver
 yicesEnableMCSat :: ConfigOption BaseBoolType
-yicesEnableMCSat = configOption knownRepr "yices_enable-mcsat"
+yicesEnableMCSat = configOption knownRepr "solver.yices.enable-mcsat"
+
+yicesEnableMCSatOLD :: ConfigOption BaseBoolType
+yicesEnableMCSatOLD = configOption knownRepr "yices_enable-mcsat"
 
 -- | Enable interactive mode (necessary for per-goal timeouts)
 yicesEnableInteractive :: ConfigOption BaseBoolType
-yicesEnableInteractive = configOption knownRepr "yices_enable-interactive"
+yicesEnableInteractive = configOption knownRepr "solver.yices.enable-interactive"
+
+yicesEnableInteractiveOLD :: ConfigOption BaseBoolType
+yicesEnableInteractiveOLD = configOption knownRepr "yices_enable-interactive"
 
 -- | Set a per-goal timeout in seconds.
 yicesGoalTimeout :: ConfigOption BaseIntegerType
-yicesGoalTimeout = configOption knownRepr "yices_goal-timeout"
+yicesGoalTimeout = configOption knownRepr "solver.yices.goal-timeout"
+
+yicesGoalTimeoutOLD :: ConfigOption BaseIntegerType
+yicesGoalTimeoutOLD = configOption knownRepr "yices_goal-timeout"
+
+-- | Control strict parsing for Yices solver responses (defaults
+-- to solver.strict-parsing option setting).
+yicesStrictParsing :: ConfigOption BaseBoolType
+yicesStrictParsing = configOption knownRepr "solver.yices.strict_parsing"
 
 yicesOptions :: [ConfigDesc]
 yicesOptions =
-  [ mkOpt
-      yicesPath
-      executablePathOptSty
-      (Just "Yices executable path")
-      (Just (ConcreteString "yices"))
-  , mkOpt
-      yicesEnableMCSat
-      boolOptSty
-      (Just "Enable the Yices MCSAT solving engine")
-      (Just (ConcreteBool False))
-  , mkOpt
-      yicesEnableInteractive
-      boolOptSty
-      (Just "Enable Yices interactive mode (needed to support timeouts)")
-      (Just (ConcreteBool False))
-  , mkOpt
-      yicesGoalTimeout
-      integerOptSty
-      (Just "Set a per-goal timeout")
-      (Just (ConcreteInteger 0))
-  ]
-  ++ yicesInternalOptions
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "Yices executable path")
+                  (Just (ConcreteString "yices"))
+      mkMCSat co = mkOpt co
+                   boolOptSty
+                   (Just "Enable the Yices MCSAT solving engine")
+                   (Just (ConcreteBool False))
+      mkIntr co = mkOpt co
+                  boolOptSty
+                  (Just "Enable Yices interactive mode (needed to support timeouts)")
+                  (Just (ConcreteBool False))
+      mkTmout co = mkOpt co
+                   integerOptSty
+                   (Just "Set a per-goal timeout")
+                   (Just (ConcreteInteger 0))
+      p = mkPath yicesPath
+      m = mkMCSat yicesEnableMCSat
+      i = mkIntr yicesEnableInteractive
+      t = mkTmout yicesGoalTimeout
+  in [ p, m, i, t
+     , copyOpt (const $ configOptionText yicesStrictParsing) strictSMTParseOpt
+     , deprecatedOpt [p] $ mkPath yicesPathOLD
+     , deprecatedOpt [m] $ mkMCSat yicesEnableMCSatOLD
+     , deprecatedOpt [i] $ mkIntr yicesEnableInteractiveOLD
+     , deprecatedOpt [t] $ mkTmout yicesGoalTimeoutOLD
+     ]
+     ++ yicesInternalOptions
 
 yicesBranchingChoices :: Set Text
 yicesBranchingChoices = Set.fromList
@@ -967,8 +989,12 @@ yicesEFGenModes = Set.fromList
   , "projection"
   ]
 
-booleanOpt :: String -> ConfigDesc
-booleanOpt nm = booleanOpt' (configOption BaseBoolRepr ("yices."++nm))
+booleanOpt :: String -> [ConfigDesc]
+booleanOpt nm =
+  let b = booleanOpt' (configOption BaseBoolRepr ("solver.yices."++nm))
+  in [ b
+     , deprecatedOpt [b] $ booleanOpt' (configOption BaseBoolRepr ("yices."++nm))
+     ]
 
 booleanOpt' :: ConfigOption BaseBoolType -> ConfigDesc
 booleanOpt' o =
@@ -977,36 +1003,52 @@ booleanOpt' o =
         Nothing
         Nothing
 
-floatWithRangeOpt :: String -> Rational -> Rational -> ConfigDesc
+floatWithRangeOpt :: String -> Rational -> Rational -> [ConfigDesc]
 floatWithRangeOpt nm lo hi =
-  mkOpt (configOption BaseRealRepr $ "yices."++nm)
-        (realWithRangeOptSty (Inclusive lo) (Inclusive hi))
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseRealRepr $ n++nm)
+              (realWithRangeOptSty (Inclusive lo) (Inclusive hi))
+              Nothing
+              Nothing
+      f = mkO "solver.yices."
+  in [ f
+     , deprecatedOpt [f] $ mkO "yices."
+     ]
 
-floatWithMinOpt :: String -> Bound Rational -> ConfigDesc
+floatWithMinOpt :: String -> Bound Rational -> [ConfigDesc]
 floatWithMinOpt nm lo =
-  mkOpt (configOption BaseRealRepr $ "yices."++nm)
-        (realWithMinOptSty lo)
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseRealRepr $ n++nm)
+              (realWithMinOptSty lo)
+              Nothing
+              Nothing
+      f = mkO "solver.yices."
+  in [ f
+     , deprecatedOpt [f] $ mkO "yices."
+     ]
 
-intWithRangeOpt :: String -> Integer -> Integer -> ConfigDesc
+intWithRangeOpt :: String -> Integer -> Integer -> [ConfigDesc]
 intWithRangeOpt nm lo hi =
-  mkOpt (configOption BaseIntegerRepr $ "yices."++nm)
-        (integerWithRangeOptSty (Inclusive lo) (Inclusive hi))
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseIntegerRepr $ n++nm)
+              (integerWithRangeOptSty (Inclusive lo) (Inclusive hi))
+              Nothing
+              Nothing
+      i = mkO "solver.yices."
+  in [ i
+     , deprecatedOpt [i] $ mkO "yices."
+     ]
 
-enumOpt :: String -> Set Text -> ConfigDesc
+enumOpt :: String -> Set Text -> [ConfigDesc]
 enumOpt nm xs =
-  mkOpt (configOption (BaseStringRepr UnicodeRepr) $ "yices."++nm)
-        (enumOptSty xs)
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption (BaseStringRepr UnicodeRepr) $ n++nm)
+              (enumOptSty xs)
+              Nothing
+              Nothing
+      e = mkO "solver.yices."
+  in [ e
+     , deprecatedOpt [e] $ mkO "yices."
+     ]
 
 yicesInternalOptions :: [ConfigDesc]
-yicesInternalOptions =
+yicesInternalOptions = concat
   [ booleanOpt "var-elim"
   , booleanOpt "arith-elim"
   , booleanOpt "flatten"
@@ -1155,8 +1197,6 @@ runYicesInOverride sym logData conditions resultFn = do
       let yp = SolverProcess { solverConn = c
                              , solverCleanupCallback = cleanupProcess hdls
                              , solverHandle = ph
-                             , solverStdin  = in_stream
-                             , solverResponse = out_stream
                              , solverErrorBehavior = ImmediateExit
                              , solverStderr = err_reader
                              , solverEvalFuns = smtEvalFuns c out_stream

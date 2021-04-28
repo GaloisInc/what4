@@ -25,26 +25,38 @@ module What4.Solver.STP
 import           Data.Bits
 
 import           What4.BaseTypes
-import           What4.Config
 import           What4.Concrete
-import           What4.Interface
-import           What4.ProblemFeatures
-import           What4.SatResult
+import           What4.Config
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
-import           What4.Solver.Adapter
+import           What4.Interface
+import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
+import           What4.SatResult
+import           What4.Solver.Adapter
 import           What4.Utils.Process
 
 data STP = STP deriving Show
 
 -- | Path to stp
 stpPath :: ConfigOption (BaseStringType Unicode)
-stpPath = configOption knownRepr "stp_path"
+stpPath = configOption knownRepr "solver.stp.path"
+
+stpPathOLD :: ConfigOption (BaseStringType Unicode)
+stpPathOLD = configOption knownRepr "stp_path"
 
 stpRandomSeed :: ConfigOption BaseIntegerType
-stpRandomSeed = configOption knownRepr "stp.random-seed"
+stpRandomSeed = configOption knownRepr "solver.stp.random-seed"
+
+stpRandomSeedOLD :: ConfigOption BaseIntegerType
+stpRandomSeedOLD = configOption knownRepr "stp.random-seed"
+
+-- | Control strict parsing for Boolector solver responses (defaults
+-- to solver.strict-parsing option setting).
+stpStrictParsing :: ConfigOption BaseBoolType
+stpStrictParsing = configOption knownRepr "solver.stp.strict_parsing"
 
 intWithRangeOpt :: ConfigOption BaseIntegerType -> Integer -> Integer -> ConfigDesc
 intWithRangeOpt nm lo hi = mkOpt nm sty Nothing Nothing
@@ -52,12 +64,19 @@ intWithRangeOpt nm lo hi = mkOpt nm sty Nothing Nothing
 
 stpOptions :: [ConfigDesc]
 stpOptions =
-  [ mkOpt stpPath
-          executablePathOptSty
-          (Just "Path to STP executable.")
-          (Just (ConcreteString "stp"))
-  , intWithRangeOpt stpRandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
-  ]
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "Path to STP executable.")
+                  (Just (ConcreteString "stp"))
+      p1 = mkPath stpPath
+      randbitval = 2^(30 :: Int)-1
+      r1 = intWithRangeOpt stpRandomSeed (negate randbitval) randbitval
+  in [ p1, r1
+     , copyOpt (const $ configOptionText stpStrictParsing) strictSMTParseOpt
+     , deprecatedOpt [p1] $ mkPath stpPathOLD
+     , deprecatedOpt [r1] $ intWithRangeOpt stpRandomSeedOLD
+       (negate randbitval) randbitval
+     ] <> SMT2.smtlib2Options
 
 stpAdapter :: SolverAdapter st
 stpAdapter =
@@ -67,6 +86,7 @@ stpAdapter =
   , solver_adapter_check_sat  = runSTPInOverride
   , solver_adapter_write_smt2 =
        SMT2.writeDefaultSMT2 STP "STP" defaultWriteSMTLIB2Features
+       (Just stpStrictParsing)
   }
 
 instance SMT2.SMTLib2Tweaks STP where
@@ -83,9 +103,6 @@ instance SMT2.SMTLib2GenericSolver STP where
     SMT2.setProduceModels writer True
     SMT2.setLogic writer SMT2.qf_bv
 
-  newDefaultWriter solver ack feats sym h in_h =
-    SMT2.newWriter solver h in_h ack (show solver) True feats False
-      =<< getSymbolVarBimap sym
 
 stpFeatures :: ProblemFeatures
 stpFeatures = useIntegerArithmetic .|. useBitvectors
@@ -96,7 +113,8 @@ runSTPInOverride
   -> [BoolExpr t]
   -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
   -> IO a
-runSTPInOverride = SMT2.runSolverInOverride STP SMT2.nullAcknowledgementAction (SMT2.defaultFeatures STP)
+runSTPInOverride = SMT2.runSolverInOverride STP SMT2.nullAcknowledgementAction
+                   (SMT2.defaultFeatures STP) (Just stpStrictParsing)
 
 -- | Run STP in a session. STP will be configured to produce models, buth
 -- otherwise left with the default configuration.
@@ -108,7 +126,8 @@ withSTP
   -> (SMT2.Session t STP -> IO a)
     -- ^ Action to run
   -> IO a
-withSTP = SMT2.withSolver STP SMT2.nullAcknowledgementAction (SMT2.defaultFeatures STP)
+withSTP = SMT2.withSolver STP SMT2.nullAcknowledgementAction
+          (SMT2.defaultFeatures STP) (Just stpStrictParsing)
 
 setInteractiveLogicAndOptions ::
   SMT2.SMTLib2Tweaks a =>
@@ -125,5 +144,7 @@ setInteractiveLogicAndOptions writer = do
 --    SMT2.setOption writer "global-declarations" "true"
 
 instance OnlineSolver (SMT2.Writer STP) where
-  startSolverProcess = SMT2.startSolver STP SMT2.smtAckResult setInteractiveLogicAndOptions
+  startSolverProcess feat = SMT2.startSolver STP SMT2.smtAckResult
+                            setInteractiveLogicAndOptions feat
+                            (Just stpStrictParsing)
   shutdownSolverProcess = SMT2.shutdownSolver STP

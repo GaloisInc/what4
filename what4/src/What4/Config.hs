@@ -87,6 +87,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 module What4.Config
   ( -- * Names of properties
@@ -100,6 +101,9 @@ module What4.Config
     -- * Option settings
   , OptionSetting(..)
   , Opt(..)
+  , setUnicodeOpt
+  , setIntegerOpt
+  , setBoolOpt
 
     -- * Defining option styles
   , OptionStyle(..)
@@ -112,6 +116,9 @@ module What4.Config
   , optWarn
   , optErr
   , checkOptSetResult
+  , OptSetFailure(..)
+  , OptGetFailure(..)
+  , OptCreateFailure(..)
 
     -- ** Option style templates
   , Bound(..)
@@ -136,6 +143,8 @@ module What4.Config
   , optV
   , optU
   , optUV
+  , copyOpt
+  , deprecatedOpt
 
     -- * Building and manipulating configurations
   , Config
@@ -157,29 +166,26 @@ module What4.Config
   , verbosityLogger
   ) where
 
-#if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
-#endif
-
-import           Control.Applicative (Const(..))
+import           Control.Applicative ( Const(..), (<|>) )
 import           Control.Concurrent.MVar
-import           Control.Exception
 import           Control.Lens ((&))
-import           Control.Monad.Identity
+import qualified Control.Lens.Combinators as LC
+import           Control.Monad.Catch
 import           Control.Monad.IO.Class
+import           Control.Monad.Identity
 import           Control.Monad.Writer.Strict hiding ((<>))
-import           Data.Kind
-import           Data.Maybe
-import           Data.Typeable
 import           Data.Foldable (toList)
+import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe
+import           Data.Parameterized.Classes
 import           Data.Parameterized.Some
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Void
@@ -305,6 +311,12 @@ data OptionSetting (tp :: BaseType) =
   }
 
 
+instance Show (OptionSetting tp) where
+  show = (<> " option setting") .
+         LC.cons '\'' . flip LC.snoc '\'' .
+         show . optionSettingName
+instance ShowF OptionSetting
+
 -- | An option defines some metadata about how a configuration option behaves.
 --   It contains a base type representation, which defines the runtime type
 --   that is expected for setting and querying this option at runtime.
@@ -427,7 +439,7 @@ realWithRangeOptSty lo hi = realOptSty & set_opt_onset vf
         vf _ (ConcreteReal x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                 prettyRational x <+> "out of range, expected real value in "
+                                 prettyRational x <+> "out of range, expected real value in"
                                                   <+> docInterval lo hi
 
 -- | Option style for real-valued options with a lower bound
@@ -447,7 +459,7 @@ integerWithRangeOptSty lo hi = integerOptSty & set_opt_onset vf
         vf _ (ConcreteInteger x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                 pretty x <+> "out of range, expected integer value in "
+                                 pretty x <+> "out of range, expected integer value in"
                                           <+> docInterval lo hi
 
 -- | Option style for integer-valued options with a lower bound
@@ -469,9 +481,9 @@ enumOptSty elts = stringOptSty & set_opt_onset vf
         vf _ (ConcreteString (UnicodeLiteral x))
          | x `Set.member` elts = return optOK
          | otherwise = return $ optErr $
-                            "invalid setting" <+> dquotes (pretty x) <+>
-                            ", expected one of:" <+>
-                            align (sep (map pretty $ Set.toList elts))
+                            "invalid setting" <+> dquotes (pretty x) <>
+                            ", expected one of these enums:" <+>
+                            align (sep (punctuate comma (map pretty $ Set.toList elts)))
 
 -- | A configuration syle for options that must be one of a fixed set of text values.
 --   Associated with each string is a validation/callback action that will be run
@@ -488,10 +500,71 @@ listOptSty values =  stringOptSty & set_opt_onset vf
         vf _ (ConcreteString (UnicodeLiteral x)) =
          fromMaybe
           (return $ optErr $
-            "invalid setting" <+> dquotes (pretty x) <+>
-            ", expected one of:" <+>
+            "invalid setting" <+> dquotes (pretty x) <>
+            ", expected one from this list:" <+>
             align (sep (map (pretty . fst) $ Map.toList values)))
           (Map.lookup x values)
+
+
+-- | Used as a wrapper for an option that has been deprecated. If the
+-- option is actually set (as opposed to just using the default value)
+-- then this will emit an OptionSetResult warning that time, optionally
+-- mentioning the replacement option (if specified).
+--
+-- There are three cases of deprecation:
+-- 1. Removing an option that no longer applies
+-- 2. Changing the name or heirarchical position of an option.
+-- 3. #2 and also changing the type.
+-- 4. Replacing an option by multiple new options (e.g. split url option
+--    into hostname and port options)
+--
+-- In the case of #1, the option will presumably be ignored by the
+-- code and the warnings are provided to allow the user to clean the
+-- option from their configurations.
+--
+-- In the case of #2, the old option and the new option will share the
+-- same value storage: changes to one can be seen via the other and
+-- vice versa.  The code can be switched over to reference the new
+-- option entirely, and user configurations setting the old option
+-- will still work until they have been updated and the definition of
+-- the old option is removed entirely.
+--
+--   NOTE: in order to support #2, the newer option should be declared
+--   (via 'insertOption') *before* the option it deprecates.
+--
+-- In the case of #3, it is not possible to share storage space, so
+-- during the deprecation period, the code using the option config
+-- value must check both locations and decide which value to utilize.
+--
+-- Case #4 is an enhanced form of #3 and #2, and is generally treated
+-- as #3, but adds the consideration that deprecation warnings will
+-- need to advise about multiple new options.  The inverse of #4
+-- (multiple options being combined to a single newer option) is just
+-- treated as separate deprecations.
+--
+--   NOTE: in order to support #4, the newer options should all be
+--   declared (via 'insertOption') *before* the options they deprecate.
+--
+-- Nested deprecations are valid, and replacement warnings are
+-- automatically transitive to the newest options.
+--
+-- Any user-supplied value for the old option will result in warnings
+-- emitted to the OptionSetResult for all four cases.  Code should
+-- ensure that these warnings are appropriately communicated to the
+-- user to allow configuration updates to occur.
+--
+-- Note that for #1 and #2, the overhead burden of continuing to
+-- define the deprecated option is very small, so actual removal of
+-- the older config can be delayed indefinitely.
+
+deprecatedOpt :: [ConfigDesc] -> ConfigDesc -> ConfigDesc
+deprecatedOpt newerOpt (ConfigDesc o sty desc oldRepl) =
+  let -- note: description and setter not modified here in case this
+      -- is called again to declare additional replacements (viz. case
+      -- #2 above).  These will be modified in the 'insertOption' function.
+      newRepl :: Maybe [ConfigDesc]
+      newRepl = (newerOpt <>) <$> (oldRepl <|> Just [])
+  in ConfigDesc o sty desc newRepl
 
 
 -- | A configuration style for options that are expected to be paths to an executable
@@ -517,7 +590,14 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 --   an @OptionStyle@ describing the sort of option it is, and an optional
 --   help message describing the semantics of this option.
 data ConfigDesc where
-  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
+  ConfigDesc :: ConfigOption tp  -- describes option name and type
+             -> OptionStyle tp   -- option validators, help info, type and default
+             -> Maybe (Doc Void) -- help text
+             -> Maybe [ConfigDesc] -- Deprecation and newer replacements
+             -> ConfigDesc
+
+instance Show ConfigDesc where
+  show (ConfigDesc o _ _ _) = show o
 
 -- | The most general method for constructing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
@@ -525,7 +605,7 @@ mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> Maybe (Doc Void)    -- ^ Help text
       -> Maybe (ConcreteVal tp) -- ^ A default value for this option
       -> ConfigDesc
-mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h
+mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h Nothing
 
 -- | Construct an option using a default style with a given initial value
 opt :: Pretty help
@@ -582,13 +662,28 @@ optUV o vf h = mkOpt o (defaultOpt (configOptionType o)
                        Nothing -> return optOK
                        Just z  -> return $ optErr $ pretty z
 
+-- | The copyOpt creates a duplicate ConfigDesc under a different
+-- name.  This is typically used to taking a common operation and
+-- modify the prefix to apply it to a more specialized role
+-- (e.g. solver.strict_parsing --> solver.z3.strict_parsing).  The
+-- style and help text of the input ConfigDesc are preserved, but any
+-- deprecation is discarded.
+copyOpt :: (Text -> Text) -> ConfigDesc -> ConfigDesc
+copyOpt modName (ConfigDesc o@(ConfigOption ty _) sty h _) =
+  let newName = case splitPath (modName (configOptionText o)) of
+        Just ps -> ps
+        Nothing -> error "new config option must not be empty"
+  in ConfigDesc (ConfigOption ty newName) sty h Nothing
+
+
+
 ------------------------------------------------------------------------
 -- ConfigState
 
 data ConfigLeaf where
   ConfigLeaf ::
     !(OptionStyle tp)              {- Style for this option -} ->
-    MVar (Maybe (ConcreteVal tp)) {- State of the option -} ->
+    MVar (Maybe (ConcreteVal tp))  {- State of the option -} ->
     Maybe (Doc Void)               {- Help text for the option -} ->
     ConfigLeaf
 
@@ -619,7 +714,8 @@ adjustConfigTrie     [] f (Just (ConfigTrie x m)) = g <$> f x
 adjustConfigMap :: Functor t => Text -> [Text] -> (Maybe ConfigLeaf -> t (Maybe ConfigLeaf)) -> ConfigMap -> t ConfigMap
 adjustConfigMap a as f = Map.alterF (adjustConfigTrie as f) a
 
--- | Traverse an entire @ConfigMap@.  The first argument is
+-- | Traverse an entire @ConfigMap@.  The first argument is the
+-- reversed heirarchical location of the starting map entry location.
 traverseConfigMap ::
   Applicative t =>
   [Text] {- ^ A REVERSED LIST of the name segments that represent the context from the root to the current @ConfigMap@. -} ->
@@ -650,19 +746,145 @@ traverseSubtree ps0 f = go ps0 []
   where
   go     [] revPath = traverseConfigMap revPath f
   go (p:ps) revPath = Map.alterF (traverse g) p
-     where g (ConfigTrie x m) = ConfigTrie x <$> go ps (p:revPath) m
+     where g (ConfigTrie x m) = ConfigTrie <$> here x <*> go ps (p:revPath) m
+           here = traverse (f (reverse (p:revPath)))
 
 
--- | Add an option to the given @ConfigMap@.
-insertOption :: (MonadIO m, MonadFail m) => ConfigDesc -> ConfigMap -> m ConfigMap
-insertOption (ConfigDesc (ConfigOption _tp (p:|ps)) sty h) m = adjustConfigMap p ps f m
+-- | Add an option to the given @ConfigMap@ or throws an
+-- 'OptCreateFailure' exception on error.
+--
+-- Inserting an option multiple times is idempotent under equivalency
+-- modulo the opt_onset in the option's style, otherwise it is an
+-- error.
+insertOption :: (MonadIO m, MonadThrow m)
+             => ConfigMap -> ConfigDesc -> m ConfigMap
+insertOption m d@(ConfigDesc o@(ConfigOption _tp (p:|ps)) sty h newRepls) =
+  adjustConfigMap p ps f m
   where
-  f Nothing  =
-       do ref <- liftIO (newMVar (opt_default_value sty))
-          return (Just (ConfigLeaf sty ref h))
-  f (Just _) = fail ("Option " ++ showPath ++ " already exists")
+  f Nothing =
+    let addOnSetWarning warning oldSty =
+          let newSty = set_opt_onset depF oldSty
+              oldVF = opt_onset oldSty
+              depF oldV newV =
+                do v <- oldVF oldV newV
+                   return (v <> optWarn warning)
+          in newSty
+        deprHelp depMsg ontoHelp =
+          let hMod oldHelp = vsep [ oldHelp, "*** DEPRECATED! ***", depMsg ]
+          in hMod <$> ontoHelp
+        newRefs tySep = hsep . punctuate comma .
+                        map (\(n, ConfigLeaf s _ _) -> optRef tySep n s)
+        optRef tySep nm s = hcat [ pretty (show nm), tySep
+                                 , pretty (show (opt_type s))
+                                 ]
+    in case newRepls of
+         -- not deprecated
+         Nothing ->
+           do ref <- liftIO (newMVar (opt_default_value sty))
+              return (Just (ConfigLeaf sty ref h))
 
-  showPath = Text.unpack (Text.intercalate "." (p:ps))
+         -- deprecation case #1 (removal)
+         Just [] ->
+           do ref <- liftIO (newMVar (opt_default_value sty))
+              let sty' = addOnSetWarning
+                         ("DEPRECATED CONFIG OPTION WILL BE IGNORED: " <>
+                           pretty (show o) <>
+                           " (no longer valid)")
+                         sty
+                  hmsg = "Option '" <> pretty (show o) <> "' is no longer valid."
+              return (Just (ConfigLeaf sty' ref (deprHelp hmsg h)))
+
+         Just n -> do
+           let newer =
+                 let returnFnd fnd loc lf =
+                       if name loc == fnd
+                       then Const [Just (fnd, lf)]
+                       else Const [Nothing]
+                     name parts = Text.intercalate "." parts
+                     lookupNewer (ConfigDesc (ConfigOption _ (t:|ts)) _sty _h new2) =
+                       case new2 of
+                         Nothing -> getConst $ traverseConfigMap [] (returnFnd (name (t:ts))) m
+                         Just n2 -> concat (lookupNewer <$> n2)
+                 in lookupNewer <$> n
+               chkMissing opts =
+                 if not (null opts) && null (catMaybes opts)
+                 then throwM $ OptCreateFailure d $
+                      "replacement options must be inserted into" <>
+                      " Config before this deprecated option"
+                 else return opts
+           newOpts <- catMaybes . concat <$> mapM chkMissing newer
+
+           case newOpts of
+
+             -- deprecation case #1 (removal)
+             [] ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let sty' = addOnSetWarning
+                             ("DEPRECATED CONFIG OPTION WILL BE IGNORED: " <>
+                              pretty (show o) <>
+                              " (no longer valid)")
+                             sty
+                      hmsg = "Option '" <> pretty (show o) <> "' is no longer valid."
+                  return (Just (ConfigLeaf sty' ref (deprHelp hmsg h)))
+
+             -- deprecation case #2 (renamed)
+             ((nm, ConfigLeaf sty' v _):[])
+               | Just Refl <- testEquality (opt_type sty) (opt_type sty') ->
+                 do let updSty = addOnSetWarning
+                                 ("DEPRECATED CONFIG OPTION USED: " <>
+                                  pretty (show o) <>
+                                  " (renamed to: " <> pretty nm <> ")")
+                        hmsg = "Suggest replacing '" <> pretty (show o) <>
+                               "' with '" <> pretty nm <> "'."
+                    return (Just (ConfigLeaf (updSty sty) v (deprHelp hmsg h)))
+
+             -- deprecation case #3 (renamed and re-typed)
+             (new1:[]) ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let updSty = addOnSetWarning
+                               ("DEPRECATED CONFIG OPTION USED: " <>
+                                optRef "::" o sty <>
+                                " (changed to: " <>
+                                newRefs "::" [new1] <>
+                                "); this value may be ignored")
+                      hmsg = "Suggest converting '" <>
+                             optRef " of type " o sty <>
+                             " to " <>
+                             newRefs " of type " [new1]
+                  return (Just (ConfigLeaf (updSty sty) ref (deprHelp hmsg h)))
+
+             -- deprecation case #4 (split to multiple options)
+             newMulti ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let updSty = addOnSetWarning
+                               ("DEPRECATED CONFIG OPTION USED: " <>
+                                optRef "::" o sty <>
+                                " (replaced by: " <>
+                                newRefs "::" newMulti <>
+                                "); this value may be ignored")
+                      hmsg = "Suggest converting " <>
+                             optRef " of type " o sty <>
+                             " to: " <> (newRefs " of type " newMulti)
+                  return (Just (ConfigLeaf (updSty sty) ref (deprHelp hmsg h)))
+
+  f (Just existing@(ConfigLeaf sty' _ h')) =
+    case testEquality (opt_type sty) (opt_type sty') of
+      Just Refl ->
+        if and [ show (opt_help sty) == show (opt_help sty')
+               , opt_default_value sty == opt_default_value sty'
+               -- Note opt_onset in sty is ignored/dropped
+               , show h == show h'
+               ]
+        then return $ Just existing
+        else throwM $ OptCreateFailure d "already exists"
+      Nothing -> throwM $ OptCreateFailure d
+                 (pretty $ "already exists with type " <> show (opt_type sty'))
+
+data OptCreateFailure = OptCreateFailure ConfigDesc (Doc Void)
+instance Exception OptCreateFailure
+instance Show OptCreateFailure where
+  show (OptCreateFailure cfgdesc msg) =
+    "Failed to create option " <> show cfgdesc <> ": " <> show msg
 
 
 ------------------------------------------------------------------------
@@ -682,13 +904,14 @@ initialConfig initVerbosity ts = do
    extendConfig (builtInOpts initVerbosity ++ ts) cfg
    return cfg
 
--- | Extend an existing configuration with new options.  An error will be
---   raised if any of the given options clash with options that already exists.
+-- | Extend an existing configuration with new options.  An
+--   'OptCreateFailure' exception will be raised if any of the given
+--   options clash with options that already exists.
 extendConfig :: [ConfigDesc]
              -> Config
              -> IO ()
 extendConfig ts (Config cfg) =
-  modifyMVar_ cfg (\m -> foldM (flip insertOption) m ts)
+  modifyMVar_ cfg (\m -> foldM insertOption m ts)
 
 -- | Verbosity of the simulator.  This option controls how much
 --   informational and debugging output is generated.
@@ -726,23 +949,43 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
   trySetOpt :: OptionSetting tp -> a -> IO OptionSetResult
 
   -- | Set the value of an option.  Return any generated warnings.
-  --   Throw an exception if a validation error occurs.
+  --   Throws an OptSetFailure exception if a validation error occurs.
   setOpt :: OptionSetting tp -> a -> IO [Doc Void]
-  setOpt x v = trySetOpt x v >>= checkOptSetResult
+  setOpt x v = trySetOpt x v >>= checkOptSetResult x
 
   -- | Get the current value of an option.  Throw an exception
   --   if the option is not currently set.
   getOpt :: OptionSetting tp -> IO a
-  getOpt x = maybe (fail msg) return =<< getMaybeOpt x
-    where msg = "Option is not set: " ++ show (optionSettingName x)
+  getOpt x = maybe (throwM $ OptGetFailure (OSet $ Some x) "not set") return
+             =<< getMaybeOpt x
 
 -- | Throw an exception if the given @OptionSetResult@ indidcates
 --   an error.  Otherwise, return any generated warnings.
-checkOptSetResult :: OptionSetResult -> IO [Doc Void]
-checkOptSetResult res =
+checkOptSetResult :: OptionSetting tp -> OptionSetResult -> IO [Doc Void]
+checkOptSetResult optset res =
   case optionSetError res of
-    Just msg -> fail (show msg)
+    Just msg -> throwM $ OptSetFailure (Some optset) msg
     Nothing -> return (toList (optionSetWarnings res))
+
+data OptSetFailure = OptSetFailure (Some OptionSetting) (Doc Void)
+instance Exception OptSetFailure
+instance Show OptSetFailure where
+  show (OptSetFailure optset msg) =
+    "Failed to set " <> show optset <> ": " <> show msg
+
+data OptRef = OName Text | OSet (Some OptionSetting) | OCfg (Some ConfigOption)
+instance Show OptRef where
+  show = \case
+    OName t -> show t
+    OSet (Some s) -> show s
+    OCfg (Some c) -> show c
+
+data OptGetFailure = OptGetFailure OptRef (Doc Void)
+instance Exception OptGetFailure
+instance Show OptGetFailure where
+  show (OptGetFailure optref msg) =
+    "Failed to get " <> (show optref) <> ": " <> show msg
+
 
 instance Opt (BaseStringType Unicode) Text where
   getMaybeOpt x = fmap (fromUnicodeLit . fromConcreteString) <$> getOption x
@@ -756,6 +999,47 @@ instance Opt BaseBoolType Bool where
   getMaybeOpt x = fmap fromConcreteBool <$> getOption x
   trySetOpt x v = setOption x (ConcreteBool v)
 
+instance Opt BaseRealType Rational where
+  getMaybeOpt x = fmap fromConcreteReal <$> getOption x
+  trySetOpt x v = setOption x (ConcreteReal v)
+
+-- | Given a unicode text value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not a unicode
+-- text valued option.
+setUnicodeOpt :: Some OptionSetting -> Text -> IO [Doc Void]
+setUnicodeOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt (BaseStringRepr UnicodeRepr) of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given a text string"
+
+-- | Given an integer value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not an integer
+-- valued option.
+setIntegerOpt :: Some OptionSetting -> Integer -> IO [Doc Void]
+setIntegerOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt BaseIntegerRepr of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given an integer"
+
+-- | Given a boolean value, set the named option to that value or
+-- generate an OptSetFailure exception if the option is not a boolean
+-- valued option.
+setBoolOpt :: Some OptionSetting -> Bool -> IO [Doc Void]
+setBoolOpt (Some optset) val =
+  let tyOpt = configOptionType (optionSettingName optset)
+  in case testEquality tyOpt BaseBoolRepr of
+       Just Refl -> setOpt optset val
+       Nothing ->
+         checkOptSetResult optset $ optErr $
+         "option type is a" <+> pretty tyOpt <+> "but given a boolean"
+
+
 -- | Given a @ConfigOption@ name, produce an @OptionSetting@
 --   object for accessing and setting the value of that option.
 --
@@ -768,7 +1052,7 @@ getOptionSetting ::
 getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
    readMVar cfg >>= getConst . adjustConfigMap p ps f
  where
-  f Nothing  = Const (fail $ "Option not found: " ++ show o)
+  f Nothing  = Const (throwM $ OptGetFailure (OCfg $ Some o) "not found")
   f (Just x) = Const (leafToSetting x)
 
   leafToSetting (ConfigLeaf sty ref _h)
@@ -781,8 +1065,11 @@ getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
              let new = if (isJust (optionSetError res)) then old else (Just v)
              new `seq` return (new, res)
       }
-    | otherwise = fail ("Type mismatch retrieving option " ++ show o ++
-                         "\nExpected: " ++ show tp ++ " but found " ++ show (opt_type sty))
+    | otherwise = throwM $ OptGetFailure (OCfg $ Some o)
+                  (pretty $ "Type mismatch: " <>
+                    "expected '" <> show tp <>
+                    "' but found '" <> show (opt_type sty) <> "'"
+                  )
 
 -- | Given a text name, produce an @OptionSetting@
 --   object for accessing and setting the value of that option.
@@ -794,10 +1081,12 @@ getOptionSettingFromText ::
   IO (Some OptionSetting)
 getOptionSettingFromText nm (Config cfg) =
    case splitPath nm of
-     Nothing -> fail "Illegal empty name for option"
+     Nothing -> throwM $ OptGetFailure (OName "") "Illegal empty name for option"
      Just (p:|ps) -> readMVar cfg >>= (getConst . adjustConfigMap p ps (f (p:|ps)))
   where
-  f (p:|ps) Nothing  = Const (fail $ "Option not found: " ++ (Text.unpack (Text.intercalate "." (p:ps))))
+  f (p:|ps) Nothing  = Const (throwM $ OptGetFailure
+                              (OName (Text.intercalate "." (p:ps)))
+                              "not found")
   f path (Just x) = Const (leafToSetting path x)
 
   leafToSetting path (ConfigLeaf sty ref _h) = return $
@@ -815,6 +1104,12 @@ getOptionSettingFromText nm (Config cfg) =
 data ConfigValue where
   ConfigValue :: ConfigOption tp -> ConcreteVal tp -> ConfigValue
 
+instance Pretty ConfigValue where
+  pretty (ConfigValue option val) =
+    ppSetting (configOptionNameParts option) (Just val)
+    <+> "::" <+> pretty (configOptionType option)
+
+
 -- | Given the name of a subtree, return all
 --   the currently-set configurtion values in that subtree.
 --
@@ -825,9 +1120,10 @@ getConfigValues ::
   IO [ConfigValue]
 getConfigValues prefix (Config cfg) =
   do m <- readMVar cfg
-     let ps = Text.splitOn "." prefix
+     let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq ConfigValue) IO ConfigLeaf
-         f [] _ = fail $ "getConfigValues: illegal empty option name"
+         f [] _ = throwM $ OptGetFailure (OName prefix)
+                  "illegal empty option prefix name"
          f (p:path) l@(ConfigLeaf sty ref _h) =
             do liftIO (readMVar ref) >>= \case
                  Just x  -> tell (Seq.singleton (ConfigValue (ConfigOption (opt_type sty) (p:|path)) x))
@@ -845,7 +1141,7 @@ ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc Voi
 ppOption nm sty x help =
   vcat
   [ group $ fillCat [ppSetting nm x, indent 2 (opt_help sty)]
-  , maybe mempty (indent 2) help
+  , maybe mempty (indent 4) help
   ]
 
 ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc Void)
@@ -854,7 +1150,7 @@ ppConfigLeaf nm (ConfigLeaf sty ref help) =
      return $ ppOption nm sty x help
 
 -- | Given the name of a subtree, compute help text for
---   all the options avaliable in that subtree.
+--   all the options available in that subtree.
 --
 --   If the subtree name is empty, the entire tree will be traversed.
 configHelp ::
@@ -863,7 +1159,7 @@ configHelp ::
   IO [Doc Void]
 configHelp prefix (Config cfg) =
   do m <- readMVar cfg
-     let ps = Text.splitOn "." prefix
+     let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
                         tell (Seq.singleton d)

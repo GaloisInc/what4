@@ -1,0 +1,2 @@
+minisat: Incremental solving is forced on (to avoid variable elimination) unless using internal decision strategy.
+success

@@ -57,6 +57,7 @@ module What4.Protocol.SMTWriter
               , supportFunctionArguments
               , supportQuantifiers
               , supportedFeatures
+              , strictParsing
               , connHandle
               , connInputHandle
               , smtWriterName
@@ -82,6 +83,8 @@ module What4.Protocol.SMTWriter
   , assumeFormulaWithFreshName
   , DefineStyle(..)
   , AcknowledgementAction(..)
+  , ResponseStrictness(..)
+  , parserStrictness
   , nullAcknowledgementAction
     -- * SMTWriter operations
   , assume
@@ -102,7 +105,7 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Exception
-import           Control.Lens hiding ((.>))
+import           Control.Lens hiding ((.>), Strict)
 import           Control.Monad.Extra
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
@@ -138,15 +141,16 @@ import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (RoundingMode(..), stringInfo)
-import           What4.ProblemFeatures
+import qualified What4.Config as CFG
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import qualified What4.Expr.StringSeq as SSeq
-import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.UnaryBV as UnaryBV
+import qualified What4.Expr.WeightedSum as WSum
+import           What4.Interface (RoundingMode(..), stringInfo)
+import           What4.ProblemFeatures
 import           What4.ProgramLoc
 import           What4.SatResult
 import qualified What4.SemiRing as SR
@@ -589,6 +593,7 @@ data StackEntry t (h :: Type) = StackEntry
 data WriterConn t (h :: Type) =
   WriterConn { smtWriterName :: !String
                -- ^ Name of writer for error reporting purposes.
+
              , connHandle :: !(OutputStream Text)
                -- ^ Handle to write to
 
@@ -612,6 +617,9 @@ data WriterConn t (h :: Type) =
                -- indices.
              , supportQuantifiers :: !Bool
                -- ^ Allow the SMT writer to generate problems with quantifiers.
+             , strictParsing :: !ResponseStrictness
+               -- ^ Be strict in parsing SMTLib2 responses; no
+               -- verbosity or variants allowed
              , supportedFeatures :: !ProblemFeatures
                -- ^ Indicates features supported by the solver.
              , entryStack :: !(IORef [StackEntry t h])
@@ -701,6 +709,8 @@ newWriterConn :: OutputStream Text
               -- ^ An action to consume solver acknowledgement responses
               -> String
               -- ^ Name of solver for reporting purposes.
+              -> ResponseStrictness
+              -- ^ Be strict in parsing responses?
               -> ProblemFeatures
               -- ^ Indicates what features are supported by the solver.
               -> SymbolVarBimap t
@@ -708,7 +718,7 @@ newWriterConn :: OutputStream Text
               -- canonical name (if any).
               -> cs -- ^ State information specific to the type of connection
               -> IO (WriterConn t cs)
-newWriterConn h in_h ack solver_name features bindings cs = do
+newWriterConn h in_h ack solver_name beStrict features bindings cs = do
   entry <- newStackEntry
   stk_ref <- newIORef [entry]
   r <- newIORef emptyState
@@ -718,6 +728,7 @@ newWriterConn h in_h ack solver_name features bindings cs = do
                        , supportFunctionDefs      = False
                        , supportFunctionArguments = False
                        , supportQuantifiers       = False
+                       , strictParsing            = beStrict
                        , supportedFeatures        = features
                        , entryStack   = stk_ref
                        , stateRef     = r
@@ -725,6 +736,29 @@ newWriterConn h in_h ack solver_name features bindings cs = do
                        , connState    = cs
                        , consumeAcknowledgement = ack
                        }
+
+-- | Strictness level for parsing solver responses.
+data ResponseStrictness
+  = Lenient  -- ^ allows other output preceeding recognized solver responses
+  | Strict   -- ^ parse _only_ recognized solver responses; fail on anything else
+  deriving (Eq, Show)
+
+-- | Given an optional override configuration option, return the SMT
+-- response parsing strictness that should be applied based on the
+-- override or thedefault strictSMTParsing configuration.
+parserStrictness :: Maybe (CFG.ConfigOption BaseBoolType)
+                 -> CFG.ConfigOption BaseBoolType
+                 -> CFG.Config
+                 -> IO ResponseStrictness
+parserStrictness overrideOpt strictOpt cfg = do
+  ovr <- case overrideOpt of
+           Nothing -> return Nothing
+           Just o -> CFG.getMaybeOpt =<< CFG.getOptionSetting o cfg
+  optval <- case ovr of
+              Just v -> return $ Just v
+              Nothing -> CFG.getMaybeOpt =<< CFG.getOptionSetting strictOpt cfg
+  return $ maybe Strict (\c -> if c then Strict else Lenient) optval
+
 
 -- | Status to indicate when term value will be uncached.
 data TermLifetime
@@ -2865,16 +2899,16 @@ class SMTWriter h => SMTReadWriter h where
     WriterConn t h -> Streams.InputStream Text -> SMTEvalFunctions h
 
   -- | Parse a set result from the solver's response.
-  smtSatResult :: f h -> Streams.InputStream Text -> IO (SatResult () ())
+  smtSatResult :: f h -> WriterConn t h -> IO (SatResult () ())
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   These correspond to previously-named assertions.
-  smtUnsatCoreResult :: f h -> Streams.InputStream Text -> IO [Text]
+  smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary
   --   atom, false for a negated atom.
-  smtUnsatAssumptionsResult :: f h -> Streams.InputStream Text -> IO [(Bool,Text)]
+  smtUnsatAssumptionsResult :: f h -> WriterConn t h -> IO [(Bool,Text)]
 
 
 -- | Return the terms associated with the given ground index variables.

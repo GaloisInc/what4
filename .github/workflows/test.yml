@@ -45,11 +45,6 @@ jobs:
       - name: Cabal update
         shell: bash
         run: nix-shell -p cabal-install --run 'cabal update'
-      - name: Cabal check
-        shell: bash
-        run: |
-          cd what4
-          nix-shell -p cabal-install --run 'cabal check'
       - name: Setup Environment Vars
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
@@ -90,7 +85,7 @@ jobs:
         # LD_LIBRARY_PATH manipulation may be removed for all steps.
         run: |
           cd what4
-          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
+          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure --enable-tests -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
       - name: Build
         shell: bash
         run: |

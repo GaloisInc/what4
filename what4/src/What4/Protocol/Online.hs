@@ -18,6 +18,8 @@ module What4.Protocol.Online
   ( OnlineSolver(..)
   , AnOnlineSolver(..)
   , SolverProcess(..)
+  , solverStdin
+  , solverResponse
   , SolverGoalTimeout(..)
   , getGoalTimeoutInSeconds
   , ErrorBehavior(..)
@@ -134,12 +136,6 @@ data SolverProcess scope solver = SolverProcess
   , solverHandle :: !ProcessHandle
     -- ^ Handle to the solver process
 
-  , solverStdin :: !(Streams.OutputStream Text)
-    -- ^ Standard in for the solver process.
-
-  , solverResponse :: !(Streams.InputStream Text)
-    -- ^ Wrap the solver's stdout, for easier parsing of responses.
-
   , solverErrorBehavior :: !ErrorBehavior
     -- ^ Indicate this solver's behavior following an error response
 
@@ -174,6 +170,15 @@ data SolverProcess scope solver = SolverProcess
     -- trying to satisfy any particular goal before giving up.  A
     -- value of zero indicates no time limit.
   }
+
+
+-- | Standard input stream for the solver process.
+solverStdin :: (SolverProcess t solver) -> (Streams.OutputStream Text)
+solverStdin = connHandle . solverConn
+
+-- | The solver's stdout, for easier parsing of responses.
+solverResponse :: (SolverProcess t solver) -> (Streams.InputStream Text)
+solverResponse = connInputHandle . solverConn
 
 
 -- | An impolite way to shut down a solver.  Prefer to use
@@ -396,7 +401,7 @@ getUnsatAssumptions proc =
      unless (supportedFeatures conn `hasProblemFeature` useUnsatAssumptions) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT assumption lists"
      addCommandNoAck conn (getUnsatAssumptionsCommand conn)
-     smtUnsatAssumptionsResult conn (solverResponse proc)
+     smtUnsatAssumptionsResult conn conn
 
 -- | After an unsatisfiable check-sat command, compute a set of the named assertions
 --   that (together with all the unnamed assertions) form an unsatisfiable core.
@@ -407,14 +412,13 @@ getUnsatCore proc =
      unless (supportedFeatures conn `hasProblemFeature` useUnsatCores) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce UNSAT cores"
      addCommandNoAck conn (getUnsatCoreCommand conn)
-     smtUnsatCoreResult conn (solverResponse proc)
+     smtUnsatCoreResult conn conn
 
 -- | Get the sat result from a previous SAT command.
 getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
-  let err_reader = solverStderr yp
-  sat_result <- tryJust filterAsync (smtSatResult yp (solverResponse yp))
+  sat_result <- tryJust filterAsync (smtSatResult yp (solverConn yp))
   case sat_result of
     Right ok -> return ok
 
@@ -422,7 +426,7 @@ getSatResult yp = do
        do -- Interrupt process
           terminateProcess ph
 
-          txt <- readAllLines err_reader
+          txt <- readAllLines $ solverStderr yp
 
           -- Wait for process to end
           ec <- waitForProcess ph

@@ -47,6 +47,7 @@ module What4.Protocol.SMTLib2
   , nameResult
   , setProduceModels
   , smtLibEvalFuns
+  , smtlib2Options
     -- * Logic
   , SMT2.Logic(..)
   , SMT2.qf_bv
@@ -90,7 +91,6 @@ import Control.Monad.Fail( MonadFail )
 import           Control.Applicative
 import           Control.Exception
 import           Control.Monad.State.Strict
-import qualified Data.Attoparsec.Text as AT
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
@@ -121,7 +121,6 @@ import           Numeric.Natural
 import qualified System.Exit as Exit
 import qualified System.IO as IO
 import qualified System.IO.Streams as Streams
-import qualified System.IO.Streams.Attoparsec.Text as Streams
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
 import qualified Prettyprinter as PP
@@ -130,6 +129,7 @@ import           LibBF( bfToBits )
 import           Prelude hiding (writeFile)
 
 import           What4.BaseTypes
+import qualified What4.Config as CFG
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import qualified What4.Interface as I
@@ -139,6 +139,7 @@ import           What4.Protocol.ReadDecimal
 import           What4.Protocol.SExp
 import           What4.Protocol.SMTLib2.Syntax (Term, term_app, un_app, bin_app)
 
+import           What4.Protocol.SMTLib2.Response
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2 hiding (Term)
 import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Protocol.SMTWriter hiding (assume, Term)
@@ -153,6 +154,10 @@ import           What4.Solver.Adapter
 all_supported :: SMT2.Logic
 all_supported = SMT2.allSupported
 {-# DEPRECATED all_supported "Use allSupported" #-}
+
+
+smtlib2Options :: [CFG.ConfigDesc]
+smtlib2Options = smtParseOptions
 
 ------------------------------------------------------------------------
 -- Floating point
@@ -565,6 +570,8 @@ newWriter :: a
               --   (may be the @nullInput@ stream if no responses are expected)
           -> AcknowledgementAction t (Writer a)
              -- ^ Action to run for consuming acknowledgement messages
+          -> ResponseStrictness
+             -- ^ Be strict in parsing SMT solver responses?
           -> String
              -- ^ Name of solver for reporting purposes.
           -> Bool
@@ -577,13 +584,13 @@ newWriter :: a
           -> B.SymbolVarBimap t
              -- ^ Variable bindings for names.
           -> IO (WriterConn t (Writer a))
-newWriter _ h in_h ack solver_name permitDefineFun arithOption quantSupport bindings = do
+newWriter _ h in_h ack isStrict solver_name permitDefineFun arithOption quantSupport bindings = do
   r <- newIORef Set.empty
   let initWriter =
         Writer
         { declaredTuples = r
         }
-  conn <- newWriterConn h in_h ack solver_name arithOption bindings initWriter
+  conn <- newWriterConn h in_h ack solver_name isStrict arithOption bindings initWriter
   return $! conn { supportFunctionDefs = permitDefineFun
                  , supportQuantifiers = quantSupport
                  }
@@ -813,17 +820,6 @@ data Session t a = Session
   , sessionResponse :: !(Streams.InputStream Text)
   }
 
-parseSMTLib2String :: AT.Parser Text
-parseSMTLib2String = AT.char '\"' >> go
- where
- go :: AT.Parser Text
- go = do xs <- AT.takeWhile (not . (=='\"'))
-         _ <- AT.char '\"'
-         (do _ <- AT.char '\"'
-             ys <- go
-             return (xs <> "\"" <> ys)
-          ) <|> return xs
-
 -- | Get a value from a solver (must be called after checkSat)
 runGetValue :: SMTLib2Tweaks a
             => Session t a
@@ -831,11 +827,10 @@ runGetValue :: SMTLib2Tweaks a
             -> IO SExp
 runGetValue s e = do
   writeGetValue (sessionWriter s) [ e ]
-  msexp <- try $ Streams.parseFromStream (parseSExp parseSMTLib2String) (sessionResponse s)
-  case msexp of
-    Left Streams.ParseException{} -> fail $ "Could not parse solver value."
-    Right (SApp [SApp [_, b]]) -> return b
-    Right sexp -> fail $ "Could not parse solver value:\n  " ++ show sexp
+  let valRsp = \case
+        AckSuccessSExp (SApp [SApp [_, b]]) -> Just b
+        _ -> Nothing
+  getLimitedSolverResponse "get value" valRsp (sessionWriter s) (SMT2.getValue [e])
 
 -- | This function runs a check sat command
 runCheckSat :: forall b t a.
@@ -849,7 +844,7 @@ runCheckSat s doEval =
   do let w = sessionWriter s
          r = sessionResponse s
      addCommands w (checkCommands w)
-     res <- smtSatResult w r
+     res <- smtSatResult w w
      case res of
        Unsat x -> doEval (Unsat x)
        Unknown -> doEval Unknown
@@ -857,93 +852,39 @@ runCheckSat s doEval =
          do evalFn <- smtExprGroundEvalFn w (smtEvalFuns w r)
             doEval (Sat (evalFn, Nothing))
 
--- | Called when methods in the following instance encounter an exception
-throwSMTLib2ParseError :: (Exception e) => Text -> SMT2.Command -> e -> m a
-throwSMTLib2ParseError what cmd e =
-  throw $ SMTLib2ParseError [cmd] $ Text.unlines
-    [ Text.unwords ["Could not parse result from", what, "."]
-    , "*** Exception: " <> Text.pack (displayException e)
-    ]
-
 instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
   smtEvalFuns w s = smtLibEvalFuns Session { sessionWriter = w
                                            , sessionResponse = s }
 
   smtSatResult p s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s)
-       case mb of
-         Left (SomeException e) ->
-            fail $ unlines [ "Could not parse check_sat result."
-                           , "*** Exception: " ++ displayException e
-                           ]
-         Right (SAtom "unsat") -> return (Unsat ())
-         Right (SAtom "sat") -> return (Sat ())
-         Right (SAtom "unknown") -> return Unknown
-         Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error (head $ reverse (checkCommands p)) msg)
-         Right res -> throw $ SMTLib2ParseError (checkCommands p) (Text.pack (show res))
+    let satRsp = \case
+          AckSat     -> Just $ Sat ()
+          AckUnsat   -> Just $ Unsat ()
+          AckUnknown -> Just Unknown
+          _ -> Nothing
+    in getLimitedSolverResponse "sat result" satRsp s
+       (head $ reverse $ checkCommands p)
 
   smtUnsatAssumptionsResult p s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s)
-       let cmd = getUnsatAssumptionsCommand p
-       case mb of
-         Right (asNegAtomList -> Just as) -> return as
-         Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-         Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-         Left (SomeException e) ->
-           throwSMTLib2ParseError "unsat assumptions" cmd e
+    let unsatAssumpRsp = \case
+         AckSuccessSExp (asNegAtomList -> Just as) -> Just as
+         _ -> Nothing
+        cmd = getUnsatAssumptionsCommand p
+    in getLimitedSolverResponse "unsat assumptions" unsatAssumpRsp s cmd
 
   smtUnsatCoreResult p s =
-    do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s)
-       let cmd = getUnsatCoreCommand p
-       case mb of
-         Right (asAtomList -> Just nms) -> return nms
-         Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-         Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-         Left (SomeException e) ->
-           throwSMTLib2ParseError "unsat core" cmd e
+    let unsatCoreRsp = \case
+          AckSuccessSExp (asAtomList -> Just nms) -> Just nms
+          _ -> Nothing
+        cmd = getUnsatCoreCommand p
+    in getLimitedSolverResponse "unsat core" unsatCoreRsp s cmd
 
-
-data SMTLib2Exception
-  = SMTLib2Unsupported SMT2.Command
-  | SMTLib2Error SMT2.Command Text
-  | SMTLib2ParseError [SMT2.Command] Text
-
-instance Show SMTLib2Exception where
-  show (SMTLib2Unsupported (SMT2.Cmd cmd)) =
-     unlines
-       [ "unsupported command:"
-       , "  " ++ Lazy.unpack (Builder.toLazyText cmd)
-       ]
-  show (SMTLib2Error (SMT2.Cmd cmd) msg) =
-     unlines
-       [ "Solver reported an error:"
-       , "  " ++ Text.unpack msg
-       , "in response to command:"
-       , "  " ++ Lazy.unpack (Builder.toLazyText cmd)
-       ]
-  show (SMTLib2ParseError cmds msg) =
-     unlines $
-       [ "Could not parse solver response:"
-       , "  " ++ Text.unpack msg
-       , "in response to commands:"
-       ] ++ map cmdToString cmds
-       where cmdToString (SMT2.Cmd cmd) =
-               "  " ++ Lazy.unpack (Builder.toLazyText cmd)
-
-instance Exception SMTLib2Exception
 
 smtAckResult :: AcknowledgementAction t (Writer a)
-smtAckResult = AckAction $ \conn cmd ->
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) (connInputHandle conn))
-     case mb of
-       Right (SAtom "success") -> return ()
-       Right (SAtom "unsupported") -> throw (SMTLib2Unsupported cmd)
-       Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-       Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-       Left (SomeException e) -> throw $ SMTLib2ParseError [cmd] $ Text.pack $
-               unlines [ "Could not parse acknowledgement result."
-                       , "*** Exception: " ++ displayException e
-                       ]
+smtAckResult = AckAction $ getLimitedSolverResponse "get ack" $ \case
+                 AckSuccess -> Just ()
+                 _ -> Nothing
+
 
 smtLibEvalFuns ::
   forall t a. SMTLib2Tweaks a => Session t a -> SMTEvalFunctions (Writer a)
@@ -977,8 +918,8 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
 
   defaultFeatures :: a -> ProblemFeatures
 
-  getErrorBehavior :: a -> WriterConn t (Writer a) -> Streams.InputStream Text -> IO ErrorBehavior
-  getErrorBehavior _ _ _ = return ImmediateExit
+  getErrorBehavior :: a -> WriterConn t (Writer a) -> IO ErrorBehavior
+  getErrorBehavior _ _ = return ImmediateExit
 
   supportsResetAssertions :: a -> Bool
   supportsResetAssertions _ = False
@@ -989,12 +930,16 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a ->
        AcknowledgementAction t (Writer a) ->
        ProblemFeatures ->
+       -- | strictness override configuration
+       Maybe (CFG.ConfigOption I.BaseBoolType) ->
        B.ExprBuilder t st fs ->
        Streams.OutputStream Text ->
        Streams.InputStream Text ->
        IO (WriterConn t (Writer a))
-  newDefaultWriter solver ack feats sym h in_h =
-    newWriter solver h in_h ack (show solver) True feats True
+  newDefaultWriter solver ack feats strictOpt sym h in_h = do
+    let cfg = I.getConfiguration sym
+    strictness <- parserStrictness strictOpt strictSMTParsing cfg
+    newWriter solver h in_h ack strictness (show solver) True feats True
       =<< B.getSymbolVarBimap sym
 
   -- | Run the solver in a session.
@@ -1002,6 +947,8 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
+    -> Maybe (CFG.ConfigOption I.BaseBoolType)
+       -- ^ strictness override configuration
     -> B.ExprBuilder t st fs
     -> FilePath
       -- ^ Path to solver executable
@@ -1009,7 +956,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     -> (Session t a -> IO b)
       -- ^ Action to run
     -> IO b
-  withSolver solver ack feats sym path logData action = do
+  withSolver solver ack feats strictOpt sym path logData action = do
     args <- defaultSolverArgs solver sym
     withProcessHandles path args Nothing $
       \hdls@(in_h, out_h, err_h, _ph) -> do
@@ -1018,7 +965,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
           demuxProcessHandles in_h out_h err_h
             (fmap (\x -> ("; ", x)) $ logHandle logData)
 
-        writer <- newDefaultWriter solver ack feats sym in_stream out_stream
+        writer <- newDefaultWriter solver ack feats strictOpt sym in_stream out_stream
         let s = Session
               { sessionWriter   = writer
               , sessionResponse = out_stream
@@ -1044,19 +991,21 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
+    -> Maybe (CFG.ConfigOption I.BaseBoolType)
+    -- ^ strictness override configuration
     -> B.ExprBuilder t st fs
     -> LogData
     -> [B.BoolExpr t]
     -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO b)
     -> IO b
-  runSolverInOverride solver ack feats sym logData predicates cont = do
+  runSolverInOverride solver ack feats strictOpt sym logData predicates cont = do
     I.logSolverEvent sym
       (I.SolverStartSATQuery $ I.SolverStartSATQueryRec
         { I.satQuerySolverName = show solver
         , I.satQueryReason     = logReason logData
         })
     path <- defaultSolverPath solver sym
-    withSolver solver ack feats sym path (logData{logVerbosity=2}) $ \session -> do
+    withSolver solver ack feats strictOpt sym path (logData{logVerbosity=2}) $ \session -> do
       -- Assume the predicates hold.
       forM_ predicates (SMTWriter.assume (sessionWriter session))
       -- Run check SAT and get the model back.
@@ -1076,15 +1025,19 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
                     -- ^ Name of solver for reporting.
                  -> ProblemFeatures
                     -- ^ Features supported by solver
+                 -> Maybe (CFG.ConfigOption I.BaseBoolType)
+                    -- ^ strictness override configuration
                  -> B.ExprBuilder t st fs
                  -> IO.Handle
                  -> [B.BoolExpr t]
                  -> IO ()
-writeDefaultSMT2 a nm feat sym h ps = do
+writeDefaultSMT2 a nm feat strictOpt sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   null_in <- Streams.nullInput
-  c <- newWriter a str null_in nullAcknowledgementAction nm True feat True bindings
+  let cfg = I.getConfiguration sym
+  strictness <- parserStrictness strictOpt strictSMTParsing cfg
+  c <- newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
   writeCheckSat c
@@ -1097,10 +1050,12 @@ startSolver
         -- ^ Action for acknowledging command responses
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
   -> ProblemFeatures
+  -> Maybe (CFG.ConfigOption I.BaseBoolType)
+  -- ^ strictness override configuration
   -> Maybe IO.Handle
   -> B.ExprBuilder t st fs
   -> IO (SolverProcess t (Writer a))
-startSolver solver ack setup feats auxOutput sym = do
+startSolver solver ack setup feats strictOpt auxOutput sym = do
   path <- defaultSolverPath solver sym
   args <- defaultSolverArgs solver sym
   hdls@(in_h, out_h, err_h, ph) <- startProcess path args Nothing
@@ -1110,13 +1065,13 @@ startSolver solver ack setup feats auxOutput sym = do
        (fmap (\x -> ("; ", x)) auxOutput)
 
   -- Create writer
-  writer <- newDefaultWriter solver ack feats sym in_stream out_stream
+  writer <- newDefaultWriter solver ack feats strictOpt sym in_stream out_stream
 
   -- Set solver logic and solver-specific options
   setup writer
 
   -- Query the solver for it's error behavior
-  errBeh <- getErrorBehavior solver writer out_stream
+  errBeh <- getErrorBehavior solver writer
 
   earlyUnsatRef <- newIORef Nothing
 
@@ -1126,11 +1081,9 @@ startSolver solver ack setup feats auxOutput sym = do
   return $! SolverProcess
             { solverConn     = writer
             , solverCleanupCallback = cleanupProcess hdls
-            , solverStdin    = in_stream
             , solverStderr   = err_reader
             , solverHandle   = ph
             , solverErrorBehavior = errBeh
-            , solverResponse = out_stream
             , solverEvalFuns = smtEvalFuns writer out_stream
             , solverLogFn    = I.logSolverEvent sym
             , solverName     = show solver
@@ -1192,45 +1145,42 @@ ppSolverVersionError err =
         na Nothing  = "n/a"
 
 -- | Get the result of a version query
-nameResult :: Streams.InputStream Text -> IO Text
-nameResult s =
-  let cmd = SMT2.getName
-  in
-    tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
-      \case
-        Right (SApp [SAtom ":name", SString nm]) -> pure nm
-        Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-        Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-        Left (SomeException e) ->
-          throwSMTLib2ParseError "name query" cmd e
+nameResult :: WriterConn t a -> IO Text
+nameResult conn =
+  getLimitedSolverResponse "solver name"
+  (\case
+      RspName nm -> Just nm
+      _ -> Nothing
+  )
+  conn SMT2.getName
 
 
 -- | Query the solver's error behavior setting
 queryErrorBehavior :: SMTLib2Tweaks a =>
-  WriterConn t (Writer a) -> Streams.InputStream Text -> IO ErrorBehavior
-queryErrorBehavior conn resp =
+  WriterConn t (Writer a) -> IO ErrorBehavior
+queryErrorBehavior conn =
   do let cmd = SMT2.getErrorBehavior
      writeCommand conn cmd
-     tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) resp) >>=
-       \case
-         Right (SApp [SAtom ":error-behavior", SAtom "continued-execution"]) -> return ContinueOnError
-         Right (SApp [SAtom ":error-behavior", SAtom "immediate-exit"]) -> return ImmediateExit
-         Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-         Left (SomeException e) -> throwSMTLib2ParseError "error behavior query" cmd e
+     getLimitedSolverResponse "error behavior"
+       (\case
+           RspErrBehavior bh -> case bh of
+             "continued-execution" -> return ContinueOnError
+             "immediate-exit" -> return ImmediateExit
+             _ -> throw $ SMTLib2ResponseUnrecognized cmd bh
+           _ -> Nothing
+       ) conn cmd
 
 
 -- | Get the result of a version query
-versionResult :: Streams.InputStream Text -> IO Text
-versionResult s =
-  let cmd = SMT2.getVersion
-  in
-    tryJust filterAsync (Streams.parseFromStream (parseSExp parseSMTLib2String) s) >>=
-      \case
-        Right (SApp [SAtom ":version", SString v]) -> pure v
-        Right (SApp [SAtom "error", SString msg]) -> throw (SMTLib2Error cmd msg)
-        Right res -> throw (SMTLib2ParseError [cmd] (Text.pack (show res)))
-        Left (SomeException e) ->
-          throwSMTLib2ParseError "version query" cmd e
+versionResult :: WriterConn t a -> IO Text
+versionResult conn =
+  getLimitedSolverResponse "solver version"
+  (\case
+      RspVersion v -> Just v
+      _ -> Nothing
+  )
+  conn SMT2.getVersion
+
 
 -- | Ensure the solver's version falls within a known-good range.
 checkSolverVersion' :: SMTLib2Tweaks solver =>
@@ -1246,7 +1196,7 @@ checkSolverVersion' boundsMap proc =
     Nothing -> done
     Just bnds ->
       do getVersion conn
-         res <- versionResult (solverResponse proc)
+         res <- versionResult $ solverConn proc
          case Versions.version res of
            Left e -> pure (Left (UnparseableVersion e))
            Right actualVer ->
