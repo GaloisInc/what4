@@ -983,6 +983,10 @@ instance Opt BaseBoolType Bool where
   getMaybeOpt x = fmap fromConcreteBool <$> getOption x
   trySetOpt x v = setOption x (ConcreteBool v)
 
+instance Opt BaseRealType Rational where
+  getMaybeOpt x = fmap fromConcreteReal <$> getOption x
+  trySetOpt x v = setOption x (ConcreteReal v)
+
 -- | Given a unicode text value, set the named option to that value or
 -- generate an OptSetFailure exception if the option is not a unicode
 -- text valued option.
