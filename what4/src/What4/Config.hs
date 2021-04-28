@@ -165,7 +165,7 @@ module What4.Config
   , verbosityLogger
   ) where
 
-import           Control.Applicative (Const(..))
+import           Control.Applicative ( Const(..), (<|>) )
 import           Control.Concurrent.MVar
 import           Control.Lens ((&))
 import qualified Control.Lens.Combinators as LC
@@ -509,24 +509,62 @@ listOptSty values =  stringOptSty & set_opt_onset vf
 -- option is actually set (as opposed to just using the default value)
 -- then this will emit a warning to stderr at that time, optionally
 -- mentioning the replacement option (if specified).
+--
+-- There are three cases of deprecation:
+-- 1. Removing an option that no longer applies
+-- 2. Changing the name or heirarchical position of an option.
+-- 3. #2 and also changing the type.
+-- 4. Replacing an option by multiple new options (e.g. split url option
+--    into hostname and port options)
+--
+-- In the case of #1, the option will presumably be ignored by the
+-- code and the warnings are provided to allow the user to clean the
+-- option from their configurations.
+--
+-- In the case of #2, the old option and the new option will share the
+-- same value storage: changes to one can be seen via the other and
+-- vice versa.  The code can be switched over to reference the new
+-- option entirely, and user configurations setting the old option
+-- will still work until they have been updated and the definition of
+-- the old option is removed entirely.
+--
+--   NOTE: in order to support #2, the newer option should be declared
+--   (via 'insertOption') *before* the option it deprecates.
+--
+-- In the case of #3, it is not possible to share storage space, so
+-- during the deprecation period, the code using the option config
+-- value must check both locations and decide which value to utilize.
+--
+-- Case #4 is an enhanced form of #3 and #2, and is generally treated
+-- as #3, but adds the consideration that deprecation warnings will
+-- need to advise about multiple new options.  The inverse of #4
+-- (multiple options being combined to a single newer option) is just
+-- treated as separate deprecations.
+--
+--   NOTE: in order to support #4, the newer options should all be
+--   declared (via 'insertOption') *before* the options they deprecate.
+--
+-- Nested deprecations are valid, and replacement warnings are
+-- automatically transitive to the newest options.
+--
+-- Any user-supplied value for the old option will result in warnings
+-- emitted to the OptionSetResult for all four cases.  Code should
+-- ensure that these warnings are appropriately communicated to the
+-- user to allow configuration updates to occur.
+--
+-- Note that for #1 and #2, the overhead burden of continuing to
+-- define the deprecated option is very small, so actual removal of
+-- the older config can be delayed indefinitely.
 
-deprecatedOpt :: Maybe ConfigDesc -> ConfigDesc -> ConfigDesc
-deprecatedOpt replOpt (ConfigDesc o sty desc) =
-  let oldVF = opt_onset sty
-      depF oldV newV = do
-        v <- oldVF oldV newV
-        return (v
-                <> optWarn (pretty $ "DEPRECATED CONFIG OPTION USED: " <> show o)
-                <> optWarn (pretty suggest)
-               )
-      suggest = case replOpt of
-                  Just (ConfigDesc r _ _) -> concat [ "  Suggest replacing '"
-                                                    , show o
-                                                    , "' with '", show r, "'"
-                                                     ]
-                  Nothing -> "  Option '" <> show o <> "' is no longer valid"
-      modDesc d = vsep [ d, "*** DEPRECATED! ***", pretty suggest ]
-  in ConfigDesc o (set_opt_onset depF sty) (modDesc <$> desc)
+deprecatedOpt :: [ConfigDesc] -> ConfigDesc -> ConfigDesc
+deprecatedOpt newerOpt (ConfigDesc o sty desc oldRepl) =
+  let -- note: description and setter not modified here in case this
+      -- is called again to declare additional replacements (viz. case
+      -- #2 above).  These will be modified in the 'insertOption' function.
+      newRepl :: Maybe [ConfigDesc]
+      newRepl = (newerOpt <>) <$> (oldRepl <|> Just [])
+  in ConfigDesc o sty desc newRepl
+
 
 -- | A configuration style for options that are expected to be paths to an executable
 --   image.  Configuration options with this style generate a warning message if set to a
@@ -551,10 +589,14 @@ executablePathOptSty = stringOptSty & set_opt_onset vf
 --   an @OptionStyle@ describing the sort of option it is, and an optional
 --   help message describing the semantics of this option.
 data ConfigDesc where
-  ConfigDesc :: ConfigOption tp -> OptionStyle tp -> Maybe (Doc Void) -> ConfigDesc
+  ConfigDesc :: ConfigOption tp  -- describes option name and type
+             -> OptionStyle tp   -- option validators, help info, type and default
+             -> Maybe (Doc Void) -- help text
+             -> Maybe [ConfigDesc] -- Deprecation and newer replacements
+             -> ConfigDesc
 
 instance Show ConfigDesc where
-  show (ConfigDesc o _ _) = show o
+  show (ConfigDesc o _ _ _) = show o
 
 -- | The most general method for constructing a normal `ConfigDesc`.
 mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
@@ -562,7 +604,7 @@ mkOpt :: ConfigOption tp     -- ^ Fixes the name and the type of this option
       -> Maybe (Doc Void)    -- ^ Help text
       -> Maybe (ConcreteVal tp) -- ^ A default value for this option
       -> ConfigDesc
-mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h
+mkOpt o sty h def = ConfigDesc o sty{ opt_default_value = def } h Nothing
 
 -- | Construct an option using a default style with a given initial value
 opt :: Pretty help
@@ -625,7 +667,7 @@ optUV o vf h = mkOpt o (defaultOpt (configOptionType o)
 data ConfigLeaf where
   ConfigLeaf ::
     !(OptionStyle tp)              {- Style for this option -} ->
-    MVar (Maybe (ConcreteVal tp)) {- State of the option -} ->
+    MVar (Maybe (ConcreteVal tp))  {- State of the option -} ->
     Maybe (Doc Void)               {- Help text for the option -} ->
     ConfigLeaf
 
@@ -698,11 +740,115 @@ traverseSubtree ps0 f = go ps0 []
 -- error.
 insertOption :: (MonadIO m, MonadThrow m)
              => ConfigMap -> ConfigDesc -> m ConfigMap
-insertOption m d@(ConfigDesc (ConfigOption _tp (p:|ps)) sty h) = adjustConfigMap p ps f m
+insertOption m d@(ConfigDesc o@(ConfigOption _tp (p:|ps)) sty h newRepls) =
+  adjustConfigMap p ps f m
   where
   f Nothing =
-       do ref <- liftIO (newMVar (opt_default_value sty))
-          return (Just (ConfigLeaf sty ref h))
+    let addOnSetWarning warning oldSty =
+          let newSty = set_opt_onset depF oldSty
+              oldVF = opt_onset oldSty
+              depF oldV newV =
+                do v <- oldVF oldV newV
+                   return (v <> optWarn warning)
+          in newSty
+        deprHelp depMsg ontoHelp =
+          let hMod oldHelp = vsep [ oldHelp, "*** DEPRECATED! ***", depMsg ]
+          in hMod <$> ontoHelp
+        newRefs tySep = hsep . punctuate comma .
+                        map (\(n, ConfigLeaf s _ _) -> optRef tySep n s)
+        optRef tySep nm s = hcat [ pretty (show nm), tySep
+                                 , pretty (show (opt_type s))
+                                 ]
+    in case newRepls of
+         -- not deprecated
+         Nothing ->
+           do ref <- liftIO (newMVar (opt_default_value sty))
+              return (Just (ConfigLeaf sty ref h))
+
+         -- deprecation case #1 (removal)
+         Just [] ->
+           do ref <- liftIO (newMVar (opt_default_value sty))
+              let sty' = addOnSetWarning
+                         ("DEPRECATED CONFIG OPTION WILL BE IGNORED: " <>
+                           pretty (show o) <>
+                           " (no longer valid)")
+                         sty
+                  hmsg = "Option '" <> pretty (show o) <> "' is no longer valid."
+              return (Just (ConfigLeaf sty' ref (deprHelp hmsg h)))
+
+         Just n -> do
+           let newer =
+                 let returnFnd fnd loc lf =
+                       if name loc == fnd
+                       then Const [Just (fnd, lf)]
+                       else Const [Nothing]
+                     name parts = Text.intercalate "." parts
+                     lookupNewer (ConfigDesc (ConfigOption _ (t:|ts)) _sty _h new2) =
+                       case new2 of
+                         Nothing -> getConst $ traverseConfigMap [] (returnFnd (name (t:ts))) m
+                         Just n2 -> concat (lookupNewer <$> n2)
+                 in lookupNewer <$> n
+               chkMissing opts =
+                 if not (null opts) && null (catMaybes opts)
+                 then throwM $ OptCreateFailure d $
+                      "replacement options must be inserted into" <>
+                      " Config before this deprecated option"
+                 else return opts
+           newOpts <- catMaybes . concat <$> mapM chkMissing newer
+
+           case newOpts of
+
+             -- deprecation case #1 (removal)
+             [] ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let sty' = addOnSetWarning
+                             ("DEPRECATED CONFIG OPTION WILL BE IGNORED: " <>
+                              pretty (show o) <>
+                              " (no longer valid)")
+                             sty
+                      hmsg = "Option '" <> pretty (show o) <> "' is no longer valid."
+                  return (Just (ConfigLeaf sty' ref (deprHelp hmsg h)))
+
+             -- deprecation case #2 (renamed)
+             ((nm, ConfigLeaf sty' v _):[])
+               | Just Refl <- testEquality (opt_type sty) (opt_type sty') ->
+                 do let updSty = addOnSetWarning
+                                 ("DEPRECATED CONFIG OPTION USED: " <>
+                                  pretty (show o) <>
+                                  " (renamed to: " <> pretty nm <> ")")
+                        hmsg = "Suggest replacing '" <> pretty (show o) <>
+                               "' with '" <> pretty nm <> "'."
+                    return (Just (ConfigLeaf (updSty sty) v (deprHelp hmsg h)))
+
+             -- deprecation case #3 (renamed and re-typed)
+             (new1:[]) ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let updSty = addOnSetWarning
+                               ("DEPRECATED CONFIG OPTION USED: " <>
+                                optRef "::" o sty <>
+                                " (changed to: " <>
+                                newRefs "::" [new1] <>
+                                "); this value may be ignored")
+                      hmsg = "Suggest converting '" <>
+                             optRef " of type " o sty <>
+                             " to " <>
+                             newRefs " of type " [new1]
+                  return (Just (ConfigLeaf (updSty sty) ref (deprHelp hmsg h)))
+
+             -- deprecation case #4 (split to multiple options)
+             newMulti ->
+               do ref <- liftIO (newMVar (opt_default_value sty))
+                  let updSty = addOnSetWarning
+                               ("DEPRECATED CONFIG OPTION USED: " <>
+                                optRef "::" o sty <>
+                                " (replaced by: " <>
+                                newRefs "::" newMulti <>
+                                "); this value may be ignored")
+                      hmsg = "Suggest converting " <>
+                             optRef " of type " o sty <>
+                             " to: " <> (newRefs " of type " newMulti)
+                  return (Just (ConfigLeaf (updSty sty) ref (deprHelp hmsg h)))
+
   f (Just existing@(ConfigLeaf sty' _ h')) =
     case testEquality (opt_type sty) (opt_type sty') of
       Just Refl ->
