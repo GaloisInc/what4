@@ -997,7 +997,7 @@ setUnicodeOpt (Some optset) val =
        Just Refl -> setOpt optset val
        Nothing ->
          checkOptSetResult optset $ optErr $
-         "option type is a" <+> pretty tyOpt <+> "but given an text string"
+         "option type is a" <+> pretty tyOpt <+> "but given a text string"
 
 -- | Given an integer value, set the named option to that value or
 -- generate an OptSetFailure exception if the option is not an integer
@@ -1021,7 +1021,7 @@ setBoolOpt (Some optset) val =
        Just Refl -> setOpt optset val
        Nothing ->
          checkOptSetResult optset $ optErr $
-         "option type is a" <+> pretty tyOpt <+> "but given an boolean"
+         "option type is a" <+> pretty tyOpt <+> "but given a boolean"
 
 
 -- | Given a @ConfigOption@ name, produce an @OptionSetting@

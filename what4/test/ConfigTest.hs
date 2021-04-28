@@ -10,8 +10,10 @@
 import           Control.Exception ( displayException, try, SomeException(..), fromException )
 import qualified Data.List as L
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
+import           Data.Parameterized.Some
 import           Data.Ratio ( (%) )
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import           Data.Void
 import qualified Prettyprinter as PP
 
@@ -213,6 +215,76 @@ testSetAndGet =
         Right [] -> return ()
         Right w -> assertFailure $ "Unexpected warnings: " <> show w
         Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+
+  , testCaseSteps "get and set option values by name" $ \step ->
+      withChecklist "multiple values" $ do
+      cfg <- initialConfig 0 []
+      let o1 = configOption (BaseStringRepr UnicodeRepr) "main.optstr"
+          o2 = configOption BaseIntegerRepr "main.set.cfg.optint"
+          o3 = configOption BaseBoolRepr "main.set.cfg.optbool"
+          o4 = configOption BaseIntegerRepr "alt.optint"
+          o1' = mkOpt o1 stringOptSty Nothing (Just $ ConcreteString "strval")
+          o2' = mkOpt o2 integerOptSty Nothing (Just $ ConcreteInteger 11)
+          o3' = mkOpt o3 boolOptSty Nothing (Just $ ConcreteBool True)
+          o4' = mkOpt o4 integerOptSty Nothing (Just $ ConcreteInteger 88)
+      extendConfig [o4', o3', o2', o1'] cfg
+      accessSome1 <- getOptionSettingFromText "main.optstr" cfg
+      accessSome2 <- getOptionSettingFromText "main.set.cfg.optint" cfg
+      accessSome3 <- getOptionSettingFromText "main.set.cfg.optbool" cfg
+      accessSome4 <- getOptionSettingFromText "alt.optint" cfg
+
+      access1 <- getOptionSetting o1 cfg
+      access2 <- getOptionSetting o2 cfg
+      access3 <- getOptionSetting o3 cfg
+      access4 <- getOptionSetting o4 cfg
+
+      step "getting with a Some OptionSetter requires type verification"
+      let cmpUnderSome :: Some OptionSetting -> T.Text -> IO ()
+          cmpUnderSome (Some getter) v =
+            case testEquality
+                 (configOptionType (optionSettingName getter))
+                 (BaseStringRepr UnicodeRepr) of
+              Just Refl -> do vt <- getMaybeOpt getter
+                              Just v @=? vt
+              Nothing -> assertFailure "invalid option type"
+      cmpUnderSome accessSome1 "strval"
+
+      step "setting using special setting functions"
+      let goodNoWarn f s v =
+            (try @SomeException $ f s v) >>= \case
+            Right [] -> return ()
+            Right w -> assertFailure $ "Unexpected warnings: " <> show w
+            Left e -> assertFailure $ "Unexpected exception: " <> displayException e
+      goodNoWarn setUnicodeOpt accessSome1 "wild carrots"
+      goodNoWarn setIntegerOpt accessSome2 31
+      goodNoWarn setIntegerOpt accessSome4 42
+      goodNoWarn setBoolOpt accessSome3 False
+
+      step "verify set values"
+      (Just "wild carrots" @=?) =<< getMaybeOpt access1
+      (Just 31 @=?) =<< getMaybeOpt access2
+      (Just False @=?) =<< getMaybeOpt access3
+      (Just 42 @=?) =<< getMaybeOpt access4
+
+      step "cannot set values with wrong types"
+      -- Note that using an OptionSetting allows compile-time
+      -- elimination, but using a (Some OptionSetting) requires
+      -- run-time type witnessing and validation
+      wantOptSetFailure "type is a BaseStringRepr"
+        =<< (try $ setIntegerOpt accessSome1 54)
+      wantOptSetFailure "but given an integer"
+        =<< (try $ setIntegerOpt accessSome1 54)
+
+      wantOptSetFailure "type is a BaseStringRepr"
+        =<< (try $ setBoolOpt accessSome1 True)
+      wantOptSetFailure "but given a boolean"
+        =<< (try $ setBoolOpt accessSome1 True)
+
+      wantOptSetFailure "type is a BaseIntegerRepr"
+        =<< (try $ setUnicodeOpt accessSome2 "fresh tomatoes")
+      wantOptSetFailure "but given a text string"
+        =<< (try $ setUnicodeOpt accessSome2 "fresh tomatoes")
+
 
   , testCaseSteps "get multiple values at once" $ \step ->
       withChecklist "multiple values" $ do
