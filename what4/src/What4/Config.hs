@@ -729,7 +729,8 @@ traverseSubtree ps0 f = go ps0 []
   where
   go     [] revPath = traverseConfigMap revPath f
   go (p:ps) revPath = Map.alterF (traverse g) p
-     where g (ConfigTrie x m) = ConfigTrie x <$> go ps (p:revPath) m
+     where g (ConfigTrie x m) = ConfigTrie <$> here x <*> go ps (p:revPath) m
+           here = traverse (f (reverse (p:revPath)))
 
 
 -- | Add an option to the given @ConfigMap@ or throws an
