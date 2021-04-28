@@ -438,7 +438,7 @@ realWithRangeOptSty lo hi = realOptSty & set_opt_onset vf
         vf _ (ConcreteReal x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                 prettyRational x <+> "out of range, expected real value in "
+                                 prettyRational x <+> "out of range, expected real value in"
                                                   <+> docInterval lo hi
 
 -- | Option style for real-valued options with a lower bound
@@ -458,7 +458,7 @@ integerWithRangeOptSty lo hi = integerOptSty & set_opt_onset vf
         vf _ (ConcreteInteger x)
           | checkBound lo hi x = return optOK
           | otherwise          = return $ optErr $
-                                 pretty x <+> "out of range, expected integer value in "
+                                 pretty x <+> "out of range, expected integer value in"
                                           <+> docInterval lo hi
 
 -- | Option style for integer-valued options with a lower bound
