@@ -29,11 +29,14 @@ import           Test.Tasty.HUnit
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 
+import qualified What4.BaseTypes as BT
 import           What4.Config
-import           What4.Interface
 import           What4.Expr
-import           What4.Solver
+import           What4.Interface
+import           What4.Protocol.SMTLib2.Response ( strictSMTParsing )
+import           What4.Protocol.SMTWriter ( parserStrictness, ResponseStrictness(..) )
 import           What4.Protocol.VerilogWriter
+import           What4.Solver
 
 data State t = State
 
@@ -78,6 +81,7 @@ mkConfigTests :: [SolverAdapter State] -> [TestTree]
 mkConfigTests adapters =
   [
     testGroup "deprecated configs" (deprecatedConfigTests adapters)
+  , testGroup "strict parsing config" (strictParseConfigTests adapters)
   ]
   where
     wantOptSetFailure withText res = case res of
@@ -172,6 +176,48 @@ mkConfigTests adapters =
                         vY <- getMaybeOpt setterY
                         vX @=? vY
         Nothing -> assertFailure "first some is not a boolean"
+
+    strictParseConfigTests adaptrs =
+      let mkPCTest adaptr =
+            testGroup (solver_adapter_name adaptr) $
+            let setCommonStrictness cfg v = do
+                  setter <- getOptionSetting strictSMTParsing cfg
+                  show <$> setOpt setter v >>= (@?= "[]")
+                setSpecificStrictness cfg v = do
+                  setter <- getOptionSettingFromText (pack cfgName) cfg
+                  show <$> setBoolOpt setter v >>= (@?= "[]")
+                cfgName = "solver." <> (toLower <$> (solver_adapter_name adaptr)) <> ".strict_parsing"
+            in [
+                 testCase "default val" $
+                 withAdapters adaptrs $ \sym -> do
+                   let cfg = getConfiguration sym
+                       strictOpt = Just $ configOption knownRepr cfgName
+                   parserStrictness strictOpt strictSMTParsing cfg >>= (@?= Strict)
+
+               , testCase "common val" $
+                 withAdapters adaptrs $ \sym -> do
+                   let cfg = getConfiguration sym
+                       strictOpt = Just $ configOption knownRepr cfgName
+                   setCommonStrictness cfg False
+                   parserStrictness strictOpt strictSMTParsing cfg >>= (@?= Lenient)
+
+               , testCase "strict val" $
+                 withAdapters adaptrs $ \sym -> do
+                   let cfg = getConfiguration sym
+                       strictOpt = Just $ configOption knownRepr cfgName
+                   setSpecificStrictness cfg False
+                   parserStrictness strictOpt strictSMTParsing cfg >>= (@?= Lenient)
+
+               , testCase "strict overrides common val" $
+                 withAdapters adaptrs $ \sym -> do
+                   let cfg = getConfiguration sym
+                       strictOpt = Just $ configOption knownRepr cfgName
+                   setCommonStrictness cfg False
+                   setSpecificStrictness cfg True
+                   parserStrictness strictOpt strictSMTParsing cfg >>= (@?= Strict)
+
+              ]
+      in fmap mkPCTest adaptrs
 
     deprecatedConfigTests adaptrs =
       [

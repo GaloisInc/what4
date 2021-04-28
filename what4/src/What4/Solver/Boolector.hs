@@ -30,19 +30,18 @@ import           Control.Monad
 import           Data.Bits ( (.|.) )
 
 import           What4.BaseTypes
-import           What4.Config
 import           What4.Concrete
-import           What4.Interface
-import           What4.ProblemFeatures
-import           What4.SatResult
+import           What4.Config
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
-import           What4.Solver.Adapter
+import           What4.Interface
+import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
+import           What4.SatResult
+import           What4.Solver.Adapter
 import           What4.Utils.Process
-
-
 
 
 data Boolector = Boolector deriving Show
@@ -54,6 +53,11 @@ boolectorPath = configOption knownRepr "solver.boolector.path"
 boolectorPathOLD :: ConfigOption (BaseStringType Unicode)
 boolectorPathOLD = configOption knownRepr "boolector_path"
 
+-- | Control strict parsing for Boolector solver responses (defaults
+-- to solver.strict-parsing option setting).
+boolectorStrictParsing :: ConfigOption BaseBoolType
+boolectorStrictParsing = configOption knownRepr "solver.boolector.strict_parsing"
+
 boolectorOptions :: [ConfigDesc]
 boolectorOptions =
   let bpOpt co = mkOpt
@@ -63,7 +67,9 @@ boolectorOptions =
                  (Just (ConcreteString "boolector"))
       bp = bpOpt boolectorPath
       bp2 = deprecatedOpt [bp] $ bpOpt boolectorPathOLD
-  in [ bp, bp2 ] <> SMT2.smtlib2Options
+  in [ bp, bp2
+     , copyOpt (const $ configOptionText boolectorStrictParsing) strictSMTParseOpt
+     ] <> SMT2.smtlib2Options
 
 boolectorAdapter :: SolverAdapter st
 boolectorAdapter =
@@ -73,6 +79,7 @@ boolectorAdapter =
   , solver_adapter_check_sat = runBoolectorInOverride
   , solver_adapter_write_smt2 =
       SMT2.writeDefaultSMT2 () "Boolector" defaultWriteSMTLIB2Features
+      (Just boolectorStrictParsing)
   }
 
 instance SMT2.SMTLib2Tweaks Boolector where
@@ -85,7 +92,8 @@ runBoolectorInOverride ::
   (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a) ->
   IO a
 runBoolectorInOverride =
-  SMT2.runSolverInOverride Boolector SMT2.nullAcknowledgementAction boolectorFeatures
+  SMT2.runSolverInOverride Boolector SMT2.nullAcknowledgementAction
+  boolectorFeatures (Just boolectorStrictParsing)
 
 -- | Run Boolector in a session. Boolector will be configured to produce models, but
 -- otherwise left with the default configuration.
@@ -97,7 +105,8 @@ withBoolector
   -> (SMT2.Session t Boolector -> IO a)
     -- ^ Action to run
   -> IO a
-withBoolector = SMT2.withSolver Boolector SMT2.nullAcknowledgementAction boolectorFeatures
+withBoolector = SMT2.withSolver Boolector SMT2.nullAcknowledgementAction
+                boolectorFeatures (Just boolectorStrictParsing)
 
 
 boolectorFeatures :: ProblemFeatures
@@ -125,5 +134,7 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setLogic writer SMT2.allSupported
 
 instance OnlineSolver (SMT2.Writer Boolector) where
-  startSolverProcess = SMT2.startSolver Boolector SMT2.smtAckResult setInteractiveLogicAndOptions
+  startSolverProcess feat = SMT2.startSolver Boolector SMT2.smtAckResult
+                            setInteractiveLogicAndOptions feat
+                            (Just boolectorStrictParsing)
   shutdownSolverProcess = SMT2.shutdownSolver Boolector

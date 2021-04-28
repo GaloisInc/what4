@@ -35,19 +35,20 @@ import           System.IO
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Config
-import           What4.Solver.Adapter
 import           What4.Concrete
-import           What4.Interface
-import           What4.ProblemFeatures
-import           What4.SatResult
+import           What4.Config
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
+import           What4.Interface
+import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
 import qualified What4.Protocol.SMTLib2.Response as RSP
 import qualified What4.Protocol.SMTLib2.Syntax as Syntax
 import           What4.Protocol.SMTWriter
+import           What4.SatResult
+import           What4.Solver.Adapter
 import           What4.Utils.Process
 
 
@@ -77,6 +78,11 @@ cvc4Timeout = configOption knownRepr "solver.cvc4.timeout"
 cvc4TimeoutOLD :: ConfigOption BaseIntegerType
 cvc4TimeoutOLD = configOption knownRepr "cvc4_timeout"
 
+-- | Control strict parsing for Boolector solver responses (defaults
+-- to solver.strict-parsing option setting).
+cvc4StrictParsing :: ConfigOption BaseBoolType
+cvc4StrictParsing = configOption knownRepr "solver.cvc4.strict_parsing"
+
 cvc4Options :: [ConfigDesc]
 cvc4Options =
   let pathOpt co = mkOpt co
@@ -91,6 +97,7 @@ cvc4Options =
                  (Just (ConcreteInteger 0))
       t1 = tmOpt cvc4Timeout
   in [ p1, r1, t1
+     , copyOpt (const $ configOptionText cvc4StrictParsing) strictSMTParseOpt
      , deprecatedOpt [p1] $ pathOpt cvc4PathOLD
      , deprecatedOpt [r1] $ intWithRangeOpt cvc4RandomSeedOLD
        (negate (2^(30::Int)-1)) (2^(30::Int)-1)
@@ -195,7 +202,8 @@ runCVC4InOverride
   -> [BoolExpr t]
   -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
   -> IO a
-runCVC4InOverride = SMT2.runSolverInOverride CVC4 nullAcknowledgementAction (SMT2.defaultFeatures CVC4)
+runCVC4InOverride = SMT2.runSolverInOverride CVC4 nullAcknowledgementAction
+                    (SMT2.defaultFeatures CVC4) (Just cvc4StrictParsing)
 
 -- | Run CVC4 in a session. CVC4 will be configured to produce models, but
 -- otherwise left with the default configuration.
@@ -207,7 +215,8 @@ withCVC4
   -> (SMT2.Session t CVC4 -> IO a)
     -- ^ Action to run
   -> IO a
-withCVC4 = SMT2.withSolver CVC4 nullAcknowledgementAction (SMT2.defaultFeatures CVC4)
+withCVC4 = SMT2.withSolver CVC4 nullAcknowledgementAction
+           (SMT2.defaultFeatures CVC4) (Just cvc4StrictParsing)
 
 setInteractiveLogicAndOptions ::
   SMT2.SMTLib2Tweaks a =>
@@ -228,7 +237,8 @@ setInteractiveLogicAndOptions writer = do
 
 instance OnlineSolver (SMT2.Writer CVC4) where
   startSolverProcess feat mbIOh sym = do
-    sp <- SMT2.startSolver CVC4 SMT2.smtAckResult setInteractiveLogicAndOptions feat mbIOh sym
+    sp <- SMT2.startSolver CVC4 SMT2.smtAckResult setInteractiveLogicAndOptions
+          feat (Just cvc4StrictParsing) mbIOh sym
     timeout <- SolverGoalTimeout <$>
                (getOpt =<< getOptionSetting cvc4Timeout (getConfiguration sym))
     return $ sp { solverGoalTimeout = timeout }

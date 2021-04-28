@@ -129,7 +129,6 @@ import           LibBF( bfToBits )
 import           Prelude hiding (writeFile)
 
 import           What4.BaseTypes
-import qualified What4.Concrete as BC
 import qualified What4.Config as CFG
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
@@ -931,15 +930,15 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a ->
        AcknowledgementAction t (Writer a) ->
        ProblemFeatures ->
+       -- | strictness override configuration
+       Maybe (CFG.ConfigOption I.BaseBoolType) ->
        B.ExprBuilder t st fs ->
        Streams.OutputStream Text ->
        Streams.InputStream Text ->
        IO (WriterConn t (Writer a))
-  newDefaultWriter solver ack feats sym h in_h = do
+  newDefaultWriter solver ack feats strictOpt sym h in_h = do
     let cfg = I.getConfiguration sym
-    strictness <- maybe Strict
-                  (\c -> if BC.fromConcreteBool c then Strict else Lenient) <$>
-                  (CFG.getOption =<< CFG.getOptionSetting strictSMTParsing cfg)
+    strictness <- parserStrictness strictOpt strictSMTParsing cfg
     newWriter solver h in_h ack strictness (show solver) True feats True
       =<< B.getSymbolVarBimap sym
 
@@ -948,6 +947,8 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
+    -> Maybe (CFG.ConfigOption I.BaseBoolType)
+       -- ^ strictness override configuration
     -> B.ExprBuilder t st fs
     -> FilePath
       -- ^ Path to solver executable
@@ -955,7 +956,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     -> (Session t a -> IO b)
       -- ^ Action to run
     -> IO b
-  withSolver solver ack feats sym path logData action = do
+  withSolver solver ack feats strictOpt sym path logData action = do
     args <- defaultSolverArgs solver sym
     withProcessHandles path args Nothing $
       \hdls@(in_h, out_h, err_h, _ph) -> do
@@ -964,7 +965,7 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
           demuxProcessHandles in_h out_h err_h
             (fmap (\x -> ("; ", x)) $ logHandle logData)
 
-        writer <- newDefaultWriter solver ack feats sym in_stream out_stream
+        writer <- newDefaultWriter solver ack feats strictOpt sym in_stream out_stream
         let s = Session
               { sessionWriter   = writer
               , sessionResponse = out_stream
@@ -990,19 +991,21 @@ class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where
     :: a
     -> AcknowledgementAction t (Writer a)
     -> ProblemFeatures
+    -> Maybe (CFG.ConfigOption I.BaseBoolType)
+    -- ^ strictness override configuration
     -> B.ExprBuilder t st fs
     -> LogData
     -> [B.BoolExpr t]
     -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO b)
     -> IO b
-  runSolverInOverride solver ack feats sym logData predicates cont = do
+  runSolverInOverride solver ack feats strictOpt sym logData predicates cont = do
     I.logSolverEvent sym
       (I.SolverStartSATQuery $ I.SolverStartSATQueryRec
         { I.satQuerySolverName = show solver
         , I.satQueryReason     = logReason logData
         })
     path <- defaultSolverPath solver sym
-    withSolver solver ack feats sym path (logData{logVerbosity=2}) $ \session -> do
+    withSolver solver ack feats strictOpt sym path (logData{logVerbosity=2}) $ \session -> do
       -- Assume the predicates hold.
       forM_ predicates (SMTWriter.assume (sessionWriter session))
       -- Run check SAT and get the model back.
@@ -1022,18 +1025,18 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
                     -- ^ Name of solver for reporting.
                  -> ProblemFeatures
                     -- ^ Features supported by solver
+                 -> Maybe (CFG.ConfigOption I.BaseBoolType)
+                    -- ^ strictness override configuration
                  -> B.ExprBuilder t st fs
                  -> IO.Handle
                  -> [B.BoolExpr t]
                  -> IO ()
-writeDefaultSMT2 a nm feat sym h ps = do
+writeDefaultSMT2 a nm feat strictOpt sym h ps = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   null_in <- Streams.nullInput
   let cfg = I.getConfiguration sym
-  strictness <- maybe Strict
-                (\c -> if BC.fromConcreteBool c then Strict else Lenient) <$>
-                (CFG.getOption =<< CFG.getOptionSetting strictSMTParsing cfg)
+  strictness <- parserStrictness strictOpt strictSMTParsing cfg
   c <- newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
   setProduceModels c True
   forM_ ps (SMTWriter.assume c)
@@ -1047,10 +1050,12 @@ startSolver
         -- ^ Action for acknowledging command responses
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
   -> ProblemFeatures
+  -> Maybe (CFG.ConfigOption I.BaseBoolType)
+  -- ^ strictness override configuration
   -> Maybe IO.Handle
   -> B.ExprBuilder t st fs
   -> IO (SolverProcess t (Writer a))
-startSolver solver ack setup feats auxOutput sym = do
+startSolver solver ack setup feats strictOpt auxOutput sym = do
   path <- defaultSolverPath solver sym
   args <- defaultSolverArgs solver sym
   hdls@(in_h, out_h, err_h, ph) <- startProcess path args Nothing
@@ -1060,7 +1065,7 @@ startSolver solver ack setup feats auxOutput sym = do
        (fmap (\x -> ("; ", x)) auxOutput)
 
   -- Create writer
-  writer <- newDefaultWriter solver ack feats sym in_stream out_stream
+  writer <- newDefaultWriter solver ack feats strictOpt sym in_stream out_stream
 
   -- Set solver logic and solver-specific options
   setup writer

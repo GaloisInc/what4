@@ -143,6 +143,7 @@ module What4.Config
   , optV
   , optU
   , optUV
+  , copyOpt
   , deprecatedOpt
 
     -- * Building and manipulating configurations
@@ -660,6 +661,21 @@ optUV o vf h = mkOpt o (defaultOpt (configOptionType o)
          onset _ x = case vf x of
                        Nothing -> return optOK
                        Just z  -> return $ optErr $ pretty z
+
+-- | The copyOpt creates a duplicate ConfigDesc under a different
+-- name.  This is typically used to taking a common operation and
+-- modify the prefix to apply it to a more specialized role
+-- (e.g. solver.strict_parsing --> solver.z3.strict_parsing).  The
+-- style and help text of the input ConfigDesc are preserved, but any
+-- deprecation is discarded.
+copyOpt :: (Text -> Text) -> ConfigDesc -> ConfigDesc
+copyOpt modName (ConfigDesc o@(ConfigOption ty _) sty h _) =
+  let newName = case splitPath (modName (configOptionText o)) of
+        Just ps -> ps
+        Nothing -> error "new config option must not be empty"
+  in ConfigDesc (ConfigOption ty newName) sty h Nothing
+
+
 
 ------------------------------------------------------------------------
 -- ConfigState

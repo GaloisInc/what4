@@ -41,6 +41,7 @@ import           What4.Interface
 import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2Syntax
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
@@ -63,6 +64,12 @@ z3Timeout = configOption knownRepr "solver.z3.timeout"
 z3TimeoutOLD :: ConfigOption BaseIntegerType
 z3TimeoutOLD = configOption knownRepr "z3_timeout"
 
+-- | Strict parsing specifically for Z3 interaction?  If set,
+-- overrides solver.strict_parsing, otherwise defaults to
+-- solver.strict_parsing.
+z3StrictParsing  :: ConfigOption BaseBoolType
+z3StrictParsing = configOption knownRepr "solver.z3.strict_parsing"
+
 z3Options :: [ConfigDesc]
 z3Options =
   let mkPath co = mkOpt co
@@ -76,6 +83,7 @@ z3Options =
       p = mkPath z3Path
       t = mkTmo z3Timeout
   in [ p, t
+     , copyOpt (const $ configOptionText z3StrictParsing) strictSMTParseOpt
      , deprecatedOpt [p] $ mkPath z3PathOLD
      , deprecatedOpt [t] $ mkTmo z3TimeoutOLD
      ] <> SMT2.smtlib2Options
@@ -137,7 +145,7 @@ writeZ3SMT2File
    -> Handle
    -> [BoolExpr t]
    -> IO ()
-writeZ3SMT2File = SMT2.writeDefaultSMT2 Z3 "Z3" z3Features
+writeZ3SMT2File = SMT2.writeDefaultSMT2 Z3 "Z3" z3Features (Just z3StrictParsing)
 
 instance SMT2.SMTLib2GenericSolver Z3 where
   defaultSolverPath _ = findSolverPath z3Path . getConfiguration
@@ -171,7 +179,8 @@ runZ3InOverride
   -> [BoolExpr t]
   -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
   -> IO a
-runZ3InOverride = SMT2.runSolverInOverride Z3 nullAcknowledgementAction z3Features
+runZ3InOverride = SMT2.runSolverInOverride Z3 nullAcknowledgementAction
+                  z3Features (Just z3StrictParsing)
 
 -- | Run Z3 in a session. Z3 will be configured to produce models, but
 -- otherwise left with the default configuration.
@@ -183,7 +192,8 @@ withZ3
   -> (SMT2.Session t Z3 -> IO a)
     -- ^ Action to run
   -> IO a
-withZ3 = SMT2.withSolver Z3 nullAcknowledgementAction z3Features
+withZ3 = SMT2.withSolver Z3 nullAcknowledgementAction
+         z3Features (Just z3StrictParsing)
 
 
 setInteractiveLogicAndOptions ::
@@ -205,7 +215,8 @@ setInteractiveLogicAndOptions writer = do
 
 instance OnlineSolver (SMT2.Writer Z3) where
   startSolverProcess feat mbIOh sym = do
-    sp <- SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions feat mbIOh sym
+    sp <- SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions feat
+          (Just z3StrictParsing) mbIOh sym
     timeout <- SolverGoalTimeout <$>
                (getOpt =<< getOptionSetting z3Timeout (getConfiguration sym))
     return $ sp { solverGoalTimeout = timeout }

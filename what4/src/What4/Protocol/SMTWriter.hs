@@ -84,6 +84,7 @@ module What4.Protocol.SMTWriter
   , DefineStyle(..)
   , AcknowledgementAction(..)
   , ResponseStrictness(..)
+  , parserStrictness
   , nullAcknowledgementAction
     -- * SMTWriter operations
   , assume
@@ -104,7 +105,7 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Exception
-import           Control.Lens hiding ((.>))
+import           Control.Lens hiding ((.>), Strict)
 import           Control.Monad.Extra
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
@@ -140,15 +141,16 @@ import           System.IO.Streams (OutputStream, InputStream)
 import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
-import           What4.Interface (RoundingMode(..), stringInfo)
-import           What4.ProblemFeatures
+import qualified What4.Config as CFG
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
 import qualified What4.Expr.StringSeq as SSeq
-import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.UnaryBV as UnaryBV
+import qualified What4.Expr.WeightedSum as WSum
+import           What4.Interface (RoundingMode(..), stringInfo)
+import           What4.ProblemFeatures
 import           What4.ProgramLoc
 import           What4.SatResult
 import qualified What4.SemiRing as SR
@@ -739,7 +741,24 @@ newWriterConn h in_h ack solver_name beStrict features bindings cs = do
 data ResponseStrictness
   = Lenient  -- ^ allows other output preceeding recognized solver responses
   | Strict   -- ^ parse _only_ recognized solver responses; fail on anything else
-  deriving (Eq)
+  deriving (Eq, Show)
+
+-- | Given an optional override configuration option, return the SMT
+-- response parsing strictness that should be applied based on the
+-- override or thedefault strictSMTParsing configuration.
+parserStrictness :: Maybe (CFG.ConfigOption BaseBoolType)
+                 -> CFG.ConfigOption BaseBoolType
+                 -> CFG.Config
+                 -> IO ResponseStrictness
+parserStrictness overrideOpt strictOpt cfg = do
+  ovr <- case overrideOpt of
+           Nothing -> return Nothing
+           Just o -> CFG.getMaybeOpt =<< CFG.getOptionSetting o cfg
+  optval <- case ovr of
+              Just v -> return $ Just v
+              Nothing -> CFG.getMaybeOpt =<< CFG.getOptionSetting strictOpt cfg
+  return $ maybe Strict (\c -> if c then Strict else Lenient) optval
+
 
 -- | Status to indicate when term value will be uncached.
 data TermLifetime

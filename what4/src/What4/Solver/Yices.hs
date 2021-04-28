@@ -64,7 +64,7 @@ module What4.Solver.Yices
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
+import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Applicative
@@ -102,25 +102,26 @@ import qualified System.IO.Streams.Attoparsec.Text as Streams
 import qualified Prettyprinter as PP
 
 import           What4.BaseTypes
-import           What4.Config
-import           What4.Solver.Adapter
 import           What4.Concrete
-import           What4.Interface
-import           What4.ProblemFeatures
-import           What4.SatResult
+import           What4.Config
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import           What4.Expr.VarIdentification
-import           What4.Protocol.SExp
-import           What4.Protocol.SMTLib2 (writeDefaultSMT2)
-import           What4.Protocol.SMTWriter as SMTWriter
+import           What4.Interface
+import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.PolyRoot as Root
+import           What4.Protocol.SExp
+import           What4.Protocol.SMTLib2 (writeDefaultSMT2)
+import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
+import           What4.Protocol.SMTWriter as SMTWriter
+import           What4.SatResult
+import           What4.Solver.Adapter
 import           What4.Utils.HandleReader
 import           What4.Utils.Process
 
-import Prelude
-import GHC.Stack
+import           Prelude
+import           GHC.Stack
 
 -- | This is a tag used to indicate that a 'WriterConn' is a connection
 -- to a specific Yices process.
@@ -903,7 +904,7 @@ yicesAdapter =
        runYicesInOverride sym logData ps
           (cont . runIdentity . traverseSatResult (\x -> pure (x,Nothing)) pure)
    , solver_adapter_write_smt2 =
-       writeDefaultSMT2 () "YICES" yicesSMT2Features
+       writeDefaultSMT2 () "YICES" yicesSMT2Features (Just yicesStrictParsing)
    }
 
 -- | Path to yices
@@ -934,6 +935,11 @@ yicesGoalTimeout = configOption knownRepr "solver.yices.goal-timeout"
 yicesGoalTimeoutOLD :: ConfigOption BaseIntegerType
 yicesGoalTimeoutOLD = configOption knownRepr "yices_goal-timeout"
 
+-- | Control strict parsing for Yices solver responses (defaults
+-- to solver.strict-parsing option setting).
+yicesStrictParsing :: ConfigOption BaseBoolType
+yicesStrictParsing = configOption knownRepr "solver.yices.strict_parsing"
+
 yicesOptions :: [ConfigDesc]
 yicesOptions =
   let mkPath co = mkOpt co
@@ -957,6 +963,7 @@ yicesOptions =
       i = mkIntr yicesEnableInteractive
       t = mkTmout yicesGoalTimeout
   in [ p, m, i, t
+     , copyOpt (const $ configOptionText yicesStrictParsing) strictSMTParseOpt
      , deprecatedOpt [p] $ mkPath yicesPathOLD
      , deprecatedOpt [m] $ mkMCSat yicesEnableMCSatOLD
      , deprecatedOpt [i] $ mkIntr yicesEnableInteractiveOLD

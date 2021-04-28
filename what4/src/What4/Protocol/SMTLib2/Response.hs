@@ -23,6 +23,7 @@ module What4.Protocol.SMTLib2.Response
   , getLimitedSolverResponse
   , smtParseOptions
   , strictSMTParsing
+  , strictSMTParseOpt
   )
 where
 
@@ -38,7 +39,6 @@ import qualified System.IO.Streams as Streams
 import qualified System.IO.Streams.Attoparsec.Text as AStreams
 
 import qualified What4.BaseTypes as BT
-import qualified What4.Concrete as BC
 import qualified What4.Config as CFG
 import           What4.Protocol.SExp
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
@@ -49,18 +49,19 @@ import           What4.Utils.Process ( filterAsync )
 strictSMTParsing :: CFG.ConfigOption BT.BaseBoolType
 strictSMTParsing = CFG.configOption BT.BaseBoolRepr "solver.strict_parsing"
 
+strictSMTParseOpt :: CFG.ConfigDesc
+strictSMTParseOpt =
+  CFG.mkOpt strictSMTParsing CFG.boolOptSty
+  (Just $ PPU.reflow $
+   Text.concat ["Strictly parse SMT responses and fail on"
+               , "unrecognized data (the default)."
+               , "This might need to be disabled when running"
+               , "the SMT solver in verbose mode."
+               ])
+  Nothing
+
 smtParseOptions :: [CFG.ConfigDesc]
-smtParseOptions =
-  [
-    CFG.mkOpt strictSMTParsing CFG.boolOptSty
-    (Just $ PPU.reflow $
-     Text.concat ["Strictly parse SMT responses and fail on"
-                 , "unrecognized data (the default)."
-                 , "This might need to be disabled when running"
-                 , "the SMT solver in verbose mode."
-                 ])
-    (Just (BC.ConcreteBool True))
-  ]
+smtParseOptions = [ strictSMTParseOpt ]
 
 
 data SMTResponse = AckSuccess
