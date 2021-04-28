@@ -1131,7 +1131,7 @@ configHelp ::
   IO [Doc Void]
 configHelp prefix (Config cfg) =
   do m <- readMVar cfg
-     let ps = Text.splitOn "." prefix
+     let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
                         tell (Seq.singleton d)
