@@ -1104,7 +1104,7 @@ getConfigValues ::
   IO [ConfigValue]
 getConfigValues prefix (Config cfg) =
   do m <- readMVar cfg
-     let ps = Text.splitOn "." prefix
+     let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq ConfigValue) IO ConfigLeaf
          f [] _ = throwM $ OptGetFailure (OName prefix)
                   "illegal empty option prefix name"
