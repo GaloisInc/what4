@@ -59,27 +59,43 @@ data CVC4 = CVC4 deriving Show
 
 -- | Path to cvc4
 cvc4Path :: ConfigOption (BaseStringType Unicode)
-cvc4Path = configOption knownRepr "cvc4_path"
+cvc4Path = configOption knownRepr "solver.cvc4.path"
+
+cvc4PathOLD :: ConfigOption (BaseStringType Unicode)
+cvc4PathOLD = configOption knownRepr "cvc4_path"
 
 cvc4RandomSeed :: ConfigOption BaseIntegerType
-cvc4RandomSeed = configOption knownRepr "cvc4.random-seed"
+cvc4RandomSeed = configOption knownRepr "solver.cvc4.random-seed"
+
+cvc4RandomSeedOLD :: ConfigOption BaseIntegerType
+cvc4RandomSeedOLD = configOption knownRepr "cvc4.random-seed"
 
 -- | Per-check timeout, in milliseconds (zero is none)
 cvc4Timeout :: ConfigOption BaseIntegerType
-cvc4Timeout = configOption knownRepr "cvc4_timeout"
+cvc4Timeout = configOption knownRepr "solver.cvc4.timeout"
+
+cvc4TimeoutOLD :: ConfigOption BaseIntegerType
+cvc4TimeoutOLD = configOption knownRepr "cvc4_timeout"
 
 cvc4Options :: [ConfigDesc]
 cvc4Options =
-  [ mkOpt cvc4Path
-          executablePathOptSty
-          (Just "Path to CVC4 executable")
-          (Just (ConcreteString "cvc4"))
-  , intWithRangeOpt cvc4RandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
-  , mkOpt cvc4Timeout
-          integerOptSty
-          (Just "Per-check timeout in milliseconds (zero is none)")
-          (Just (ConcreteInteger 0))
-  ] <> SMT2.smtlib2Options
+  let pathOpt co = mkOpt co
+                   executablePathOptSty
+                   (Just "Path to CVC4 executable")
+                   (Just (ConcreteString "cvc4"))
+      p1 = pathOpt cvc4Path
+      r1 = intWithRangeOpt cvc4RandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
+      tmOpt co = mkOpt co
+                 integerOptSty
+                 (Just "Per-check timeout in milliseconds (zero is none)")
+                 (Just (ConcreteInteger 0))
+      t1 = tmOpt cvc4Timeout
+  in [ p1, r1, t1
+     , deprecatedOpt [p1] $ pathOpt cvc4PathOLD
+     , deprecatedOpt [r1] $ intWithRangeOpt cvc4RandomSeedOLD
+       (negate (2^(30::Int)-1)) (2^(30::Int)-1)
+     , deprecatedOpt [t1] $ tmOpt cvc4TimeoutOLD
+     ] <> SMT2.smtlib2Options
 
 cvc4Adapter :: SolverAdapter st
 cvc4Adapter =

@@ -41,10 +41,16 @@ data STP = STP deriving Show
 
 -- | Path to stp
 stpPath :: ConfigOption (BaseStringType Unicode)
-stpPath = configOption knownRepr "stp_path"
+stpPath = configOption knownRepr "solver.stp.path"
+
+stpPathOLD :: ConfigOption (BaseStringType Unicode)
+stpPathOLD = configOption knownRepr "stp_path"
 
 stpRandomSeed :: ConfigOption BaseIntegerType
-stpRandomSeed = configOption knownRepr "stp.random-seed"
+stpRandomSeed = configOption knownRepr "solver.stp.random-seed"
+
+stpRandomSeedOLD :: ConfigOption BaseIntegerType
+stpRandomSeedOLD = configOption knownRepr "stp.random-seed"
 
 intWithRangeOpt :: ConfigOption BaseIntegerType -> Integer -> Integer -> ConfigDesc
 intWithRangeOpt nm lo hi = mkOpt nm sty Nothing Nothing
@@ -52,12 +58,17 @@ intWithRangeOpt nm lo hi = mkOpt nm sty Nothing Nothing
 
 stpOptions :: [ConfigDesc]
 stpOptions =
-  [ mkOpt stpPath
-          executablePathOptSty
-          (Just "Path to STP executable.")
-          (Just (ConcreteString "stp"))
-  , intWithRangeOpt stpRandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
-  ] <> SMT2.smtlib2Options
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "Path to STP executable.")
+                  (Just (ConcreteString "stp"))
+      p1 = mkPath stpPath
+      r1 = intWithRangeOpt stpRandomSeed (negate (2^(30::Int)-1)) (2^(30::Int)-1)
+  in [ p1, r1
+     , deprecatedOpt [p1] $ mkPath stpPathOLD
+     , deprecatedOpt [r1] $ intWithRangeOpt stpRandomSeedOLD
+       (negate (2^(30::Int)-1)) (2^(30::Int)-1)
+     ] <> SMT2.smtlib2Options
 
 stpAdapter :: SolverAdapter st
 stpAdapter =

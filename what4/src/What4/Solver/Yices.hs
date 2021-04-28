@@ -908,44 +908,61 @@ yicesAdapter =
 
 -- | Path to yices
 yicesPath :: ConfigOption (BaseStringType Unicode)
-yicesPath = configOption knownRepr "yices_path"
+yicesPath = configOption knownRepr "solver.yices.path"
+
+yicesPathOLD :: ConfigOption (BaseStringType Unicode)
+yicesPathOLD = configOption knownRepr "yices_path"
 
 -- | Enable the MC-SAT solver
 yicesEnableMCSat :: ConfigOption BaseBoolType
-yicesEnableMCSat = configOption knownRepr "yices_enable-mcsat"
+yicesEnableMCSat = configOption knownRepr "solver.yices.enable-mcsat"
+
+yicesEnableMCSatOLD :: ConfigOption BaseBoolType
+yicesEnableMCSatOLD = configOption knownRepr "yices_enable-mcsat"
 
 -- | Enable interactive mode (necessary for per-goal timeouts)
 yicesEnableInteractive :: ConfigOption BaseBoolType
-yicesEnableInteractive = configOption knownRepr "yices_enable-interactive"
+yicesEnableInteractive = configOption knownRepr "solver.yices.enable-interactive"
+
+yicesEnableInteractiveOLD :: ConfigOption BaseBoolType
+yicesEnableInteractiveOLD = configOption knownRepr "yices_enable-interactive"
 
 -- | Set a per-goal timeout in seconds.
 yicesGoalTimeout :: ConfigOption BaseIntegerType
-yicesGoalTimeout = configOption knownRepr "yices_goal-timeout"
+yicesGoalTimeout = configOption knownRepr "solver.yices.goal-timeout"
+
+yicesGoalTimeoutOLD :: ConfigOption BaseIntegerType
+yicesGoalTimeoutOLD = configOption knownRepr "yices_goal-timeout"
 
 yicesOptions :: [ConfigDesc]
 yicesOptions =
-  [ mkOpt
-      yicesPath
-      executablePathOptSty
-      (Just "Yices executable path")
-      (Just (ConcreteString "yices"))
-  , mkOpt
-      yicesEnableMCSat
-      boolOptSty
-      (Just "Enable the Yices MCSAT solving engine")
-      (Just (ConcreteBool False))
-  , mkOpt
-      yicesEnableInteractive
-      boolOptSty
-      (Just "Enable Yices interactive mode (needed to support timeouts)")
-      (Just (ConcreteBool False))
-  , mkOpt
-      yicesGoalTimeout
-      integerOptSty
-      (Just "Set a per-goal timeout")
-      (Just (ConcreteInteger 0))
-  ]
-  ++ yicesInternalOptions
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "Yices executable path")
+                  (Just (ConcreteString "yices"))
+      mkMCSat co = mkOpt co
+                   boolOptSty
+                   (Just "Enable the Yices MCSAT solving engine")
+                   (Just (ConcreteBool False))
+      mkIntr co = mkOpt co
+                  boolOptSty
+                  (Just "Enable Yices interactive mode (needed to support timeouts)")
+                  (Just (ConcreteBool False))
+      mkTmout co = mkOpt co
+                   integerOptSty
+                   (Just "Set a per-goal timeout")
+                   (Just (ConcreteInteger 0))
+      p = mkPath yicesPath
+      m = mkMCSat yicesEnableMCSat
+      i = mkIntr yicesEnableInteractive
+      t = mkTmout yicesGoalTimeout
+  in [ p, m, i, t
+     , deprecatedOpt [p] $ mkPath yicesPathOLD
+     , deprecatedOpt [m] $ mkMCSat yicesEnableMCSatOLD
+     , deprecatedOpt [i] $ mkIntr yicesEnableInteractiveOLD
+     , deprecatedOpt [t] $ mkTmout yicesGoalTimeoutOLD
+     ]
+     ++ yicesInternalOptions
 
 yicesBranchingChoices :: Set Text
 yicesBranchingChoices = Set.fromList
@@ -965,8 +982,12 @@ yicesEFGenModes = Set.fromList
   , "projection"
   ]
 
-booleanOpt :: String -> ConfigDesc
-booleanOpt nm = booleanOpt' (configOption BaseBoolRepr ("yices."++nm))
+booleanOpt :: String -> [ConfigDesc]
+booleanOpt nm =
+  let b = booleanOpt' (configOption BaseBoolRepr ("solver.yices."++nm))
+  in [ b
+     , deprecatedOpt [b] $ booleanOpt' (configOption BaseBoolRepr ("yices."++nm))
+     ]
 
 booleanOpt' :: ConfigOption BaseBoolType -> ConfigDesc
 booleanOpt' o =
@@ -975,36 +996,52 @@ booleanOpt' o =
         Nothing
         Nothing
 
-floatWithRangeOpt :: String -> Rational -> Rational -> ConfigDesc
+floatWithRangeOpt :: String -> Rational -> Rational -> [ConfigDesc]
 floatWithRangeOpt nm lo hi =
-  mkOpt (configOption BaseRealRepr $ "yices."++nm)
-        (realWithRangeOptSty (Inclusive lo) (Inclusive hi))
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseRealRepr $ n++nm)
+              (realWithRangeOptSty (Inclusive lo) (Inclusive hi))
+              Nothing
+              Nothing
+      f = mkO "solver.yices."
+  in [ f
+     , deprecatedOpt [f] $ mkO "yices."
+     ]
 
-floatWithMinOpt :: String -> Bound Rational -> ConfigDesc
+floatWithMinOpt :: String -> Bound Rational -> [ConfigDesc]
 floatWithMinOpt nm lo =
-  mkOpt (configOption BaseRealRepr $ "yices."++nm)
-        (realWithMinOptSty lo)
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseRealRepr $ n++nm)
+              (realWithMinOptSty lo)
+              Nothing
+              Nothing
+      f = mkO "solver.yices."
+  in [ f
+     , deprecatedOpt [f] $ mkO "yices."
+     ]
 
-intWithRangeOpt :: String -> Integer -> Integer -> ConfigDesc
+intWithRangeOpt :: String -> Integer -> Integer -> [ConfigDesc]
 intWithRangeOpt nm lo hi =
-  mkOpt (configOption BaseIntegerRepr $ "yices."++nm)
-        (integerWithRangeOptSty (Inclusive lo) (Inclusive hi))
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption BaseIntegerRepr $ n++nm)
+              (integerWithRangeOptSty (Inclusive lo) (Inclusive hi))
+              Nothing
+              Nothing
+      i = mkO "solver.yices."
+  in [ i
+     , deprecatedOpt [i] $ mkO "yices."
+     ]
 
-enumOpt :: String -> Set Text -> ConfigDesc
+enumOpt :: String -> Set Text -> [ConfigDesc]
 enumOpt nm xs =
-  mkOpt (configOption (BaseStringRepr UnicodeRepr) $ "yices."++nm)
-        (enumOptSty xs)
-        Nothing
-        Nothing
+  let mkO n = mkOpt (configOption (BaseStringRepr UnicodeRepr) $ n++nm)
+              (enumOptSty xs)
+              Nothing
+              Nothing
+      e = mkO "solver.yices."
+  in [ e
+     , deprecatedOpt [e] $ mkO "yices."
+     ]
 
 yicesInternalOptions :: [ConfigDesc]
-yicesInternalOptions =
+yicesInternalOptions = concat
   [ booleanOpt "var-elim"
   , booleanOpt "arith-elim"
   , booleanOpt "flatten"

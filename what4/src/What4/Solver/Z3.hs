@@ -51,25 +51,34 @@ data Z3 = Z3 deriving Show
 
 -- | Path to Z3
 z3Path :: ConfigOption (BaseStringType Unicode)
-z3Path = configOption knownRepr "z3_path"
+z3Path = configOption knownRepr "solver.z3.path"
+
+z3PathOLD :: ConfigOption (BaseStringType Unicode)
+z3PathOLD = configOption knownRepr "z3_path"
 
 -- | Per-check timeout, in milliseconds (zero is none)
 z3Timeout :: ConfigOption BaseIntegerType
-z3Timeout = configOption knownRepr "z3_timeout"
+z3Timeout = configOption knownRepr "solver.z3.timeout"
+
+z3TimeoutOLD :: ConfigOption BaseIntegerType
+z3TimeoutOLD = configOption knownRepr "z3_timeout"
 
 z3Options :: [ConfigDesc]
 z3Options =
-  [ mkOpt
-      z3Path
-      executablePathOptSty
-      (Just "Z3 executable path")
-      (Just (ConcreteString "z3"))
-  , mkOpt
-      z3Timeout
-      integerOptSty
-      (Just "Per-check timeout in milliseconds (zero is none)")
-      (Just (ConcreteInteger 0))
-  ] <> SMT2.smtlib2Options
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "Z3 executable path")
+                  (Just (ConcreteString "z3"))
+      mkTmo co = mkOpt co
+                 integerOptSty
+                 (Just "Per-check timeout in milliseconds (zero is none)")
+                 (Just (ConcreteInteger 0))
+      p = mkPath z3Path
+      t = mkTmo z3Timeout
+  in [ p, t
+     , deprecatedOpt [p] $ mkPath z3PathOLD
+     , deprecatedOpt [t] $ mkTmo z3TimeoutOLD
+     ] <> SMT2.smtlib2Options
 
 z3Adapter :: SolverAdapter st
 z3Adapter =

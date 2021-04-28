@@ -49,16 +49,21 @@ data Boolector = Boolector deriving Show
 
 -- | Path to boolector
 boolectorPath :: ConfigOption (BaseStringType Unicode)
-boolectorPath = configOption knownRepr "boolector_path"
+boolectorPath = configOption knownRepr "solver.boolector.path"
+
+boolectorPathOLD :: ConfigOption (BaseStringType Unicode)
+boolectorPathOLD = configOption knownRepr "boolector_path"
 
 boolectorOptions :: [ConfigDesc]
 boolectorOptions =
-  [ mkOpt
-      boolectorPath
-      executablePathOptSty
-      (Just "Path to boolector executable")
-      (Just (ConcreteString "boolector"))
-  ] <> SMT2.smtlib2Options
+  let bpOpt co = mkOpt
+                 co
+                 executablePathOptSty
+                 (Just "Path to boolector executable")
+                 (Just (ConcreteString "boolector"))
+      bp = bpOpt boolectorPath
+      bp2 = deprecatedOpt [bp] $ bpOpt boolectorPathOLD
+  in [ bp, bp2 ] <> SMT2.smtlib2Options
 
 boolectorAdapter :: SolverAdapter st
 boolectorAdapter =

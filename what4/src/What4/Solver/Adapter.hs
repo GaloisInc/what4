@@ -112,8 +112,16 @@ defaultWriteSMTLIB2Features
   .|. useSymbolicArrays
 
 defaultSolverAdapter :: ConfigOption (BaseStringType Unicode)
-defaultSolverAdapter = configOption (BaseStringRepr UnicodeRepr) "default_solver"
+defaultSolverAdapter = configOption (BaseStringRepr UnicodeRepr) "solver.default"
 
+deprecatedDefaultSolverAdapterConfig :: ConfigOption (BaseStringType Unicode)
+deprecatedDefaultSolverAdapterConfig = configOption (BaseStringRepr UnicodeRepr) "default_solver"
+
+
+-- Given a list of solver adapters, returns a tuple of the full set of
+-- solver config options for all adapters (plus a configuration to
+-- specify the default adapter) and an IO operation that will return
+-- current default adapter when executed.
 
 solverAdapterOptions ::
   [SolverAdapter st] ->
@@ -121,7 +129,7 @@ solverAdapterOptions ::
 solverAdapterOptions [] = fail "No solver adapters specified!"
 solverAdapterOptions xs@(def:_) =
   do ref <- newIORef def
-     let opts = sty ref : concatMap solver_adapter_config_options xs
+     let opts = sty ref : sty' ref : concatMap solver_adapter_config_options xs
      return (opts, readIORef ref)
 
  where
@@ -131,6 +139,11 @@ solverAdapterOptions xs@(def:_) =
                  (listOptSty (vals ref))
                  (Just (PP.pretty "Indicates which solver to use for check-sat queries"))
                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
+ sty' ref = deprecatedOpt [sty ref] $
+            mkOpt deprecatedDefaultSolverAdapterConfig
+                  (listOptSty (vals ref))
+                  (Just (PP.pretty "Indicates which solver to use for check-sat queries."))
+                  (Just (ConcreteString (UnicodeLiteral (T.pack (solver_adapter_name def)))))
 
 -- | Test the ability to interact with a solver by peforming a check-sat query
 --   on a trivially unsatisfiable problem.

@@ -44,16 +44,21 @@ data ExternalABC = ExternalABC deriving Show
 
 -- | Path to ABC
 abcPath :: ConfigOption (BaseStringType Unicode)
-abcPath = configOption knownRepr "abc_path"
+abcPath = configOption knownRepr "solver.abc.path"
+
+abcPathOLD :: ConfigOption (BaseStringType Unicode)
+abcPathOLD = configOption knownRepr "abc_path"
 
 abcOptions :: [ConfigDesc]
 abcOptions =
-  [ mkOpt
-      abcPath
-      executablePathOptSty
-      (Just "ABC executable path")
-      (Just (ConcreteString "abc"))
-  ] <> SMT2.smtlib2Options
+  let optPath co = mkOpt co
+                   executablePathOptSty
+                   (Just "ABC executable path")
+                   (Just (ConcreteString "abc"))
+      p = optPath abcPath
+  in [ p
+     , deprecatedOpt [p] $ optPath abcPathOLD
+     ] <> SMT2.smtlib2Options
 
 externalABCAdapter :: SolverAdapter st
 externalABCAdapter =

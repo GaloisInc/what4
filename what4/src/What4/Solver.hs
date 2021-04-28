@@ -45,6 +45,7 @@ module What4.Solver
   , CVC4(..)
   , cvc4Adapter
   , cvc4Path
+  , cvc4Timeout
   , runCVC4InOverride
   , writeCVC4SMT2File
   , withCVC4
@@ -71,6 +72,9 @@ module What4.Solver
     -- * Yices
   , yicesAdapter
   , yicesPath
+  , yicesEnableMCSat
+  , yicesEnableInteractive
+  , yicesGoalTimeout
   , runYicesInOverride
   , writeYicesFile
   , yicesOptions
@@ -79,6 +83,7 @@ module What4.Solver
     -- * Z3
   , Z3(..)
   , z3Path
+  , z3Timeout
   , z3Adapter
   , runZ3InOverride
   , withZ3

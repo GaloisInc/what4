@@ -66,16 +66,21 @@ data DReal = DReal deriving Show
 
 -- | Path to dReal
 drealPath :: ConfigOption (BaseStringType Unicode)
-drealPath = configOption knownRepr "dreal_path"
+drealPath = configOption knownRepr "solver.dreal.path"
+
+drealPathOLD :: ConfigOption (BaseStringType Unicode)
+drealPathOLD = configOption knownRepr "dreal_path"
 
 drealOptions :: [ConfigDesc]
 drealOptions =
-  [ mkOpt
-      drealPath
-      executablePathOptSty
-      (Just "Path to dReal executable")
-      (Just (ConcreteString "dreal"))
-  ] <> SMT2.smtlib2Options
+  let dpOpt co = mkOpt co
+                 executablePathOptSty
+                 (Just "Path to dReal executable")
+                 (Just (ConcreteString "dreal"))
+      dp = dpOpt drealPath
+  in [ dp
+     , deprecatedOpt [dp] $ dpOpt drealPathOLD
+     ] <> SMT2.smtlib2Options
 
 drealAdapter :: SolverAdapter st
 drealAdapter =
