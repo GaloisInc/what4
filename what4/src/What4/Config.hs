@@ -507,7 +507,7 @@ listOptSty values =  stringOptSty & set_opt_onset vf
 
 -- | Used as a wrapper for an option that has been deprecated. If the
 -- option is actually set (as opposed to just using the default value)
--- then this will emit a warning to stderr at that time, optionally
+-- then this will emit an OptionSetResult warning that time, optionally
 -- mentioning the replacement option (if specified).
 --
 -- There are three cases of deprecation:
@@ -698,7 +698,8 @@ adjustConfigTrie     [] f (Just (ConfigTrie x m)) = g <$> f x
 adjustConfigMap :: Functor t => Text -> [Text] -> (Maybe ConfigLeaf -> t (Maybe ConfigLeaf)) -> ConfigMap -> t ConfigMap
 adjustConfigMap a as f = Map.alterF (adjustConfigTrie as f) a
 
--- | Traverse an entire @ConfigMap@.  The first argument is
+-- | Traverse an entire @ConfigMap@.  The first argument is the
+-- reversed heirarchical location of the starting map entry location.
 traverseConfigMap ::
   Applicative t =>
   [Text] {- ^ A REVERSED LIST of the name segments that represent the context from the root to the current @ConfigMap@. -} ->
@@ -1123,7 +1124,7 @@ ppConfigLeaf nm (ConfigLeaf sty ref help) =
      return $ ppOption nm sty x help
 
 -- | Given the name of a subtree, compute help text for
---   all the options avaliable in that subtree.
+--   all the options available in that subtree.
 --
 --   If the subtree name is empty, the entire tree will be traversed.
 configHelp ::
