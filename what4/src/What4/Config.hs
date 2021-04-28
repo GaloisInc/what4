@@ -1114,7 +1114,7 @@ ppOption :: [Text] -> OptionStyle tp -> Maybe (ConcreteVal tp) -> Maybe (Doc Voi
 ppOption nm sty x help =
   vcat
   [ group $ fillCat [ppSetting nm x, indent 2 (opt_help sty)]
-  , maybe mempty (indent 2) help
+  , maybe mempty (indent 4) help
   ]
 
 ppConfigLeaf :: [Text] -> ConfigLeaf -> IO (Doc Void)
