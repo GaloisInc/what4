@@ -39,10 +39,6 @@ module What4.Expr.GroundEval
   , groundEq
   ) where
 
-#if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
-#endif
-
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
@@ -186,19 +182,19 @@ tryEvalGroundExpr _ (BoundVarExpr _)  = mzero
 -- | Helper function for evaluating @NonceApp@ expressions.
 --
 --   This function is intended for implementers of symbolic backends.
-evalGroundNonceApp :: MonadFail m
+evalGroundNonceApp :: Monad m
                    => (forall u . Expr t u -> MaybeT m (GroundValue u))
                    -> NonceApp t (Expr t) tp
                    -> MaybeT m (GroundValue tp)
 evalGroundNonceApp fn a0 =
   case a0 of
     Annotation _ _ t -> fn t
-    Forall{} ->  lift $ fail $ "The ground evaluator does not support quantifiers."
-    Exists{} ->  lift $ fail $ "The ground evaluator does not support quantifiers."
-    MapOverArrays{} ->  lift $ fail $ "The ground evaluator does not support mapping arrays from arbitrary functions."
-    ArrayFromFn{} ->  lift $ fail $ "The ground evaluator does not support arrays from arbitrary functions."
-    ArrayTrueOnEntries{} ->  lift $ fail $ "The ground evaluator does not support arrayTrueOnEntries."
-    FnApp{} -> lift $ fail $ "The ground evaluator does not support function applications."
+    Forall{} -> mzero
+    Exists{} -> mzero
+    MapOverArrays{} -> mzero
+    ArrayFromFn{} -> mzero
+    ArrayTrueOnEntries{} -> mzero
+    FnApp{} -> mzero
 
 {-# INLINABLE evalGroundApp #-}
 
