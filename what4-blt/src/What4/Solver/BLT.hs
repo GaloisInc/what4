@@ -132,18 +132,18 @@ runBLTInOverride sym logData ps contFn = do
   epar <- parseBLTParams . T.unpack <$> (getOpt =<< getOptionSetting bltParams cfg)
   par  <- either fail return epar
   logSolverEvent sym
-    SolverStartSATQuery
+    (SolverStartSATQuery $ SolverStartSATQueryRec
     { satQuerySolverName = "BLT"
     , satQueryReason = logReason logData
-    }
+    })
   withHandle par $ \h -> do
     forM_ ps (assume h)
     result <- checkSat h
     logSolverEvent sym
-      SolverEndSATQuery
+      (SolverEndSATQuery $ SolverEndSATQueryRec
       { satQueryResult = forgetModelAndCore result
       , satQueryError  = Nothing
-      }
+      })
     contFn result
 
 ------------------------------------------------------------------------

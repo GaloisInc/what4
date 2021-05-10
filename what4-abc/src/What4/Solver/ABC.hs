@@ -79,7 +79,8 @@ import           What4.BaseTypes
 import           What4.Concrete
 import           What4.Config
 import           What4.Interface
-                   (getConfiguration, IsExprBuilder, logSolverEvent, SolverEvent(..), andAllOf)
+                   ( getConfiguration, IsExprBuilder, logSolverEvent
+                   , SolverEvent(..), SolverStartSATQuery(..), SolverEndSATQuery(..), andAllOf )
 import           What4.Expr
 import           What4.Expr.Builder
 import qualified What4.Expr.BoolMap as BM
@@ -743,10 +744,10 @@ checkSat sym logData e = do
   checkSupportedByAbc vars
   checkNoLatches vars
   logSolverEvent sym
-    SolverStartSATQuery
+    (SolverStartSATQuery $ SolverStartSATQueryRec
     { satQuerySolverName = "ABC"
     , satQueryReason = logReason logData
-    }
+    })
   withNetwork $ \ntk -> do
     -- Get network
     let g = gia ntk
@@ -790,10 +791,10 @@ checkSat sym logData e = do
              logCallbackVerbose logData 2 "Calling ABC's QBF solver"
              runQBF ntk exist_cnt p max_qbf_iter
     logSolverEvent sym
-      SolverEndSATQuery
+      (SolverEndSATQuery $ SolverEndSATQueryRec
       { satQueryResult = forgetModelAndCore res
       , satQueryError  = Nothing
-      }
+      })
     return res
 
 -- | Associate an element in a binding with the term.
