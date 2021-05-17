@@ -273,14 +273,16 @@ data Item where
 data ModuleState sym n =
     ModuleState { vsInputs :: [(Word64, Some WT.BaseTypeRepr, Identifier)]
                 -- ^ All module inputs, in reverse order. We use Word64 for Nonces to avoid GHC bugs.
+                -- For more detail:
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/2595
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/10856
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/16501
                 , vsOutputs :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
                 -- ^ All module outputs, in reverse order. Includes the
                 -- type, signedness, name, and initializer of each.
                 , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
                 -- ^ All internal wires, in reverse order. Includes the
                 -- type, signedness, name, and initializer of each.
-                , vsFreshIdent :: Int
-                -- ^ A counter for generating fresh names.
                 , vsSeenNonces :: Map.Map Word64 Identifier
                 -- ^ A map from the identifier nonces seen so far to their identifier names.
                 , vsUsedIdentifiers :: Set.Set Identifier
@@ -335,7 +337,6 @@ initModuleState sym = do
            { vsInputs = []
            , vsOutputs = []
            , vsWires = []
-           , vsFreshIdent = 0
            , vsSeenNonces = Map.empty
            , vsUsedIdentifiers = Set.empty
            , vsExpCache = cache
@@ -415,17 +416,11 @@ freshIdentifier :: T.Text -> VerilogM sym n Identifier
 freshIdentifier basename = do
   st <- get
   let used = vsUsedIdentifiers st
-  case basename `Set.member` used of
-    True ->
-      do let x = vsFreshIdent st
-             freshName = T.concat [basename, "_", fromString (show x)]
-         put $ st { vsFreshIdent = x+1
-                  , vsUsedIdentifiers = Set.insert freshName used
-                  }
-         return freshName
-    False ->
-      do put $ st { vsUsedIdentifiers = Set.insert basename used }
-         return basename
+  let nm | basename `Set.member` used =
+             T.concat [basename, "_", fromString $ show $ Set.size used ]
+         | otherwise = basename
+  put $ st { vsUsedIdentifiers = Set.insert nm used }
+  return nm
 
 -- | Add a new wire to the current Verilog module state, given a type, a
 -- signedness flag, the prefix of a name, and an initializer expression.
