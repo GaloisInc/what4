@@ -284,9 +284,13 @@ data ModuleState sym n =
                 -- ^ All internal wires, in reverse order. Includes the
                 -- type, signedness, name, and initializer of each.
                 , vsSeenNonces :: Map.Map Word64 Identifier
-                -- ^ A map from the identifier nonces seen so far to their identifier names.
+                -- ^ A map from the identifier nonces seen so far to
+                -- their identifier names. These nonces exist for
+                -- identifiers from the original term, but not
+                -- intermediate Verilog variables.
                 , vsUsedIdentifiers :: Set.Set Identifier
-                -- ^ A set of all the identifiers used so far
+                -- ^ A set of all the identifiers used so far, including
+                -- intermediate Verilog variables.
                 , vsExpCache :: IdxCache n IExp
                 -- ^ An expression cache to preserve sharing present in
                 -- the What4 representation.
