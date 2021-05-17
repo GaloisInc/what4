@@ -181,11 +181,11 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
     refDoc = unlines [ "module f(x, out);"
                      , "  input [7:0] x;"
                      , "  wire [7:0] wr = 8'h1;"
-                     , "  wire [7:0] wr_0 = wr * x;"
-                     , "  wire [7:0] wr_1 = wr + wr_0;"
-                     , "  wire wr_2 = wr_1 == x;"
-                     , "  wire wr_3 = ! wr_2;"
-                     , "  output out = wr_3;"
+                     , "  wire [7:0] wr_2 = wr * x;"
+                     , "  wire [7:0] wr_3 = wr + wr_2;"
+                     , "  wire wr_4 = wr_3 == x;"
+                     , "  wire wr_5 = ! wr_4;"
+                     , "  output out = wr_5;"
                      , "endmodule"
                      ]
 
