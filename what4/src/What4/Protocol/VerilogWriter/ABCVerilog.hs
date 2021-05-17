@@ -16,6 +16,7 @@ import Data.BitVector.Sized
 import Data.Parameterized.NatRepr
 import Data.Parameterized.Some
 import Data.String
+import Data.Word
 import Prettyprinter
 import What4.BaseTypes
 import What4.Protocol.VerilogWriter.AST
@@ -34,7 +35,7 @@ moduleDoc (Module ms) name =
     , "endmodule"
     ]
   where
-    inputNames = map (identDoc . snd) (vsInputs ms)
+    inputNames = map (identDoc . (\(_, _, n) -> n)) (vsInputs ms)
     outputNames = map (identDoc . (\(_, _, n, _) -> n)) (vsOutputs ms)
     params = reverse inputNames ++ reverse outputNames
 
@@ -54,8 +55,8 @@ lhsDoc (LHS name) = identDoc name
 lhsDoc (LHSBit name idx) =
   identDoc name <> brackets (pretty idx)
 
-inputDoc :: (Some BaseTypeRepr, Identifier) -> Doc ()
-inputDoc (tp, name) =
+inputDoc :: (Word64, Some BaseTypeRepr, Identifier) -> Doc ()
+inputDoc (_, tp, name) =
   viewSome (typeDoc "input" False) tp <+> identDoc name <> semi
 
 wireDoc :: Doc () -> (Some BaseTypeRepr, Bool, Identifier, Some Exp) -> Doc ()

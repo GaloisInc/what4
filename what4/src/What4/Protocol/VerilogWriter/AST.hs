@@ -7,24 +7,30 @@ License          : BSD3
 An intermediate AST to use for generating Verilog modules from What4 expressions.
 -}
 {-# LANGUAGE GADTs, GeneralizedNewtypeDeriving, ScopedTypeVariables,
-  TypeApplications, PolyKinds, DataKinds, ExplicitNamespaces, TypeOperators #-}
+  TypeApplications, PolyKinds, DataKinds, ExplicitNamespaces, TypeOperators,
+  OverloadedStrings #-}
 
 module What4.Protocol.VerilogWriter.AST
   where
 
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Map as Map
+import qualified Data.Text as T
+import qualified Data.Set as Set
+import           Data.String
+import           Data.Word
 import           Control.Monad.Except
-import           Control.Monad.State (MonadState(), StateT(..), get, put, modify)
+import           Control.Monad.State (MonadState(), StateT(..), get, put, modify, gets)
 
 import qualified What4.BaseTypes as WT
 import           What4.Expr.Builder
 import           Data.Parameterized.Classes (OrderingF(..), compareF)
+import           Data.Parameterized.Nonce (Nonce, indexValue)
 import           Data.Parameterized.Some (Some(..), viewSome)
 import           Data.Parameterized.Pair
 import           GHC.TypeNats ( type (<=) )
 
-type Identifier = String
+type Identifier = T.Text
 
 -- | A type for Verilog binary operators that enforces well-typedness,
 -- including bitvector size constraints.
@@ -136,7 +142,7 @@ mkLet :: Exp tp -> VerilogM sym n (IExp tp)
 mkLet (IExp x) = return x
 mkLet e = do
     let tp = expType e
-    x <- addFreshWire tp False "x" e
+    x <- addFreshWire tp False "wr" e
     return (Ident tp x)
 
 -- | Indicate than an expression name is signed. This causes arithmetic
@@ -145,7 +151,7 @@ mkLet e = do
 signed :: IExp tp -> VerilogM sym n (IExp tp)
 signed e = do
     let tp = iexpType e
-    x <- addFreshWire tp True "x" (IExp e)
+    x <- addFreshWire tp True "wr" (IExp e)
     return (Ident tp x)
 
 -- | Apply a binary operation to two expressions and bind the result to
@@ -265,16 +271,26 @@ data Item where
 -- | Necessary monadic operations
 
 data ModuleState sym n =
-    ModuleState { vsInputs :: [(Some WT.BaseTypeRepr, Identifier)]
-                -- ^ All module inputs, in reverse order.
+    ModuleState { vsInputs :: [(Word64, Some WT.BaseTypeRepr, Identifier)]
+                -- ^ All module inputs, in reverse order. We use Word64 for Nonces to avoid GHC bugs.
+                -- For more detail:
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/2595
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/10856
+                --   https://gitlab.haskell.org/ghc/ghc/-/issues/16501
                 , vsOutputs :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
                 -- ^ All module outputs, in reverse order. Includes the
                 -- type, signedness, name, and initializer of each.
                 , vsWires :: [(Some WT.BaseTypeRepr, Bool, Identifier, Some Exp)]
                 -- ^ All internal wires, in reverse order. Includes the
                 -- type, signedness, name, and initializer of each.
-                , vsFreshIdent :: Int
-                -- ^ A counter for generating fresh names.
+                , vsSeenNonces :: Map.Map Word64 Identifier
+                -- ^ A map from the identifier nonces seen so far to
+                -- their identifier names. These nonces exist for
+                -- identifiers from the original term, but not
+                -- intermediate Verilog variables.
+                , vsUsedIdentifiers :: Set.Set Identifier
+                -- ^ A set of all the identifiers used so far, including
+                -- intermediate Verilog variables.
                 , vsExpCache :: IdxCache n IExp
                 -- ^ An expression cache to preserve sharing present in
                 -- the What4 representation.
@@ -304,9 +320,15 @@ newtype Module sym n = Module (ModuleState sym n)
 -- that corresponds to the module's output.
 mkModule ::
   sym ->
+  [(Some (Expr n), T.Text)] ->
   [VerilogM sym n (Some IExp)] ->
   ExceptT String IO (Module sym n)
-mkModule sym ops = fmap Module $ execVerilogM sym $ do
+mkModule sym ins ops = fmap Module $ execVerilogM sym $ do
+    let addExprInput e ident =
+          case e of
+            Some (BoundVarExpr x) -> addBoundInput x ident
+            _ -> throwError "Input provided to mkModule isn't an input"
+    mapM_ (uncurry addExprInput) ins
     es <- sequence ops
     forM_ es $ \se ->
       do out <- freshIdentifier "out"
@@ -315,7 +337,17 @@ mkModule sym ops = fmap Module $ execVerilogM sym $ do
 initModuleState :: sym -> IO (ModuleState sym n)
 initModuleState sym = do
   cache <- newIdxCache
-  return $ ModuleState [] [] [] 0 cache Map.empty Map.empty sym
+  return $ ModuleState
+           { vsInputs = []
+           , vsOutputs = []
+           , vsWires = []
+           , vsSeenNonces = Map.empty
+           , vsUsedIdentifiers = Set.empty
+           , vsExpCache = cache
+           , vsBVCache = Map.empty
+           , vsBoolCache = Map.empty
+           , vsSym = sym
+           }
 
 runVerilogM ::
   VerilogM sym n a ->
@@ -332,16 +364,34 @@ execVerilogM sym op =
      (_a,m) <- runVerilogM op s
      return m
 
+addBoundInput ::
+  ExprBoundVar n tp ->
+  Identifier ->
+  VerilogM sym n Identifier
+addBoundInput x ident =
+  addFreshInput (Some idx) (Some tp) ident
+    where
+      tp = bvarType x
+      idx = bvarId x
+
 -- | Returns and records a fresh input with the given type and with a
 -- name constructed from the given base.
 addFreshInput ::
-  WT.BaseTypeRepr tp ->
+  Some (Nonce n) ->
+  Some WT.BaseTypeRepr ->
   Identifier ->
   VerilogM sym n Identifier
-addFreshInput tp base = do
-  name <- freshIdentifier base
-  modify $ \st -> st { vsInputs = (Some tp, name) : vsInputs st }
-  return name
+addFreshInput n tp base = do
+  seenNonces <- gets vsSeenNonces
+  let idx = viewSome indexValue n
+  case Map.lookup idx seenNonces of
+    Just ident -> return ident
+    Nothing ->
+      do name <- freshIdentifier base
+         modify $ \st -> st { vsInputs = (idx, tp, name) : vsInputs st
+                            , vsSeenNonces = Map.insert idx name seenNonces
+                            }
+         return name
 
 -- | Add an output to the current Verilog module state, given a type, a
 -- name, and an initializer expression.
@@ -366,13 +416,15 @@ addWire tp isSigned name e =
 
 -- | Create a fresh identifier by concatenating the given base with the
 -- current fresh identifier counter.
-freshIdentifier :: String -> VerilogM sym n Identifier
+freshIdentifier :: T.Text -> VerilogM sym n Identifier
 freshIdentifier basename = do
   st <- get
-  let x = vsFreshIdent st
-  put $ st { vsFreshIdent = x+1 }
-  return $ basename ++ "_" ++ show x
-
+  let used = vsUsedIdentifiers st
+  let nm | basename `Set.member` used =
+             T.concat [basename, "_", fromString $ show $ Set.size used ]
+         | otherwise = basename
+  put $ st { vsUsedIdentifiers = Set.insert nm used }
+  return nm
 
 -- | Add a new wire to the current Verilog module state, given a type, a
 -- signedness flag, the prefix of a name, and an initializer expression.
@@ -381,7 +433,7 @@ freshIdentifier basename = do
 addFreshWire ::
   WT.BaseTypeRepr tp ->
   Bool ->
-  String ->
+  T.Text ->
   Exp tp ->
   VerilogM sym n Identifier
 addFreshWire repr isSigned basename e = do

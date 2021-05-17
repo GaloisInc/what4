@@ -624,7 +624,7 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
      one <- bvLit sym w (mkBV w 1)
      add <- bvAdd sym x one
      r <- notPred sym =<< bvEq sym x add
-     edoc <- runExceptT (exprsVerilog sym [Some r] "f")
+     edoc <- runExceptT (exprsVerilog sym [] [Some r] "f")
      case edoc of
        Left err -> fail $ "Failed to translate to Verilog: " ++ err
        Right doc ->
@@ -636,17 +636,16 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
                     , refDoc
                     ]
   where
-    refDoc = unlines [
-               "module f(x_1, out_6);"
-             , "  input [7:0] x_1;"
-             , "  wire [7:0] x_0 = 8'h1;"
-             , "  wire [7:0] x_2 = x_0 * x_1;"
-             , "  wire [7:0] x_3 = x_0 + x_2;"
-             , "  wire x_4 = x_3 == x_1;"
-             , "  wire x_5 = ! x_4;"
-             , "  output out_6 = x_5;"
-             , "endmodule"
-             ]
+    refDoc = unlines [ "module f(x, out);"
+                     , "  input [7:0] x;"
+                     , "  wire [7:0] wr = 8'h1;"
+                     , "  wire [7:0] wr_2 = wr * x;"
+                     , "  wire [7:0] wr_3 = wr + wr_2;"
+                     , "  wire wr_4 = wr_3 == x;"
+                     , "  wire wr_5 = ! wr_4;"
+                     , "  output out = wr_5;"
+                     , "endmodule"
+                     ]
 
 getSolverVersion :: String -> IO String
 getSolverVersion solver = do

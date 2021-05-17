@@ -22,6 +22,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty ( NonEmpty(..) )
 
 import           Data.Parameterized.Context
+import           Data.Parameterized.Some (Some(..))
 import           GHC.TypeNats
 
 
@@ -30,6 +31,7 @@ import           What4.BaseTypes as WT
 import           What4.Expr.Builder
 import           What4.Interface
 import qualified What4.SemiRing as SR
+import           What4.Symbol
 import qualified What4.Expr.WeightedSum as WS
 import qualified What4.Expr.UnaryBV as UBV
 
@@ -62,14 +64,11 @@ exprToVerilogExpr e = do
       AppExpr app -> appExprVerilogExpr app
       NonceAppExpr n -> nonceAppExprVerilogExpr n
       BoundVarExpr x ->
-        do name <- addFreshInput tp base
-           return $ Ident tp name
-        where
-          tp = bvarType x
-          base = bvarIdentifier x
+        do name <- addBoundInput x (bvarIdentifier x)
+           return $ Ident (bvarType x) name
 
 bvarIdentifier :: ExprBoundVar t tp -> Identifier
-bvarIdentifier x = show (bvarName x)
+bvarIdentifier = solverSymbolAsText . bvarName
 
 nonceAppExprVerilogExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>
@@ -83,11 +82,12 @@ nonceAppExprVerilogExpr nae =
     MapOverArrays _ _ _ -> doNotSupportError "arrays"
     ArrayTrueOnEntries _ _ -> doNotSupportError "arrays"
     FnApp f Empty -> do
-      name <- addFreshInput tp base
+      name <- addFreshInput (Some idx) (Some tp) base
       return $ Ident tp name
         where
           tp = symFnReturnType f
-          base = show (symFnName f)
+          idx = symFnId f
+          base = solverSymbolAsText (symFnName f)
     -- TODO: inline defined functions?
     -- TODO: implement uninterpreted functions as uninterpreted functions
     FnApp _ _ -> doNotSupportError "named function applications"
