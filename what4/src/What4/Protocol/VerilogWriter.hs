@@ -16,12 +16,11 @@ module What4.Protocol.VerilogWriter
   ) where
 
 import Control.Monad.Except
-import Data.Parameterized.Nonce (Nonce(..))
 import Data.Parameterized.Some (Some(..), traverseSome)
 import Data.Text (Text)
 import Prettyprinter
 import What4.Expr.Builder (Expr, SymExpr)
-import What4.Interface (IsExprBuilder, BaseTypeRepr)
+import What4.Interface (IsExprBuilder)
 
 import What4.Protocol.VerilogWriter.AST
 import What4.Protocol.VerilogWriter.ABCVerilog
