@@ -121,7 +121,7 @@ library
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
     vector >= 0.12.1,
-    versions >= 4.0 && < 5.0,
+    versions >= 4.0 && < 6.0,
     zenc >= 0.1.0 && < 0.2.0,
     ghc-prim >= 0.5.2
 
