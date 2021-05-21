@@ -58,6 +58,7 @@ solver(yices).
 solver(stp).
 solver(cvc4).
 solver(cvc5).
+solver(bitwuzla).
 solver(boolector).
 solver(abc).
 
@@ -78,6 +79,7 @@ main_version(yices, "2_6_4").
 main_version(stp, "2_3_3").
 main_version(cvc4, "1_8").
 main_version(cvc5, "1_0_2").
+main_version(bitwuzla, "0_3_0").
 main_version(boolector, "3_2_2").
 main_version(abc, "2021_12_30").
 
@@ -117,6 +119,8 @@ version(stp, "2_3_2").
 
 version(cvc4, "1_8").
 version(cvc5, "1_0_2").
+
+version(bitwuzla, "0_3_0").
 
 version(boolector, "3_2_2").
 version(boolector, "3_2_1").
