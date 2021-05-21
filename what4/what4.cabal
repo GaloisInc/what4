@@ -166,6 +166,7 @@ library
 
     What4.Solver
     What4.Solver.Adapter
+    What4.Solver.Bitwuzla
     What4.Solver.Boolector
     What4.Solver.CVC4
     What4.Solver.DReal
