@@ -32,6 +32,16 @@ module What4.Solver
   , runExternalABCInOverride
   , writeABCSMT2File
 
+    -- * Bitwuzla
+  , Bitwuzla(..)
+  , bitwuzlaAdapter
+  , bitwuzlaPath
+  , bitwuzlaTimeout
+  , runBitwuzlaInOverride
+  , withBitwuzla
+  , bitwuzlaOptions
+  , bitwuzlaFeatures
+
     -- * Boolector
   , Boolector(..)
   , boolectorAdapter
@@ -107,6 +117,7 @@ module What4.Solver
   ) where
 
 import           What4.Solver.Adapter
+import           What4.Solver.Bitwuzla
 import           What4.Solver.Boolector
 import           What4.Solver.CVC4
 import           What4.Solver.CVC5

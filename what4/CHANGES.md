@@ -1,3 +1,7 @@
+# next (TBA)
+
+* Add support for the `bitwuzla` SMT solver.
+
 # 1.5.1 (October 2023)
 
 * Require building with `versions >= 6.0.2`.
