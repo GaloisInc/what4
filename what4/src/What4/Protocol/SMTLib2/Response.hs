@@ -111,7 +111,7 @@ getLimitedSolverResponse intent handleResponse conn cmd =
         case rsp of
           AckUnsupported -> throw (SMTLib2Unsupported cmd)
           (AckError msg) -> throw (SMTLib2Error cmd msg)
-          (AckSkipped line rest) -> validateResp rest
+          (AckSkipped _line rest) -> validateResp rest
           _ -> case handleResponse rsp of
                  Just x -> return x
                  Nothing -> throw $ SMTLib2InvalidResponse cmd intent rsp

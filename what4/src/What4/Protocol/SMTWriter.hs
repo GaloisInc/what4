@@ -1204,7 +1204,7 @@ freshBoundFn :: [(Text, Some TypeMap)] -- ^ Arguments expected for function.
              -> SMTCollector t h Text
 freshBoundFn args tp t = do
   conn <- asks scConn
-  f <- asks freshBoundTermFn
+  f <- asks $ \x -> freshBoundTermFn x
   liftIO $ do
     var <- withWriterState conn $ freshVarName
     f var args tp t

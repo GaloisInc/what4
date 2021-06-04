@@ -95,6 +95,8 @@ import           What4.Utils.Complex
 import           What4.Utils.IncrHash
 import qualified What4.Utils.AnnotatedMap as AM
 
+------------------------------------------------------------------------
+-- Data types
 
 -- | This type represents 'Expr' values that were built from a
 -- 'NonceApp'.
@@ -125,9 +127,6 @@ data AppExpr t (tp :: BaseType)
                 , appExprAbsValue :: !(AbstractValue tp)
                 }
 
-------------------------------------------------------------------------
--- Expr
-
 -- | The main ExprBuilder expression datastructure.  The non-trivial @Expr@
 -- values constructed by this module are uniquely identified by a
 -- nonce value that is used to explicitly represent sub-term sharing.
@@ -153,6 +152,800 @@ data Expr t (tp :: BaseType) where
   NonceAppExpr :: {-# UNPACK #-} !(NonceAppExpr t tp) -> Expr t tp
   -- A bound variable
   BoundVarExpr :: !(ExprBoundVar t tp) -> Expr t tp
+
+data BVOrNote w = BVOrNote !IncrHash !(BVD.BVDomain w)
+
+newtype BVOrSet e w = BVOrSet (AM.AnnotatedMap (Wrap e (BaseBVType w)) (BVOrNote w) ())
+
+-- | Type @'App' e tp@ encodes the top-level application of an 'Expr'
+-- expression. It includes first-order expression forms that do not
+-- bind variables (contrast with 'NonceApp').
+--
+-- Parameter @e@ is used everywhere a recursive sub-expression would
+-- go. Uses of the 'App' type will tie the knot through this
+-- parameter. Parameter @tp@ indicates the type of the expression.
+data App (e :: BaseType -> Type) (tp :: BaseType) where
+
+  ------------------------------------------------------------------------
+  -- Generic operations
+
+  BaseIte ::
+    !(BaseTypeRepr tp) ->
+    !Integer {- Total number of predicates in this ite tree -} ->
+    !(e BaseBoolType) ->
+    !(e tp) ->
+    !(e tp) ->
+    App e tp
+
+  BaseEq ::
+    !(BaseTypeRepr tp) ->
+    !(e tp) ->
+    !(e tp) ->
+    App e BaseBoolType
+
+  ------------------------------------------------------------------------
+  -- Boolean operations
+
+  -- Invariant: The argument to a NotPred must not be another NotPred.
+  NotPred :: !(e BaseBoolType) -> App e BaseBoolType
+
+  -- Invariant: The BoolMap must contain at least two elements. No
+  -- element may be a NotPred; negated elements must be represented
+  -- with Negative element polarity.
+  ConjPred :: !(BoolMap e) -> App e BaseBoolType
+
+  ------------------------------------------------------------------------
+  -- Semiring operations
+
+  SemiRingSum ::
+    {-# UNPACK #-} !(WeightedSum e sr) ->
+    App e (SR.SemiRingBase sr)
+
+  -- A product of semiring values
+  --
+  -- The ExprBuilder should maintain the invariant that none of the values is
+  -- a constant, and hence this denotes a non-linear expression.
+  -- Multiplications by scalars should use the 'SemiRingSum' constructor.
+  SemiRingProd ::
+     {-# UNPACK #-} !(SemiRingProduct e sr) ->
+     App e (SR.SemiRingBase sr)
+
+  SemiRingLe
+     :: !(SR.OrderedSemiRingRepr sr)
+     -> !(e (SR.SemiRingBase sr))
+     -> !(e (SR.SemiRingBase sr))
+     -> App e BaseBoolType
+
+  ------------------------------------------------------------------------
+  -- Basic arithmetic operations
+
+  RealIsInteger :: !(e BaseRealType) -> App e BaseBoolType
+
+  IntDiv :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
+  IntMod :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
+  IntAbs :: !(e BaseIntegerType)  -> App e BaseIntegerType
+  IntDivisible :: !(e BaseIntegerType) -> Natural -> App e BaseBoolType
+
+  RealDiv :: !(e BaseRealType) -> !(e BaseRealType) -> App e BaseRealType
+
+  -- Returns @sqrt(x)@, result is not defined if @x@ is negative.
+  RealSqrt :: !(e BaseRealType) -> App e BaseRealType
+
+  ------------------------------------------------------------------------
+  -- Operations that introduce irrational numbers.
+
+  Pi :: App e BaseRealType
+
+  RealSin   :: !(e BaseRealType) -> App e BaseRealType
+  RealCos   :: !(e BaseRealType) -> App e BaseRealType
+  RealATan2 :: !(e BaseRealType) -> !(e BaseRealType) -> App e BaseRealType
+  RealSinh  :: !(e BaseRealType) -> App e BaseRealType
+  RealCosh  :: !(e BaseRealType) -> App e BaseRealType
+
+  RealExp :: !(e BaseRealType) -> App e BaseRealType
+  RealLog :: !(e BaseRealType) -> App e BaseRealType
+
+  --------------------------------
+  -- Bitvector operations
+
+  -- Return value of bit at given index.
+  BVTestBit :: (1 <= w)
+            => !Natural -- Index of bit to test
+                        -- (least-significant bit has index 0)
+            -> !(e (BaseBVType w))
+            -> App e BaseBoolType
+  BVSlt :: (1 <= w)
+        => !(e (BaseBVType w))
+        -> !(e (BaseBVType w))
+        -> App e BaseBoolType
+  BVUlt :: (1 <= w)
+        => !(e (BaseBVType w))
+        -> !(e (BaseBVType w))
+        -> App e BaseBoolType
+
+  BVOrBits :: (1 <= w) => !(NatRepr w) -> !(BVOrSet e w) -> App e (BaseBVType w)
+
+  -- A unary representation of terms where an integer @i@ is mapped to a
+  -- predicate that is true if the unsigned encoding of the value is greater
+  -- than or equal to @i@.
+  --
+  -- The map contains a binding (i -> p_i) when the predicate
+  --
+  -- As an example, we can encode the value @1@ with the assignment:
+  --   { 0 => true ; 2 => false }
+  BVUnaryTerm :: (1 <= n)
+              => !(UnaryBV (e BaseBoolType) n)
+              -> App e (BaseBVType n)
+
+  BVConcat :: (1 <= u, 1 <= v, 1 <= (u+v))
+           => !(NatRepr (u+v))
+           -> !(e (BaseBVType u))
+           -> !(e (BaseBVType v))
+           -> App e (BaseBVType (u+v))
+
+  BVSelect :: (1 <= n, idx + n <= w)
+              -- First bit to select from (least-significant bit has index 0)
+           => !(NatRepr idx)
+              -- Number of bits to select, counting up toward more significant bits
+           -> !(NatRepr n)
+              -- Bitvector to select from.
+           -> !(e (BaseBVType w))
+           -> App e (BaseBVType n)
+
+  BVFill :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e BaseBoolType)
+         -> App e (BaseBVType w)
+
+  BVUdiv :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+  BVUrem :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+  BVSdiv :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+  BVSrem :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+
+  BVShl :: (1 <= w)
+        => !(NatRepr w)
+        -> !(e (BaseBVType w))
+        -> !(e (BaseBVType w))
+        -> App e (BaseBVType w)
+
+  BVLshr :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+
+  BVAshr :: (1 <= w)
+         => !(NatRepr w)
+         -> !(e (BaseBVType w))
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType w)
+
+  BVRol :: (1 <= w)
+        => !(NatRepr w)
+        -> !(e (BaseBVType w)) -- bitvector to rotate
+        -> !(e (BaseBVType w)) -- rotate amount
+        -> App e (BaseBVType w)
+
+  BVRor :: (1 <= w)
+        => !(NatRepr w)
+        -> !(e (BaseBVType w))   -- bitvector to rotate
+        -> !(e (BaseBVType w))   -- rotate amount
+        -> App e (BaseBVType w)
+
+  BVZext :: (1 <= w, w+1 <= r, 1 <= r)
+         => !(NatRepr r)
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType r)
+
+  BVSext :: (1 <= w, w+1 <= r, 1 <= r)
+         => !(NatRepr r)
+         -> !(e (BaseBVType w))
+         -> App e (BaseBVType r)
+
+  BVPopcount ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(e (BaseBVType w)) ->
+    App e (BaseBVType w)
+
+  BVCountTrailingZeros ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(e (BaseBVType w)) ->
+    App e (BaseBVType w)
+
+  BVCountLeadingZeros ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(e (BaseBVType w)) ->
+    App e (BaseBVType w)
+
+  --------------------------------
+  -- Float operations
+
+  FloatNeg
+    :: !(FloatPrecisionRepr fpp)
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatAbs
+    :: !(FloatPrecisionRepr fpp)
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatSqrt
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatAdd
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatSub
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatMul
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatDiv
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatRem
+    :: !(FloatPrecisionRepr fpp)
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatFMA
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatFpEq
+    :: !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e BaseBoolType
+  FloatLe
+    :: !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e BaseBoolType
+  FloatLt
+    :: !(e (BaseFloatType fpp))
+    -> !(e (BaseFloatType fpp))
+    -> App e BaseBoolType
+  FloatIsNaN :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsInf :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsZero :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsPos :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsNeg :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsSubnorm :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatIsNorm :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
+  FloatCast
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp'))
+    -> App e (BaseFloatType fpp)
+  FloatRound
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseFloatType fpp)
+  FloatFromBinary
+    :: (2 <= eb, 2 <= sb)
+    => !(FloatPrecisionRepr (FloatingPointPrecision eb sb))
+    -> !(e (BaseBVType (eb + sb)))
+    -> App e (BaseFloatType (FloatingPointPrecision eb sb))
+  FloatToBinary
+    :: (2 <= eb, 2 <= sb, 1 <= eb + sb)
+    => !(FloatPrecisionRepr (FloatingPointPrecision eb sb))
+    -> !(e (BaseFloatType (FloatingPointPrecision eb sb)))
+    -> App e (BaseBVType (eb + sb))
+  BVToFloat
+    :: (1 <= w)
+    => !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseBVType w))
+    -> App e (BaseFloatType fpp)
+  SBVToFloat
+    :: (1 <= w)
+    => !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e (BaseBVType w))
+    -> App e (BaseFloatType fpp)
+  RealToFloat
+    :: !(FloatPrecisionRepr fpp)
+    -> !RoundingMode
+    -> !(e BaseRealType)
+    -> App e (BaseFloatType fpp)
+  FloatToBV
+    :: (1 <= w)
+    => !(NatRepr w)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseBVType w)
+  FloatToSBV
+    :: (1 <= w)
+    => !(NatRepr w)
+    -> !RoundingMode
+    -> !(e (BaseFloatType fpp))
+    -> App e (BaseBVType w)
+  FloatToReal :: !(e (BaseFloatType fpp)) -> App e BaseRealType
+
+  ------------------------------------------------------------------------
+  -- Array operations
+
+  -- Partial map from concrete indices to array values over another array.
+  ArrayMap :: !(Ctx.Assignment BaseTypeRepr (i ::> itp))
+           -> !(BaseTypeRepr tp)
+                -- /\ The type of the array.
+           -> !(AUM.ArrayUpdateMap e (i ::> itp) tp)
+              -- /\ Maps indices that are updated to the associated value.
+           -> !(e (BaseArrayType (i::> itp) tp))
+              -- /\ The underlying array that has been updated.
+           -> App e (BaseArrayType (i ::> itp) tp)
+
+  -- Constant array
+  ConstantArray :: !(Ctx.Assignment BaseTypeRepr (i ::> tp))
+                -> !(BaseTypeRepr b)
+                -> !(e b)
+                -> App e (BaseArrayType (i::>tp) b)
+
+  UpdateArray :: !(BaseTypeRepr b)
+              -> !(Ctx.Assignment BaseTypeRepr (i::>tp))
+              -> !(e (BaseArrayType (i::>tp) b))
+              -> !(Ctx.Assignment e (i::>tp))
+              -> !(e b)
+              -> App e (BaseArrayType (i::>tp) b)
+
+  SelectArray :: !(BaseTypeRepr b)
+              -> !(e (BaseArrayType (i::>tp) b))
+              -> !(Ctx.Assignment e (i::>tp))
+              -> App e b
+
+  ------------------------------------------------------------------------
+  -- Conversions.
+
+  IntegerToReal :: !(e BaseIntegerType) -> App e BaseRealType
+
+  -- Convert a real value to an integer
+  --
+  -- Not defined on non-integral reals.
+  RealToInteger :: !(e BaseRealType) -> App e BaseIntegerType
+
+  BVToInteger   :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
+  SBVToInteger  :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
+
+  -- Converts integer to a bitvector.  The number is interpreted modulo 2^n.
+  IntegerToBV  :: (1 <= w) => !(e BaseIntegerType) -> NatRepr w -> App e (BaseBVType w)
+
+  RoundReal :: !(e BaseRealType) -> App e BaseIntegerType
+  RoundEvenReal :: !(e BaseRealType) -> App e BaseIntegerType
+  FloorReal :: !(e BaseRealType) -> App e BaseIntegerType
+  CeilReal  :: !(e BaseRealType) -> App e BaseIntegerType
+
+  ------------------------------------------------------------------------
+  -- Complex operations
+
+  Cplx  :: {-# UNPACK #-} !(Complex (e BaseRealType)) -> App e BaseComplexType
+  RealPart :: !(e BaseComplexType) -> App e BaseRealType
+  ImagPart :: !(e BaseComplexType) -> App e BaseRealType
+
+  ------------------------------------------------------------------------
+  -- Strings
+
+  StringContains :: !(e (BaseStringType si))
+                 -> !(e (BaseStringType si))
+                 -> App e BaseBoolType
+
+  StringIsPrefixOf :: !(e (BaseStringType si))
+                 -> !(e (BaseStringType si))
+                 -> App e BaseBoolType
+
+  StringIsSuffixOf :: !(e (BaseStringType si))
+                 -> !(e (BaseStringType si))
+                 -> App e BaseBoolType
+
+  StringIndexOf :: !(e (BaseStringType si))
+                -> !(e (BaseStringType si))
+                -> !(e BaseIntegerType)
+                -> App e BaseIntegerType
+
+  StringSubstring :: !(StringInfoRepr si)
+                  -> !(e (BaseStringType si))
+                  -> !(e BaseIntegerType)
+                  -> !(e BaseIntegerType)
+                  -> App e (BaseStringType si)
+
+  StringAppend :: !(StringInfoRepr si)
+               -> !(SSeq.StringSeq e si)
+               -> App e (BaseStringType si)
+
+  StringLength :: !(e (BaseStringType si))
+               -> App e BaseIntegerType
+
+  ------------------------------------------------------------------------
+  -- Structs
+
+  -- A struct with its fields.
+  StructCtor :: !(Ctx.Assignment BaseTypeRepr flds)
+             -> !(Ctx.Assignment e flds)
+             -> App e (BaseStructType flds)
+
+  StructField :: !(e (BaseStructType flds))
+              -> !(Ctx.Index flds tp)
+              -> !(BaseTypeRepr tp)
+              -> App e tp
+
+-- | The Kind of a bound variable.
+data VarKind
+  = QuantifierVarKind
+    -- ^ A variable appearing in a quantifier.
+  | LatchVarKind
+    -- ^ A variable appearing as a latch input.
+  | UninterpVarKind
+    -- ^ A variable appearing in a uninterpreted constant
+
+-- | Information about bound variables.
+-- Parameter @t@ is a phantom type brand used to track nonces.
+--
+-- Type @'ExprBoundVar' t@ instantiates the type family
+-- @'BoundVar' ('ExprBuilder' t st)@.
+--
+-- Selector functions are provided to destruct 'ExprBoundVar'
+-- values, but the constructor is kept hidden. The preferred way to
+-- construct a 'ExprBoundVar' is to use 'freshBoundVar'.
+data ExprBoundVar t (tp :: BaseType) =
+  BVar { bvarId  :: {-# UNPACK #-} !(Nonce t tp)
+       , bvarLoc :: !ProgramLoc
+       , bvarName :: !SolverSymbol
+       , bvarType :: !(BaseTypeRepr tp)
+       , bvarKind :: !VarKind
+       , bvarAbstractValue :: !(Maybe (AbstractValue tp))
+       }
+
+-- | Type @NonceApp t e tp@ encodes the top-level application of an
+-- 'Expr'. It includes expression forms that bind variables (contrast
+-- with 'App').
+--
+-- Parameter @t@ is a phantom type brand used to track nonces.
+-- Parameter @e@ is used everywhere a recursive sub-expression would
+-- go. Uses of the 'NonceApp' type will tie the knot through this
+-- parameter. Parameter @tp@ indicates the type of the expression.
+data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
+  Annotation ::
+    !(BaseTypeRepr tp) ->
+    !(Nonce t tp) ->
+    !(e tp) ->
+    NonceApp t e tp
+
+  Forall :: !(ExprBoundVar t tp)
+         -> !(e BaseBoolType)
+         -> NonceApp t e BaseBoolType
+  Exists :: !(ExprBoundVar t tp)
+         -> !(e BaseBoolType)
+         -> NonceApp t e BaseBoolType
+
+  -- Create an array from a function
+  ArrayFromFn :: !(ExprSymFn t (idx ::> itp) ret)
+              -> NonceApp t e (BaseArrayType (idx ::> itp) ret)
+
+  -- Create an array by mapping over one or more existing arrays.
+  MapOverArrays :: !(ExprSymFn t (ctx::>d) r)
+                -> !(Ctx.Assignment BaseTypeRepr (idx ::> itp))
+                -> !(Ctx.Assignment (ArrayResultWrapper e (idx ::> itp)) (ctx::>d))
+                -> NonceApp t e (BaseArrayType (idx ::> itp) r)
+
+  -- This returns true if all the indices satisfying the given predicate equal true.
+  ArrayTrueOnEntries
+    :: !(ExprSymFn t (idx ::> itp) BaseBoolType)
+    -> !(e (BaseArrayType (idx ::> itp) BaseBoolType))
+    -> NonceApp t e BaseBoolType
+
+  -- Apply a function to some arguments
+  FnApp :: !(ExprSymFn t args ret)
+        -> !(Ctx.Assignment e args)
+        -> NonceApp t e ret
+
+-- | This describes information about an undefined or defined function.
+-- Parameter @t@ is a phantom type brand used to track nonces.
+-- The @args@ and @ret@ parameters define the types of arguments
+-- and the return type of the function.
+data SymFnInfo t (args :: Ctx BaseType) (ret :: BaseType)
+   = UninterpFnInfo !(Ctx.Assignment BaseTypeRepr args)
+                    !(BaseTypeRepr ret)
+     -- ^ Information about the argument type and return type of an uninterpreted function.
+
+   | DefinedFnInfo !(Ctx.Assignment (ExprBoundVar t) args)
+                   !(Expr t ret)
+                   !UnfoldPolicy
+     -- ^ Information about a defined function.
+     -- Includes bound variables and an expression associated to a defined function,
+     -- as well as a policy for when to unfold the body.
+
+   | MatlabSolverFnInfo !(MatlabSolverFn (Expr t) args ret)
+                        !(Ctx.Assignment (ExprBoundVar t) args)
+                        !(Expr t ret)
+     -- ^ This is a function that corresponds to a matlab solver function.
+     --   It includes the definition as a ExprBuilder expr to
+     --   enable export to other solvers.
+
+-- | This represents a symbolic function in the simulator.
+-- Parameter @t@ is a phantom type brand used to track nonces.
+-- The @args@ and @ret@ parameters define the types of arguments
+-- and the return type of the function.
+--
+-- Type @'ExprSymFn' t (Expr t)@ instantiates the type family @'SymFn'
+-- ('ExprBuilder' t st)@.
+data ExprSymFn t (args :: Ctx BaseType) (ret :: BaseType)
+   = ExprSymFn { symFnId :: !(Nonce t (args ::> ret))
+                 -- /\ A unique identifier for the function
+                 , symFnName :: !SolverSymbol
+                 -- /\ Name of the function
+                 , symFnInfo :: !(SymFnInfo t args ret)
+                 -- /\ Information about function
+                 , symFnLoc  :: !ProgramLoc
+                 -- /\ Location where function was defined.
+                 }
+
+------------------------------------------------------------------------
+-- Template Haskell–generated definitions
+
+-- Dummy declaration splice to bring App into template haskell scope.
+$(return [])
+
+-- | Used to implement foldMapFc from traversal.
+data Dummy (tp :: k)
+
+instance Eq (Dummy tp) where
+  _ == _ = True
+instance EqF Dummy where
+  eqF _ _ = True
+instance TestEquality Dummy where
+  testEquality x _y = case x of {}
+
+instance Ord (Dummy tp) where
+  compare _ _ = EQ
+instance OrdF Dummy where
+  compareF x _y = case x of {}
+
+instance HashableF Dummy where
+  hashWithSaltF _ _ = 0
+
+instance HasAbsValue Dummy where
+  getAbsValue _ = error "you made a magic Dummy value!"
+
+instance FoldableFC App where
+  foldMapFC f0 t = getConst (traverseApp (g f0) t)
+    where g :: (f tp -> a) -> f tp -> Const a (Dummy tp)
+          g f v = Const (f v)
+
+traverseApp :: (Applicative m, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
+            => (forall tp. e tp -> m (f tp))
+            -> App e utp -> m ((App f) utp)
+traverseApp =
+  $(structuralTraversal [t|App|]
+    [ ( ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
+      , [|UnaryBV.instantiate|]
+      )
+    , ( ConType [t|Ctx.Assignment BaseTypeRepr|] `TypeApp` AnyType
+      , [|(\_ -> pure) |]
+      )
+    , ( ConType [t|WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
+      , [| WSum.traverseVars |]
+      )
+    , ( ConType [t|BVOrSet|] `TypeApp` AnyType `TypeApp` AnyType
+      , [| traverseBVOrSet |]
+      )
+    , ( ConType [t|SemiRingProduct|] `TypeApp` AnyType `TypeApp` AnyType
+      , [| WSum.traverseProdVars |]
+      )
+    , ( ConType [t|AUM.ArrayUpdateMap|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
+      , [| AUM.traverseArrayUpdateMap |]
+      )
+    , ( ConType [t|SSeq.StringSeq|] `TypeApp` AnyType `TypeApp` AnyType
+      , [| SSeq.traverseStringSeq |]
+      )
+    , ( ConType [t|BoolMap|] `TypeApp` AnyType
+      , [| BM.traverseVars |]
+      )
+    , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
+      , [|traverseFC|]
+      )
+    ]
+   )
+
+{-# NOINLINE appEqF #-}
+-- | Check if two applications are equal.
+appEqF ::
+  (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) =>
+  App e x -> App e y -> Maybe (x :~: y)
+appEqF = $(structuralTypeEquality [t|App|]
+           [ (TypeApp (ConType [t|NatRepr|]) AnyType, [|testEquality|])
+           , (TypeApp (ConType [t|FloatPrecisionRepr|]) AnyType, [|testEquality|])
+           , (TypeApp (ConType [t|BaseTypeRepr|]) AnyType, [|testEquality|])
+           , (DataArg 0 `TypeApp` AnyType, [|testEquality|])
+           , (ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|AUM.ArrayUpdateMap|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
+             , [|\x y -> if x == y then Just Refl else Nothing|])
+           , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|Ctx.Index|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|StringInfoRepr|] `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|SR.SemiRingRepr|] `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|SR.OrderedSemiRingRepr|] `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|WSum.WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|SemiRingProduct|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|])
+           ]
+          )
+
+instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => Eq (App e tp) where
+  x == y = isJust (testEquality x y)
+
+instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => TestEquality (App e) where
+  testEquality = appEqF
+
+{-# NOINLINE hashApp #-}
+-- | Hash an an application.
+hashApp ::
+  (OrdF e, HashableF e, HasAbsValue e, Hashable (e BaseBoolType), Hashable (e BaseRealType)) =>
+  Int -> App e s -> Int
+hashApp = $(structuralHashWithSalt [t|App|]
+               [(DataArg 0 `TypeApp` AnyType, [|hashWithSaltF|])]
+           )
+
+instance (OrdF e, HashableF e, HasAbsValue e, Hashable (e BaseBoolType), Hashable (e BaseRealType)) =>
+  HashableF (App e) where
+    hashWithSaltF = hashApp
+
+
+-- | Return 'true' if an app represents a non-linear operation.
+-- Controls whether the non-linear counter ticks upward in the
+-- 'Statistics'.
+isNonLinearApp :: App e tp -> Bool
+isNonLinearApp app = case app of
+  -- FIXME: These are just guesses; someone who knows what's actually
+  -- slow in the solvers should correct them.
+
+  SemiRingProd pd
+    | SR.SemiRingBVRepr SR.BVBitsRepr _ <- WSum.prodRepr pd -> False
+    | otherwise -> True
+
+  IntDiv {} -> True
+  IntMod {} -> True
+  IntDivisible {} -> True
+  RealDiv {} -> True
+  RealSqrt {} -> True
+  RealSin {} -> True
+  RealCos {} -> True
+  RealATan2 {} -> True
+  RealSinh {} -> True
+  RealCosh {} -> True
+  RealExp {} -> True
+  RealLog {} -> True
+  BVUdiv {} -> True
+  BVUrem {} -> True
+  BVSdiv {} -> True
+  BVSrem {} -> True
+  FloatSqrt {} -> True
+  FloatMul {} -> True
+  FloatDiv {} -> True
+  FloatRem {} -> True
+  _ -> False
+
+
+
+instance TestEquality e => Eq (NonceApp t e tp) where
+  x == y = isJust (testEquality x y)
+
+instance TestEquality e => TestEquality (NonceApp t e) where
+  testEquality =
+    $(structuralTypeEquality [t|NonceApp|]
+           [ (DataArg 0 `TypeApp` AnyType, [|testEquality|])
+           , (DataArg 1 `TypeApp` AnyType, [|testEquality|])
+           , ( ConType [t|BaseTypeRepr|] `TypeApp` AnyType
+             , [|testEquality|]
+             )
+           , ( ConType [t|Nonce|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|]
+             )
+           , ( ConType [t|ExprBoundVar|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|]
+             )
+           , ( ConType [t|ExprSymFn|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
+              , [|testExprSymFnEq|]
+              )
+           , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
+             , [|testEquality|]
+             )
+           ]
+          )
+
+instance HashableF e => HashableF (NonceApp t e) where
+  hashWithSaltF = $(structuralHashWithSalt [t|NonceApp|]
+                      [ (DataArg 1 `TypeApp` AnyType, [|hashWithSaltF|]) ])
+
+traverseArrayResultWrapper
+  :: Functor m
+  => (forall tp . e tp -> m (f tp))
+     -> ArrayResultWrapper e (idx ::> itp) c
+     -> m (ArrayResultWrapper f (idx ::> itp) c)
+traverseArrayResultWrapper f (ArrayResultWrapper a) =
+  ArrayResultWrapper <$> f a
+
+traverseArrayResultWrapperAssignment
+  :: Applicative m
+  => (forall tp . e tp -> m (f tp))
+     -> Ctx.Assignment (ArrayResultWrapper e (idx ::> itp)) c
+     -> m (Ctx.Assignment (ArrayResultWrapper f (idx ::> itp)) c)
+traverseArrayResultWrapperAssignment f = traverseFC (\e -> traverseArrayResultWrapper f e)
+
+instance FunctorFC (NonceApp t)  where
+  fmapFC = fmapFCDefault
+
+instance FoldableFC (NonceApp t) where
+  foldMapFC = foldMapFCDefault
+
+instance TraversableFC (NonceApp t) where
+  traverseFC =
+    $(structuralTraversal [t|NonceApp|]
+      [ ( ConType [t|Ctx.Assignment|]
+          `TypeApp` (ConType [t|ArrayResultWrapper|] `TypeApp` AnyType `TypeApp` AnyType)
+          `TypeApp` AnyType
+        , [|traverseArrayResultWrapperAssignment|]
+        )
+      , ( ConType [t|ExprSymFn|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
+        , [|\_-> pure|]
+        )
+      , ( ConType [t|Ctx.Assignment|] `TypeApp` ConType [t|BaseTypeRepr|] `TypeApp` AnyType
+        , [|\_ -> pure|]
+        )
+      , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
+        , [|traverseFC|]
+        )
+      ]
+     )
+
+instance PolyEq (Expr t x) (Expr t y) where
+  polyEqF x y = do
+    Refl <- testEquality x y
+    return Refl
+
+------------------------------------------------------------------------
+-- Expr
 
 -- | Destructor for the 'AppExpr' constructor.
 {-# INLINE asApp #-}
@@ -816,33 +1609,6 @@ ppExpr' e0 o = do
 ------------------------------------------------------------------------
 -- ExprBoundVar
 
--- | The Kind of a bound variable.
-data VarKind
-  = QuantifierVarKind
-    -- ^ A variable appearing in a quantifier.
-  | LatchVarKind
-    -- ^ A variable appearing as a latch input.
-  | UninterpVarKind
-    -- ^ A variable appearing in a uninterpreted constant
-
--- | Information about bound variables.
--- Parameter @t@ is a phantom type brand used to track nonces.
---
--- Type @'ExprBoundVar' t@ instantiates the type family
--- @'BoundVar' ('ExprBuilder' t st)@.
---
--- Selector functions are provided to destruct 'ExprBoundVar'
--- values, but the constructor is kept hidden. The preferred way to
--- construct a 'ExprBoundVar' is to use 'freshBoundVar'.
-data ExprBoundVar t (tp :: BaseType) =
-  BVar { bvarId  :: {-# UNPACK #-} !(Nonce t tp)
-       , bvarLoc :: !ProgramLoc
-       , bvarName :: !SolverSymbol
-       , bvarType :: !(BaseTypeRepr tp)
-       , bvarKind :: !VarKind
-       , bvarAbstractValue :: !(Maybe (AbstractValue tp))
-       }
-
 instance Eq (ExprBoundVar t tp) where
   x == y = bvarId x == bvarId y
 
@@ -862,95 +1628,7 @@ instance HashableF (ExprBoundVar t) where
   hashWithSaltF = hashWithSalt
 
 ------------------------------------------------------------------------
--- NonceApp
-
--- | Type @NonceApp t e tp@ encodes the top-level application of an
--- 'Expr'. It includes expression forms that bind variables (contrast
--- with 'App').
---
--- Parameter @t@ is a phantom type brand used to track nonces.
--- Parameter @e@ is used everywhere a recursive sub-expression would
--- go. Uses of the 'NonceApp' type will tie the knot through this
--- parameter. Parameter @tp@ indicates the type of the expression.
-data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
-  Annotation ::
-    !(BaseTypeRepr tp) ->
-    !(Nonce t tp) ->
-    !(e tp) ->
-    NonceApp t e tp
-
-  Forall :: !(ExprBoundVar t tp)
-         -> !(e BaseBoolType)
-         -> NonceApp t e BaseBoolType
-  Exists :: !(ExprBoundVar t tp)
-         -> !(e BaseBoolType)
-         -> NonceApp t e BaseBoolType
-
-  -- Create an array from a function
-  ArrayFromFn :: !(ExprSymFn t (idx ::> itp) ret)
-              -> NonceApp t e (BaseArrayType (idx ::> itp) ret)
-
-  -- Create an array by mapping over one or more existing arrays.
-  MapOverArrays :: !(ExprSymFn t (ctx::>d) r)
-                -> !(Ctx.Assignment BaseTypeRepr (idx ::> itp))
-                -> !(Ctx.Assignment (ArrayResultWrapper e (idx ::> itp)) (ctx::>d))
-                -> NonceApp t e (BaseArrayType (idx ::> itp) r)
-
-  -- This returns true if all the indices satisfying the given predicate equal true.
-  ArrayTrueOnEntries
-    :: !(ExprSymFn t (idx ::> itp) BaseBoolType)
-    -> !(e (BaseArrayType (idx ::> itp) BaseBoolType))
-    -> NonceApp t e BaseBoolType
-
-  -- Apply a function to some arguments
-  FnApp :: !(ExprSymFn t args ret)
-        -> !(Ctx.Assignment e args)
-        -> NonceApp t e ret
-
-
-------------------------------------------------------------------------
 -- ExprSymFn
-
--- | This describes information about an undefined or defined function.
--- Parameter @t@ is a phantom type brand used to track nonces.
--- The @args@ and @ret@ parameters define the types of arguments
--- and the return type of the function.
-data SymFnInfo t (args :: Ctx BaseType) (ret :: BaseType)
-   = UninterpFnInfo !(Ctx.Assignment BaseTypeRepr args)
-                    !(BaseTypeRepr ret)
-     -- ^ Information about the argument type and return type of an uninterpreted function.
-
-   | DefinedFnInfo !(Ctx.Assignment (ExprBoundVar t) args)
-                   !(Expr t ret)
-                   !UnfoldPolicy
-     -- ^ Information about a defined function.
-     -- Includes bound variables and an expression associated to a defined function,
-     -- as well as a policy for when to unfold the body.
-
-   | MatlabSolverFnInfo !(MatlabSolverFn (Expr t) args ret)
-                        !(Ctx.Assignment (ExprBoundVar t) args)
-                        !(Expr t ret)
-     -- ^ This is a function that corresponds to a matlab solver function.
-     --   It includes the definition as a ExprBuilder expr to
-     --   enable export to other solvers.
-
--- | This represents a symbolic function in the simulator.
--- Parameter @t@ is a phantom type brand used to track nonces.
--- The @args@ and @ret@ parameters define the types of arguments
--- and the return type of the function.
---
--- Type @'ExprSymFn' t (Expr t)@ instantiates the type family @'SymFn'
--- ('ExprBuilder' t st)@.
-data ExprSymFn t (args :: Ctx BaseType) (ret :: BaseType)
-   = ExprSymFn { symFnId :: !(Nonce t (args ::> ret))
-                 -- /\ A unique identifier for the function
-                 , symFnName :: !SolverSymbol
-                 -- /\ Name of the function
-                 , symFnInfo :: !(SymFnInfo t args ret)
-                 -- /\ Information about function
-                 , symFnLoc  :: !ProgramLoc
-                 -- /\ Location where function was defined.
-                 }
 
 instance Show (ExprSymFn t args ret) where
   show f | symFnName f == emptySymbol = "f" ++ show (indexValue (symFnId f))
@@ -993,12 +1671,8 @@ instance IsSymFn (ExprSymFn t) where
 -------------------------------------------------------------------------------
 -- BVOrSet
 
-data BVOrNote w = BVOrNote !IncrHash !(BVD.BVDomain w)
-
 instance Semigroup (BVOrNote w) where
   BVOrNote xh xa <> BVOrNote yh ya = BVOrNote (xh <> yh) (BVD.or xa ya)
-
-newtype BVOrSet e w = BVOrSet (AM.AnnotatedMap (Wrap e (BaseBVType w)) (BVOrNote w) ())
 
 traverseBVOrSet :: (HashableF f, HasAbsValue f, OrdF f, Applicative m) =>
   (forall tp. e tp -> m (f tp)) ->
@@ -1035,456 +1709,6 @@ instance OrdF e => Hashable (BVOrSet e w) where
     case AM.annotation m of
       Just (BVOrNote h _) -> hashWithSalt s h
       Nothing -> s
-
-
-------------------------------------------------------------------------
--- App
-
--- | Type @'App' e tp@ encodes the top-level application of an 'Expr'
--- expression. It includes first-order expression forms that do not
--- bind variables (contrast with 'NonceApp').
---
--- Parameter @e@ is used everywhere a recursive sub-expression would
--- go. Uses of the 'App' type will tie the knot through this
--- parameter. Parameter @tp@ indicates the type of the expression.
-data App (e :: BaseType -> Type) (tp :: BaseType) where
-
-  ------------------------------------------------------------------------
-  -- Generic operations
-
-  BaseIte ::
-    !(BaseTypeRepr tp) ->
-    !Integer {- Total number of predicates in this ite tree -} ->
-    !(e BaseBoolType) ->
-    !(e tp) ->
-    !(e tp) ->
-    App e tp
-
-  BaseEq ::
-    !(BaseTypeRepr tp) ->
-    !(e tp) ->
-    !(e tp) ->
-    App e BaseBoolType
-
-  ------------------------------------------------------------------------
-  -- Boolean operations
-
-  -- Invariant: The argument to a NotPred must not be another NotPred.
-  NotPred :: !(e BaseBoolType) -> App e BaseBoolType
-
-  -- Invariant: The BoolMap must contain at least two elements. No
-  -- element may be a NotPred; negated elements must be represented
-  -- with Negative element polarity.
-  ConjPred :: !(BoolMap e) -> App e BaseBoolType
-
-  ------------------------------------------------------------------------
-  -- Semiring operations
-
-  SemiRingSum ::
-    {-# UNPACK #-} !(WeightedSum e sr) ->
-    App e (SR.SemiRingBase sr)
-
-  -- A product of semiring values
-  --
-  -- The ExprBuilder should maintain the invariant that none of the values is
-  -- a constant, and hence this denotes a non-linear expression.
-  -- Multiplications by scalars should use the 'SemiRingSum' constructor.
-  SemiRingProd ::
-     {-# UNPACK #-} !(SemiRingProduct e sr) ->
-     App e (SR.SemiRingBase sr)
-
-  SemiRingLe
-     :: !(SR.OrderedSemiRingRepr sr)
-     -> !(e (SR.SemiRingBase sr))
-     -> !(e (SR.SemiRingBase sr))
-     -> App e BaseBoolType
-
-  ------------------------------------------------------------------------
-  -- Basic arithmetic operations
-
-  RealIsInteger :: !(e BaseRealType) -> App e BaseBoolType
-
-  IntDiv :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
-  IntMod :: !(e BaseIntegerType)  -> !(e BaseIntegerType) -> App e BaseIntegerType
-  IntAbs :: !(e BaseIntegerType)  -> App e BaseIntegerType
-  IntDivisible :: !(e BaseIntegerType) -> Natural -> App e BaseBoolType
-
-  RealDiv :: !(e BaseRealType) -> !(e BaseRealType) -> App e BaseRealType
-
-  -- Returns @sqrt(x)@, result is not defined if @x@ is negative.
-  RealSqrt :: !(e BaseRealType) -> App e BaseRealType
-
-  ------------------------------------------------------------------------
-  -- Operations that introduce irrational numbers.
-
-  Pi :: App e BaseRealType
-
-  RealSin   :: !(e BaseRealType) -> App e BaseRealType
-  RealCos   :: !(e BaseRealType) -> App e BaseRealType
-  RealATan2 :: !(e BaseRealType) -> !(e BaseRealType) -> App e BaseRealType
-  RealSinh  :: !(e BaseRealType) -> App e BaseRealType
-  RealCosh  :: !(e BaseRealType) -> App e BaseRealType
-
-  RealExp :: !(e BaseRealType) -> App e BaseRealType
-  RealLog :: !(e BaseRealType) -> App e BaseRealType
-
-  --------------------------------
-  -- Bitvector operations
-
-  -- Return value of bit at given index.
-  BVTestBit :: (1 <= w)
-            => !Natural -- Index of bit to test
-                        -- (least-significant bit has index 0)
-            -> !(e (BaseBVType w))
-            -> App e BaseBoolType
-  BVSlt :: (1 <= w)
-        => !(e (BaseBVType w))
-        -> !(e (BaseBVType w))
-        -> App e BaseBoolType
-  BVUlt :: (1 <= w)
-        => !(e (BaseBVType w))
-        -> !(e (BaseBVType w))
-        -> App e BaseBoolType
-
-  BVOrBits :: (1 <= w) => !(NatRepr w) -> !(BVOrSet e w) -> App e (BaseBVType w)
-
-  -- A unary representation of terms where an integer @i@ is mapped to a
-  -- predicate that is true if the unsigned encoding of the value is greater
-  -- than or equal to @i@.
-  --
-  -- The map contains a binding (i -> p_i) when the predicate
-  --
-  -- As an example, we can encode the value @1@ with the assignment:
-  --   { 0 => true ; 2 => false }
-  BVUnaryTerm :: (1 <= n)
-              => !(UnaryBV (e BaseBoolType) n)
-              -> App e (BaseBVType n)
-
-  BVConcat :: (1 <= u, 1 <= v, 1 <= (u+v))
-           => !(NatRepr (u+v))
-           -> !(e (BaseBVType u))
-           -> !(e (BaseBVType v))
-           -> App e (BaseBVType (u+v))
-
-  BVSelect :: (1 <= n, idx + n <= w)
-              -- First bit to select from (least-significant bit has index 0)
-           => !(NatRepr idx)
-              -- Number of bits to select, counting up toward more significant bits
-           -> !(NatRepr n)
-              -- Bitvector to select from.
-           -> !(e (BaseBVType w))
-           -> App e (BaseBVType n)
-
-  BVFill :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e BaseBoolType)
-         -> App e (BaseBVType w)
-
-  BVUdiv :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-  BVUrem :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-  BVSdiv :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-  BVSrem :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-
-  BVShl :: (1 <= w)
-        => !(NatRepr w)
-        -> !(e (BaseBVType w))
-        -> !(e (BaseBVType w))
-        -> App e (BaseBVType w)
-
-  BVLshr :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-
-  BVAshr :: (1 <= w)
-         => !(NatRepr w)
-         -> !(e (BaseBVType w))
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType w)
-
-  BVRol :: (1 <= w)
-        => !(NatRepr w)
-        -> !(e (BaseBVType w)) -- bitvector to rotate
-        -> !(e (BaseBVType w)) -- rotate amount
-        -> App e (BaseBVType w)
-
-  BVRor :: (1 <= w)
-        => !(NatRepr w)
-        -> !(e (BaseBVType w))   -- bitvector to rotate
-        -> !(e (BaseBVType w))   -- rotate amount
-        -> App e (BaseBVType w)
-
-  BVZext :: (1 <= w, w+1 <= r, 1 <= r)
-         => !(NatRepr r)
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType r)
-
-  BVSext :: (1 <= w, w+1 <= r, 1 <= r)
-         => !(NatRepr r)
-         -> !(e (BaseBVType w))
-         -> App e (BaseBVType r)
-
-  BVPopcount ::
-    (1 <= w) =>
-    !(NatRepr w) ->
-    !(e (BaseBVType w)) ->
-    App e (BaseBVType w)
-
-  BVCountTrailingZeros ::
-    (1 <= w) =>
-    !(NatRepr w) ->
-    !(e (BaseBVType w)) ->
-    App e (BaseBVType w)
-
-  BVCountLeadingZeros ::
-    (1 <= w) =>
-    !(NatRepr w) ->
-    !(e (BaseBVType w)) ->
-    App e (BaseBVType w)
-
-  --------------------------------
-  -- Float operations
-
-  FloatNeg
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatAbs
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatSqrt
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatAdd
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatSub
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatMul
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatDiv
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatRem
-    :: !(FloatPrecisionRepr fpp)
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatFMA
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatFpEq
-    :: !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e BaseBoolType
-  FloatLe
-    :: !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e BaseBoolType
-  FloatLt
-    :: !(e (BaseFloatType fpp))
-    -> !(e (BaseFloatType fpp))
-    -> App e BaseBoolType
-  FloatIsNaN :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsInf :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsZero :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsPos :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsNeg :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsSubnorm :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatIsNorm :: !(e (BaseFloatType fpp)) -> App e BaseBoolType
-  FloatCast
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp'))
-    -> App e (BaseFloatType fpp)
-  FloatRound
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseFloatType fpp)
-  FloatFromBinary
-    :: (2 <= eb, 2 <= sb)
-    => !(FloatPrecisionRepr (FloatingPointPrecision eb sb))
-    -> !(e (BaseBVType (eb + sb)))
-    -> App e (BaseFloatType (FloatingPointPrecision eb sb))
-  FloatToBinary
-    :: (2 <= eb, 2 <= sb, 1 <= eb + sb)
-    => !(FloatPrecisionRepr (FloatingPointPrecision eb sb))
-    -> !(e (BaseFloatType (FloatingPointPrecision eb sb)))
-    -> App e (BaseBVType (eb + sb))
-  BVToFloat
-    :: (1 <= w)
-    => !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseBVType w))
-    -> App e (BaseFloatType fpp)
-  SBVToFloat
-    :: (1 <= w)
-    => !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e (BaseBVType w))
-    -> App e (BaseFloatType fpp)
-  RealToFloat
-    :: !(FloatPrecisionRepr fpp)
-    -> !RoundingMode
-    -> !(e BaseRealType)
-    -> App e (BaseFloatType fpp)
-  FloatToBV
-    :: (1 <= w)
-    => !(NatRepr w)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseBVType w)
-  FloatToSBV
-    :: (1 <= w)
-    => !(NatRepr w)
-    -> !RoundingMode
-    -> !(e (BaseFloatType fpp))
-    -> App e (BaseBVType w)
-  FloatToReal :: !(e (BaseFloatType fpp)) -> App e BaseRealType
-
-  ------------------------------------------------------------------------
-  -- Array operations
-
-  -- Partial map from concrete indices to array values over another array.
-  ArrayMap :: !(Ctx.Assignment BaseTypeRepr (i ::> itp))
-           -> !(BaseTypeRepr tp)
-                -- /\ The type of the array.
-           -> !(AUM.ArrayUpdateMap e (i ::> itp) tp)
-              -- /\ Maps indices that are updated to the associated value.
-           -> !(e (BaseArrayType (i::> itp) tp))
-              -- /\ The underlying array that has been updated.
-           -> App e (BaseArrayType (i ::> itp) tp)
-
-  -- Constant array
-  ConstantArray :: !(Ctx.Assignment BaseTypeRepr (i ::> tp))
-                -> !(BaseTypeRepr b)
-                -> !(e b)
-                -> App e (BaseArrayType (i::>tp) b)
-
-  UpdateArray :: !(BaseTypeRepr b)
-              -> !(Ctx.Assignment BaseTypeRepr (i::>tp))
-              -> !(e (BaseArrayType (i::>tp) b))
-              -> !(Ctx.Assignment e (i::>tp))
-              -> !(e b)
-              -> App e (BaseArrayType (i::>tp) b)
-
-  SelectArray :: !(BaseTypeRepr b)
-              -> !(e (BaseArrayType (i::>tp) b))
-              -> !(Ctx.Assignment e (i::>tp))
-              -> App e b
-
-  ------------------------------------------------------------------------
-  -- Conversions.
-
-  IntegerToReal :: !(e BaseIntegerType) -> App e BaseRealType
-
-  -- Convert a real value to an integer
-  --
-  -- Not defined on non-integral reals.
-  RealToInteger :: !(e BaseRealType) -> App e BaseIntegerType
-
-  BVToInteger   :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
-  SBVToInteger  :: (1 <= w) => !(e (BaseBVType w)) -> App e BaseIntegerType
-
-  -- Converts integer to a bitvector.  The number is interpreted modulo 2^n.
-  IntegerToBV  :: (1 <= w) => !(e BaseIntegerType) -> NatRepr w -> App e (BaseBVType w)
-
-  RoundReal :: !(e BaseRealType) -> App e BaseIntegerType
-  RoundEvenReal :: !(e BaseRealType) -> App e BaseIntegerType
-  FloorReal :: !(e BaseRealType) -> App e BaseIntegerType
-  CeilReal  :: !(e BaseRealType) -> App e BaseIntegerType
-
-  ------------------------------------------------------------------------
-  -- Complex operations
-
-  Cplx  :: {-# UNPACK #-} !(Complex (e BaseRealType)) -> App e BaseComplexType
-  RealPart :: !(e BaseComplexType) -> App e BaseRealType
-  ImagPart :: !(e BaseComplexType) -> App e BaseRealType
-
-  ------------------------------------------------------------------------
-  -- Strings
-
-  StringContains :: !(e (BaseStringType si))
-                 -> !(e (BaseStringType si))
-                 -> App e BaseBoolType
-
-  StringIsPrefixOf :: !(e (BaseStringType si))
-                 -> !(e (BaseStringType si))
-                 -> App e BaseBoolType
-
-  StringIsSuffixOf :: !(e (BaseStringType si))
-                 -> !(e (BaseStringType si))
-                 -> App e BaseBoolType
-
-  StringIndexOf :: !(e (BaseStringType si))
-                -> !(e (BaseStringType si))
-                -> !(e BaseIntegerType)
-                -> App e BaseIntegerType
-
-  StringSubstring :: !(StringInfoRepr si)
-                  -> !(e (BaseStringType si))
-                  -> !(e BaseIntegerType)
-                  -> !(e BaseIntegerType)
-                  -> App e (BaseStringType si)
-
-  StringAppend :: !(StringInfoRepr si)
-               -> !(SSeq.StringSeq e si)
-               -> App e (BaseStringType si)
-
-  StringLength :: !(e (BaseStringType si))
-               -> App e BaseIntegerType
-
-  ------------------------------------------------------------------------
-  -- Structs
-
-  -- A struct with its fields.
-  StructCtor :: !(Ctx.Assignment BaseTypeRepr flds)
-             -> !(Ctx.Assignment e flds)
-             -> App e (BaseStructType flds)
-
-  StructField :: !(e (BaseStructType flds))
-              -> !(Ctx.Index flds tp)
-              -> !(BaseTypeRepr tp)
-              -> App e tp
 
 ------------------------------------------------------------------------
 -- Types
@@ -2251,232 +2475,3 @@ ppApp' a0 = do
     StructCtor _ flds -> prettyApp "struct" (toListFC exprPrettyArg flds)
     StructField s idx _ ->
       prettyApp "field" [exprPrettyArg s, showPrettyArg idx]
-
-
--- Dummy declaration splice to bring App into template haskell scope.
-$(return [])
-
--- | Used to implement foldMapFc from traversal.
-data Dummy (tp :: k)
-
-instance Eq (Dummy tp) where
-  _ == _ = True
-instance EqF Dummy where
-  eqF _ _ = True
-instance TestEquality Dummy where
-  testEquality x _y = case x of {}
-
-instance Ord (Dummy tp) where
-  compare _ _ = EQ
-instance OrdF Dummy where
-  compareF x _y = case x of {}
-
-instance HashableF Dummy where
-  hashWithSaltF _ _ = 0
-
-instance HasAbsValue Dummy where
-  getAbsValue _ = error "you made a magic Dummy value!"
-
-instance FoldableFC App where
-  foldMapFC f0 t = getConst (traverseApp (g f0) t)
-    where g :: (f tp -> a) -> f tp -> Const a (Dummy tp)
-          g f v = Const (f v)
-
-traverseApp :: (Applicative m, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
-            => (forall tp. e tp -> m (f tp))
-            -> App e utp -> m ((App f) utp)
-traverseApp =
-  $(structuralTraversal [t|App|]
-    [ ( ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
-      , [|UnaryBV.instantiate|]
-      )
-    , ( ConType [t|Ctx.Assignment BaseTypeRepr|] `TypeApp` AnyType
-      , [|(\_ -> pure) |]
-      )
-    , ( ConType [t|WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
-      , [| WSum.traverseVars |]
-      )
-    , ( ConType [t|BVOrSet|] `TypeApp` AnyType `TypeApp` AnyType
-      , [| traverseBVOrSet |]
-      )
-    , ( ConType [t|SemiRingProduct|] `TypeApp` AnyType `TypeApp` AnyType
-      , [| WSum.traverseProdVars |]
-      )
-    , ( ConType [t|AUM.ArrayUpdateMap|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
-      , [| AUM.traverseArrayUpdateMap |]
-      )
-    , ( ConType [t|SSeq.StringSeq|] `TypeApp` AnyType `TypeApp` AnyType
-      , [| SSeq.traverseStringSeq |]
-      )
-    , ( ConType [t|BoolMap|] `TypeApp` AnyType
-      , [| BM.traverseVars |]
-      )
-    , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
-      , [|traverseFC|]
-      )
-    ]
-   )
-
-{-# NOINLINE appEqF #-}
--- | Check if two applications are equal.
-appEqF ::
-  (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) =>
-  App e x -> App e y -> Maybe (x :~: y)
-appEqF = $(structuralTypeEquality [t|App|]
-           [ (TypeApp (ConType [t|NatRepr|]) AnyType, [|testEquality|])
-           , (TypeApp (ConType [t|FloatPrecisionRepr|]) AnyType, [|testEquality|])
-           , (TypeApp (ConType [t|BaseTypeRepr|]) AnyType, [|testEquality|])
-           , (DataArg 0 `TypeApp` AnyType, [|testEquality|])
-           , (ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|AUM.ArrayUpdateMap|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
-             , [|\x y -> if x == y then Just Refl else Nothing|])
-           , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|Ctx.Index|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|StringInfoRepr|] `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|SR.SemiRingRepr|] `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|SR.OrderedSemiRingRepr|] `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|WSum.WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|])
-           , (ConType [t|SemiRingProduct|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|])
-           ]
-          )
-
-instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => Eq (App e tp) where
-  x == y = isJust (testEquality x y)
-
-instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => TestEquality (App e) where
-  testEquality = appEqF
-
-{-# NOINLINE hashApp #-}
--- | Hash an an application.
-hashApp ::
-  (OrdF e, HashableF e, HasAbsValue e, Hashable (e BaseBoolType), Hashable (e BaseRealType)) =>
-  Int -> App e s -> Int
-hashApp = $(structuralHashWithSalt [t|App|]
-               [(DataArg 0 `TypeApp` AnyType, [|hashWithSaltF|])]
-           )
-
-instance (OrdF e, HashableF e, HasAbsValue e, Hashable (e BaseBoolType), Hashable (e BaseRealType)) =>
-  HashableF (App e) where
-    hashWithSaltF = hashApp
-
-
--- | Return 'true' if an app represents a non-linear operation.
--- Controls whether the non-linear counter ticks upward in the
--- 'Statistics'.
-isNonLinearApp :: App e tp -> Bool
-isNonLinearApp app = case app of
-  -- FIXME: These are just guesses; someone who knows what's actually
-  -- slow in the solvers should correct them.
-
-  SemiRingProd pd
-    | SR.SemiRingBVRepr SR.BVBitsRepr _ <- WSum.prodRepr pd -> False
-    | otherwise -> True
-
-  IntDiv {} -> True
-  IntMod {} -> True
-  IntDivisible {} -> True
-  RealDiv {} -> True
-  RealSqrt {} -> True
-  RealSin {} -> True
-  RealCos {} -> True
-  RealATan2 {} -> True
-  RealSinh {} -> True
-  RealCosh {} -> True
-  RealExp {} -> True
-  RealLog {} -> True
-  BVUdiv {} -> True
-  BVUrem {} -> True
-  BVSdiv {} -> True
-  BVSrem {} -> True
-  FloatSqrt {} -> True
-  FloatMul {} -> True
-  FloatDiv {} -> True
-  FloatRem {} -> True
-  _ -> False
-
-
-
-instance TestEquality e => Eq (NonceApp t e tp) where
-  x == y = isJust (testEquality x y)
-
-instance TestEquality e => TestEquality (NonceApp t e) where
-  testEquality =
-    $(structuralTypeEquality [t|NonceApp|]
-           [ (DataArg 0 `TypeApp` AnyType, [|testEquality|])
-           , (DataArg 1 `TypeApp` AnyType, [|testEquality|])
-           , ( ConType [t|BaseTypeRepr|] `TypeApp` AnyType
-             , [|testEquality|]
-             )
-           , ( ConType [t|Nonce|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|]
-             )
-           , ( ConType [t|ExprBoundVar|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|]
-             )
-           , ( ConType [t|ExprSymFn|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
-              , [|testExprSymFnEq|]
-              )
-           , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
-             , [|testEquality|]
-             )
-           ]
-          )
-
-instance HashableF e => HashableF (NonceApp t e) where
-  hashWithSaltF = $(structuralHashWithSalt [t|NonceApp|]
-                      [ (DataArg 1 `TypeApp` AnyType, [|hashWithSaltF|]) ])
-
-traverseArrayResultWrapper
-  :: Functor m
-  => (forall tp . e tp -> m (f tp))
-     -> ArrayResultWrapper e (idx ::> itp) c
-     -> m (ArrayResultWrapper f (idx ::> itp) c)
-traverseArrayResultWrapper f (ArrayResultWrapper a) =
-  ArrayResultWrapper <$> f a
-
-traverseArrayResultWrapperAssignment
-  :: Applicative m
-  => (forall tp . e tp -> m (f tp))
-     -> Ctx.Assignment (ArrayResultWrapper e (idx ::> itp)) c
-     -> m (Ctx.Assignment (ArrayResultWrapper f (idx ::> itp)) c)
-traverseArrayResultWrapperAssignment f = traverseFC (\e -> traverseArrayResultWrapper f e)
-
-instance FunctorFC (NonceApp t)  where
-  fmapFC = fmapFCDefault
-
-instance FoldableFC (NonceApp t) where
-  foldMapFC = foldMapFCDefault
-
-instance TraversableFC (NonceApp t) where
-  traverseFC =
-    $(structuralTraversal [t|NonceApp|]
-      [ ( ConType [t|Ctx.Assignment|]
-          `TypeApp` (ConType [t|ArrayResultWrapper|] `TypeApp` AnyType `TypeApp` AnyType)
-          `TypeApp` AnyType
-        , [|traverseArrayResultWrapperAssignment|]
-        )
-      , ( ConType [t|ExprSymFn|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
-        , [|\_-> pure|]
-        )
-      , ( ConType [t|Ctx.Assignment|] `TypeApp` ConType [t|BaseTypeRepr|] `TypeApp` AnyType
-        , [|\_ -> pure|]
-        )
-      , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
-        , [|traverseFC|]
-        )
-      ]
-     )
-
-instance PolyEq (Expr t x) (Expr t y) where
-  polyEqF x y = do
-    Refl <- testEquality x y
-    return Refl
-
