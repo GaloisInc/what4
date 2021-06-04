@@ -649,14 +649,14 @@ bvIsNonzero sym (DBV x) = W.bvIsNonzero sym x
 -- Bitvector shifts and rotates
 ----------------------------------------
 
-bvMax ::
+bvMin ::
   (IsExprBuilder sym, 1 <= w) =>
   sym ->
   W.SymBV sym w ->
   W.SymBV sym w ->
   IO (W.SymBV sym w)
-bvMax sym x y =
-  do p <- W.bvUge sym x y
+bvMin sym x y =
+  do p <- W.bvUle sym x y
      W.bvIte sym p x y
 
 reduceShift ::
@@ -681,7 +681,7 @@ reduceShift wop sym (DBV x) (DBV y) =
     -- clamping.
     NatLT _diff ->
       do wx <- W.bvLit sym (W.bvWidth y) (BV.mkBV (W.bvWidth y) (intValue (W.bvWidth x)))
-         y' <- W.bvTrunc sym (W.bvWidth x) =<< bvMax sym y wx
+         y' <- W.bvTrunc sym (W.bvWidth x) =<< bvMin sym y wx
          DBV <$> wop sym x y'
 
 reduceRotate ::
