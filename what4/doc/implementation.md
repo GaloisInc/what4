@@ -123,3 +123,28 @@ reasons:
 
 A future version of Yices may provide the ability to specify normal
 keyboard interrupt handling via command-line parameters.
+
+## Configuration
+
+What4 configuration utilizes a configuration management that allows
+different modules to locally define their configuration options.
+Configuration options are identified by a name which contains
+period-separated strings to differentiate different configuration
+namespaces.
+
+The overall configuration is stored in the `sym` parameter, and can be
+retrieved by the `getConfiguration` function and extended via the
+`extendConfig` function.  Each configuration has an `OptionStyle` that
+associates a validation function with the configuration; setting a
+configuration value returns an indication of whether an error
+occurred, along with zero or more warnings for the configuration.
+
+Each module can define its own set of configuration options, and must
+contrive to extend the global configuration with its options at
+startup time.
+
+This configuration mechanism is designed to allow client libraries and
+executables to extend the configuration with their own configuration
+parameters.
+
+For more information, see src/What4/Config.hs.
