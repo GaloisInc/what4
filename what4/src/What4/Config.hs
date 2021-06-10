@@ -47,7 +47,7 @@
 -- to install.  A configuration may be later extended with additional
 -- options by using the `extendConfig` operation.
 --
--- Example use (assuming the you wanted to use the z3 solver):
+-- Example use (assuming you wanted to use the z3 solver):
 --
 -- > import What4.Solver
 -- >
@@ -959,7 +959,7 @@ class Opt (tp :: BaseType) (a :: Type) | tp -> a where
   getOpt x = maybe (throwM $ OptGetFailure (OSet $ Some x) "not set") return
              =<< getMaybeOpt x
 
--- | Throw an exception if the given @OptionSetResult@ indidcates
+-- | Throw an exception if the given @OptionSetResult@ indicates
 --   an error.  Otherwise, return any generated warnings.
 checkOptSetResult :: OptionSetting tp -> OptionSetResult -> IO [Doc Void]
 checkOptSetResult optset res =
@@ -1111,7 +1111,7 @@ instance Pretty ConfigValue where
 
 
 -- | Given the name of a subtree, return all
---   the currently-set configurtion values in that subtree.
+--   the currently-set configuration values in that subtree.
 --
 --   If the subtree name is empty, the entire tree will be traversed.
 getConfigValues ::
