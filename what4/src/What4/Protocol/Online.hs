@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- |
 Module      : What4.Protocol.Online
 Description : Online solver interactions
@@ -27,6 +28,7 @@ module What4.Protocol.Online
   , killSolver
   , push
   , pop
+  , tryPop
   , reset
   , inNewFrame
   , inNewFrameWithVars
@@ -47,7 +49,8 @@ import           Control.Concurrent.Async ( race )
 import           Control.Exception ( SomeException(..), catchJust, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
-import           Control.Monad.Catch ( Exception, MonadMask, bracket_, onException, fromException  )
+import           Control.Monad.Catch ( Exception, MonadMask, bracket_, catchIf
+                                     , onException, throwM, fromException  )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.IORef
 import           Data.Parameterized.Some
@@ -57,6 +60,7 @@ import qualified Data.Text.Lazy as LazyText
 import           Prettyprinter
 import           System.Exit
 import           System.IO
+import qualified System.IO.Error as IOE
 import qualified System.IO.Streams as Streams
 import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
@@ -285,19 +289,30 @@ pop p =
                      addCommand c (popCommand c)
       | otherwise -> writeIORef (solverEarlyUnsat p) $! (Just $! i-1)
 
--- | Pop a previous solver assumption frame, but don't communicate
---   the pop command to the solver.  This is really only useful in
---   error recovery code when we know the solver has already exited.
-popStackOnly :: SolverProcess scope solver -> IO ()
-popStackOnly p =
-  readIORef (solverEarlyUnsat p) >>= \case
+-- | Pop a previous solver assumption frame, but allow this to fail if
+-- the solver has exited.
+tryPop :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+tryPop p =
+  let trycmd conn = catchIf solverGone
+                    (addCommand conn (popCommand conn))
+                    (const $ throwM RunawaySolverTimeout)
+#if MIN_VERSION_base(4,14,0)
+      solverGone = IOE.isResourceVanishedError
+#else
+      solverGone = isInfixOf "resource vanished" . IOE.ioeGetErrorString
+#endif
+  in readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
                   popEntryStack c
+                  trycmd c
     Just i
       | i <= 1 -> do let c = solverConn p
                      popEntryStack c
                      writeIORef (solverEarlyUnsat p) Nothing
+                     trycmd c
       | otherwise -> writeIORef (solverEarlyUnsat p) $! (Just $! i-1)
+
+
 
 
 -- | Perform an action in the scope of a solver assumption frame.
@@ -315,13 +330,15 @@ inNewFrameWithVars p vars action =
   case solverErrorBehavior p of
     ContinueOnError ->
       bracket_ (liftIO $ pushWithVars)
-               (liftIO $ pop p)
+               (liftIO $ tryPop p)
                action
     ImmediateExit ->
       do liftIO $ pushWithVars
-         x <- (onException action (liftIO $ popStackOnly p))
-         liftIO $ pop p
-         return x
+         onException (do x <- action
+                         liftIO $ pop p
+                         return x
+                     )
+           (liftIO $ tryPop p)
   where
     conn = solverConn p
     pushWithVars = do
