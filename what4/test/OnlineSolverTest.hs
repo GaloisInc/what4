@@ -24,7 +24,7 @@ import           Data.Char ( toLower )
 import           Data.Either ( isLeft, isRight )
 import qualified Data.List as L
 import           Data.Maybe ( fromMaybe )
-import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), qApprox )
+import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), (|+|), qApprox )
 import           Data.Metrology.SI ( Time, milli, micro, nano, Second(..) )
 import           Data.Metrology.Show ()
 import           Data.Proxy
@@ -347,7 +347,16 @@ timeoutTests =
       --
       -- If the timeout value is too large, then the solver may
       -- complete the proof more quickly than the timeout will fire.
-      -- Also, people get bored.
+      -- Also, people get bored.  But in practice, this will likely be
+      -- set to a number of seconds to allow complex solver solutions
+      -- to be obtained.
+      --
+      -- What4 also includes a deadman timeout on solver activity: the
+      -- testTimeout is passed to the solver for voluntary timeouts,
+      -- but if the solver does not honor this time specification,
+      -- what4 will terminated it via a longer deadman timeout (longer
+      -- to avoid triggering it unless needed because it's more
+      -- impactful due to killing the solver process itself).
       --
       -- This value should also be <= 60% of useableTimeThreshold to
       -- ensure that the solver runs for a siginificantly longer
@@ -356,7 +365,7 @@ timeoutTests =
       -- This value can be adjusted by the developer as needed to
       -- reasonably validate timeout testing subject to the above
       -- considerations.
-      testTimeout = 100 % milli Second
+      testTimeout = 250 % milli Second
 
       -- Solvers must run for at least this amount of time to be
       -- useable for timeout tests.  The test timeout value is
@@ -369,7 +378,9 @@ timeoutTests =
       -- does not control how long the actual tests run.
       --
       -- This value can be adjusted by the developer for cause.
-      useableTimeThreshold = 250 % milli Second :: Time
+      useableTimeThreshold = testTimeout
+                             |+| (500 % milli Second) -- What4 deadman timeout
+                             |+| (650 % milli Second) -- plus some extra time
       -- useableTimeThreshold = 4 % Second :: Time
 
       -- This is empirical data from previous runs of the "Test itself
@@ -380,11 +391,11 @@ timeoutTests =
       -- developer as solvers, What4 formulation, and machine speeds
       -- evolve.
       approxTestTimes :: [ (String, Time) ]
-      approxTestTimes = [ ("Z3",         2.27 % Second)    -- Z3 4.8.10
-                        , ("CVC4",       6.37 % Second)    -- CVC4 1.8
-                        , ("Yices",      2.66 % Second)    -- Yices 2.6.1
-                        , ("Boolector",  6.56 % Second)    -- Boolector 3.2.1
-                        , ("STP",        0 % Second)       -- unknown yet
+      approxTestTimes = [ ("Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
+                        , ("CVC4",       7.5  % Second)    -- CVC4 1.8
+                        , ("Yices",      2.9  % Second)    -- Yices 2.6.1
+                        , ("Boolector",  7.2  % Second)    -- Boolector 3.2.1
+                        , ("STP",        1.35 % Second)    -- STP 2.3.3
                         ]
 
       -- This is the acceptable delta variation in time between the
@@ -392,7 +403,7 @@ timeoutTests =
       -- If difference between the two exceeds this amount then it
       -- represents a significant variation that should be attended
       -- to; either the values in the approxTestTimes needs to be
-      -- ujpdated to account for evolved functionality or the test
+      -- updated to account for evolved functionality or the test
       -- formulas should be updated to ensure that reasonable timeout
       -- testing can be performed (or there is a significant
       -- performance regression or unexpected improvement in What4).
@@ -404,7 +415,7 @@ timeoutTests =
       -- due to increased CPU load or scheduling variance due multiple
       -- parallel running multiple tests.
       --
-      acceptableTimeDelta = 800 % milli Second :: Time  -- solo
+      acceptableTimeDelta = 1800 % milli Second :: Time
       -- acceptableTimeDelta = 2.2 % Second :: Time   -- parallelized
 
       --------------------------------------------------
@@ -431,7 +442,7 @@ timeoutTests =
            , let maybeRunTest = if useableTimeThreshold |<| historical
                                 then id
                                 else ignoreTestBecause $ unwords
-                                     [ "solver runs test faster than "
+                                     [ "solver runs test faster than"
                                      , "reasonable timing threshold;"
                                      , "skipping"
                                      ]
@@ -443,7 +454,7 @@ timeoutTests =
 
            -- Verify that specifying a goal-timeout will stop once
            -- that timeout is reached (i.e. before the race timeout here).
-           , testCase "Test with goal timeout" $ do
+           , testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
                rslt <- race
                        (threadDelay (floor $ useableTimeThreshold # micro Second))
                        (longTimeTest s (Just testTimeout))
