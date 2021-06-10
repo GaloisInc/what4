@@ -93,6 +93,7 @@ startProcess path args mcwd =
               , std_err = CreatePipe
               , create_group = False
               , cwd = mcwd
+              , delegate_ctlc = True
               }
      createProcess create_proc >>= \case
        (Just in_h, Just out_h, Just err_h, ph) -> return (in_h, out_h, err_h, ph)
