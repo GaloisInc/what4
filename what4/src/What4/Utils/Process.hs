@@ -103,7 +103,7 @@ startProcess path args mcwd =
                ] ++ args
 
 -- | Filtering function for use with `catchJust` or `tryJust`
---   that filters out asynch exceptions so they are rethrown
+--   that filters out async exceptions so they are rethrown
 --   instead of captured
 filterAsync :: SomeException -> Maybe SomeException
 filterAsync e

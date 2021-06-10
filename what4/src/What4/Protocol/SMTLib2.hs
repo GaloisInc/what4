@@ -1043,6 +1043,8 @@ writeDefaultSMT2 a nm feat strictOpt sym h ps = do
   writeCheckSat c
   writeExit c
 
+-- n.b. commonly used for the startSolverProcess method of the
+-- OnlineSolver class, so it's helpful for the type suffixes to align
 startSolver
   :: SMTLib2GenericSolver a
   => a

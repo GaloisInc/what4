@@ -2868,7 +2868,8 @@ newtype SMTEvalBVArrayWrapper h =
 data SMTEvalFunctions h
    = SMTEvalFunctions { smtEvalBool :: Term h -> IO Bool
                         -- ^ Given a SMT term for a Boolean value, this should
-                        -- whether the term is assigned true or false.
+                        -- return an indication of whether the term is assigned
+                        -- true or false.
                       , smtEvalBV   :: forall w . NatRepr w -> Term h -> IO (BV.BV w)
                         -- ^ Given a bitwidth, and a SMT term for a bitvector
                         -- with that bitwidth, this should return an unsigned

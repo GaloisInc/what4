@@ -227,7 +227,7 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setOption writer "print-success"  "true"
     -- Tell CVC4 to produce models
     SMT2.setOption writer "produce-models" "true"
-    -- Tell CVC4 to make declaraions global, so they are not removed by 'pop' commands
+    -- Tell CVC4 to make declarations global, so they are not removed by 'pop' commands
     SMT2.setOption writer "global-declarations" "true"
     -- Tell CVC4 to compute UNSAT cores, if that feature is enabled
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do

@@ -146,7 +146,7 @@ setInteractiveLogicAndOptions writer = do
     -- Tell STP to produce models
     SMT2.setOption writer "produce-models" "true"
 
-    -- Tell STP to make declaraions global, so they are not removed by 'pop' commands
+    -- Tell STP to make declarations global, so they are not removed by 'pop' commands
 -- TODO, add this command once https://github.com/stp/stp/issues/365 is closed
 --    SMT2.setOption writer "global-declarations" "true"
 

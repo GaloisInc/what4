@@ -416,7 +416,7 @@ checkAndGetModel yp rsn = do
     Unknown -> return Unknown
     Sat () -> Sat <$> getModel yp
 
--- | Following a successful check-sat command, build a ground evaulation function
+-- | Following a successful check-sat command, build a ground evaluation function
 --   that will evaluate terms in the context of the current model.
 getModel :: SMTReadWriter solver => SolverProcess scope solver -> IO (GroundEvalFn scope)
 getModel p = smtExprGroundEvalFn (solverConn p)
