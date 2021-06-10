@@ -681,6 +681,8 @@ reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVE
                           catMaybes <$> mapM (rep testLevel) allAdapters
   where rep lvl a = let s = solver_adapter_name a in disp lvl a s =<< getSolverVersion s
         disp lvl adptr s = \case
+          Right v -> do putStrLn $ "  Solver " <> s <> " == " <> v
+                        return $ Just adptr
           Left e ->
             if and [ "does not exist" `L.isInfixOf` e
                    , lvl == "0"
@@ -689,8 +691,6 @@ reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVE
                     return Nothing
             else do putStrLn $ "  Solver " <> s <> " error: " <> e
                     return $ Just adptr
-          Right v -> do putStrLn $ "  Solver " <> s <> " == " <> v
-                        return $ Just adptr
 
 
 main :: IO ()
