@@ -17,6 +17,8 @@ jobs:
     name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
+    env:
+      CI_TEST_LEVEL: "1"
     strategy:
       matrix:
         os: [ubuntu-latest]
