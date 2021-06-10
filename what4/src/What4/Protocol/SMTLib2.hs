@@ -97,8 +97,6 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
 import           Data.IORef
-import qualified Data.Text as Text
-import qualified Data.Text.Lazy as Lazy
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid
@@ -112,6 +110,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.String
 import           Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Text.Lazy as Lazy
 import           Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder

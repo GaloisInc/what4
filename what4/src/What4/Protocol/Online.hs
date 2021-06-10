@@ -47,9 +47,9 @@ import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
 import           Control.Monad.Catch ( MonadMask, bracket_, onException )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
+import           Data.IORef
 import           Data.Parameterized.Some
 import           Data.Proxy
-import           Data.IORef
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
 import           Prettyprinter

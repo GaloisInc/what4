@@ -101,7 +101,7 @@ module What4.Protocol.SMTWriter
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail( MonadFail )
+import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Exception
@@ -112,8 +112,8 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
-import qualified Data.Bits as Bits
 import qualified Data.BitVector.Sized as BV
+import qualified Data.Bits as Bits
 import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
@@ -128,10 +128,10 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Lazy as Lazy
 import           Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder (decimal)
-import qualified Data.Text.Lazy as Lazy
 import           Data.Word
 import           LibBF (BigFloat, bfFromBits)
 
