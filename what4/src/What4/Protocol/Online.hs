@@ -22,6 +22,7 @@ module What4.Protocol.Online
   , solverResponse
   , SolverGoalTimeout(..)
   , getGoalTimeoutInSeconds
+  , withLocalGoalTimeout
   , ErrorBehavior(..)
   , killSolver
   , push
@@ -41,11 +42,12 @@ module What4.Protocol.Online
   , checkSatisfiableWithModel
   ) where
 
-import           Control.Exception
-                   ( SomeException(..), catchJust, tryJust, displayException )
+import           Control.Concurrent ( threadDelay )
+import           Control.Concurrent.Async ( race )
+import           Control.Exception ( SomeException(..), catchJust, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
-import           Control.Monad.Catch ( MonadMask, bracket_, onException )
+import           Control.Monad.Catch ( Exception, MonadMask, bracket_, onException, fromException  )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.IORef
 import           Data.Parameterized.Some
@@ -56,8 +58,7 @@ import           Prettyprinter
 import           System.Exit
 import           System.IO
 import qualified System.IO.Streams as Streams
-import           System.Process
-                   (ProcessHandle, terminateProcess, waitForProcess)
+import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
 import           What4.Expr
 import           What4.Interface (SolverEvent(..)
@@ -432,9 +433,16 @@ getUnsatCore proc =
 getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
-  sat_result <- tryJust filterAsync (smtSatResult yp (solverConn yp))
+  let action = smtSatResult yp
+  sat_result <- withLocalGoalTimeout yp action
+
   case sat_result of
     Right ok -> return ok
+
+    Left e@(SomeException _)
+      | Just RunawaySolverTimeout <- fromException e -> do
+          -- Deadman timeout fired, so this is effectively Incomplete
+          return Unknown
 
     Left (SomeException e) ->
        do -- Interrupt process
@@ -454,3 +462,39 @@ getSatResult yp = do
                   , "*** standard error:"
                   , LazyText.unpack txt
                   ]
+
+
+-- | If the solver cannot voluntarily limit itself to the requested
+-- timeout period, this runs a local async process with a slightly
+-- longer time period that will forcibly terminate the solver process
+-- if it expires while the solver process is still running.
+--
+-- Note that this will require re-establishment of the solver process
+-- and any associated context for any subsequent solver goal
+-- evaluation.
+
+withLocalGoalTimeout ::
+  SolverProcess t s
+  -> (WriterConn t s -> IO (SatResult () ()))
+  -> IO (Either SomeException (SatResult () ()))
+withLocalGoalTimeout solverProc action =
+  if getGoalTimeoutInSeconds (solverGoalTimeout solverProc) == 0
+  then do tryJust filterAsync (action $ solverConn solverProc)
+  else let deadmanTimeoutPeriodMicroSeconds =
+             (fromInteger $
+              getGoalTimeoutInMilliSeconds (solverGoalTimeout solverProc)
+              + 500  -- allow solver to honor timeout first
+             ) * 1000  -- convert msec to usec
+           deadmanTimer = threadDelay deadmanTimeoutPeriodMicroSeconds
+       in
+          do race deadmanTimer (action $ solverConn solverProc) >>= \case
+               Left () -> do killSolver solverProc
+                             return $ Left $ SomeException RunawaySolverTimeout
+               Right x -> return $ Right x
+
+
+-- | The RunawaySolverTimeout is thrown when the solver cannot
+-- voluntarily limit itself to the requested solver-timeout period and
+-- has subsequently been forcibly stopped.
+data RunawaySolverTimeout = RunawaySolverTimeout deriving Show
+instance Exception RunawaySolverTimeout

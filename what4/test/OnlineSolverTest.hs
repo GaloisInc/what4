@@ -61,9 +61,9 @@ allOnlineSolvers =
   [ ("Z3", AnOnlineSolver @(SMT2.Writer Z3) Proxy, z3Features, z3Options, Just z3Timeout)
   , ("CVC4",  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options, Just cvc4Timeout)
   , ("Yices", AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions, Just yicesGoalTimeout)
-  , ("Boolector", AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions, Nothing)
+  , ("Boolector", AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions, Just boolectorTimeout)
 #ifdef TEST_STP
-  , ("STP", AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions, Nothing)
+  , ("STP", AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions, Just stpTimeout)
 #endif
   ]
 
@@ -267,12 +267,7 @@ longTimeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutO
 
      f <- mkFormula2 sym
 
-     proc' <- startSolverProcess @s features Nothing sym
-     let proc = maybe proc'
-           (\t -> proc' {
-               solverGoalTimeout = SolverGoalTimeout $ floor (t # micro Second)
-               }
-           ) goal_tmo
+     proc <- startSolverProcess @s features Nothing sym
      let conn = solverConn proc
 
      -- Check that formula f is satisfiable, and get the values from
@@ -420,15 +415,17 @@ timeoutTests solvers =
       -- testing can be performed (or there is a significant
       -- performance regression or unexpected improvement in What4).
       --
-      -- Note that when this test executable is run solo, a delta
-      -- value of ~ 0.5 Second is sufficient, but when *all* test
-      -- executables are run in parallel via `cabal test`, there seems
-      -- to be a much larger variation in testing times.  This may be
-      -- due to increased CPU load or scheduling variance due multiple
-      -- parallel running multiple tests.
+      -- Note that when this test executable is run locally solo, a
+      -- delta value of ~ 0.5 Second is sufficient, but when *all*
+      -- test executables are run in parallel via `cabal test` on a VM
+      -- test runner, there seems to be a much larger variation in
+      -- testing times.  This may be due to increased CPU load or
+      -- scheduling variance due multiple parallel running multiple
+      -- tests.  Increase this as needed: it doesn't really have a
+      -- negative affect on the actual timing tests, but it does
+      -- decrease sensitivity in test timing changes.
       --
-      acceptableTimeDelta = 1800 % milli Second :: Time
-      -- acceptableTimeDelta = 2.2 % Second :: Time   -- parallelized
+      acceptableTimeDelta = 55.0 -- percent variance from expected
 
       --------------------------------------------------
       -- end of expected developer-adjustments above  --
@@ -449,7 +446,7 @@ timeoutTests solvers =
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
                assertBool
                  ("actual duration of " <> show deltaT <> " is significantly different than expected")
-                 $ qApprox acceptableTimeDelta deltaT historical
+                 $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
 
            , let maybeRunTest = if useableTimeThreshold |<| historical
                                 then id

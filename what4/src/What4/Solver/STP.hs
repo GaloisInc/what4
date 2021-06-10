@@ -16,6 +16,7 @@ module What4.Solver.STP
   ( STP(..)
   , stpAdapter
   , stpPath
+  , stpTimeout
   , stpOptions
   , stpFeatures
   , runSTPInOverride
@@ -47,6 +48,10 @@ stpPath = configOption knownRepr "solver.stp.path"
 stpPathOLD :: ConfigOption (BaseStringType Unicode)
 stpPathOLD = configOption knownRepr "stp_path"
 
+-- | Per-check timeout, in milliseconds (zero is none)
+stpTimeout :: ConfigOption BaseIntegerType
+stpTimeout = configOption knownRepr "solver.stp.timeout"
+
 stpRandomSeed :: ConfigOption BaseIntegerType
 stpRandomSeed = configOption knownRepr "solver.stp.random-seed"
 
@@ -76,6 +81,8 @@ stpOptions =
      , deprecatedOpt [p1] $ mkPath stpPathOLD
      , deprecatedOpt [r1] $ intWithRangeOpt stpRandomSeedOLD
        (negate randbitval) randbitval
+     , mkOpt stpTimeout integerOptSty (Just "Per-check timeout in milliseconds (zero is none)")
+       (Just (ConcreteInteger 0))
      ] <> SMT2.smtlib2Options
 
 stpAdapter :: SolverAdapter st
@@ -144,7 +151,14 @@ setInteractiveLogicAndOptions writer = do
 --    SMT2.setOption writer "global-declarations" "true"
 
 instance OnlineSolver (SMT2.Writer STP) where
-  startSolverProcess feat = SMT2.startSolver STP SMT2.smtAckResult
-                            setInteractiveLogicAndOptions feat
-                            (Just stpStrictParsing)
+
+  startSolverProcess feat mbIOh sym = do
+    timeout <- SolverGoalTimeout <$>
+               (getOpt =<< getOptionSetting stpTimeout (getConfiguration sym))
+    SMT2.startSolver STP SMT2.smtAckResult
+      setInteractiveLogicAndOptions
+      timeout
+      feat
+      (Just stpStrictParsing) mbIOh sym
+
   shutdownSolverProcess = SMT2.shutdownSolver STP

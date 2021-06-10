@@ -19,6 +19,7 @@
 module What4.Solver.Boolector
   ( Boolector(..)
   , boolectorPath
+  , boolectorTimeout
   , boolectorOptions
   , boolectorAdapter
   , runBoolectorInOverride
@@ -53,6 +54,10 @@ boolectorPath = configOption knownRepr "solver.boolector.path"
 boolectorPathOLD :: ConfigOption (BaseStringType Unicode)
 boolectorPathOLD = configOption knownRepr "boolector_path"
 
+-- | Per-check timeout, in milliseconds (zero is none)
+boolectorTimeout :: ConfigOption BaseIntegerType
+boolectorTimeout = configOption knownRepr "solver.boolector.timeout"
+
 -- | Control strict parsing for Boolector solver responses (defaults
 -- to solver.strict-parsing option setting).
 boolectorStrictParsing :: ConfigOption BaseBoolType
@@ -65,9 +70,14 @@ boolectorOptions =
                  executablePathOptSty
                  (Just "Path to boolector executable")
                  (Just (ConcreteString "boolector"))
+      mkTmo co = mkOpt co
+                 integerOptSty
+                 (Just "Per-check timeout in milliseconds (zero is none)")
+                 (Just (ConcreteInteger 0))
       bp = bpOpt boolectorPath
       bp2 = deprecatedOpt [bp] $ bpOpt boolectorPathOLD
   in [ bp, bp2
+     , mkTmo boolectorTimeout
      , copyOpt (const $ configOptionText boolectorStrictParsing) strictSMTParseOpt
      ] <> SMT2.smtlib2Options
 
@@ -134,7 +144,12 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setLogic writer SMT2.allSupported
 
 instance OnlineSolver (SMT2.Writer Boolector) where
-  startSolverProcess feat = SMT2.startSolver Boolector SMT2.smtAckResult
-                            setInteractiveLogicAndOptions feat
-                            (Just boolectorStrictParsing)
+  startSolverProcess feat mbIOh sym = do
+    timeout <- SolverGoalTimeout <$>
+               (getOpt =<< getOptionSetting boolectorTimeout (getConfiguration sym))
+    SMT2.startSolver Boolector SMT2.smtAckResult
+                            setInteractiveLogicAndOptions
+                            timeout
+                            feat
+                            (Just boolectorStrictParsing) mbIOh sym
   shutdownSolverProcess = SMT2.shutdownSolver Boolector
