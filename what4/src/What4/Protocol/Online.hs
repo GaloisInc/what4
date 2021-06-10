@@ -117,6 +117,11 @@ getGoalTimeoutInSeconds sgt =
       -- a full second.
   in if msecs > 0 && secs == 0 then 1 else secs
 
+instance Pretty SolverGoalTimeout where
+  pretty (SolverGoalTimeout ms) = pretty ms <> pretty "msec"
+
+instance Show SolverGoalTimeout where
+  show = show . pretty
 
 -- | A live connection to a running solver process.
 --
