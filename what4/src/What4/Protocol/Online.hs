@@ -197,7 +197,11 @@ solverResponse = connInputHandle . solverConn
 killSolver :: SolverProcess t solver -> IO ()
 killSolver p =
   do catchJust filterAsync
-           (terminateProcess (solverHandle p))
+           (terminateProcess (solverHandle p)
+            -- some solvers emit stderr messages on SIGTERM
+            >> readAllLines (solverStderr p)
+            >> return ()
+           )
            (\(ex :: SomeException) -> hPutStrLn stderr $ displayException ex)
      void $ waitForProcess (solverHandle p)
 
