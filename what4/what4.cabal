@@ -253,6 +253,7 @@ test-suite adapter-test
     lens,
     mtl >= 2.2.1,
     process,
+    tasty-expected-failure >= 0.12 && < 0.13,
     text,
     versions
 

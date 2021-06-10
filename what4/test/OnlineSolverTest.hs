@@ -157,6 +157,10 @@ checkFormula1Model sym p q r eval =
 -- resetting the solver between cases
 quickstartTest :: Bool -> SolverTestData -> TestTree
 quickstartTest useFrames (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt) =
+  let wrap = if nm == "STP"
+             then ignoreTestBecause "STP cannot generate the model"
+             else id
+  in wrap $
   testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
   do sym <- newExprBuilder FloatUninterpretedRepr State gen

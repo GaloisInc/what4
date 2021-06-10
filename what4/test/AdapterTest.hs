@@ -24,6 +24,7 @@ import           System.Exit ( ExitCode(..) )
 import           System.Process ( readProcessWithExitCode )
 
 import           Test.Tasty
+import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.HUnit
 
 import           Data.Parameterized.Nonce
@@ -565,7 +566,12 @@ nonlinearRealTest adpt = testCase (solver_adapter_name adpt) $
 
 
 mkQuickstartTest :: SolverAdapter State -> TestTree
-mkQuickstartTest adpt = testCase (solver_adapter_name adpt) $
+mkQuickstartTest adpt =
+  let wrap = if solver_adapter_name adpt == "stp"
+             then ignoreTestBecause "STP cannot generate the model"
+             else id
+  in wrap $
+  testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
     do -- Let's determine if the following formula is satisfiable:
        -- f(p, q, r) = (p | !q) & (q | r) & (!p | !r) & (!p | !q | r)
