@@ -23,13 +23,14 @@ import           Control.Monad.IO.Class ( MonadIO )
 import           Data.Char ( toLower )
 import           Data.Either ( isLeft, isRight )
 import qualified Data.List as L
-import           Data.Maybe ( fromMaybe )
+import           Data.Maybe ( catMaybes, fromMaybe )
 import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), (|+|), qApprox )
 import           Data.Metrology.SI ( Time, milli, micro, nano, Second(..) )
 import           Data.Metrology.Show ()
 import           Data.Proxy
 import qualified Prettyprinter as PP
 import           System.Clock
+import           System.Environment ( lookupEnv )
 import           System.Exit ( ExitCode(..) )
 import           System.Process ( readProcessWithExitCode )
 
@@ -287,7 +288,7 @@ longTimeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutO
 
 ----------------------------------------------------------------------
 
-getSolverVersion :: String -> IO String
+getSolverVersion :: String -> IO (Either String String)
 getSolverVersion solver =
   let args = case toLower <$> solver of
                -- n.b. abc will return a non-zero exit code if asked
@@ -298,29 +299,40 @@ getSolverVersion solver =
     Right (r,o,e) ->
       if r == ExitSuccess
       then let ol = lines o in
-             return $ if null ol then (solver <> " v??") else head ol
-      else return $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ solver <> " invocation error: " <> show err
+             return $ Right $ if null ol then (solver <> " v??") else head ol
+      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
+    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
 
 
-reportSolverVersions :: IO ()
-reportSolverVersions = do putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-                          void $ mapM rep allOnlineSolvers
-  where rep testsolver = let s = testSolverName testsolver in disp s =<< getSolverVersion s
-        disp s v = putStrLn $ "  Solver " <> s <> " -> " <> v
+reportSolverVersions :: IO [SolverTestData]
+reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+                          putStrLn "SOLVER SELF-REPORTED VERSIONS::"
+                          catMaybes <$> mapM (rep testLevel) allOnlineSolvers
+  where rep lvl testsolver = let s = testSolverName testsolver
+                             in disp lvl testsolver s =<< getSolverVersion s
+        disp lvl solver s = \case
+          Right v -> do putStrLn $ "  Solver " <> s <> " -> " <> v
+                        return $ Just solver
+          Left e -> if and [ "does not exist" `L.isInfixOf` e
+                           , lvl == "0"
+                           ]
+                    then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
+                            return Nothing
+                    else do putStrLn $ "  Solver " <> s <> " error: " <> e
+                            return $ Just solver
 
 
 main :: IO ()
 main = do
-  reportSolverVersions
+  solvers <- reportSolverVersions
   defaultMain $
     -- localOption (mkTimeout (10 * 1000 * 1000)) $
     testGroup "OnlineSolverTests"
     [
-      testGroup "SmokeTest" $ map mkSmokeTest allOnlineSolvers
-    , testGroup "QuickStart Framed" $ map (quickstartTest True)  allOnlineSolvers
-    , testGroup "QuickStart Direct" $ map (quickstartTest False) allOnlineSolvers
-    , timeoutTests
+      testGroup "SmokeTest" $ map mkSmokeTest solvers
+    , testGroup "QuickStart Framed" $ map (quickstartTest True)  solvers
+    , testGroup "QuickStart Direct" $ map (quickstartTest False) solvers
+    , timeoutTests solvers
     ]
 
 -- Test the effects of general timeouts on solver proofs
@@ -329,8 +341,8 @@ main = do
 -- machine, etc.  As long as they run consistently longer than the
 -- useable threshold the tests should perform as expected.
 
-timeoutTests :: TestTree
-timeoutTests =
+timeoutTests :: [SolverTestData] -> TestTree
+timeoutTests solvers =
   let
       -- Amount of time to use for timeouts in testing: can be edited
       -- to adjust the timeout threshold needed.  This should be large
@@ -472,4 +484,4 @@ timeoutTests =
        testTimeout |<=| useableTimeThreshold |* 0.60 @?
        "test timeout too large"
 
-     ] <> map mkTimeoutTests allOnlineSolvers
+     ] <> map mkTimeoutTests solvers
