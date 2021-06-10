@@ -30,6 +30,7 @@ where
 import           Control.Applicative
 import           Control.Exception
 import qualified Data.Attoparsec.Text as AT
+import           Data.Maybe ( isJust )
 import           Data.Text ( Text )
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Lazy
@@ -87,6 +88,10 @@ getSolverResponse :: SMTWriter.WriterConn t h
 getSolverResponse conn = do
   mb <- tryJust filterAsync
         (AStreams.parseFromStream
+          -- n.b. the parseFromStream with an attoparsec parser used
+          -- here will throw
+          -- System.IO.Streams.Attoparsec.ParseException on a parser
+          -- failure; the rspParser throws some other parse errors
           (rspParser (SMTWriter.strictParsing conn))
           (SMTWriter.connInputHandle conn))
   return mb
@@ -117,14 +122,20 @@ getLimitedSolverResponse intent handleResponse conn cmd =
                  Nothing -> throw $ SMTLib2InvalidResponse cmd intent rsp
   in getSolverResponse conn >>= \case
     Right rsp -> validateResp rsp
-    Left (SomeException e) -> do
-      curInp <- Streams.read (SMTWriter.connInputHandle conn)
-      throw $ SMTLib2ParseError intent [cmd] $ Text.pack $
-        unlines [ "Solver response parsing failure."
-                , "*** Exception: " ++ displayException e
-                , "Attempting to parse input for " <> intent <> ":"
-                , show curInp
-                ]
+    Left se@(SomeException e)
+      | isJust $ filterAsync se -> throw e
+      | Just (AStreams.ParseException _) <- fromException se
+        -> do -- Parser failed and left the unparseable input in the
+              -- stream; extract it to show the user
+              curInp <- Streams.read (SMTWriter.connInputHandle conn)
+              throw $ SMTLib2ParseError intent [cmd] $ Text.pack $
+                unlines [ "Solver response parsing failure."
+                        , "*** Exception: " ++ displayException e
+                        , "Attempting to parse input for " <> intent <> ":"
+                        , show curInp
+                        ]
+      | otherwise -> throw e
+
 
 
 rspParser :: SMTWriter.ResponseStrictness -> AT.Parser SMTResponse
