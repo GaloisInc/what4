@@ -456,10 +456,17 @@ timeoutTests solvers =
                                      , "skipping"
                                      ]
              in maybeRunTest $ testCase "Test runs past timeout" $ do
+               start <- getTime Monotonic
                rslt <- race
                        (threadDelay (floor $ useableTimeThreshold # micro Second))
                        (longTimeTest s Nothing)
+               finish <- getTime Monotonic
+               let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
                isLeft rslt @? "solver is to fast for valid timeout testing"
+               assertBool
+                 ("Solver check query not interruptible (" <>
+                   show deltaT <> " > expected " <> show useableTimeThreshold <> ")")
+                 $ qApprox (useableTimeThreshold |* (acceptableTimeDelta / 100.0))  deltaT useableTimeThreshold
 
            -- Verify that specifying a goal-timeout will stop once
            -- that timeout is reached (i.e. before the race timeout here).
