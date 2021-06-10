@@ -50,6 +50,7 @@ module What4.Solver
   , writeCVC4SMT2File
   , withCVC4
   , cvc4Options
+  , cvc4Timeout
   , cvc4Features
 
     -- * DReal
@@ -78,6 +79,7 @@ module What4.Solver
   , runYicesInOverride
   , writeYicesFile
   , yicesOptions
+  , yicesGoalTimeout
   , yicesDefaultFeatures
 
     -- * Z3
@@ -88,6 +90,7 @@ module What4.Solver
   , runZ3InOverride
   , withZ3
   , z3Options
+  , z3Timeout
   , z3Features
   ) where
 

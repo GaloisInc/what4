@@ -90,6 +90,7 @@ library
   import: bldflags
   build-depends:
     base >= 4.8 && < 5,
+    async,
     attoparsec >= 0.13,
     bimap >= 0.2,
     bifunctors >= 5,
@@ -279,13 +280,21 @@ test-suite online-solver-test
     buildable: False
 
   build-depends:
+    async,
     bv-sized,
     bytestring,
+    clock,
     containers,
     data-binary-ieee754,
+    exceptions,
     lens,
+    prettyprinter,
     process,
+    tasty-expected-failure >= 0.12 && < 0.13,
+    tasty-checklist >= 0.1 && < 0.2,
     text,
+    units,
+    units-defs,
     versions
 
 test-suite expr-builder-smtlib2
