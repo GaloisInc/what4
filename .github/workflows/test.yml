@@ -94,7 +94,7 @@ jobs:
         # LD_LIBRARY_PATH manipulation may be removed for all steps.
         run: |
           cd what4
-          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure --enable-tests -fSTPTestDisable -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
+          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
       - name: Build
         shell: bash
         run: |
@@ -108,7 +108,8 @@ jobs:
           echo CVC4 version $(nix eval nixpkgs.cvc4.version)
           echo Yices version $(nix eval nixpkgs.yices.version)
           echo Z3 version $(nix eval nixpkgs.z3.version)
-          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
+          echo STP version $(nix eval nixpkgs.z3.version)
+          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 stp yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
       - name: Documentation
         shell: bash
         run: |
