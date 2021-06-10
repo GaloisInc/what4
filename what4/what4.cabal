@@ -310,6 +310,8 @@ test-suite expr-builder-smtlib2
     containers,
     data-binary-ieee754,
     libBF,
+    process,
+    tasty-expected-failure >= 0.12 && < 0.13,
     text,
     versions
 
