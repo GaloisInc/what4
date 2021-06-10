@@ -192,8 +192,7 @@ quickstartTest useFrames (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts,
           case res of
             Unsat _ -> fail "Unsatisfiable"
             Unknown -> fail "Solver returned UNKNOWN"
-            Sat _ ->
-              checkFormula1Model sym p q r =<< getModel proc
+            Sat _ -> checkFormula1Model sym p q r =<< getModel proc
 
      -- Now check that the formula is unsatisfiable when the blocking
      -- predicate is added.  Re-use the existing solver connection
@@ -256,6 +255,7 @@ longTimeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutO
   do sym <- newExprBuilder FloatUninterpretedRepr State gen
      extendConfig opts (getConfiguration sym)
 
+     -- Configure a solver timeout in What4 if specified for this test.
      case goal_tmo of
        Nothing -> return ()
        Just t -> case mb'timeoutOpt of
@@ -321,7 +321,6 @@ main :: IO ()
 main = do
   solvers <- reportSolverVersions
   defaultMain $
-    -- localOption (mkTimeout (10 * 1000 * 1000)) $
     testGroup "OnlineSolverTests"
     [
       testGroup "SmokeTest" $ map mkSmokeTest solvers
