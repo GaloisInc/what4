@@ -2782,8 +2782,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just x' <- asString x
     , Just off' <- asInteger off
     , Just len' <- asInteger len
-    , 0 <= off', 0 <= len'
-    , off' + len' <= stringLitLength x'
     = stringLit sym $! stringLitSubstring x' off' len'
 
     | otherwise

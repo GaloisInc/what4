@@ -539,8 +539,24 @@ stringAbsConcat :: StringAbstractValue -> StringAbstractValue -> StringAbstractV
 stringAbsConcat (StringAbs lenx) (StringAbs leny) = StringAbs (addRange lenx leny)
 
 stringAbsSubstring :: StringAbstractValue -> ValueRange Integer -> ValueRange Integer -> StringAbstractValue
-stringAbsSubstring (StringAbs s) off len =
-  StringAbs (rangeMin len (rangeMax (singleRange 0) (addRange s (negateRange off))))
+stringAbsSubstring (StringAbs s) off len
+  -- empty string if len is negative
+  | Just False <- rangeCheckLe (singleRange 0) len = StringAbs (singleRange 0)
+  -- empty string if off is negative
+  | Just False <- rangeCheckLe (singleRange 0) off = StringAbs (singleRange 0)
+  -- empty string if off is out of bounds
+  | Just True <- rangeCheckLe s off = StringAbs (singleRange 0)
+
+  | otherwise =
+      let -- clamp off at 0
+          off' = rangeMax (singleRange 0) off
+          -- clamp len at 0
+          len' = rangeMax (singleRange 0) len
+          -- subtract off' from the length of s, clamp to 0
+          s'   = rangeMax (singleRange 0) (addRange s (negateRange off'))
+          -- result is the minimum of the length requested and the length
+          -- of the string after removing the prefix
+       in StringAbs (rangeMin len' s')
 
 stringAbsContains :: StringAbstractValue -> StringAbstractValue -> Maybe Bool
 stringAbsContains = couldContain
@@ -558,6 +574,7 @@ couldContain (StringAbs lenx) (StringAbs leny)
 
 stringAbsIndexOf :: StringAbstractValue -> StringAbstractValue -> ValueRange Integer -> ValueRange Integer
 stringAbsIndexOf (StringAbs lenx) (StringAbs leny) k
+  | Just False <- rangeCheckLe (singleRange 0) k = SingleRange (-1)
   | Just False <- rangeCheckLe (addRange leny k) lenx = SingleRange (-1)
   | otherwise = MultiRange (Inclusive (-1)) (rangeHiBound rng)
 
