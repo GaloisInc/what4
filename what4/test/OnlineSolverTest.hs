@@ -299,10 +299,10 @@ getSolverVersion solver =
     Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
 
 
-reportSolverVersions :: IO [SolverTestData]
-reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-                          putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-                          catMaybes <$> mapM (rep testLevel) allOnlineSolvers
+reportSolverVersions :: String -> IO [SolverTestData]
+reportSolverVersions testLevel =
+  do putStrLn "SOLVER SELF-REPORTED VERSIONS::"
+     catMaybes <$> mapM (rep testLevel) allOnlineSolvers
   where rep lvl testsolver = let s = testSolverName testsolver
                              in disp lvl testsolver s =<< getSolverVersion s
         disp lvl solver s = \case
@@ -319,14 +319,15 @@ reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVE
 
 main :: IO ()
 main = do
-  solvers <- reportSolverVersions
+  testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  solvers <- reportSolverVersions testLevel
   defaultMain $
     testGroup "OnlineSolverTests"
     [
       testGroup "SmokeTest" $ map mkSmokeTest solvers
     , testGroup "QuickStart Framed" $ map (quickstartTest True)  solvers
     , testGroup "QuickStart Direct" $ map (quickstartTest False) solvers
-    , timeoutTests solvers
+    , timeoutTests testLevel solvers
     ]
 
 -- Test the effects of general timeouts on solver proofs
@@ -335,8 +336,8 @@ main = do
 -- machine, etc.  As long as they run consistently longer than the
 -- useable threshold the tests should perform as expected.
 
-timeoutTests :: [SolverTestData] -> TestTree
-timeoutTests solvers =
+timeoutTests :: String -> [SolverTestData] -> TestTree
+timeoutTests testLevel solvers =
   let
       -- Amount of time to use for timeouts in testing: can be edited
       -- to adjust the timeout threshold needed.  This should be large
@@ -415,16 +416,17 @@ timeoutTests solvers =
       -- performance regression or unexpected improvement in What4).
       --
       -- Note that when this test executable is run locally solo, a
-      -- delta value of ~ 0.5 Second is sufficient, but when *all*
-      -- test executables are run in parallel via `cabal test` on a VM
-      -- test runner, there seems to be a much larger variation in
-      -- testing times.  This may be due to increased CPU load or
-      -- scheduling variance due multiple parallel running multiple
-      -- tests.  Increase this as needed: it doesn't really have a
-      -- negative affect on the actual timing tests, but it does
-      -- decrease sensitivity in test timing changes.
+      -- delta value of ~ 0.5 Second is sufficient.  This test is
+      -- disabled when run via CI (i.e. CI_TEST_LEVEL is not 0),
+      -- because *all* test executables are run in parallel via `cabal
+      -- test` on unpredictable VMs, so it's not possible to exert any
+      -- timing constraints in that situation.
       --
-      acceptableTimeDelta = 63.0 -- percent variance allowed from expected
+      -- Increase this as needed: it doesn't really have a negative
+      -- affect on the actual timing tests, but it does decrease
+      -- sensitivity in test timing changes.
+
+      acceptableTimeDelta = 55.0 -- percent variance allowed from expected
 
       --------------------------------------------------
       -- end of expected developer-adjustments above  --
@@ -443,9 +445,12 @@ timeoutTests solvers =
                longTimeTest s Nothing @? "valid test"
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
-               assertBool
-                 ("actual duration of " <> show deltaT <> " is significantly different than expected")
-                 $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
+               if testLevel == "0"
+                 then assertBool
+                      ("actual duration of " <> show deltaT
+                       <> " is significantly different than expected")
+                      $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
+                 else return ()
 
            , let maybeRunTest = if useableTimeThreshold |<| historical
                                 then id
