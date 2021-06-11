@@ -535,7 +535,13 @@ mkConfigTests adapters =
 ----------------------------------------------------------------------
 
 nonlinearRealTest :: SolverAdapter State -> TestTree
-nonlinearRealTest adpt = testCase (solver_adapter_name adpt) $
+nonlinearRealTest adpt =
+  let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
+             then expectFailBecause
+                  (solver_adapter_name adpt
+                   <> "does not support this type of linear arithmetic term")
+             else id
+  in wrap $ testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
     do x <- freshConstant sym (safeSymbol "a") BaseRealRepr
        y <- freshConstant sym (safeSymbol "b") BaseRealRepr
@@ -702,9 +708,6 @@ main = do
     [ testGroup "SmokeTest" $ map mkSmokeTest adapters
     , testGroup "Config Tests" $ mkConfigTests adapters
     , testGroup "QuickStart" $ map mkQuickstartTest adapters
-    , testGroup "nonlinear reals" $ map nonlinearRealTest
-      -- NB: nonlinear arith expected to fail for STP and Boolector
-      (filter (\a -> not $ solver_adapter_name a `elem` [ "boolector"
-                                                        , "stp" ]) adapters)
+    , testGroup "nonlinear reals" $ map nonlinearRealTest adapters
     , testGroup "Verilog" [verilogTest]
     ]
