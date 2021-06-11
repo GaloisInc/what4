@@ -424,7 +424,7 @@ timeoutTests solvers =
       -- negative affect on the actual timing tests, but it does
       -- decrease sensitivity in test timing changes.
       --
-      acceptableTimeDelta = 55.0 -- percent variance from expected
+      acceptableTimeDelta = 63.0 -- percent variance allowed from expected
 
       --------------------------------------------------
       -- end of expected developer-adjustments above  --
