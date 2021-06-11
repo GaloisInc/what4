@@ -53,6 +53,7 @@ import           Control.Monad.Catch ( Exception, MonadMask, bracket_, catchIf
                                      , onException, throwM, fromException  )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.IORef
+import qualified Data.List as L
 import           Data.Parameterized.Some
 import           Data.Proxy
 import           Data.Text (Text)
@@ -299,7 +300,7 @@ tryPop p =
 #if MIN_VERSION_base(4,14,0)
       solverGone = IOE.isResourceVanishedError
 #else
-      solverGone = isInfixOf "resource vanished" . IOE.ioeGetErrorString
+      solverGone = L.isInfixOf "resource vanished" . IOE.ioeGetErrorString
 #endif
   in readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
