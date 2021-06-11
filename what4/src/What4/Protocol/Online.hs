@@ -53,7 +53,10 @@ import           Control.Monad.Catch ( Exception, MonadMask, bracket_, catchIf
                                      , onException, throwM, fromException  )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.IORef
+#if MIN_VERSION_base(4,14,0)
+#else
 import qualified Data.List as L
+#endif
 import           Data.Parameterized.Some
 import           Data.Proxy
 import           Data.Text (Text)
