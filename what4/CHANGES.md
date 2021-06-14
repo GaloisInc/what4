@@ -23,6 +23,27 @@ allow 0 length slices regardless of the length of the input.
 results when string offsets are out-of-bounds.  The SMTLib 2.6 standard
 specifies precise results for these cases, which we now implement.
 
+* Configuration parameters relative to solvers have been renamed in a
+  more consistent and heirarchical fashion; the old configuration
+  parameters still work but will emit deprecation warnings when used.
+
+  * `default_solver` --> `solver.default`
+  * `abc_path` --> `solver.abc.path`
+  * `boolector_path` --> `solver.boolector.path`
+  * `cvc4_path` --> `solver.cvc4.path`
+  * `cvc4.random-seed` --> `solver.cvc4.random-seed`
+  * `cvc4_timeout` --> `solver.cvc4.timeout`
+  * `dreal_path` --> `solver.dreal.path`
+  * `stp_path` --> `solver.stp.path`
+  * `stp.random-seed` --> `solver.stp.random-seed`
+  * `yices_path` --> `solver.yices.path`
+  * `yices_enable-mcsat` --> `solver.yices.enable-mcsat`
+  * `yices_enable-interactive` --> `solver.yices.enable-interactive`
+  * `yices_goal_timeout` --> `solver.yices.goal-timeout`
+  * `yices.*` --> `solver.yices.*` for many yices internal options
+  * `z3_path` --> `solver.z3.path`
+  * `z3_timeout` --> `solver.z3.timeout`
+
 # 1.1 (February 2021)
 
 * Use multithread-safe storage primitive for configuration options,
