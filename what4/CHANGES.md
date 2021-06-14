@@ -10,8 +10,12 @@ fields.
 not correctly handling cases where the shift amount has more
 bits than the word to be shifted.
 
-* Fix issue #121. The ordering of inputs in generated Verilog
-files is now more predictable.
+* Fix issue #121. The ordering of inputs in generated Verilog files is
+now more predictable. Previously, it was determined by the order the
+inputs were encountered during term traversal. Now the user can provide
+a list of (input, name) pairs which are declared in order. Any
+additional inputs discovered during traversal will be added after these
+specified inputs.
 
 * Fix issue #113.  The `bvSliceLE` and `bvSliceBE` functions of
 `What4.SWord` did not properly handle size 0 bit-vectors and
