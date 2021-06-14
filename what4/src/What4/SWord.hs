@@ -314,8 +314,10 @@ bvSliceBE :: forall sym. IsExprBuilder sym => sym
   -> Integer
   -- ^ Starting index, from 0 as most significant bit
   -> Integer
-  -- ^ Number of bits to take (must be > 0)
-  -> SWord sym -> IO (SWord sym)
+  -- ^ Number of bits to take
+  -> SWord sym
+  -> IO (SWord sym)
+bvSliceBE _ _m 0 _  = pure ZBV
 bvSliceBE sym m n (DBV bv)
   | Just (Some nr) <- someNat n,
     Just LeqProof  <- isPosNat nr,
@@ -329,7 +331,11 @@ bvSliceBE sym m n (DBV bv)
   = panic "bvSliceBE"
       ["invalid arguments to slice: " ++ show m ++ " " ++ show n
         ++ " from vector of length " ++ show (W.bvWidth bv)]
-bvSliceBE _ _ _ ZBV = return ZBV
+bvSliceBE _ m n ZBV
+  = panic "bvSliceBE"
+      ["invalid arguments to slice: " ++ show m ++ " " ++ show n
+        ++ " from vector of length 0"]
+
 
 -- | Select a subsequence from a bitvector, with bits
 --   numbered in Little Endian order (least significant bit is 0).
@@ -338,8 +344,10 @@ bvSliceLE :: forall sym. IsExprBuilder sym => sym
   -> Integer
   -- ^ Starting index, from 0 as most significant bit
   -> Integer
-  -- ^ Number of bits to take (must be > 0)
-  -> SWord sym -> IO (SWord sym)
+  -- ^ Number of bits to take
+  -> SWord sym
+  -> IO (SWord sym)
+bvSliceLE _ _m 0 _  = return ZBV
 bvSliceLE sym m n (DBV bv)
   | Just (Some nr) <- someNat n,
     Just LeqProof  <- isPosNat nr,
@@ -352,10 +360,10 @@ bvSliceLE sym m n (DBV bv)
   = panic "bvSliceLE"
       ["invalid arguments to slice: " ++ show m ++ " " ++ show n
         ++ " from vector of length " ++ show (W.bvWidth bv)]
-bvSliceLE _ _ _ ZBV = return ZBV
-
-
-
+bvSliceLE _ m n ZBV
+  = panic "bvSliceLE"
+      ["invalid arguments to slice: " ++ show m ++ " " ++ show n
+        ++ " from vector of length 0"]
 
 
 -- | Ceiling (log_2 x)
@@ -495,11 +503,9 @@ bvBinPred  :: forall sym. IsExprBuilder sym =>
   Bool {- ^ answer to give on 0-width bitvectors -} ->
   (forall w. 1 <= w => sym -> SymBV sym w -> SymBV sym w -> IO (Pred sym)) ->
   sym -> SWord sym -> SWord sym -> IO (Pred sym)
-bvBinPred _ f sym x@(DBV bv1) y@(DBV bv2)
+bvBinPred _ f sym (DBV bv1) (DBV bv2)
   | Just Refl <- testEquality (W.exprType bv1) (W.exprType bv2)
   = f sym bv1 bv2
-  | otherwise
-  = panic "bvBinPred" ["bit-vectors don't have same length", show (bvWidth x), show (bvWidth y)]
 bvBinPred b _ sym ZBV ZBV
   = pure (W.backendPred sym b)
 bvBinPred _ _ _ x y
