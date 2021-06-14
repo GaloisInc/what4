@@ -150,29 +150,48 @@ stringLitIsSuffixOf (Char16Literal x) (Char16Literal y) = WS.isSuffixOf x y
 stringLitIsSuffixOf (Char8Literal x) (Char8Literal y) = BS.isSuffixOf x y
 
 stringLitSubstring :: StringLiteral si -> Integer -> Integer -> StringLiteral si
-stringLitSubstring (UnicodeLiteral x) len off =
-  UnicodeLiteral $ T.take (fromInteger len)  $ T.drop (fromInteger off) x
-stringLitSubstring (Char16Literal x) len off =
-  Char16Literal  $ WS.take (fromInteger len) $ WS.drop (fromInteger off) x
-stringLitSubstring (Char8Literal x) len off =
-  Char8Literal   $ BS.take (fromIntegral len) $ BS.drop (fromInteger off) x
+stringLitSubstring (UnicodeLiteral x) len off
+  | off < 0 || len < 0 = UnicodeLiteral T.empty
+  | otherwise = UnicodeLiteral $ T.take (fromInteger len)  $ T.drop (fromInteger off) x
+stringLitSubstring (Char16Literal x) len off
+  | off < 0 || len < 0 = Char16Literal WS.empty
+  | otherwise = Char16Literal $ WS.take (fromInteger len) $ WS.drop (fromInteger off) x
+stringLitSubstring (Char8Literal x) len off
+  | off < 0 || len < 0 = Char8Literal BS.empty
+  | otherwise = Char8Literal $ BS.take (fromIntegral len) $ BS.drop (fromInteger off) x
 
+-- | Index of first occurrence of second string in first one starting at
+--   the position specified by the third argument.
+--   @stringLitIndexOf s t k@, with @0 <= k <= |s|@ is the position of the first
+--   occurrence of @t@ in @s@ at or after position @k@, if any.
+--   Otherwise, it is @-1@. Note that the result is @k@ whenever @k@ is within
+--   the range @[0, |s|]@ and @t@ is empty.
 stringLitIndexOf :: StringLiteral si -> StringLiteral si -> Integer -> Integer
 stringLitIndexOf (UnicodeLiteral x) (UnicodeLiteral y) k
-   | T.null y = 0
+   | k < 0    = -1
+   | k > toInteger (T.length x) = -1
+   | T.null y = k
    | T.null b = -1
    | otherwise = toInteger (T.length a) + k
   where (a,b) = T.breakOn y (T.drop (fromInteger k) x)
 
-stringLitIndexOf (Char16Literal x) (Char16Literal y) k =
-  case WS.findSubstring y (WS.drop (fromInteger k) x) of
-    Nothing -> -1
-    Just n  -> toInteger n + k
+stringLitIndexOf (Char16Literal x) (Char16Literal y) k
+  | k < 0 = -1
+  | k > toInteger (WS.length x) = -1
+  | WS.null y = k
+  | otherwise =
+      case WS.findSubstring y (WS.drop (fromInteger k) x) of
+        Nothing -> -1
+        Just n  -> toInteger n + k
 
-stringLitIndexOf (Char8Literal x) (Char8Literal y) k =
-  case bsFindSubstring y (BS.drop (fromInteger k) x) of
-    Nothing -> -1
-    Just n  -> toInteger n + k
+stringLitIndexOf (Char8Literal x) (Char8Literal y) k
+  | k < 0 = -1
+  | k > toInteger (BS.length x) = -1
+  | BS.null y = k
+  | otherwise =
+      case bsFindSubstring y (BS.drop (fromInteger k) x) of
+        Nothing -> -1
+        Just n  -> toInteger n + k
 
 -- | Get the first index of a substring in another string,
 --   or 'Nothing' if the string is not found.
