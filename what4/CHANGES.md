@@ -48,6 +48,11 @@ specifies precise results for these cases, which we now implement.
   * `z3_path` --> `solver.z3.path`
   * `z3_timeout` --> `solver.z3.timeout`
 
+* Added the `solver.strict_parsing` configuration parameter.  This is
+  enabled by default but could be disabled to allow running solvers in
+  debug mode or to workaround other unexpected output from solver
+  processes.
+
 # 1.1 (February 2021)
 
 * Use multithread-safe storage primitive for configuration options,
