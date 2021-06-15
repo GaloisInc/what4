@@ -704,12 +704,12 @@ stringTest2 sym solver =
 
        _ -> fail "expected satisfable model"
 
-stringTest3 ::
+_stringTest3 ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest3 sym solver =
+_stringTest3 sym solver =
   do let bsz = "qwe\x1crtyQQ\"QQ"
      z <- stringLit sym (Char8Literal bsz)
 
@@ -975,7 +975,9 @@ main = defaultMain $ testGroup "Tests"
 
   , testCase "Z3 string1" $ withOnlineZ3 stringTest1
   , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-  , testCase "Z3 string3" $ withOnlineZ3 stringTest3
+  -- TODO, reenable this test, or a similar one, once the following is fixed
+  -- https://github.com/GaloisInc/what4/issues/56
+  -- , testCase "Z3 string3" $ withOnlineZ3 stringTest3
   , testCase "Z3 string4" $ withOnlineZ3 stringTest4
   , testCase "Z3 string5" $ withOnlineZ3 stringTest5
 
