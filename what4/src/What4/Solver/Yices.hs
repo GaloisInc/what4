@@ -679,6 +679,8 @@ yicesStartSolver features auxOutput sym = do -- FIXME
                             features `hasProblemFeature` useUnsatAssumptions
   when (enableMCSat && hasNamedAssumptions) $
      fail "Unsat cores and named assumptions are incompatible with MC-SAT in Yices."
+  let  features' | enableMCSat = features .|. useNonlinearArithmetic
+                 | otherwise = features
 
   hdls@(in_h,out_h,err_h,ph) <- startProcess yices_path args Nothing
 
@@ -688,7 +690,7 @@ yicesStartSolver features auxOutput sym = do -- FIXME
 
   in_stream' <- Streams.atEndOfOutput (hClose in_h) in_stream
 
-  conn <- newConnection in_stream' out_stream yicesAck features goalTimeout B.emptySymbolVarBimap
+  conn <- newConnection in_stream' out_stream yicesAck features' goalTimeout B.emptySymbolVarBimap
 
   setYicesParams conn cfg
 
