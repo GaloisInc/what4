@@ -27,6 +27,7 @@ Extra-doc-files:
   README.md
   CHANGES.md
   doc/README.md
+  doc/implementation.md
   doc/bvdomain.cry
   doc/arithdomain.cry
   doc/bitsdomain.cry
