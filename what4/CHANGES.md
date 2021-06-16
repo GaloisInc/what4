@@ -1,3 +1,7 @@
+# 1.2.1 (June 2021)
+
+* Include test suite data in the Hackage tarball.
+
 # 1.2 (June 2021)
 
 This is primarily a bugfix release, but also adds support
