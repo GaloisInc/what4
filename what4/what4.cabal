@@ -23,6 +23,10 @@ Description:
 
 data-files: solverBounds.config
 
+Extra-source-files:
+  test/responses/*.exp
+  test/responses/*.rsp
+
 Extra-doc-files:
   README.md
   CHANGES.md
