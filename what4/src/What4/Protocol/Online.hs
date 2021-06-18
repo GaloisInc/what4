@@ -183,11 +183,15 @@ data SolverProcess scope solver = SolverProcess
     -- ^ The amount of time (in seconds) that a solver should spend
     -- trying to satisfy any particular goal before giving up.  A
     -- value of zero indicates no time limit.
-
-    -- THIS IS INFORMATIONAL ONLY AND *NOT* USED TO ACTUALLY SET THE
-    -- SOLVER TIMEOUT!  To set the solver timeout, see the
-    -- solver-specific configuration (e.g. 'z3Timeout', 'cvc4Timeout',
-    -- etc.)
+    --
+    -- Note that it is not sufficient to set just this value to
+    -- control timeouts; this value is used as a reference for common
+    -- code (e.g. SMTLIB2) to determine the timeout for the associated
+    -- timer.  When initialized, this field of the SolverProcess is
+    -- initialized from a solver-specific timeout configuration
+    -- (e.g. z3Timeout); the latter is the definitive reference for
+    -- the timeout, and solver-specific code will likely use the the
+    -- latter rather than this common field.
   }
 
 
