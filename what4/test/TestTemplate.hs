@@ -12,8 +12,8 @@ module Main where
 
 import Control.Exception
 import Control.Monad ((<=<)) -- , when)
-import           Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class (liftIO)
+import           Control.Monad.Trans.Maybe
 import Data.Bits
 import Data.Parameterized.Map (MapF)
 import qualified Data.Parameterized.Map as MapF

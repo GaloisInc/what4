@@ -1,12 +1,4 @@
-Left Could not parse solver response:
-  Solver response parsing failure.
-*** Exception: Unrecognized response from solver:
+Left Unrecognized response from solver:
   bad :reason-unknown value
 in response to command:
   reason?
-
-Attempting to parse input for test resp:
-Just "(:reason-unknown foo bar baz)\n"
-
-in response to commands for test resp:
-test cmd

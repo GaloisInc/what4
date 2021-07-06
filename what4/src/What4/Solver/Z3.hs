@@ -63,7 +63,6 @@ z3Timeout = configOption knownRepr "solver.z3.timeout"
 
 z3TimeoutOLD :: ConfigOption BaseIntegerType
 z3TimeoutOLD = configOption knownRepr "z3_timeout"
-
 -- | Strict parsing specifically for Z3 interaction?  If set,
 -- overrides solver.strict_parsing, otherwise defaults to
 -- solver.strict_parsing.
@@ -214,11 +213,11 @@ setInteractiveLogicAndOptions writer = do
       SMT2.setOption writer "produce-unsat-cores" "true"
 
 instance OnlineSolver (SMT2.Writer Z3) where
+
   startSolverProcess feat mbIOh sym = do
-    sp <- SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions feat
-          (Just z3StrictParsing) mbIOh sym
     timeout <- SolverGoalTimeout <$>
                (getOpt =<< getOptionSetting z3Timeout (getConfiguration sym))
-    return $ sp { solverGoalTimeout = timeout }
+    SMT2.startSolver Z3 SMT2.smtAckResult setInteractiveLogicAndOptions
+      timeout feat (Just z3StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver Z3

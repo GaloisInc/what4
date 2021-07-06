@@ -90,6 +90,7 @@ library
   import: bldflags
   build-depends:
     base >= 4.8 && < 5,
+    async,
     attoparsec >= 0.13,
     bimap >= 0.2,
     bifunctors >= 5,
@@ -252,6 +253,7 @@ test-suite adapter-test
     lens,
     mtl >= 2.2.1,
     process,
+    tasty-expected-failure >= 0.12 && < 0.13,
     text,
     versions
 
@@ -271,7 +273,8 @@ test-suite online-solver-test
 
   main-is: OnlineSolverTest.hs
 
-  if flag(solverTests)
+  -- Disabled for 9.0 until units package is updated
+  if flag(solverTests) && impl(ghc < 9.0)
     buildable: True
     if ! flag(STPTestDisable)
       cpp-options: -DTEST_STP
@@ -279,13 +282,21 @@ test-suite online-solver-test
     buildable: False
 
   build-depends:
+    async,
     bv-sized,
     bytestring,
+    clock,
     containers,
     data-binary-ieee754,
+    exceptions,
     lens,
+    prettyprinter,
     process,
+    tasty-expected-failure >= 0.12 && < 0.13,
+    tasty-checklist >= 1.0 && < 1.1,
     text,
+    units,
+    units-defs,
     versions
 
 test-suite expr-builder-smtlib2
@@ -300,6 +311,8 @@ test-suite expr-builder-smtlib2
     containers,
     data-binary-ieee754,
     libBF,
+    process,
+    tasty-expected-failure >= 0.12 && < 0.13,
     text,
     versions
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- |
 Module      : What4.Protocol.Online
 Description : Online solver interactions
@@ -22,10 +23,12 @@ module What4.Protocol.Online
   , solverResponse
   , SolverGoalTimeout(..)
   , getGoalTimeoutInSeconds
+  , withLocalGoalTimeout
   , ErrorBehavior(..)
   , killSolver
   , push
   , pop
+  , tryPop
   , reset
   , inNewFrame
   , inNewFrameWithVars
@@ -41,23 +44,29 @@ module What4.Protocol.Online
   , checkSatisfiableWithModel
   ) where
 
-import           Control.Exception
-                   ( SomeException(..), catchJust, tryJust, displayException )
+import           Control.Concurrent ( threadDelay )
+import           Control.Concurrent.Async ( race )
+import           Control.Exception ( SomeException(..), catchJust, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
-import           Control.Monad.Catch ( MonadMask, bracket_, onException )
+import           Control.Monad.Catch ( Exception, MonadMask, bracket_, catchIf
+                                     , onException, throwM, fromException  )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
+import           Data.IORef
+#if MIN_VERSION_base(4,14,0)
+#else
+import qualified Data.List as L
+#endif
 import           Data.Parameterized.Some
 import           Data.Proxy
-import           Data.IORef
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
 import           Prettyprinter
 import           System.Exit
 import           System.IO
+import qualified System.IO.Error as IOE
 import qualified System.IO.Streams as Streams
-import           System.Process
-                   (ProcessHandle, terminateProcess, waitForProcess)
+import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
 import           What4.Expr
 import           What4.Interface (SolverEvent(..)
@@ -117,6 +126,11 @@ getGoalTimeoutInSeconds sgt =
       -- a full second.
   in if msecs > 0 && secs == 0 then 1 else secs
 
+instance Pretty SolverGoalTimeout where
+  pretty (SolverGoalTimeout ms) = pretty ms <> pretty "msec"
+
+instance Show SolverGoalTimeout where
+  show = show . pretty
 
 -- | A live connection to a running solver process.
 --
@@ -169,6 +183,15 @@ data SolverProcess scope solver = SolverProcess
     -- ^ The amount of time (in seconds) that a solver should spend
     -- trying to satisfy any particular goal before giving up.  A
     -- value of zero indicates no time limit.
+    --
+    -- Note that it is not sufficient to set just this value to
+    -- control timeouts; this value is used as a reference for common
+    -- code (e.g. SMTLIB2) to determine the timeout for the associated
+    -- timer.  When initialized, this field of the SolverProcess is
+    -- initialized from a solver-specific timeout configuration
+    -- (e.g. z3Timeout); the latter is the definitive reference for
+    -- the timeout, and solver-specific code will likely use the the
+    -- latter rather than this common field.
   }
 
 
@@ -187,7 +210,11 @@ solverResponse = connInputHandle . solverConn
 killSolver :: SolverProcess t solver -> IO ()
 killSolver p =
   do catchJust filterAsync
-           (terminateProcess (solverHandle p))
+           (terminateProcess (solverHandle p)
+            -- some solvers emit stderr messages on SIGTERM
+            >> readAllLines (solverStderr p)
+            >> return ()
+           )
            (\(ex :: SomeException) -> hPutStrLn stderr $ displayException ex)
      void $ waitForProcess (solverHandle p)
 
@@ -270,19 +297,30 @@ pop p =
                      addCommand c (popCommand c)
       | otherwise -> writeIORef (solverEarlyUnsat p) $! (Just $! i-1)
 
--- | Pop a previous solver assumption frame, but don't communicate
---   the pop command to the solver.  This is really only useful in
---   error recovery code when we know the solver has already exited.
-popStackOnly :: SolverProcess scope solver -> IO ()
-popStackOnly p =
-  readIORef (solverEarlyUnsat p) >>= \case
+-- | Pop a previous solver assumption frame, but allow this to fail if
+-- the solver has exited.
+tryPop :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+tryPop p =
+  let trycmd conn = catchIf solverGone
+                    (addCommand conn (popCommand conn))
+                    (const $ throwM RunawaySolverTimeout)
+#if MIN_VERSION_base(4,14,0)
+      solverGone = IOE.isResourceVanishedError
+#else
+      solverGone = L.isInfixOf "resource vanished" . IOE.ioeGetErrorString
+#endif
+  in readIORef (solverEarlyUnsat p) >>= \case
     Nothing -> do let c = solverConn p
                   popEntryStack c
+                  trycmd c
     Just i
       | i <= 1 -> do let c = solverConn p
                      popEntryStack c
                      writeIORef (solverEarlyUnsat p) Nothing
+                     trycmd c
       | otherwise -> writeIORef (solverEarlyUnsat p) $! (Just $! i-1)
+
+
 
 
 -- | Perform an action in the scope of a solver assumption frame.
@@ -300,13 +338,15 @@ inNewFrameWithVars p vars action =
   case solverErrorBehavior p of
     ContinueOnError ->
       bracket_ (liftIO $ pushWithVars)
-               (liftIO $ pop p)
+               (liftIO $ tryPop p)
                action
     ImmediateExit ->
       do liftIO $ pushWithVars
-         x <- (onException action (liftIO $ popStackOnly p))
-         liftIO $ pop p
-         return x
+         onException (do x <- action
+                         liftIO $ pop p
+                         return x
+                     )
+           (liftIO $ tryPop p)
   where
     conn = solverConn p
     pushWithVars = do
@@ -384,7 +424,7 @@ checkAndGetModel yp rsn = do
     Unknown -> return Unknown
     Sat () -> Sat <$> getModel yp
 
--- | Following a successful check-sat command, build a ground evaulation function
+-- | Following a successful check-sat command, build a ground evaluation function
 --   that will evaluate terms in the context of the current model.
 getModel :: SMTReadWriter solver => SolverProcess scope solver -> IO (GroundEvalFn scope)
 getModel p = smtExprGroundEvalFn (solverConn p)
@@ -418,9 +458,16 @@ getUnsatCore proc =
 getSatResult :: SMTReadWriter s => SolverProcess t s -> IO (SatResult () ())
 getSatResult yp = do
   let ph = solverHandle yp
-  sat_result <- tryJust filterAsync (smtSatResult yp (solverConn yp))
+  let action = smtSatResult yp
+  sat_result <- withLocalGoalTimeout yp action
+
   case sat_result of
     Right ok -> return ok
+
+    Left e@(SomeException _)
+      | Just RunawaySolverTimeout <- fromException e -> do
+          -- Deadman timeout fired, so this is effectively Incomplete
+          return Unknown
 
     Left (SomeException e) ->
        do -- Interrupt process
@@ -440,3 +487,39 @@ getSatResult yp = do
                   , "*** standard error:"
                   , LazyText.unpack txt
                   ]
+
+
+-- | If the solver cannot voluntarily limit itself to the requested
+-- timeout period, this runs a local async process with a slightly
+-- longer time period that will forcibly terminate the solver process
+-- if it expires while the solver process is still running.
+--
+-- Note that this will require re-establishment of the solver process
+-- and any associated context for any subsequent solver goal
+-- evaluation.
+
+withLocalGoalTimeout ::
+  SolverProcess t s
+  -> (WriterConn t s -> IO (SatResult () ()))
+  -> IO (Either SomeException (SatResult () ()))
+withLocalGoalTimeout solverProc action =
+  if getGoalTimeoutInSeconds (solverGoalTimeout solverProc) == 0
+  then do tryJust filterAsync (action $ solverConn solverProc)
+  else let deadmanTimeoutPeriodMicroSeconds =
+             (fromInteger $
+              getGoalTimeoutInMilliSeconds (solverGoalTimeout solverProc)
+              + 500  -- allow solver to honor timeout first
+             ) * 1000  -- convert msec to usec
+           deadmanTimer = threadDelay deadmanTimeoutPeriodMicroSeconds
+       in
+          do race deadmanTimer (action $ solverConn solverProc) >>= \case
+               Left () -> do killSolver solverProc
+                             return $ Left $ SomeException RunawaySolverTimeout
+               Right x -> return $ Right x
+
+
+-- | The RunawaySolverTimeout is thrown when the solver cannot
+-- voluntarily limit itself to the requested solver-timeout period and
+-- has subsequently been forcibly stopped.
+data RunawaySolverTimeout = RunawaySolverTimeout deriving Show
+instance Exception RunawaySolverTimeout

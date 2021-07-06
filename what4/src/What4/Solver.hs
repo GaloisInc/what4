@@ -36,6 +36,7 @@ module What4.Solver
   , Boolector(..)
   , boolectorAdapter
   , boolectorPath
+  , boolectorTimeout
   , runBoolectorInOverride
   , withBoolector
   , boolectorOptions
@@ -64,6 +65,7 @@ module What4.Solver
   , STP(..)
   , stpAdapter
   , stpPath
+  , stpTimeout
   , runSTPInOverride
   , withSTP
   , stpOptions

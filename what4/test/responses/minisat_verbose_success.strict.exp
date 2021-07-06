@@ -1,8 +1,1 @@
-Left Could not parse solver response:
-  Solver response parsing failure.
-*** Exception: Parse exception: Failed reading: empty
-Attempting to parse input for test resp:
-Just "minisat: Incremental solving is forced on (to avoid variable elimination) unless using internal decision strategy.\nsuccess\n"
-
-in response to commands for test resp:
-test cmd
+Left Parse exception: Failed reading: empty

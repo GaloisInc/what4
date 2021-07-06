@@ -12,16 +12,22 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-import Test.Tasty
-import Test.Tasty.HUnit
-
+import           Test.Tasty
+import           Test.Tasty.ExpectedFailure
+import           Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
 import qualified Data.ByteString as BS
-import qualified Data.Map as Map
+import           Data.Char ( toLower )
 import           Data.Foldable
+import qualified Data.List as L
+import qualified Data.Map as Map
+import           Data.Maybe ( catMaybes, fromMaybe )
+import           System.Environment ( lookupEnv )
+import           System.Exit ( ExitCode(..) )
+import           System.Process ( readProcessWithExitCode )
 
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
@@ -29,20 +35,20 @@ import           Data.Parameterized.Some
 import           System.IO
 import           LibBF
 
-import What4.BaseTypes
-import What4.Config
-import What4.Expr
-import What4.Interface
-import What4.InterpretedFloatingPoint
-import What4.Protocol.Online
-import What4.Protocol.SMTLib2
-import What4.SatResult
-import What4.Solver.Adapter
+import           What4.BaseTypes
+import           What4.Config
+import           What4.Expr
+import           What4.Interface
+import           What4.InterpretedFloatingPoint
+import           What4.Protocol.Online
+import           What4.Protocol.SMTLib2
+import           What4.SatResult
+import           What4.Solver.Adapter
 import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
-import What4.Utils.StringLiteral
-import What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
+import           What4.Utils.StringLiteral
+import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
 data State t = State
 data SomePred = forall t . SomePred (BoolExpr t)
@@ -704,12 +710,12 @@ stringTest2 sym solver =
 
        _ -> fail "expected satisfable model"
 
-_stringTest3 ::
+stringTest3 ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-_stringTest3 sym solver =
+stringTest3 sym solver =
   do let bsz = "qwe\x1crtyQQ\"QQ"
      z <- stringLit sym (Char8Literal bsz)
 
@@ -924,79 +930,124 @@ testBVBitreverse = testCase "test bvBitreverse" $
     e1 <- bvLit sym knownRepr (BV.mkBV knownNat 128)
     e0 @?= e1
 
+----------------------------------------------------------------------
+
+getSolverVersion :: String -> IO (Either String String)
+getSolverVersion solver =
+  let args = case toLower <$> solver of
+               -- n.b. abc will return a non-zero exit code if asked
+               -- for command usage.
+               "abc" -> ["s", "-q", "version;quit"]
+               _ -> ["--version"]
+  in try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
+    Right (r,o,e) ->
+      if r == ExitSuccess
+      then let ol = lines o in
+             return $ Right $ if null ol then (solver <> " v??") else head ol
+      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
+    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
+
+
+reportSolverVersions :: IO [String]
+reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+                          putStrLn "SOLVER SELF-REPORTED VERSIONS::"
+                          catMaybes <$> mapM (rep testLevel) [ "cvc4", "z3", "yices" ]
+  where rep lvl s = disp lvl s =<< getSolverVersion s
+        disp lvl s = \case
+          Right v -> do putStrLn $ "  Solver " <> s <> " -> " <> v
+                        return $ Just s
+          Left e -> if and [ "does not exist" `L.isInfixOf` e
+                           , lvl == "0"
+                           ]
+                    then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
+                            return Nothing
+                    else do putStrLn $ "  Solver " <> s <> " error: " <> e
+                            return $ Just s
+
+
 main :: IO ()
-main = defaultMain $ testGroup "Tests"
-  [ testInterpretedFloatReal
-  , testFloatUninterpreted
-  , testInterpretedFloatIEEE
-  , testFloatUnsat0
-  , testFloatUnsat1
-  , testFloatUnsat2
-  , testFloatSat0
-  , testFloatSat1
-  , testFloatToBinary
-  , testFloatFromBinary
-  , testFloatBinarySimplification
-  , testRealFloatBinarySimplification
-  , testFloatCastSimplification
-  , testFloatCastNoSimplification
-  , testBVSelectShl
-  , testBVSelectLshr
-  , testBVOrShlZext
-  , testUninterpretedFunctionScope
-  , testBVIteNesting
-  , testRotate1
-  , testRotate2
-  , testRotate3
-  , testSymbolPrimeCharZ3
-  , testBoundVarAsFree
-  , testSolverInfo
-  , testSolverVersion
-  , testBVDomainArithScale
-  , testBVSwap
-  , testBVBitreverse
+main = do
+  solvers <- reportSolverVersions
+  let z3Tests =
+        [
+          testUninterpretedFunctionScope
+        , testRotate1
+        , testRotate2
+        , testRotate3
+        , testBoundVarAsFree
+        , testSolverInfo
+        , testSolverVersion
+        , testFloatUnsat0
+        , testFloatUnsat1
+        , testFloatUnsat2
+        , testFloatSat0
+        , testFloatSat1
+        , testFloatToBinary
+        , testFloatFromBinary
+        , testBVIteNesting
+        , testSymbolPrimeCharZ3
+        , testCase "Z3 0-tuple" $ withOnlineZ3 zeroTupleTest
+        , testCase "Z3 1-tuple" $ withOnlineZ3 oneTupleTest
+        , testCase "Z3 pair"    $ withOnlineZ3 pairTest
+        , testCase "Z3 forall binder" $ withOnlineZ3 forallTest
 
-  , testCase "Yices 0-tuple" $ withYices zeroTupleTest
-  , testCase "Yices 1-tuple" $ withYices oneTupleTest
-  , testCase "Yices pair"    $ withYices pairTest
+        , testCase "Z3 string1" $ withOnlineZ3 stringTest1
+        , testCase "Z3 string2" $ withOnlineZ3 stringTest2
+        , ignoreTestBecause "https://github.com/GaloisInc/what4/issues/56 needs to be fixed" $
+          testCase "Z3 string3" $ withOnlineZ3 stringTest3
+        , testCase "Z3 string4" $ withOnlineZ3 stringTest4
+        , testCase "Z3 string5" $ withOnlineZ3 stringTest5
 
-  , testCase "Z3 0-tuple" $ withOnlineZ3 zeroTupleTest
-  , testCase "Z3 1-tuple" $ withOnlineZ3 oneTupleTest
-  , testCase "Z3 pair"    $ withOnlineZ3 pairTest
+        , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
+        , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
 
-  -- TODO, enable this test when we figure out why it
-  -- doesnt work...
-  --  , testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
-  , testCase "CVC4 1-tuple" $ withCVC4 oneTupleTest
-  , testCase "CVC4 pair"    $ withCVC4 pairTest
+        , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
+        ]
+  let cvc4Tests =
+        [
+          -- TODO, enable this test when we figure out why it
+          -- doesnt work...
+          --  , testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
+          testCase "CVC4 1-tuple" $ withCVC4 oneTupleTest
+        , testCase "CVC4 pair"    $ withCVC4 pairTest
+        , testCase "CVC4 forall binder" $ withCVC4 forallTest
 
-  , testCase "Z3 forall binder" $ withOnlineZ3 forallTest
-  , testCase "CVC4 forall binder" $ withCVC4 forallTest
+        , testCase "CVC4 string1" $ withCVC4 stringTest1
+        , testCase "CVC4 string2" $ withCVC4 stringTest2
+        , ignoreTestBecause "https://github.com/GaloisInc/what4/issues/56 needs to be fixed" $
+          testCase "CVC4 string3" $ withCVC4 stringTest3
+        , testCase "CVC4 string4" $ withCVC4 stringTest4
+        , testCase "CVC4 string5" $ withCVC4 stringTest5
 
-  , testCase "Z3 string1" $ withOnlineZ3 stringTest1
-  , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-  -- TODO, reenable this test, or a similar one, once the following is fixed
-  -- https://github.com/GaloisInc/what4/issues/56
-  -- , testCase "Z3 string3" $ withOnlineZ3 stringTest3
-  , testCase "Z3 string4" $ withOnlineZ3 stringTest4
-  , testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
+        , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
 
-  , testCase "CVC4 string1" $ withCVC4 stringTest1
-  , testCase "CVC4 string2" $ withCVC4 stringTest2
-
-  -- TODO, reenable this test, or a similar one, once the following is fixed
-  -- https://github.com/GaloisInc/what4/issues/56
-  -- , testCase "CVC4 string3" $ withCVC4 stringTest3
-  , testCase "CVC4 string4" $ withCVC4 stringTest4
-  , testCase "CVC4 string5" $ withCVC4 stringTest5
-
-  , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
-  , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
-
-  , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
-  , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
-
-  , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
-  , testCase "Yices rounding" $ withYices roundingTest
-  , testCase "CVC4 rounding" $ withCVC4 roundingTest
-  ]
+        , testCase "CVC4 rounding" $ withCVC4 roundingTest
+        ]
+  let yicesTests =
+        [
+          testCase "Yices 0-tuple" $ withYices zeroTupleTest
+        , testCase "Yices 1-tuple" $ withYices oneTupleTest
+        , testCase "Yices pair"    $ withYices pairTest
+        , testCase "Yices rounding" $ withYices roundingTest
+        ]
+  let skipIfNotPresent nm = if nm `elem` solvers then id
+                            else fmap (ignoreTestBecause (nm <> " not present"))
+  defaultMain $ testGroup "Tests" $
+    [ testInterpretedFloatReal
+    , testFloatUninterpreted
+    , testInterpretedFloatIEEE
+    , testFloatBinarySimplification
+    , testRealFloatBinarySimplification
+    , testFloatCastSimplification
+    , testFloatCastNoSimplification
+    , testBVSelectShl
+    , testBVSelectLshr
+    , testBVOrShlZext
+    , testBVDomainArithScale
+    , testBVSwap
+    , testBVBitreverse
+    ]
+    <> (skipIfNotPresent "cvc4" cvc4Tests)
+    <> (skipIfNotPresent "yices" yicesTests)
+    <> (skipIfNotPresent "z3" z3Tests)

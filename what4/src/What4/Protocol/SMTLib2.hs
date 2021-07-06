@@ -97,8 +97,6 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
 import           Data.IORef
-import qualified Data.Text as Text
-import qualified Data.Text.Lazy as Lazy
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid
@@ -112,6 +110,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.String
 import           Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Text.Lazy as Lazy
 import           Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Text.Lazy.Builder.Int as Builder
@@ -1043,19 +1043,22 @@ writeDefaultSMT2 a nm feat strictOpt sym h ps = do
   writeCheckSat c
   writeExit c
 
+-- n.b. commonly used for the startSolverProcess method of the
+-- OnlineSolver class, so it's helpful for the type suffixes to align
 startSolver
   :: SMTLib2GenericSolver a
   => a
   -> AcknowledgementAction t (Writer a)
         -- ^ Action for acknowledging command responses
   -> (WriterConn t (Writer a) -> IO ()) -- ^ Action for setting start-up-time options and logic
+  -> SolverGoalTimeout
   -> ProblemFeatures
   -> Maybe (CFG.ConfigOption I.BaseBoolType)
   -- ^ strictness override configuration
   -> Maybe IO.Handle
   -> B.ExprBuilder t st fs
   -> IO (SolverProcess t (Writer a))
-startSolver solver ack setup feats strictOpt auxOutput sym = do
+startSolver solver ack setup tmout feats strictOpt auxOutput sym = do
   path <- defaultSolverPath solver sym
   args <- defaultSolverArgs solver sym
   hdls@(in_h, out_h, err_h, ph) <- startProcess path args Nothing
@@ -1089,7 +1092,7 @@ startSolver solver ack setup feats strictOpt auxOutput sym = do
             , solverName     = show solver
             , solverEarlyUnsat = earlyUnsatRef
             , solverSupportsResetAssertions = supportsResetAssertions solver
-            , solverGoalTimeout = SolverGoalTimeout 0 -- no timeout by default
+            , solverGoalTimeout = tmout
             }
 
 shutdownSolver

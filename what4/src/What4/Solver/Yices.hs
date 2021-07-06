@@ -68,6 +68,8 @@ import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Applicative
+import           Control.Concurrent ( threadDelay )
+import           Control.Concurrent.Async ( race )
 import           Control.Exception
                    (assert, SomeException(..), tryJust, throw, displayException, Exception(..))
 import           Control.Lens ((^.), folded)
@@ -767,20 +769,36 @@ getAckResponse resps =
 -- Throws an exception if something goes wrong.
 getSatResponse :: WriterConn t Connection -> IO (SatResult () ())
 getSatResponse conn =
-  do mb <- tryJust filterAsync (Streams.parseFromStream (parseSExp parseYicesString) (connInputHandle conn))
-     case mb of
-       Right (SAtom "unsat")   -> return (Unsat ())
-       Right (SAtom "sat")     -> return (Sat ())
-       Right (SAtom "unknown") -> return Unknown
-       Right (SAtom "interrupted") -> return Unknown
-       Right res -> fail $
+  let interpretSExpr = \case
+        (SAtom "unsat")   -> Unsat ()
+        (SAtom "sat")     -> Sat ()
+        (SAtom "unknown") -> Unknown
+        (SAtom "interrupted") -> Unknown
+        res -> throw $ UnparseableYicesResponse $
                unlines [ "Could not parse sat result."
                        , "  " ++ show res
                        ]
-       Left (SomeException e) -> fail $
-               unlines [ "Could not parse sat result."
-                       , "*** Exception: " ++ displayException e
-                       ]
+      tmo = getGoalTimeoutInSeconds $ yicesTimeout $ connState conn
+      delay = 500  -- allow solver to honor timeout first
+      msec2usec = (1000 *)
+      deadman_tmo = msec2usec $ fromInteger (tmo + delay)
+      deadmanTimer = threadDelay deadman_tmo
+      action = Streams.parseFromStream (parseSExp parseYicesString)
+  in if tmo == 0
+     then tryJust filterAsync (action (connInputHandle conn)) >>= \case
+            Right d -> return $ interpretSExpr d
+            Left e -> fail $ unlines [ "Could not parse sat result."
+                                     , "*** Exception: " ++ displayException e
+                                     ]
+     else race deadmanTimer (tryJust filterAsync $ action (connInputHandle conn)) >>= \case
+          Right (Right x) -> return $ interpretSExpr x
+          Left () -> return Unknown  -- no response in timeout period
+          Right (Left e) -> fail $ unlines [ "Could not parse sat result."
+                                           , "*** Exception: " ++ displayException e
+                                           ]
+
+data UnparseableYicesResponse = UnparseableYicesResponse String deriving Show
+instance Exception UnparseableYicesResponse
 
 type Eval scope ty =
   WriterConn scope Connection ->

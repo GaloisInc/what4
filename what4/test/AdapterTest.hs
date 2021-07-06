@@ -19,11 +19,14 @@ import           Control.Monad.Except ( runExceptT )
 import           Data.BitVector.Sized ( mkBV )
 import           Data.Char ( toLower )
 import qualified Data.List as L
+import           Data.Maybe ( catMaybes, fromMaybe )
 import           Data.Text ( pack )
+import           System.Environment ( lookupEnv )
 import           System.Exit ( ExitCode(..) )
 import           System.Process ( readProcessWithExitCode )
 
 import           Test.Tasty
+import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.HUnit
 
 import           Data.Parameterized.Nonce
@@ -349,7 +352,9 @@ mkConfigTests adapters =
             Left (SomeException e) -> assertFailure $ show e
           cmpUnderSomesI settera setterb
 
-      , testCase "deprecated dreal_path is equivalent to solver.dreal.path" $
+      , (if "dreal" `elem` (solver_adapter_name <$> adapters)
+         then id else ignoreTestBecause "dreal not available") $
+        testCase "deprecated dreal_path is equivalent to solver.dreal.path" $
         withAdapters adaptrs $ \sym -> do
 #ifdef TEST_DREAL
           settera <- getOptionSettingFromText "dreal_path"
@@ -371,7 +376,9 @@ mkConfigTests adapters =
           wantOptGetFailure "not found" settera
 #endif
 
-      , testCase "deprecated abc_path is equivalent to solver.abc.path" $
+      , (if "abc" `elem` (solver_adapter_name <$> adapters)
+         then id else ignoreTestBecause "abc not available") $
+        testCase "deprecated abc_path is equivalent to solver.abc.path" $
         withAdapters adaptrs $ \sym -> do
           settera <- getOptionSettingFromText "abc_path"
                      (getConfiguration sym)
@@ -528,7 +535,13 @@ mkConfigTests adapters =
 ----------------------------------------------------------------------
 
 nonlinearRealTest :: SolverAdapter State -> TestTree
-nonlinearRealTest adpt = testCase (solver_adapter_name adpt) $
+nonlinearRealTest adpt =
+  let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
+             then expectFailBecause
+                  (solver_adapter_name adpt
+                   <> "does not support this type of linear arithmetic term")
+             else id
+  in wrap $ testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
     do x <- freshConstant sym (safeSymbol "a") BaseRealRepr
        y <- freshConstant sym (safeSymbol "b") BaseRealRepr
@@ -565,7 +578,12 @@ nonlinearRealTest adpt = testCase (solver_adapter_name adpt) $
 
 
 mkQuickstartTest :: SolverAdapter State -> TestTree
-mkQuickstartTest adpt = testCase (solver_adapter_name adpt) $
+mkQuickstartTest adpt =
+  let wrap = if solver_adapter_name adpt == "stp"
+             then ignoreTestBecause "STP cannot generate the model"
+             else id
+  in wrap $
+  testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
     do -- Let's determine if the following formula is satisfiable:
        -- f(p, q, r) = (p | !q) & (q | r) & (!p | !r) & (!p | !q | r)
@@ -647,7 +665,7 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
                      , "endmodule"
                      ]
 
-getSolverVersion :: String -> IO String
+getSolverVersion :: String -> IO (Either String String)
 getSolverVersion solver = do
   let args = case toLower <$> solver of
                -- n.b. abc will return a non-zero exit code if asked
@@ -658,29 +676,38 @@ getSolverVersion solver = do
     Right (r,o,e) ->
       if r == ExitSuccess
       then let ol = lines o in
-             return $ if null ol then (solver <> " v??") else head ol
-      else return $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ solver <> " invocation error: " <> show err
+             return $ Right $ if null ol then (solver <> " v??") else head ol
+      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
+    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
 
 
-reportSolverVersions :: IO ()
-reportSolverVersions = do putStrLn "SOLVER VERSIONS::"
-                          void $ mapM rep allAdapters
-  where rep a = let s = solver_adapter_name a in disp s =<< getSolverVersion s
-        disp s v = putStrLn $ "  Solver " <> s <> " == " <> v
+reportSolverVersions :: IO [SolverAdapter State]
+reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+                          putStrLn "SOLVER VERSIONS::"
+                          catMaybes <$> mapM (rep testLevel) allAdapters
+  where rep lvl a = let s = solver_adapter_name a in disp lvl a s =<< getSolverVersion s
+        disp lvl adptr s = \case
+          Right v -> do putStrLn $ "  Solver " <> s <> " == " <> v
+                        return $ Just adptr
+          Left e ->
+            if and [ "does not exist" `L.isInfixOf` e
+                   , lvl == "0"
+                   ]
+            then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
+                    return Nothing
+            else do putStrLn $ "  Solver " <> s <> " error: " <> e
+                    return $ Just adptr
 
 
 main :: IO ()
 main = do
-  reportSolverVersions
+  adapters <- reportSolverVersions
   defaultMain $
     localOption (mkTimeout (10 * 1000 * 1000)) $
     testGroup "AdapterTests"
-    [ testGroup "SmokeTest" $ map mkSmokeTest allAdapters
-    , testGroup "Config Tests" $ mkConfigTests allAdapters
-    , testGroup "QuickStart" $ map mkQuickstartTest allAdapters
-    , testGroup "nonlinear reals" $ map nonlinearRealTest
-      -- NB: nonlinear arith expected to fail for STP and Boolector
-      ([ cvc4Adapter, z3Adapter, yicesAdapter ] <> drealAdpt)
+    [ testGroup "SmokeTest" $ map mkSmokeTest adapters
+    , testGroup "Config Tests" $ mkConfigTests adapters
+    , testGroup "QuickStart" $ map mkQuickstartTest adapters
+    , testGroup "nonlinear reals" $ map nonlinearRealTest adapters
     , testGroup "Verilog" [verilogTest]
     ]
