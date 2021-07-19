@@ -106,7 +106,6 @@ import           Control.Monad.Fail ( MonadFail )
 
 import           Control.Exception
 import           Control.Lens hiding ((.>), Strict)
-import           Control.Monad.Extra
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import           Control.Monad.ST
@@ -786,6 +785,23 @@ cacheLookup
   -> IO (Maybe a)
 cacheLookup conn lookup_action =
   readIORef (entryStack conn) >>= firstJustM lookup_action
+
+
+-- | Like 'findM', but also allows you to compute some additional information in the predicate.
+firstJustM :: Monad m => (a -> m (Maybe b)) -> [a] -> m (Maybe b)
+firstJustM _ [] = pure Nothing
+firstJustM p (x:xs) = maybeM (firstJustM p xs) (pure . Just) (p x)
+{-# INLINE firstJustM #-}
+
+-- | Monadic generalisation of 'maybe'.
+maybeM :: Monad m => m b -> (a -> m b) -> m (Maybe a) -> m b
+maybeM n j x = maybe n j =<< x
+{-# INLINE maybeM #-}
+
+-- | Like 'when', but where the test can be monadic.
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM b t = do b' <- b; when b' t
+{-# INLINE whenM #-}
 
 cacheLookupExpr :: WriterConn t h -> Nonce t tp -> IO (Maybe (SMTExpr h tp))
 cacheLookupExpr c n = cacheLookup c $ \entry ->
@@ -1790,6 +1806,7 @@ mkExpr (BoundVarExpr var) = do
 -- | Convert an element to a base expression.
 mkBaseExpr :: SMTWriter h => Expr t tp -> SMTCollector t h (Term h)
 mkBaseExpr e = asBase <$> mkExpr e
+{-# INLINE mkBaseExpr #-}
 
 -- | Convert structure to list.
 mkIndicesTerms :: SMTWriter h
