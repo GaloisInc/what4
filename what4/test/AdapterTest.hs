@@ -229,12 +229,9 @@ mkConfigTests adapters =
         -- n.b. requires at least 2 entries in the adaptrs list
         \step -> withAdapters adaptrs $ \sym -> do
           step "Get OptionSetters, regular and deprecated, Text and ConfigOption"
-          settera <- getOptionSettingFromText "solver.default"
-                     (getConfiguration sym)
-          setterb <- getOptionSettingFromText "default_solver"
-                     (getConfiguration sym)
-          settera' <- getOptionSetting defaultSolverAdapter
-                     (getConfiguration sym)
+          settera <- getOptionSettingFromText "solver.default" (getConfiguration sym)
+          setterb <- getOptionSettingFromText "default_solver" (getConfiguration sym)
+          settera' <- getOptionSetting defaultSolverAdapter (getConfiguration sym)
           step "Get (same) initial value from regular and deprecated"
           cmpUnderSomes settera setterb
           step "Get (same) initial value from Text and ConfigOption identification"
