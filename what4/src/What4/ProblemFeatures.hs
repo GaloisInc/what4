@@ -22,6 +22,8 @@
 -- 10 : Uses floating-point
 -- 11 : Computes UNSAT cores
 -- 12 : Computes UNSAT assumptions
+-- 13 : Uses uninterpreted functions
+-- 14 : Uses defined functions
 ------------------------------------------------------------------------
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -41,6 +43,8 @@ module What4.ProblemFeatures
   , useFloatingPoint
   , useUnsatCores
   , useUnsatAssumptions
+  , useUninterpFunctions
+  , useDefinedFunctions
   , hasProblemFeature
   ) where
 
@@ -116,5 +120,18 @@ useUnsatCores = ProblemFeatures 0x800
 useUnsatAssumptions :: ProblemFeatures
 useUnsatAssumptions = ProblemFeatures 0x1000
 
+-- | Indicates if the solver is able and configured to use
+--   uninterpreted functions.
+useUninterpFunctions :: ProblemFeatures
+useUninterpFunctions = ProblemFeatures 0x2000
+
+-- | Indicates if the solver is able and configured to use
+--   defined functions.
+useDefinedFunctions :: ProblemFeatures
+useDefinedFunctions = ProblemFeatures 0x4000
+
+-- | Tests if one set of problem features subsumes another.
+--   In particular, @hasProblemFeature x y@ is true iff
+--   the set of features in @x@ is a superset of those in @y@.
 hasProblemFeature :: ProblemFeatures -> ProblemFeatures -> Bool
 hasProblemFeature x y = (x .&. y) == y
