@@ -361,10 +361,14 @@ recordExprVars _ (BoundVarExpr info) = do
 recordFnVars :: ExprSymFn t args ret -> VarRecorder s t ()
 recordFnVars f = do
   case symFnInfo f of
-    UninterpFnInfo{}  -> return ()
-    DefinedFnInfo _ d _ -> recordExprVars ExistsForall d
-    MatlabSolverFnInfo _ _ d -> recordExprVars ExistsForall d
-
+    UninterpFnInfo{}  ->
+      addFeatures useUninterpFunctions
+    DefinedFnInfo _ d _ ->
+      do addFeatures useDefinedFunctions
+         recordExprVars ExistsForall d
+    MatlabSolverFnInfo _ _ d ->
+      do addFeatures useDefinedFunctions
+         recordExprVars ExistsForall d
 
 -- | Recurse through the variables in the element, adding bound variables
 -- as both exist and forall vars.
@@ -386,7 +390,6 @@ recurseNonceAppVars scope ea0 = do
     ArrayTrueOnEntries f a -> do
       recordFnVars f
       recordExprVars scope a
-
     FnApp f a -> do
       recordFnVars f
       traverseFC_ (recordExprVars scope) a
