@@ -117,6 +117,10 @@ indexType :: [SMT2.Sort] -> SMT2.Sort
 indexType [i] = i
 indexType il = SMT2.smtlib2StructSort @CVC4 il
 
+indexCtor :: [SMT2.Term] -> SMT2.Term
+indexCtor [i] = i
+indexCtor il = SMT2.smtlib2StructCtor @CVC4 il
+
 instance SMT2.SMTLib2Tweaks CVC4 where
   smtlib2tweaks = CVC4
 
@@ -124,15 +128,15 @@ instance SMT2.SMTLib2Tweaks CVC4 where
 
   smtlib2arrayConstant = Just $ \idx rtp v ->
     SMT2.arrayConst (indexType idx) rtp v
+  smtlib2arraySelect a i = SMT2.arraySelect a (indexCtor i)
+  smtlib2arrayUpdate a i = SMT2.arrayStore a (indexCtor i)
 
   smtlib2declareStructCmd _ = Nothing
-
   smtlib2StructSort []  = Syntax.varSort "Tuple"
   smtlib2StructSort tps = Syntax.Sort $ "(Tuple" <> foldMap f tps <> ")"
     where f x = " " <> Syntax.unSort x
 
   smtlib2StructCtor args = Syntax.term_app "mkTuple" args
-
   smtlib2StructProj _n i x = Syntax.term_app (Syntax.builder_list ["_", "tupSel", fromString (show i)]) [ x ]
 
 cvc4Features :: ProblemFeatures

@@ -834,6 +834,20 @@ stringTest5 sym solver =
        _ -> fail "expected satisfable model"
 
 
+multidimArrayTest ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+multidimArrayTest sym solver =
+    do f <- freshConstant sym (userSymbol' "a") $
+              BaseArrayRepr (Ctx.empty Ctx.:> BaseBoolRepr Ctx.:> BaseBoolRepr) BaseBoolRepr
+       f' <- arrayUpdate sym f (Ctx.empty Ctx.:> falsePred sym Ctx.:> falsePred sym) (falsePred sym)
+       p <- arrayLookup sym f' (Ctx.empty Ctx.:> truePred sym Ctx.:> truePred sym)
+       checkSatisfiable solver "test" p >>= \case
+         Sat _ -> return ()
+         _ -> fail "expected satisfiable model"
+
 forallTest ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -1002,6 +1016,8 @@ main = do
         , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
 
         , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
+
+        , testCase "Z3 multidim array"$ withOnlineZ3 multidimArrayTest
         ]
   let cvc4Tests =
         [
@@ -1023,6 +1039,8 @@ main = do
         , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
 
         , testCase "CVC4 rounding" $ withCVC4 roundingTest
+
+        , testCase "CVC4 multidim array"$ withCVC4 multidimArrayTest
         ]
   let yicesTests =
         [

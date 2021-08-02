@@ -1061,6 +1061,7 @@ declareTypes conn = \case
   ComplexToArrayTypeMap  -> return ()
   PrimArrayTypeMap args ret ->
     do traverseFC_ (declareTypes conn) args
+       declareStructDatatype conn args
        declareTypes conn ret
   FnArrayTypeMap args ret ->
     do traverseFC_ (declareTypes conn) args
@@ -2569,22 +2570,23 @@ appSMTExpr ae = do
                     else FnArrayTypeMap
       idx_types <- liftIO $
         traverseFC (evalFirstClassTypeRepr conn (eltSource i)) idxRepr
+      let tp = mkArray idx_types value_type
+      -- make sure any referenced tuple types exist
+      liftIO (declareTypes conn tp)
+
       case arrayConstant @h of
         Just constFn
           | otherwise -> do
             let idx_smt_types = toListFC Some idx_types
-            let tp = mkArray idx_types value_type
             freshBoundTerm tp $!
               constFn idx_smt_types (Some value_type) (asBase v)
         Nothing -> do
           when (not (supportFunctionDefs conn)) $ do
             fail $ show $ pretty (smtWriterName conn) <+>
               "cannot encode constant arrays."
-          -- Constant functions use unnamed variables.
-          let array_type = mkArray idx_types value_type
           -- Create names for index variables.
           args <- liftIO $ createTypeMapArgsForArray conn idx_types
-          SMTName array_type <$> freshBoundFn args value_type (asBase v)
+          SMTName tp <$> freshBoundFn args value_type (asBase v)
 
     SelectArray _bRepr a idx -> do
       aexpr <- mkExpr a
