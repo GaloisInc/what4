@@ -14,7 +14,7 @@
 
 import           Control.Exception ( displayException, try, SomeException(..), fromException )
 import           Control.Lens (folded)
-import           Control.Monad ( forM, unless, void )
+import           Control.Monad ( forM, unless )
 import           Control.Monad.Except ( runExceptT )
 import           Data.BitVector.Sized ( mkBV )
 import           Data.Char ( toLower )
@@ -32,7 +32,6 @@ import           Test.Tasty.HUnit
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 
-import qualified What4.BaseTypes as BT
 import           What4.Config
 import           What4.Expr
 import           What4.Interface
@@ -394,7 +393,9 @@ mkConfigTests adapters =
             Left (SomeException e) -> assertFailure $ show e
           cmpUnderSome settera setterb
 
-      , testCase "deprecated stp_path is equivalent to solver.stp.path" $
+      , (if "stp" `elem` (solver_adapter_name <$> adapters)
+         then id else ignoreTestBecause "stp not available") $
+        testCase "deprecated stp_path is equivalent to solver.stp.path" $
         withAdapters adaptrs $ \sym -> do
 #ifdef TEST_STP
           settera <- getOptionSettingFromText "stp_path"
@@ -416,7 +417,9 @@ mkConfigTests adapters =
           wantOptGetFailure "not found" settera
 #endif
 
-      , testCase "deprecated stp.random-seed is equivalent to solver.stp.random-seed" $
+      , (if "stp" `elem` (solver_adapter_name <$> adapters)
+         then id else ignoreTestBecause "stp not available") $
+        testCase "deprecated stp.random-seed is equivalent to solver.stp.random-seed" $
         withAdapters adaptrs $ \sym -> do
 #ifdef TEST_STP
           settera <- getOptionSettingFromText "stp.random-seed"
