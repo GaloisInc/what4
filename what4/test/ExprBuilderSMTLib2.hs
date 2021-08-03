@@ -19,12 +19,12 @@ import           Test.Tasty.HUnit
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
-import qualified Data.ByteString as BS
 import           Data.Char ( toLower )
 import           Data.Foldable
 import qualified Data.List as L
 import qualified Data.Map as Map
 import           Data.Maybe ( catMaybes, fromMaybe )
+import qualified Data.Text as Text
 import           System.Environment ( lookupEnv )
 import           System.Exit ( ExitCode(..) )
 import           System.Process ( readProcessWithExitCode )
@@ -634,14 +634,14 @@ stringTest1 ::
   SolverProcess t solver ->
   IO ()
 stringTest1 sym solver =
-  do let bsx = "asdf\nasdf"
-     let bsz = "qwe\x1crty"
-     let bsw = "QQ\"QQ"
+  do let bsx = "asdf\nasdf"     -- length 9
+     let bsz = "qwe\x1c\&rty"   -- length 7
+     let bsw = "QQ\"QQ"         -- length 5
 
-     x <- stringLit sym (Char8Literal bsx)
-     y <- freshConstant sym (userSymbol' "str") (BaseStringRepr Char8Repr)
-     z <- stringLit sym (Char8Literal bsz)
-     w <- stringLit sym (Char8Literal bsw)
+     x <- stringLit sym (UnicodeLiteral bsx)
+     y <- freshConstant sym (userSymbol' "str") (BaseStringRepr UnicodeRepr)
+     z <- stringLit sym (UnicodeLiteral bsz)
+     w <- stringLit sym (UnicodeLiteral bsw)
 
      s <- stringConcat sym x =<< stringConcat sym y z
      s' <- stringConcat sym s w
@@ -653,12 +653,12 @@ stringTest1 sym solver =
 
      checkSatisfiableWithModel solver "test" p $ \case
        Sat fn ->
-         do Char8Literal slit <- groundEval fn s'
+         do UnicodeLiteral slit <- groundEval fn s'
             llit <- groundEval fn n
 
-            (fromIntegral (BS.length slit) == llit) @? "model string length"
-            BS.isPrefixOf bsx slit @? "prefix check"
-            BS.isSuffixOf (bsz <> bsw) slit @? "suffix check"
+            (fromIntegral (Text.length slit) == llit) @? "model string length"
+            Text.isPrefixOf bsx slit @? "prefix check"
+            Text.isSuffixOf (bsz <> bsw) slit @? "suffix check"
 
        _ -> fail "expected satisfiable model"
 
@@ -675,17 +675,17 @@ stringTest2 ::
   IO ()
 stringTest2 sym solver =
   do let bsx = "asdf\nasdf"
-     let bsz = "qwe\x1crty"
+     let bsz = "qwe\x1c\&rty"
      let bsw = "QQ\"QQ"
 
      q <- freshConstant sym (userSymbol' "q") BaseBoolRepr
 
-     x <- stringLit sym (Char8Literal bsx)
-     z <- stringLit sym (Char8Literal bsz)
-     w <- stringLit sym (Char8Literal bsw)
+     x <- stringLit sym (UnicodeLiteral bsx)
+     z <- stringLit sym (UnicodeLiteral bsz)
+     w <- stringLit sym (UnicodeLiteral bsw)
 
-     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr Char8Repr)
-     b <- freshConstant sym (userSymbol' "strb") (BaseStringRepr Char8Repr)
+     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr UnicodeRepr)
+     b <- freshConstant sym (userSymbol' "strb") (BaseStringRepr UnicodeRepr)
 
      ax <- stringConcat sym x a
 
@@ -716,19 +716,19 @@ stringTest3 ::
   SolverProcess t solver ->
   IO ()
 stringTest3 sym solver =
-  do let bsz = "qwe\x1crtyQQ\"QQ"
-     z <- stringLit sym (Char8Literal bsz)
+  do let bsz = "qwe\x1c\&rtyQQ\"QQ"
+     z <- stringLit sym (UnicodeLiteral bsz)
 
-     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr Char8Repr)
-     b <- freshConstant sym (userSymbol' "strb") (BaseStringRepr Char8Repr)
-     c <- freshConstant sym (userSymbol' "strc") (BaseStringRepr Char8Repr)
+     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr UnicodeRepr)
+     b <- freshConstant sym (userSymbol' "strb") (BaseStringRepr UnicodeRepr)
+     c <- freshConstant sym (userSymbol' "strc") (BaseStringRepr UnicodeRepr)
 
      pfx <- stringIsPrefixOf sym a z
      sfx <- stringIsSuffixOf sym b z
 
      cnt1 <- stringContains sym z c
-     cnt2 <- notPred sym =<< stringContains sym c =<< stringLit sym (Char8Literal "Q")
-     cnt3 <- notPred sym =<< stringContains sym c =<< stringLit sym (Char8Literal "q")
+     cnt2 <- notPred sym =<< stringContains sym c =<< stringLit sym (UnicodeLiteral "Q")
+     cnt3 <- notPred sym =<< stringContains sym c =<< stringLit sym (UnicodeLiteral "q")
      cnt  <- andPred sym cnt1 =<< andPred sym cnt2 cnt3
 
      lena <- stringLength sym a
@@ -748,13 +748,13 @@ stringTest3 sym solver =
 
      checkSatisfiableWithModel solver "test" p $ \case
        Sat fn ->
-         do alit <- fromChar8Lit <$> groundEval fn a
-            blit <- fromChar8Lit <$> groundEval fn b
-            clit <- fromChar8Lit <$> groundEval fn c
+         do alit <- fromUnicodeLit <$> groundEval fn a
+            blit <- fromUnicodeLit <$> groundEval fn b
+            clit <- fromUnicodeLit <$> groundEval fn c
 
-            alit == (BS.take 9 bsz) @? "correct prefix"
-            blit == (BS.drop (BS.length bsz - 9) bsz) @? "correct suffix"
-            clit == (BS.take 6 (BS.drop 1 bsz)) @? "correct middle"
+            alit == (Text.take 9 bsz) @? "correct prefix"
+            blit == (Text.drop (Text.length bsz - 9) bsz) @? "correct suffix"
+            clit == (Text.take 6 (Text.drop 1 bsz)) @? "correct middle"
 
        _ -> fail "expected satisfable model"
 
@@ -766,8 +766,8 @@ stringTest4 ::
   IO ()
 stringTest4 sym solver =
   do let bsx = "str"
-     x <- stringLit sym (Char8Literal bsx)
-     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr Char8Repr)
+     x <- stringLit sym (UnicodeLiteral bsx)
+     a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr UnicodeRepr)
      i <- stringIndexOf sym a x =<< intLit sym 5
 
      zero <- intLit sym 0
@@ -775,10 +775,10 @@ stringTest4 sym solver =
 
      checkSatisfiableWithModel solver "test" p $ \case
        Sat fn ->
-          do alit <- fromChar8Lit <$> groundEval fn a
+          do alit <- fromUnicodeLit <$> groundEval fn a
              ilit <- groundEval fn i
 
-             BS.isPrefixOf bsx (BS.drop (fromIntegral ilit) alit) @? "correct index"
+             Text.isPrefixOf bsx (Text.drop (fromIntegral ilit) alit) @? "correct index"
              ilit >= 5 @? "index large enough"
 
        _ -> fail "expected satisfable model"
@@ -791,10 +791,10 @@ stringTest4 sym solver =
 
      checkSatisfiableWithModel solver "test" q $ \case
        Sat fn ->
-          do alit <- fromChar8Lit <$> groundEval fn a
+          do alit <- fromUnicodeLit <$> groundEval fn a
              ilit <- groundEval fn i
 
-             not (BS.isInfixOf bsx (BS.drop 5 alit)) @? "substring not found"
+             not (Text.isInfixOf bsx (Text.drop 5 alit)) @? "substring not found"
              ilit == (-1) @? "expected neg one"
 
        _ -> fail "expected satisfable model"
@@ -805,7 +805,7 @@ stringTest5 ::
   SolverProcess t solver ->
   IO ()
 stringTest5 sym solver =
-  do a <- freshConstant sym (userSymbol' "a") (BaseStringRepr Char8Repr)
+  do a <- freshConstant sym (userSymbol' "a") (BaseStringRepr UnicodeRepr)
      off <- freshConstant sym (userSymbol' "off") BaseIntegerRepr
      len <- freshConstant sym (userSymbol' "len") BaseIntegerRepr
 
@@ -815,7 +815,7 @@ stringTest5 sym solver =
      let qlit = "qwerty"
 
      sub <- stringSubstring sym a off len
-     p1 <- stringEq sym sub =<< stringLit sym (Char8Literal qlit)
+     p1 <- stringEq sym sub =<< stringLit sym (UnicodeLiteral qlit)
      p2 <- intLe sym n5 off
      p3 <- intLe sym n20 =<< stringLength sym a
 
@@ -823,11 +823,11 @@ stringTest5 sym solver =
 
      checkSatisfiableWithModel solver "test" p $ \case
        Sat fn ->
-         do alit <- fromChar8Lit <$> groundEval fn a
+         do alit <- fromUnicodeLit <$> groundEval fn a
             offlit <- groundEval fn off
             lenlit <- groundEval fn len
 
-            let q = BS.take (fromIntegral lenlit) (BS.drop (fromIntegral offlit) alit)
+            let q = Text.take (fromIntegral lenlit) (Text.drop (fromIntegral offlit) alit)
 
             q == qlit @? "correct substring"
 
@@ -1007,8 +1007,7 @@ main = do
 
         , testCase "Z3 string1" $ withOnlineZ3 stringTest1
         , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-        , ignoreTestBecause "https://github.com/GaloisInc/what4/issues/56 needs to be fixed" $
-          testCase "Z3 string3" $ withOnlineZ3 stringTest3
+        , testCase "Z3 string3" $ withOnlineZ3 stringTest3
         , testCase "Z3 string4" $ withOnlineZ3 stringTest4
         , testCase "Z3 string5" $ withOnlineZ3 stringTest5
 
@@ -1021,17 +1020,15 @@ main = do
         ]
   let cvc4Tests =
         [
-          -- TODO, enable this test when we figure out why it
-          -- doesnt work...
-          --  , testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
-          testCase "CVC4 1-tuple" $ withCVC4 oneTupleTest
+          ignoreTestBecause "This test stalls the solver for some reason; line-buffering issue?" $
+          testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
+        , testCase "CVC4 1-tuple" $ withCVC4 oneTupleTest
         , testCase "CVC4 pair"    $ withCVC4 pairTest
         , testCase "CVC4 forall binder" $ withCVC4 forallTest
 
         , testCase "CVC4 string1" $ withCVC4 stringTest1
         , testCase "CVC4 string2" $ withCVC4 stringTest2
-        , ignoreTestBecause "https://github.com/GaloisInc/what4/issues/56 needs to be fixed" $
-          testCase "CVC4 string3" $ withCVC4 stringTest3
+        , testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
 
