@@ -92,9 +92,6 @@ import           Control.Applicative
 import           Control.Exception
 import           Control.Monad.State.Strict
 import qualified Data.BitVector.Sized as BV
-import qualified Data.Bits as Bits
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import           Data.Char (digitToInt, isPrint, isAscii)
 import           Data.IORef
 import           Data.Map.Strict (Map)
@@ -207,53 +204,94 @@ arraySelect = SMT2.select
 arrayStore :: Term -> Term -> Term -> Term
 arrayStore = SMT2.store
 
-byteStringTerm :: ByteString -> Term
-byteStringTerm bs = SMT2.T ("\"" <> BS.foldr f "\"" bs)
+------------------------------------------------------------------------------------
+-- String Escaping functions
+--
+-- The following functions implement the escaping and
+-- escape parsing rules from SMTLib 2.6.  Documentation
+-- regarding this format is pasted below from the
+-- specification document.
+--
+--      The restriction to printable US ASCII characters in string constants is for
+--      simplicity since that set is universally supported. Arbitrary Unicode characters
+--      can be represented with _escape sequences_ which can have one of the following
+--      forms
+--          \ud₃d₂d₁d₀
+--          \u{d₀}
+--          \u{d₁d₀}
+--          \u{d₂d₁d₀}
+--          \u{d₃d₂d₁d₀}
+--          \u{d₄d₃d₂d₁d₀}
+--      where each dᵢ is a hexadecimal digit and d₄ is restricted to the range 0-2.
+--      These are the **only escape sequences** in this theory. See later.
+--      In a later version, the restrictions above on the digits may be extended
+--      to allow characters from all 17 Unicode planes.
+--
+--      Observe that the first form, \ud₃d₂d₁d₀, has exactly 4 hexadecimal digit,
+--      following the common use of this form in some programming languages.
+--      Unicode characters outside the range covered by \ud₃d₂d₁d₀ can be
+--      represented with the long form \u{d₄d₃d₂d₁d₀}.
+--
+--      Also observe that programming language-specific escape sequences, such as
+--      \n, \b, \r and so on, are _not_ escape sequences in this theory as they
+--      are not fully standard across languages.
+
+-- | Apply the SMTLib2.6 string escaping rules to a string literal.
+textToTerm :: Text -> Term
+textToTerm bs = SMT2.T ("\"" <> Text.foldr f "\"" bs)
  where
- f w x
+ f c x
    | '\"' == c = "\"\"" <> x
    | isPrint c = Builder.singleton c <> x
-   | otherwise = "\\x" <> h1 <> h2  <> x
-  where
-  h1 = Builder.fromString (showHex (w `Bits.shiftR` 4) "")
-  h2 = Builder.fromString (showHex (w Bits..&. 0xF) "")
+   | otherwise = "\\u{" <> Builder.fromString (showHex (fromEnum c) "}") <> x
 
-  c :: Char
-  c = toEnum (fromEnum w)
-
-
-unescapeText :: Text -> Maybe ByteString
+-- | Parse SMTLIb2.6 escaping rules for strings.
+--
+--   Note! The escaping rule that uses the @\"\"@ sequence
+--   to encode a double quote has already been resolved
+--   by @parseSMTLIb2String@, so here we just need to
+--   parse the @\\u@ escape forms.
+unescapeText :: Text -> Maybe Text
 unescapeText = go mempty
  where
- go bs t =
+ go str t =
    case Text.uncons t of
-     Nothing -> Just bs
+     Nothing -> Just str
      Just (c, t')
        | not (isAscii c) -> Nothing
-       | c == '\\'       -> readEscape bs t'
-       | otherwise       -> continue bs c t'
+       | c == '\\'       -> readEscape str t'
+       | otherwise       -> continue str c t'
 
- continue bs c t = go (BS.snoc bs (toEnum (fromEnum c))) t
+ continue str c t = go (Text.snoc str c) t
 
- readEscape bs t =
+ readEscape str t =
    case Text.uncons t of
      Nothing -> Nothing
      Just (c, t')
-       | c == 'a'  -> continue bs '\a' t'
-       | c == 'b'  -> continue bs '\b' t'
-       | c == 'e'  -> continue bs '\x1B' t'
-       | c == 'f'  -> continue bs '\f' t'
-       | c == 'n'  -> continue bs '\n' t'
-       | c == 'r'  -> continue bs '\r' t'
-       | c == 't'  -> continue bs '\t' t'
-       | c == 'v'  -> continue bs '\v' t'
-       | c == 'x'  -> readHexEscape bs t'
-       | otherwise -> continue bs c t'
+       -- Note: the \u forms are the _only_ escape forms
+       | c == 'u'  -> readHexEscape str t'
+       | otherwise -> continue (Text.snoc str '\\') c t'
 
- readHexEscape bs t =
-   case readHex (Text.unpack (Text.take 2 t)) of
-     (n, []):_ | 0 <= n && n < 256 -> go (BS.snoc bs (toEnum n)) (Text.drop 2 t)
+ readHexEscape str t =
+   case Text.uncons t of
+     Just (c, t')
+       -- take until the closing brace
+       | c == '{'
+       , (ds, t'') <- Text.breakOn "}" t'
+       , Just ('}',t''') <- Text.uncons t''
+       -> readDigits str ds t'''
+
+         -- take exactly four digits
+       | (ds, t'') <- Text.splitAt 4 t'
+       , Text.length ds == 4
+       -> readDigits str ds t''
+
      _ -> Nothing
+
+ readDigits str ds t =
+    case readHex (Text.unpack ds) of
+      (n, []):_ -> continue str (toEnum n) t
+      _ -> Nothing
 
 -- | This class exists so that solvers supporting the SMTLib2 format can support
 --   features that go slightly beyond the standard.
@@ -295,8 +333,8 @@ class Show a => SMTLib2Tweaks a where
   smtlib2StringSort :: SMT2.Sort
   smtlib2StringSort = SMT2.Sort "String"
 
-  smtlib2StringTerm :: ByteString -> Term
-  smtlib2StringTerm = byteStringTerm
+  smtlib2StringTerm :: Text -> Term
+  smtlib2StringTerm = textToTerm
 
   smtlib2StringLength :: Term -> Term
   smtlib2StringLength = SMT2.un_app "str.len"
@@ -368,7 +406,7 @@ asSMT2Type IntegerTypeMap = SMT2.intSort
 asSMT2Type RealTypeMap    = SMT2.realSort
 asSMT2Type (BVTypeMap w)  = SMT2.bvSort (natValue w)
 asSMT2Type (FloatTypeMap fpp) = SMT2.Sort $ mkFloatSymbol "FloatingPoint" (asSMTFloatPrecision fpp)
-asSMT2Type Char8TypeMap = smtlib2StringSort @a
+asSMT2Type UnicodeTypeMap = smtlib2StringSort @a
 asSMT2Type ComplexToStructTypeMap =
   smtlib2StructSort @a [ SMT2.realSort, SMT2.realSort ]
 asSMT2Type ComplexToArrayTypeMap =
@@ -634,7 +672,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
     let resolveArg (var, Some tp) = (var, asSMT2Type @a tp)
      in SMT2.defineFun f (resolveArg <$> args) (asSMT2Type @a return_type) e
 
-  stringTerm bs = smtlib2StringTerm @a bs
+  stringTerm str = smtlib2StringTerm @a str
   stringLength x = smtlib2StringLength @a x
   stringAppend xs = smtlib2StringAppend @a xs
   stringContains x y = smtlib2StringContains @a x y
@@ -743,8 +781,8 @@ parseBVLitHelper (SApp ["_", SAtom (Text.unpack -> ('b' : 'v' : n_str)), SAtom (
 -- BGS: Is this correct?
 parseBVLitHelper _ = natBV 0 0
 
-parseStringSolverValue :: MonadFail m => SExp -> m ByteString
-parseStringSolverValue (SString t) | Just bs <- unescapeText t = return bs
+parseStringSolverValue :: MonadFail m => SExp -> m Text
+parseStringSolverValue (SString t) | Just t' <- unescapeText t = return t'
 parseStringSolverValue x = fail ("Could not parse string solver value:\n  " ++ show x)
 
 parseFloatSolverValue :: MonadFail m => FloatPrecisionRepr fpp
@@ -757,7 +795,7 @@ parseFloatSolverValue (FloatingPointPrecisionRepr eb sb) s = do
     (Just Refl, Just Refl) -> do
       -- eb' + 1 ~ 1 + eb'
       Refl <- return $ plusComm eb' (knownNat @1)
-      -- (eb' + 1) + sb' ~ eb' + (1 + sb') 
+      -- (eb' + 1) + sb' ~ eb' + (1 + sb')
       Refl <- return $ plusAssoc eb' (knownNat @1) sb'
       return bv
         where bv = BV.concat (addNat (knownNat @1) eb) sb' (BV.concat knownNat eb sgn expt) sig

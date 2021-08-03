@@ -113,7 +113,6 @@ import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Bits as Bits
-import           Data.ByteString (ByteString)
 import           Data.IORef
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -173,7 +172,7 @@ data TypeMap (tp::BaseType) where
   RealTypeMap    :: TypeMap BaseRealType
   BVTypeMap      :: (1 <= w) => !(NatRepr w) -> TypeMap (BaseBVType w)
   FloatTypeMap   :: !(FloatPrecisionRepr fpp) -> TypeMap (BaseFloatType fpp)
-  Char8TypeMap   :: TypeMap (BaseStringType Char8)
+  UnicodeTypeMap :: TypeMap (BaseStringType Unicode)
 
   -- A complex number mapped to an SMTLIB struct.
   ComplexToStructTypeMap:: TypeMap BaseComplexType
@@ -210,7 +209,7 @@ instance Show (TypeMap a) where
   show RealTypeMap              = "RealTypeMap"
   show (BVTypeMap n)            = "BVTypeMap " ++ show n
   show (FloatTypeMap x)         = "FloatTypeMap " ++ show x
-  show Char8TypeMap             = "Char8TypeMap"
+  show UnicodeTypeMap           = "UnicodeTypeMap"
   show (ComplexToStructTypeMap) = "ComplexToStructTypeMap"
   show ComplexToArrayTypeMap    = "ComplexToArrayTypeMap"
   show (PrimArrayTypeMap ctx a) = "PrimArrayTypeMap " ++ showF ctx ++ " " ++ showF a
@@ -225,7 +224,7 @@ instance TestEquality TypeMap where
   testEquality BoolTypeMap BoolTypeMap = Just Refl
   testEquality IntegerTypeMap IntegerTypeMap = Just Refl
   testEquality RealTypeMap RealTypeMap = Just Refl
-  testEquality Char8TypeMap Char8TypeMap = Just Refl
+  testEquality UnicodeTypeMap UnicodeTypeMap = Just Refl
   testEquality (FloatTypeMap x) (FloatTypeMap y) = do
     Refl <- testEquality x y
     return Refl
@@ -931,7 +930,7 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   structProj :: Ctx.Assignment TypeMap args -> Ctx.Index args tp -> Term h -> Term h
 
   -- | Produce a term representing a string literal
-  stringTerm :: ByteString -> Term h
+  stringTerm :: Text -> Term h
 
   -- | Compute the length of a term
   stringLength :: Term h -> Term h
@@ -1056,7 +1055,7 @@ declareTypes conn = \case
   RealTypeMap    -> return ()
   BVTypeMap _ -> return ()
   FloatTypeMap _ -> return ()
-  Char8TypeMap -> return ()
+  UnicodeTypeMap -> return ()
   ComplexToStructTypeMap -> declareStructDatatype conn (Ctx.Empty Ctx.:> RealTypeMap Ctx.:> RealTypeMap)
   ComplexToArrayTypeMap  -> return ()
   PrimArrayTypeMap args ret ->
@@ -1181,7 +1180,7 @@ typeMapFirstClass conn tp0 = do
     BaseFloatRepr fpp -> Right $! FloatTypeMap fpp
     BaseRealRepr -> Right RealTypeMap
     BaseIntegerRepr -> Right IntegerTypeMap
-    BaseStringRepr Char8Repr -> Right Char8TypeMap
+    BaseStringRepr UnicodeRepr -> Right UnicodeTypeMap
     BaseStringRepr si -> Left (StringTypeUnsupported (Some si))
     BaseComplexRepr
       | feat `hasProblemFeature` useStructs        -> Right ComplexToStructTypeMap
@@ -1299,7 +1298,7 @@ addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRang
      when (hi < maxUnsigned w) $
        addSideCondition "bv_bitrange" $ (bvOr t (bvTerm w (BV.mkBV w hi))) .== (bvTerm w (BV.mkBV w hi))
 
-addPartialSideCond _ t (Char8TypeMap) (Just (StringAbs len)) =
+addPartialSideCond _ t (UnicodeTypeMap) (Just (StringAbs len)) =
   do case rangeLowBound len of
        Inclusive lo ->
           addSideCondition "string length low range" $
@@ -1758,9 +1757,9 @@ mkExpr t@(FloatExpr fpp f _) = do
   return $ SMTExpr (FloatTypeMap fpp) $ floatTerm fpp f
 mkExpr t@(StringExpr l _) =
   case l of
-    Char8Literal bs -> do
+    UnicodeLiteral str -> do
       checkStringSupport t
-      return $ SMTExpr Char8TypeMap $ stringTerm @h bs
+      return $ SMTExpr UnicodeTypeMap $ stringTerm @h str
     _ -> do
       conn <- asks scConn
       theoryUnsupported conn ("strings " ++ show (stringLiteralInfo l)) t
@@ -2329,7 +2328,7 @@ appSMTExpr ae = do
 
     StringLength xe -> do
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           freshBoundTerm IntegerTypeMap $ stringLength @h x
@@ -2337,7 +2336,7 @@ appSMTExpr ae = do
 
     StringIndexOf xe ye ke ->
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           y <- mkBaseExpr ye
@@ -2347,17 +2346,17 @@ appSMTExpr ae = do
 
     StringSubstring _ xe offe lene ->
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           off <- mkBaseExpr offe
           len <- mkBaseExpr lene
-          freshBoundTerm Char8TypeMap $ stringSubstring @h x off len
+          freshBoundTerm UnicodeTypeMap $ stringSubstring @h x off len
         si -> fail ("Unsupported symbolic string substring operation " ++  show si)
 
     StringContains xe ye ->
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           y <- mkBaseExpr ye
@@ -2366,7 +2365,7 @@ appSMTExpr ae = do
 
     StringIsPrefixOf xe ye ->
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           y <- mkBaseExpr ye
@@ -2375,7 +2374,7 @@ appSMTExpr ae = do
 
     StringIsSuffixOf xe ye ->
       case stringInfo xe of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
           x <- mkBaseExpr xe
           y <- mkBaseExpr ye
@@ -2384,12 +2383,12 @@ appSMTExpr ae = do
 
     StringAppend si xes ->
       case si of
-        Char8Repr -> do
+        UnicodeRepr -> do
           checkStringSupport i
-          let f (SSeq.StringSeqLiteral l) = return $ stringTerm @h $ fromChar8Lit l
+          let f (SSeq.StringSeqLiteral l) = return $ stringTerm @h $ fromUnicodeLit l
               f (SSeq.StringSeqTerm t)    = mkBaseExpr t
           xs <- mapM f $ SSeq.toList xes
-          freshBoundTerm Char8TypeMap $ stringAppend @h xs
+          freshBoundTerm UnicodeTypeMap $ stringAppend @h xs
 
         _ -> fail ("Unsupported symbolic string append operation " ++  show si)
 
@@ -2907,7 +2906,7 @@ data SMTEvalFunctions h
                         -- and codomain are both bitvectors. If 'Nothing',
                         -- signifies that we should fall back to index-selection
                         -- representation of arrays.
-                      , smtEvalString :: Term h -> IO ByteString
+                      , smtEvalString :: Term h -> IO Text
                         -- ^ Given a SMT term representing as sequence of bytes,
                         -- return the value as a bytestring.
                       }
@@ -2959,7 +2958,7 @@ getSolverVal _ smtFns (BVTypeMap w) tm = smtEvalBV smtFns w tm
 getSolverVal _ smtFns RealTypeMap   tm = smtEvalReal smtFns tm
 getSolverVal _ smtFns (FloatTypeMap fpp) tm =
   bfFromBits (fppOpts fpp RNE) . BV.asUnsigned <$> smtEvalFloat smtFns fpp tm
-getSolverVal _ smtFns Char8TypeMap tm = Char8Literal <$> smtEvalString smtFns tm
+getSolverVal _ smtFns UnicodeTypeMap tm = UnicodeLiteral <$> smtEvalString smtFns tm
 getSolverVal _ smtFns IntegerTypeMap tm = do
   r <- smtEvalReal smtFns tm
   when (denominator r /= 1) $ fail "Expected integer value."
