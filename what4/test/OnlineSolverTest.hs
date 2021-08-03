@@ -17,7 +17,7 @@ import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
 import           Control.Exception ( try, SomeException )
 import           Control.Lens (folded)
-import           Control.Monad ( forM, void )
+import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
 import           Data.Char ( toLower )
@@ -398,7 +398,7 @@ timeoutTests testLevel solvers =
       -- developer as solvers, What4 formulation, and machine speeds
       -- evolve.
       approxTestTimes :: [ (String, Time) ]
-      approxTestTimes = [ ("Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
+      approxTestTimes = [ ("Z3",         3.75 % Second)    -- Z3 4.8.11.  Z3 is good at self timeout.
                         , ("CVC4",       7.5  % Second)    -- CVC4 1.8
                         , ("Yices",      2.9  % Second)    -- Yices 2.6.1
                         , ("Boolector",  7.2  % Second)    -- Boolector 3.2.1
