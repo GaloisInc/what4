@@ -125,7 +125,7 @@ boolectorFeatures = useSymbolicArrays
 
 instance SMT2.SMTLib2GenericSolver Boolector where
   defaultSolverPath _ = findSolverPath boolectorPath . getConfiguration
-  defaultSolverArgs _ _ = return ["--smt2", "--smt2-model", "--incremental", "--output-format=smt2", "-e=0"]
+  defaultSolverArgs _ _ = return ["--smt2", "--incremental", "--output-format=smt2", "-e=0"]
   defaultFeatures _ = boolectorFeatures
   setDefaultLogicAndOptions writer = do
     SMT2.setLogic writer SMT2.allSupported
