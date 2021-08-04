@@ -226,6 +226,7 @@ import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.StringSeq as SSeq
 import           What4.Expr.UnaryBV (UnaryBV)
 import qualified What4.Expr.UnaryBV as UnaryBV
+import qualified What4.Expr.VarIdentification as VI
 
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
@@ -3903,6 +3904,9 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
     v <- sbMakeBoundVar sym nm tp LatchVarKind Nothing
     updateVarBinding sym nm (VarSymbolBinding v)
     return $! BoundVarExpr v
+
+  exprUninterpConstants _sym expr =
+    (runST $ VI.collectVarInfo $ VI.recordExprVars VI.ExistsOnly expr) ^. VI.uninterpConstants
 
   freshBoundVar sym nm tp =
     sbMakeBoundVar sym nm tp QuantifierVarKind Nothing

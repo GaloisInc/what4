@@ -206,6 +206,7 @@ import           Data.Parameterized.TraversableFC
 import qualified Data.Parameterized.Vector as Vector
 import           Data.Ratio
 import           Data.Scientific (Scientific)
+import           Data.Set (Set)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           LibBF (BigFloat)
@@ -2666,6 +2667,9 @@ class ( IsExprBuilder sym
     Maybe Rational {- ^ lower bound -} ->
     Maybe Rational {- ^ upper bound -} ->
     IO (SymReal sym)
+
+  -- | Return the set of uninterpreted constants in the given expression.
+  exprUninterpConstants :: sym -> SymExpr sym tp -> Set (Some (BoundVar sym))
 
 
   ----------------------------------------------------------------------
