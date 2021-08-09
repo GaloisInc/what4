@@ -113,7 +113,7 @@ jobs:
           cd what4
           declare -A z3_sha
           z3_sha=([4.8.8]=sha256-qpmi75I27m89dhKSy8D2zkzqKpLoFBPRBrhzDB8axeY=
-                  [4.8.10]=sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc=
+                  [4.8.10]=sha256-jvn1RtSqmhRTA9I+VDDVGW3KID38WiFGl/vGB6ioPvA=
                   [4.8.11]=sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc=
                   [4.8.12]=sha256-oLsdiZQ5ZIWn0Hr/zuWL5EcolOx9X+1sRE/VAQ9rbPE=
                   )
