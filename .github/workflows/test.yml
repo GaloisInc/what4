@@ -113,9 +113,12 @@ jobs:
           echo Boolector version $(nix eval nixpkgs.boolector.version)
           echo CVC4 version $(nix eval nixpkgs.cvc4.version)
           echo Yices version $(nix eval nixpkgs.yices.version)
-          echo Z3 version $(nix eval nixpkgs.z3.version)
-          echo STP version $(nix eval nixpkgs.z3.version)
-          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 stp yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
+          # echo Z3 version $(nix eval nixpkgs.z3.version)
+          echo Z3 version 4.8.11
+          echo STP version $(nix eval nixpkgs.stp.version)
+          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 stp yices zlib \
+            'z3.overrideAttrs (_: { version = "4.8.11"; src=fetchFromGitHub { owner="Z3Prover"; repo="z3"; rev="z3-4.8.11"; sha256 = "sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc="; }; })' \
+            --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
       - name: Documentation
         shell: bash
         run: |
