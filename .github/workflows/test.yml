@@ -23,6 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         ghc: [9.0.1, 8.10.4, 8.8.4, 8.6.5]
+        z3: [4.8.8, 4.8.10, 4.8.11, 4.8.12]
         allow-failure: [false]
       fail-fast: false
     steps:
@@ -116,7 +117,7 @@ jobs:
                   [4.8.11]=sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc=
                   [4.8.12]=sha256-oLsdiZQ5ZIWn0Hr/zuWL5EcolOx9X+1sRE/VAQ9rbPE=
                   )
-          z3=4.8.8
+          z3=${{ matrix.z3 }}
           echo Boolector version $(nix eval nixpkgs.boolector.version)
           echo CVC4 version $(nix eval nixpkgs.cvc4.version)
           echo Yices version $(nix eval nixpkgs.yices.version)
