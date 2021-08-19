@@ -2184,9 +2184,11 @@ reduceApp sym unary a0 = do
     ConstantArray idx_tp _ e -> constantArray sym idx_tp e
     SelectArray _ a i     -> arrayLookup sym a i
     UpdateArray _ _ a i v -> arrayUpdate sym a i v
-    CopyArray _ _ dest_arr dest_idx src_arr src_idx len _ _ -> arrayCopy sym dest_arr dest_idx src_arr src_idx len
+    CopyArray _ _ dest_arr dest_idx src_arr src_idx len _ _ ->
+      arrayCopy sym dest_arr dest_idx src_arr src_idx len
     SetArray _ _ arr idx val len _ -> arraySet sym arr idx val len
-    EqualArrayRange _ _ x_arr x_idx y_arr y_idx len _ _ -> arrayRangeEq sym x_arr x_idx y_arr y_idx len
+    EqualArrayRange _ _ x_arr x_idx y_arr y_idx len _ _ ->
+      arrayRangeEq sym x_arr x_idx y_arr y_idx len
 
     IntegerToReal x -> integerToReal sym x
     RealToInteger x -> realToInteger sym x

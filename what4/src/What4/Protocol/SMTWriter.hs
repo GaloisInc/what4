@@ -2630,7 +2630,10 @@ appSMTExpr ae = do
 
       cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
         i_expr <- asBase <$> freshConstant "i" idx_type
-        return $ asBase (smt_array_select res [i_expr]) .== ite ((bvULe dest_idx_expr i_expr) .&& (bvULt i_expr (bvAdd dest_idx_expr len_expr))) (asBase (smt_array_select src_arr_typed_expr [bvAdd src_idx_expr (bvSub i_expr dest_idx_expr)])) (asBase (smt_array_select dest_arr_typed_expr [i_expr]))
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe dest_idx_expr i_expr) .&& (bvULt i_expr (bvAdd dest_idx_expr len_expr)))
+            (asBase (smt_array_select src_arr_typed_expr [bvAdd src_idx_expr (bvSub i_expr dest_idx_expr)]))
+            (asBase (smt_array_select dest_arr_typed_expr [i_expr]))
       addSideCondition "array copy" $ forallResult cr
       addSideCondition "array copy" $ bvULt dest_idx_expr (bvAdd dest_idx_expr len_expr)
       addSideCondition "array copy" $ bvULt src_idx_expr (bvAdd src_idx_expr len_expr)
@@ -2649,7 +2652,10 @@ appSMTExpr ae = do
       res <- freshConstant "array_set" arr_type
       cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
         i_expr <- asBase <$> freshConstant "i" idx_type
-        return $ asBase (smt_array_select res [i_expr]) .== ite ((bvULe idx_expr i_expr) .&& (bvULt i_expr (bvAdd idx_expr len_expr))) val_expr (asBase (smt_array_select arr_typed_expr [i_expr]))
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe idx_expr i_expr) .&& (bvULt i_expr (bvAdd idx_expr len_expr)))
+            val_expr
+            (asBase (smt_array_select arr_typed_expr [i_expr]))
       addSideCondition "array set" $ forallResult cr
       addSideCondition "array set" $ bvULt idx_expr (bvAdd idx_expr len_expr)
 
@@ -2666,7 +2672,9 @@ appSMTExpr ae = do
 
       cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
         i_expr <- asBase <$> freshConstant "i" idx_type
-        return $ impliesExpr ((bvULe x_idx_expr i_expr) .&& (bvULt i_expr (bvAdd x_idx_expr len_expr))) ((asBase (smt_array_select x_arr_typed_expr [i_expr])) .== (asBase (smt_array_select y_arr_typed_expr [bvAdd y_idx_expr (bvSub i_expr x_idx_expr)])))
+        return $ impliesExpr ((bvULe x_idx_expr i_expr) .&& (bvULt i_expr (bvAdd x_idx_expr len_expr)))
+          ((asBase (smt_array_select x_arr_typed_expr [i_expr])) .==
+            (asBase (smt_array_select y_arr_typed_expr [bvAdd y_idx_expr (bvSub i_expr x_idx_expr)])))
       addSideCondition "array range equal" $ bvULt x_idx_expr (bvAdd x_idx_expr len_expr)
       addSideCondition "array range equal" $ bvULt y_idx_expr (bvAdd y_idx_expr len_expr)
 

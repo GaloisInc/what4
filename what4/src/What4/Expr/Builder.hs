@@ -1140,11 +1140,6 @@ sbConcreteLookup sym arr0 mcidx idx
   , end_idx_unsigned <= lookup_idx_unsigned =
     sbConcreteLookup sym arr mcidx idx
 
-    -- Lookups on mux arrays just distribute over mux.
-  -- | Just (BaseIte _ _ p x y) <- asApp arr0 = do
-  --     xv <- sbConcreteLookup sym x mcidx idx
-  --     yv <- sbConcreteLookup sym y mcidx idx
-  --     baseTypeIte sym p xv yv
   | Just (MapOverArrays f _ args) <- asNonceApp arr0 = do
       let eval :: ArrayResultWrapper (Expr t) (d::>tp) utp
                -> IO (Expr t utp)
@@ -1158,25 +1153,11 @@ sbConcreteLookup sym arr0 mcidx idx
         sbMakeExpr sym (SelectArray range sliced_arr sliced_idx)
 
 sliceArrayLookupUpdate ::
-  ExprBuilder t st fs
-  -> Expr t (BaseArrayType (d::>tp) range)
-  -> Ctx.Assignment (Expr t) (d::>tp)
-  -> IO (Expr t (BaseArrayType (d::>tp) range), Ctx.Assignment (Expr t) (d::>tp))
+  ExprBuilder t st fs ->
+  Expr t (BaseArrayType (d::>tp) range) ->
+  Ctx.Assignment (Expr t) (d::>tp) ->
+  IO (Expr t (BaseArrayType (d::>tp) range), Ctx.Assignment (Expr t) (d::>tp))
 sliceArrayLookupUpdate sym arr0 lookup_idx
-  -- | Just (UpdateArray _ _ arr idx val) <- asApp arr0 = do
-  --   p0 <- foldlFC' (\p -> \(Pair x y) -> andPred sym p =<< isEq sym x y) (truePred sym) $ Ctx.zipWith Pair idx lookup_idx
-  --   case asConstantPred p0 of
-  --     Just True -> do
-  --       arr_base <- arrayUpdateBase sym arr
-  --       sliced_arr <- arrayUpdate sym arr_base lookup_idx val
-  --       return (sliced_arr, lookup_idx)
-  --     Just False ->
-  --       sliceArrayLookupUpdate sym arr lookup_idx
-  --     _ -> do
-  --       (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr lookup_idx
-  --       sliced_arr0 <- arrayUpdate sym sliced_arr sliced_idx val
-  --       return (sliced_arr0, sliced_idx)
-
   | Just (ArrayMap _ _ entry_map arr) <- asApp arr0 =
     case asConcreteIndices lookup_idx of
       Just lookup_concrete_idx ->
@@ -1232,16 +1213,16 @@ sliceArrayLookupUpdate sym arr0 lookup_idx
   | Just (BaseIte _ _ p x y) <- asApp arr0 = do
       (x', i') <- sliceArrayLookupUpdate sym x lookup_idx
       (y', j') <- sliceArrayLookupUpdate sym y lookup_idx
-      foo <- baseTypeIte sym p x' y'
-      bar <- Ctx.zipWithM (baseTypeIte sym p) i' j'
-      return (foo, bar)
+      sliced_arr <- baseTypeIte sym p x' y'
+      sliced_idx <- Ctx.zipWithM (baseTypeIte sym p) i' j'
+      return (sliced_arr, sliced_idx)
 
   | otherwise = return (arr0, lookup_idx)
 
 arrayUpdateBase ::
-  ExprBuilder t st fs
-  -> Expr t (BaseArrayType (d::>tp) range)
-  -> IO (Expr t (BaseArrayType (d::>tp) range))
+  ExprBuilder t st fs ->
+  Expr t (BaseArrayType (d::>tp) range) ->
+  IO (Expr t (BaseArrayType (d::>tp) range))
 arrayUpdateBase sym arr0 = case asApp arr0 of
   Just (UpdateArray _ _ arr _ _) -> arrayUpdateBase sym arr
   Just (ArrayMap _ _ _ arr) -> arrayUpdateBase sym arr
