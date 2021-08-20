@@ -30,7 +30,7 @@ module What4.Expr.VarIdentification
   , varErrors
     -- * CollectedVarInfo generation
   , Scope(..)
-  , Polarity(..)
+  , BM.Polarity(..)
   , VarRecorder
   , collectVarInfo
   , recordExprVars
@@ -61,9 +61,10 @@ import           Data.Word
 import           Prettyprinter (Doc)
 
 import           What4.BaseTypes
+import           What4.Expr.App
 import           What4.Expr.AppTheory
 import qualified What4.Expr.BoolMap as BM
-import           What4.Expr.Builder
+import           What4.Interface
 import           What4.ProblemFeatures
 import qualified What4.SemiRing as SR
 import           What4.Utils.MonadST
@@ -127,10 +128,10 @@ varErrors = lens _varErrors (\s v -> s { _varErrors = v })
 
 -- | Return variables needed to define element as a predicate
 predicateVarInfo :: Expr t BaseBoolType -> CollectedVarInfo t
-predicateVarInfo e = runST $ collectVarInfo $ recordAssertionVars ExistsOnly Positive e
+predicateVarInfo e = runST $ collectVarInfo $ recordAssertionVars ExistsOnly BM.Positive e
 
 newtype VarRecorder s t a
-      = VR { unVR :: ReaderT (H.HashTable s Word64 (Maybe Polarity))
+      = VR { unVR :: ReaderT (H.HashTable s Word64 (Maybe BM.Polarity))
                              (StateT (CollectedVarInfo t) (ST s))
                              a
            }
@@ -178,7 +179,7 @@ data Scope
 
 
 addExistVar :: Scope -- ^ Quantifier scope
-            -> Polarity -- ^ Polarity of variable
+            -> BM.Polarity -- ^ Polarity of variable
             -> NonceAppExpr t BaseBoolType -- ^ Top term
             -> BoundQuant                 -- ^ Quantifier appearing in top term.
             -> ExprBoundVar t tp
@@ -195,7 +196,7 @@ addExistVar ExistsOnly p e q v x = do
 addExistVar ExistsForall _ _ _ _ _ = do
   fail $ "what4 does not allow existental variables to appear inside forall quantifier."
 
-addForallVar :: Polarity -- ^ Polarity of formula
+addForallVar :: BM.Polarity -- ^ Polarity of formula
              -> NonceAppExpr t BaseBoolType -- ^ Top term
              -> BoundQuant            -- ^ Quantifier appearing in top term.
              -> ExprBoundVar t tp   -- ^ Bound variable
@@ -233,8 +234,8 @@ addBothVar ExistsForall _ _ _ _ = do
 -- | Record variables in a predicate that we are checking satisfiability of.
 recordAssertionVars :: Scope
                        -- ^ Scope of assertion
-                    -> Polarity
-                       -- ^ Polarity of this formula.
+                    -> BM.Polarity
+                       -- ^ BM.Polarity of this formula.
                     -> Expr t BaseBoolType
                        -- ^ Predicate to assert
                     -> VarRecorder s t ()
@@ -275,39 +276,39 @@ recordAssertionVars scope _ e = do
 
 -- | This records asserted variables in an app expr.
 recurseAssertedNonceAppExprVars :: Scope
-                           -> Polarity
+                           -> BM.Polarity
                            -> NonceAppExpr t BaseBoolType
                            -> VarRecorder s t ()
 recurseAssertedNonceAppExprVars scope p ea0 =
   case nonceExprApp ea0 of
     Forall v x -> do
       case p of
-        Positive -> do
+        BM.Positive -> do
           addFeatures useExistForall
           addForallVar      p ea0 ForallBound v x
-        Negative ->
+        BM.Negative ->
           addExistVar scope p ea0 ForallBound v x
     Exists v x -> do
       case p of
-        Positive ->
+        BM.Positive ->
           addExistVar scope p ea0 ExistBound v x
-        Negative -> do
+        BM.Negative -> do
           addFeatures useExistForall
           addForallVar      p ea0 ExistBound v x
     _ -> recurseNonceAppVars scope ea0
 
 -- | This records asserted variables in an app expr.
-recurseAssertedAppExprVars :: Scope -> Polarity -> Expr t BaseBoolType -> VarRecorder s t ()
+recurseAssertedAppExprVars :: Scope -> BM.Polarity -> Expr t BaseBoolType -> VarRecorder s t ()
 recurseAssertedAppExprVars scope p e = go e
  where
  go BoolExpr{} = return ()
 
  go (asApp -> Just (NotPred x)) =
-        recordAssertionVars scope (negatePolarity p) x
+        recordAssertionVars scope (BM.negatePolarity p) x
 
  go (asApp -> Just (ConjPred xs)) =
-   let pol (x,Positive) = recordAssertionVars scope p x
-       pol (x,Negative) = recordAssertionVars scope (negatePolarity p) x
+   let pol (x,BM.Positive) = recordAssertionVars scope p x
+       pol (x,BM.Negative) = recordAssertionVars scope (BM.negatePolarity p) x
    in
    case BM.viewBoolMap xs of
      BM.BoolMapUnit -> return ()

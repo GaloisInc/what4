@@ -16,8 +16,8 @@ module What4.Expr.AppTheory
   , typeTheory
   ) where
 
+import           What4.Expr.App
 import           What4.BaseTypes
-import           What4.Expr.Builder
 import qualified What4.SemiRing as SR
 import qualified What4.Expr.WeightedSum as WSum
 
