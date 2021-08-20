@@ -1382,7 +1382,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
               -> Ctx.Assignment (SymExpr sym) (idx::>tp)
               -> IO (SymExpr sym b)
 
-  -- | Return element in array.
+  -- | Copy elements from the source array to the destination array.
+  --
+  -- @'arrayCopy' sym dest_arr dest_idx src_arr src_idx len@ copies the
+  -- elements from @src_arr@ at indices @[src_idx .. (src_idx + len)]@ into
+  -- @dest_arr@ at indices @[dest_idx .. (dest_idx + len)]@.
+  --
+  -- The result is undefined if either @dest_idx + len@ or @src_idx + len@
+  -- wraps around.
   arrayCopy ::
     (1 <= w) =>
     sym ->
@@ -1393,7 +1400,12 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     SymBV sym w ->
     IO (SymArray sym (SingleCtx (BaseBVType w)) a)
 
-  -- | Return element in array.
+  -- | Set elements of the given array.
+  --
+  -- @'arraySet' sym arr idx val len@ sets the elements of @arr@ at indices
+  -- @[idx .. (idx + len)]@ to @val@.
+  --
+  -- The result is undefined if @idx + len@ wraps around.
   arraySet ::
     (1 <= w) =>
     sym ->
@@ -1403,7 +1415,16 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     SymBV sym w ->
     IO (SymArray sym (SingleCtx (BaseBVType w)) a)
 
-  -- | Return element in array.
+  -- | Check whether the lhs array and rhs array are equal at a range of
+  --   indices.
+  --
+  -- @'arrayRangeEq' sym lhs_arr lhs_idx rhs_arr rhs_idx len@ checks whether
+  -- the elements of @lhs_arr@ at indices @[lhs_idx .. (lhs_idx + len)]@ and
+  -- the elements of @rhs_arr@ at indices @[rhs_idx .. (rhs_idx + len)]@ are
+  -- equal.
+  --
+  -- The result is undefined if either @lhs_idx + len@ or @rhs_idx + len@
+  -- wraps around.
   arrayRangeEq ::
     (1 <= w) =>
     sym ->

@@ -1152,6 +1152,10 @@ sbConcreteLookup sym arr0 mcidx idx
         (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr0 idx
         sbMakeExpr sym (SelectArray range sliced_arr sliced_idx)
 
+-- | Simplify an array lookup expression by slicing the array w.r.t. the index.
+--
+-- Remove array update, copy and set operations at indices that are different
+-- from the lookup index.
 sliceArrayLookupUpdate ::
   ExprBuilder t st fs ->
   Expr t (BaseArrayType (d::>tp) range) ->
