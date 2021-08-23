@@ -43,8 +43,8 @@ import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
-import           Data.List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))
+import           Data.Foldable
 import qualified Data.Map.Strict as Map
 import           Data.Maybe ( fromMaybe )
 import qualified Data.Parameterized.Context as Ctx
@@ -108,6 +108,35 @@ lookupArray :: Ctx.Assignment BaseTypeRepr idx
 lookupArray _ (ArrayMapping f) i = f i
 lookupArray tps (ArrayConcrete base m) i = return $ fromMaybe base (Map.lookup i' m)
   where i' = fromMaybe (error "lookupArray: not valid indexLits") $ Ctx.zipWithM asIndexLit tps i
+
+-- | Update a ground array.
+updateArray ::
+  Ctx.Assignment BaseTypeRepr idx ->
+  GroundArray idx b ->
+  Ctx.Assignment GroundValueWrapper idx ->
+  GroundValue b ->
+  IO (GroundArray idx b)
+updateArray idx_tps arr idx val =
+  case arr of
+    ArrayMapping arr' -> return . ArrayMapping $ \x ->
+      if indicesEq idx_tps idx x then pure val else arr' x
+    ArrayConcrete d m -> do
+      let idx' = fromMaybe (error "UpdateArray only supported on Nat and BV") $ Ctx.zipWithM asIndexLit idx_tps idx
+      return $ ArrayConcrete d (Map.insert idx' val m)
+
+ where indicesEq :: Ctx.Assignment BaseTypeRepr ctx
+                 -> Ctx.Assignment GroundValueWrapper ctx
+                 -> Ctx.Assignment GroundValueWrapper ctx
+                 -> Bool
+       indicesEq tps x y =
+         forallIndex (Ctx.size x) $ \j ->
+           let GVW xj = x Ctx.! j
+               GVW yj = y Ctx.! j
+               tp = tps Ctx.! j
+           in case tp of
+                BaseIntegerRepr -> xj == yj
+                BaseBVRepr _    -> xj == yj
+                _ -> error $ "We do not yet support UpdateArray on " ++ show tp ++ " indices."
 
 asIndexLit :: BaseTypeRepr tp -> GroundValueWrapper tp -> Maybe (IndexLit tp)
 asIndexLit BaseIntegerRepr (GVW v) = return $ IntIndexLit v
@@ -476,31 +505,53 @@ evalGroundApp f a0 = do
       arr <- f a
       idx <- traverseFC (\e -> GVW <$> f e) i
       v'  <- f v
-      case arr of
-        ArrayMapping arr' -> return . ArrayMapping $ \x ->
-          if indicesEq idx_tps idx x then pure v' else arr' x
-        ArrayConcrete d m -> do
-          val <- f v
-          let idx' = fromMaybe (error "UpdateArray only supported on Nat and BV") $ Ctx.zipWithM asIndexLit idx_tps idx
-          return $ ArrayConcrete d (Map.insert idx' val m)
+      lift $ updateArray idx_tps arr idx v'
 
-     where indicesEq :: Ctx.Assignment BaseTypeRepr ctx
-                     -> Ctx.Assignment GroundValueWrapper ctx
-                     -> Ctx.Assignment GroundValueWrapper ctx
-                     -> Bool
-           indicesEq tps x y =
-             forallIndex (Ctx.size x) $ \j ->
-               let GVW xj = x Ctx.! j
-                   GVW yj = y Ctx.! j
-                   tp = tps Ctx.! j
-               in case tp of
-                    BaseIntegerRepr -> xj == yj
-                    BaseBVRepr _    -> xj == yj
-                    _ -> error $ "We do not yet support UpdateArray on " ++ show tp ++ " indices."
+    CopyArray w _ dest_arr dest_idx src_arr src_idx len _ _ -> do
+      ground_dest_arr <- f dest_arr
+      ground_dest_idx <- f dest_idx
+      ground_src_arr <- f src_arr
+      ground_src_idx <- f src_idx
+      ground_len <- f len
 
-    CopyArray{} -> error "CopyArray: unsupported."
-    SetArray{} -> error "SetArray: unsupported."
-    EqualArrayRange{} -> error "EqualArrayRange: unsupported."
+      lift $ foldlM
+        (\arr_acc (dest_i, src_i) ->
+          updateArray (Ctx.singleton $ BaseBVRepr w) arr_acc (Ctx.singleton $ GVW dest_i)
+            =<< lookupArray (Ctx.singleton $ BaseBVRepr w) ground_src_arr (Ctx.singleton $ GVW src_i))
+        ground_dest_arr
+        (zip
+          (BV.enumFromToUnsigned ground_dest_idx (BV.sub w (BV.add w ground_dest_idx ground_len) (BV.mkBV w 1)))
+          (BV.enumFromToUnsigned ground_src_idx (BV.sub w (BV.add w ground_src_idx ground_len) (BV.mkBV w 1))))
+
+    SetArray w _ arr idx val len _ -> do
+      ground_arr <- f arr
+      ground_idx <- f idx
+      ground_val <- f val
+      ground_len <- f len
+
+      lift $ foldlM
+        (\arr_acc i ->
+          updateArray (Ctx.singleton $ BaseBVRepr w) arr_acc (Ctx.singleton $ GVW i) ground_val)
+        ground_arr
+        (BV.enumFromToUnsigned ground_idx (BV.sub w (BV.add w ground_idx ground_len) (BV.mkBV w 1)))
+
+    EqualArrayRange w a_repr lhs_arr lhs_idx rhs_arr rhs_idx len _ _ -> do
+      ground_lhs_arr <- f lhs_arr
+      ground_lhs_idx <- f lhs_idx
+      ground_rhs_arr <- f rhs_arr
+      ground_rhs_idx <- f rhs_idx
+      ground_len <- f len
+
+      foldlM
+        (\acc (lhs_i, rhs_i) -> do
+            ground_eq_res <- MaybeT $ groundEq a_repr <$>
+              lookupArray (Ctx.singleton $ BaseBVRepr w) ground_lhs_arr (Ctx.singleton $ GVW lhs_i) <*>
+              lookupArray (Ctx.singleton $ BaseBVRepr w) ground_rhs_arr (Ctx.singleton $ GVW rhs_i)
+            return $ acc && ground_eq_res)
+        True
+        (zip
+          (BV.enumFromToUnsigned ground_lhs_idx (BV.sub w (BV.add w ground_lhs_idx ground_len) (BV.mkBV w 1)))
+          (BV.enumFromToUnsigned ground_rhs_idx (BV.sub w (BV.add w ground_rhs_idx ground_len) (BV.mkBV w 1))))
 
     ------------------------------------------------------------------------
     -- Conversions
