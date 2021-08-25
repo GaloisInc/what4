@@ -533,37 +533,37 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     (1 <= w) =>
     !(NatRepr w) ->
     !(BaseTypeRepr a) ->
-    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- ^ @dest_arr@ -} ->
-    !(e (BaseBVType w)) {- ^ @dest_idx@ -} ->
-    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- ^ @src_arr@ -} ->
-    !(e (BaseBVType w)) {- ^ @src_idx@ -} ->
-    !(e (BaseBVType w)) {- ^ @len@ -} ->
-    !(e (BaseBVType w)) {- ^ @dest_idx + len@ -} ->
-    !(e (BaseBVType w)) {- ^ @src_idx + len@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @dest_arr@ -} ->
+    !(e (BaseBVType w)) {- @dest_idx@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @src_arr@ -} ->
+    !(e (BaseBVType w)) {- @src_idx@ -} ->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @dest_idx + len@ -} ->
+    !(e (BaseBVType w)) {- @src_idx + len@ -} ->
     App e (BaseArrayType (SingleCtx (BaseBVType w)) a)
 
   SetArray ::
     (1 <= w) =>
     !(NatRepr w) ->
     !(BaseTypeRepr a) ->
-    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- ^ @arr@ -} ->
-    !(e (BaseBVType w)) {- ^ @idx@ -} ->
-    !(e a) {- ^ @val@ -}->
-    !(e (BaseBVType w)) {- ^ @len@ -} ->
-    !(e (BaseBVType w)) {- ^ @idx + len@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @arr@ -} ->
+    !(e (BaseBVType w)) {- @idx@ -} ->
+    !(e a) {- @val@ -}->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @idx + len@ -} ->
     App e (BaseArrayType (SingleCtx (BaseBVType w)) a)
 
   EqualArrayRange ::
     (1 <= w) =>
     !(NatRepr w) ->
     !(BaseTypeRepr a) ->
-    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- ^ @lhs_arr@ -} ->
-    !(e (BaseBVType w)) {- ^ @lhs_idx@ -} ->
-    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- ^ @rhs_arr@ -} ->
-    !(e (BaseBVType w)) {- ^ @rhs_idx@ -} ->
-    !(e (BaseBVType w)) {- ^ @len@ -} ->
-    !(e (BaseBVType w)) {- ^ @lhs_idx + len@ -} ->
-    !(e (BaseBVType w)) {- ^ @rhs_idx + len@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @lhs_arr@ -} ->
+    !(e (BaseBVType w)) {- @lhs_idx@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @rhs_arr@ -} ->
+    !(e (BaseBVType w)) {- @rhs_idx@ -} ->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @lhs_idx + len@ -} ->
+    !(e (BaseBVType w)) {- @rhs_idx + len@ -} ->
     App e BaseBoolType
 
   ------------------------------------------------------------------------
