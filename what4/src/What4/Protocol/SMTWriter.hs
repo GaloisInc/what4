@@ -2616,6 +2616,70 @@ appSMTExpr ae = do
               let expr = ite cond value base_array_value
               SMTName array_type <$> freshBoundFn args resType expr
 
+    CopyArray _w_repr _a_repr dest_arr dest_idx src_arr src_idx len _dest_end_idx _src_end_idx -> do
+      dest_arr_typed_expr <- mkExpr dest_arr
+      let arr_type = smtExprType dest_arr_typed_expr
+      dest_idx_typed_expr <- mkExpr dest_idx
+      let dest_idx_expr = asBase dest_idx_typed_expr
+      let idx_type = smtExprType dest_idx_typed_expr
+      src_arr_typed_expr <- mkExpr src_arr
+      src_idx_expr <- mkBaseExpr src_idx
+      len_expr <- mkBaseExpr len
+
+      res <- freshConstant "array_copy" arr_type
+
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe dest_idx_expr i_expr) .&& (bvULt i_expr (bvAdd dest_idx_expr len_expr)))
+            (asBase (smt_array_select src_arr_typed_expr [bvAdd src_idx_expr (bvSub i_expr dest_idx_expr)]))
+            (asBase (smt_array_select dest_arr_typed_expr [i_expr]))
+      addSideCondition "array copy" $ forallResult cr
+      addSideCondition "array copy" $ bvULt dest_idx_expr (bvAdd dest_idx_expr len_expr)
+      addSideCondition "array copy" $ bvULt src_idx_expr (bvAdd src_idx_expr len_expr)
+
+      return res
+
+    SetArray _w_repr _a_repr arr idx val len _end_idx -> do
+      arr_typed_expr <- mkExpr arr
+      let arr_type = smtExprType arr_typed_expr
+      idx_typed_expr <- mkExpr idx
+      let idx_expr = asBase idx_typed_expr
+      let idx_type = smtExprType idx_typed_expr
+      val_expr <- mkBaseExpr val
+      len_expr <- mkBaseExpr len
+
+      res <- freshConstant "array_set" arr_type
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe idx_expr i_expr) .&& (bvULt i_expr (bvAdd idx_expr len_expr)))
+            val_expr
+            (asBase (smt_array_select arr_typed_expr [i_expr]))
+      addSideCondition "array set" $ forallResult cr
+      addSideCondition "array set" $ bvULt idx_expr (bvAdd idx_expr len_expr)
+
+      return res
+
+    EqualArrayRange _w_repr _a_repr x_arr x_idx y_arr y_idx len _x_end_idx _y_end_idx -> do
+      x_arr_typed_expr <- mkExpr x_arr
+      x_idx_typed_expr <- mkExpr x_idx
+      let x_idx_expr = asBase x_idx_typed_expr
+      let idx_type = smtExprType x_idx_typed_expr
+      y_arr_typed_expr <- mkExpr y_arr
+      y_idx_expr <- mkBaseExpr y_idx
+      len_expr <- mkBaseExpr len
+
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ impliesExpr ((bvULe x_idx_expr i_expr) .&& (bvULt i_expr (bvAdd x_idx_expr len_expr)))
+          ((asBase (smt_array_select x_arr_typed_expr [i_expr])) .==
+            (asBase (smt_array_select y_arr_typed_expr [bvAdd y_idx_expr (bvSub i_expr x_idx_expr)])))
+      addSideCondition "array range equal" $ bvULt x_idx_expr (bvAdd x_idx_expr len_expr)
+      addSideCondition "array range equal" $ bvULt y_idx_expr (bvAdd y_idx_expr len_expr)
+
+      freshBoundTerm BoolTypeMap $ forallResult cr
+
     ------------------------------------------------------------------------
     -- Conversions.
 

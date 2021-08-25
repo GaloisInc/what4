@@ -1382,6 +1382,59 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
               -> Ctx.Assignment (SymExpr sym) (idx::>tp)
               -> IO (SymExpr sym b)
 
+  -- | Copy elements from the source array to the destination array.
+  --
+  -- @'arrayCopy' sym dest_arr dest_idx src_arr src_idx len@ copies the elements
+  -- from @src_arr@ at indices @[src_idx .. (src_idx + len - 1)]@ into
+  -- @dest_arr@ at indices @[dest_idx .. (dest_idx + len - 1)]@.
+  --
+  -- The result is undefined if either @dest_idx + len@ or @src_idx + len@
+  -- wraps around.
+  arrayCopy ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @dest_arr@ -}  ->
+    SymBV sym w {- ^ @dest_idx@ -} ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @src_arr@ -} ->
+    SymBV sym w {- ^ @src_idx@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Set elements of the given array.
+  --
+  -- @'arraySet' sym arr idx val len@ sets the elements of @arr@ at indices
+  -- @[idx .. (idx + len - 1)]@ to @val@.
+  --
+  -- The result is undefined if @idx + len@ wraps around.
+  arraySet ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @arr@ -} ->
+    SymBV sym w {- ^ @idx@ -} ->
+    SymExpr sym a {- ^ @val@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Check whether the lhs array and rhs array are equal at a range of
+  --   indices.
+  --
+  -- @'arrayRangeEq' sym lhs_arr lhs_idx rhs_arr rhs_idx len@ checks whether the
+  -- elements of @lhs_arr@ at indices @[lhs_idx .. (lhs_idx + len - 1)]@ and the
+  -- elements of @rhs_arr@ at indices @[rhs_idx .. (rhs_idx + len - 1)]@ are
+  -- equal.
+  --
+  -- The result is undefined if either @lhs_idx + len@ or @rhs_idx + len@
+  -- wraps around.
+  arrayRangeEq ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @lhs_arr@ -} ->
+    SymBV sym w {- ^ @lhs_idx@ -} ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @rhs_arr@ -} ->
+    SymBV sym w {- ^ @rhs_idx@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (Pred sym)
+
   -- | Create an array from a map of concrete indices to values.
   --
   -- This is implemented, but designed to be overridden for efficiency.

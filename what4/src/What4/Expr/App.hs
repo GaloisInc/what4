@@ -529,6 +529,43 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
               -> !(Ctx.Assignment e (i::>tp))
               -> App e b
 
+  CopyArray ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(BaseTypeRepr a) ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @dest_arr@ -} ->
+    !(e (BaseBVType w)) {- @dest_idx@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @src_arr@ -} ->
+    !(e (BaseBVType w)) {- @src_idx@ -} ->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @dest_idx + len@ -} ->
+    !(e (BaseBVType w)) {- @src_idx + len@ -} ->
+    App e (BaseArrayType (SingleCtx (BaseBVType w)) a)
+
+  SetArray ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(BaseTypeRepr a) ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @arr@ -} ->
+    !(e (BaseBVType w)) {- @idx@ -} ->
+    !(e a) {- @val@ -}->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @idx + len@ -} ->
+    App e (BaseArrayType (SingleCtx (BaseBVType w)) a)
+
+  EqualArrayRange ::
+    (1 <= w) =>
+    !(NatRepr w) ->
+    !(BaseTypeRepr a) ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @lhs_arr@ -} ->
+    !(e (BaseBVType w)) {- @lhs_idx@ -} ->
+    !(e (BaseArrayType (SingleCtx (BaseBVType w)) a)) {- @rhs_arr@ -} ->
+    !(e (BaseBVType w)) {- @rhs_idx@ -} ->
+    !(e (BaseBVType w)) {- @len@ -} ->
+    !(e (BaseBVType w)) {- @lhs_idx + len@ -} ->
+    !(e (BaseBVType w)) {- @rhs_idx + len@ -} ->
+    App e BaseBoolType
+
   ------------------------------------------------------------------------
   -- Conversions.
 
@@ -1819,6 +1856,9 @@ appType a =
     ConstantArray idx b _   -> BaseArrayRepr idx b
     SelectArray b _ _       -> b
     UpdateArray b itp _ _ _     -> BaseArrayRepr itp b
+    CopyArray w a_repr _ _ _ _ _ _ _ -> BaseArrayRepr (singleton (BaseBVRepr w)) a_repr
+    SetArray w a_repr _ _ _ _ _ -> BaseArrayRepr (singleton (BaseBVRepr w)) a_repr
+    EqualArrayRange _ _ _ _ _ _ _ _ _ -> knownRepr
 
     IntegerToReal{} -> knownRepr
     BVToInteger{} -> knownRepr
@@ -1973,6 +2013,11 @@ abstractEval f a0 = do
 
     SelectArray _bRepr a _i -> f a  -- FIXME?
     UpdateArray bRepr _ a _i v -> withAbstractable bRepr $ avJoin bRepr (f a) (f v)
+    CopyArray _ a_repr dest_arr _dest_idx src_arr _src_idx _len _dest_end_idx _src_end_idx ->
+      withAbstractable a_repr $ avJoin a_repr (f dest_arr) (f src_arr)
+    SetArray _ a_repr arr _idx val _len _end_idx ->
+      withAbstractable a_repr $ avJoin a_repr (f arr) (f val)
+    EqualArrayRange{} -> Nothing
 
     IntegerToReal x -> RAV (mapRange toRational (f x)) (Just True)
     BVToInteger x -> valueRange (Inclusive lx) (Inclusive ux)
@@ -2139,6 +2184,11 @@ reduceApp sym unary a0 = do
     ConstantArray idx_tp _ e -> constantArray sym idx_tp e
     SelectArray _ a i     -> arrayLookup sym a i
     UpdateArray _ _ a i v -> arrayUpdate sym a i v
+    CopyArray _ _ dest_arr dest_idx src_arr src_idx len _ _ ->
+      arrayCopy sym dest_arr dest_idx src_arr src_idx len
+    SetArray _ _ arr idx val len _ -> arraySet sym arr idx val len
+    EqualArrayRange _ _ x_arr x_idx y_arr y_idx len _ _ ->
+      arrayRangeEq sym x_arr x_idx y_arr y_idx len
 
     IntegerToReal x -> integerToReal sym x
     RealToInteger x -> realToInteger sym x
@@ -2430,6 +2480,28 @@ ppApp' a0 = do
       prettyApp "select" (exprPrettyArg a : exprPrettyIndices i)
     UpdateArray _ _ a i v ->
       prettyApp "update" ([exprPrettyArg a] ++ exprPrettyIndices i ++ [exprPrettyArg v])
+    CopyArray _ _ dest_arr dest_idx src_arr src_idx len _ _ ->
+      prettyApp
+        "arrayCopy"
+        [ exprPrettyArg dest_arr
+        , exprPrettyArg dest_idx
+        , exprPrettyArg src_arr
+        , exprPrettyArg src_idx
+        , exprPrettyArg len
+        ]
+    SetArray _ _ arr idx val len _ ->
+      prettyApp
+        "arraySet"
+        [exprPrettyArg arr, exprPrettyArg idx, exprPrettyArg val, exprPrettyArg len]
+    EqualArrayRange _ _ x_arr x_idx y_arr y_idx len _ _ ->
+      prettyApp
+        "arrayRangeEq"
+        [ exprPrettyArg x_arr
+        , exprPrettyArg x_idx
+        , exprPrettyArg y_arr
+        , exprPrettyArg y_idx
+        , exprPrettyArg len
+        ]
 
     ------------------------------------------------------------------------
     -- Conversions.

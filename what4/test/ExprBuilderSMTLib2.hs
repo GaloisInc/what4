@@ -366,6 +366,76 @@ testBVOrShlZext = testCase "bv or-shl-zext -> concat simplification" $
     e4 <- bvOrBits sym e2 e1
     show e4 @?= show e3
 
+arrayCopyTest :: TestTree
+arrayCopyTest = testCase "arrayCopy" $ withZ3 $ \sym s -> do
+  a <- freshConstant sym (userSymbol' "a") (BaseArrayRepr (Ctx.singleton (BaseBVRepr $ knownNat @64)) (BaseBVRepr $ knownNat @8))
+  b <- freshConstant sym (userSymbol' "b") knownRepr
+  i <- freshConstant sym (userSymbol' "i") (BaseBVRepr $ knownNat @64)
+  j <- freshConstant sym (userSymbol' "j") knownRepr
+  k <- freshConstant sym (userSymbol' "k") knownRepr
+  n <- freshConstant sym (userSymbol' "n") knownRepr
+
+  copy_a_i_b_j_n <- arrayCopy sym a i b j n
+  add_i_k <- bvAdd sym i k
+  copy_a_i_b_j_n_at_add_i_k <- arrayLookup sym copy_a_i_b_j_n (Ctx.singleton add_i_k)
+  add_j_k <- bvAdd sym j k
+  b_at_add_j_k <- arrayLookup sym b (Ctx.singleton add_j_k)
+
+  assume (sessionWriter s) =<< bvUle sym i =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+  assume (sessionWriter s) =<< bvUle sym j =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+  assume (sessionWriter s) =<< bvUle sym n =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+
+  assume (sessionWriter s) =<< bvNe sym copy_a_i_b_j_n_at_add_i_k b_at_add_j_k
+
+  runCheckSat s $ \res -> isSat res @? "sat"
+
+  assume (sessionWriter s) =<< bvUlt sym k n
+
+  runCheckSat s $ \res -> isUnsat res @? "unsat"
+
+arraySetTest :: TestTree
+arraySetTest = testCase "arraySet" $ withZ3 $ \sym s -> do
+  a <- freshConstant sym (userSymbol' "a") knownRepr
+  i <- freshConstant sym (userSymbol' "i") (BaseBVRepr $ knownNat @64)
+  j <- freshConstant sym (userSymbol' "j") knownRepr
+  n <- freshConstant sym (userSymbol' "n") knownRepr
+  v <- freshConstant sym (userSymbol' "v") (BaseBVRepr $ knownNat @8)
+
+  set_a_i_v_n <- arraySet sym a i v n
+  add_i_j <- bvAdd sym i j
+  set_a_i_v_n_at_add_i_j <- arrayLookup sym set_a_i_v_n (Ctx.singleton add_i_j)
+
+  assume (sessionWriter s) =<< bvUle sym i =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+  assume (sessionWriter s) =<< bvUle sym n =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+
+  assume (sessionWriter s) =<< bvNe sym v set_a_i_v_n_at_add_i_j
+
+  runCheckSat s $ \res -> isSat res @? "sat"
+
+  assume (sessionWriter s) =<< bvUlt sym j n
+
+  runCheckSat s $ \res -> isUnsat res @? "unsat"
+
+arrayCopySetTest :: TestTree
+arrayCopySetTest = testCase "arrayCopy/arraySet" $ withZ3 $ \sym s -> do
+  a <- freshConstant sym (userSymbol' "a") knownRepr
+  i <- freshConstant sym (userSymbol' "i") (BaseBVRepr $ knownNat @64)
+  n <- freshConstant sym (userSymbol' "n") knownRepr
+  v <- freshConstant sym (userSymbol' "v") (BaseBVRepr $ knownNat @8)
+
+  const_v <- constantArray sym (Ctx.singleton (BaseBVRepr $ knownNat @64)) v
+  z <- bvLit sym knownRepr $ BV.mkBV knownNat 0
+  copy_a_i_v_n <- arrayCopy sym a i const_v z n
+  set_a_i_v_n <- arraySet sym a i v n
+
+  assume (sessionWriter s) =<< bvUle sym i =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+  assume (sessionWriter s) =<< bvUle sym n =<< bvLit sym knownRepr (BV.mkBV knownNat 1024)
+
+  p <- notPred sym =<< arrayEq sym copy_a_i_v_n set_a_i_v_n
+
+  assume (sessionWriter s) p
+  runCheckSat s $ \res -> isUnsat res @? "unsat"
+
 testUninterpretedFunctionScope :: TestTree
 testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
   withOnlineZ3 $ \sym s -> do
@@ -1018,6 +1088,10 @@ main = do
         , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
 
         , testCase "Z3 multidim array"$ withOnlineZ3 multidimArrayTest
+
+        , arrayCopyTest
+        , arraySetTest
+        , arrayCopySetTest
         ]
   let cvc4Tests =
         [
@@ -1069,3 +1143,4 @@ main = do
     <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "yices" yicesTests)
     <> (skipIfNotPresent "z3" z3Tests)
+
