@@ -3020,14 +3020,14 @@ cplxLogBase base sym x = do
 asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
-    BaseBoolRepr    -> ConcreteBool <$> asConstantPred x
-    BaseIntegerRepr -> ConcreteInteger <$> asInteger x
-    BaseRealRepr    -> ConcreteReal <$> asRational x
+    BaseBoolRepr       -> ConcreteBool <$> asConstantPred x
+    BaseIntegerRepr    -> ConcreteInteger <$> asInteger x
+    BaseRealRepr       -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
-    BaseComplexRepr -> ConcreteComplex <$> asComplex x
-    BaseBVRepr w    -> ConcreteBV w <$> asBV x
-    BaseFloatRepr fpp -> ConcreteFloat fpp <$> asFloat x
-    BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
+    BaseComplexRepr    -> ConcreteComplex <$> asComplex x
+    BaseBVRepr w       -> ConcreteBV w <$> asBV x
+    BaseFloatRepr fpp  -> ConcreteFloat fpp <$> asFloat x
+    BaseStructRepr _   -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
     BaseArrayRepr idx _tp -> do
       def <- asConstantArray x
       c_def <- asConcrete def
