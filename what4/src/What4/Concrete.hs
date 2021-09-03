@@ -108,14 +108,14 @@ fromConcreteBV (ConcreteBV _w x) = x
 -- | Compute the type representative for a concrete value.
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
 concreteType = \case
-  ConcreteBool{}     -> BaseBoolRepr
-  ConcreteInteger{}  -> BaseIntegerRepr
-  ConcreteReal{}     -> BaseRealRepr
-  ConcreteFloat fpp _ -> BaseFloatRepr fpp
-  ConcreteString s   -> BaseStringRepr (stringLiteralInfo s)
-  ConcreteComplex{}  -> BaseComplexRepr
-  ConcreteBV w _     -> BaseBVRepr w
-  ConcreteStruct xs  -> BaseStructRepr (fmapFC concreteType xs)
+  ConcreteBool{}            -> BaseBoolRepr
+  ConcreteInteger{}         -> BaseIntegerRepr
+  ConcreteReal{}            -> BaseRealRepr
+  ConcreteFloat fpp _       -> BaseFloatRepr fpp
+  ConcreteString s          -> BaseStringRepr (stringLiteralInfo s)
+  ConcreteComplex{}         -> BaseComplexRepr
+  ConcreteBV w _            -> BaseBVRepr w
+  ConcreteStruct xs         -> BaseStructRepr (fmapFC concreteType xs)
   ConcreteArray idxTy def _ -> BaseArrayRepr idxTy (concreteType def)
 
 $(return [])
