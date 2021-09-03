@@ -3026,7 +3026,7 @@ asConcrete x =
     BaseStringRepr _si -> ConcreteString <$> asString x
     BaseComplexRepr -> ConcreteComplex <$> asComplex x
     BaseBVRepr w    -> ConcreteBV w <$> asBV x
-    BaseFloatRepr _ -> Nothing
+    BaseFloatRepr fpp -> ConcreteFloat fpp <$> asFloat x
     BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
     BaseArrayRepr idx _tp -> do
       def <- asConstantArray x
@@ -3042,6 +3042,7 @@ concreteToSym sym = \case
    ConcreteBool False   -> return (falsePred sym)
    ConcreteInteger x    -> intLit sym x
    ConcreteReal x       -> realLit sym x
+   ConcreteFloat fpp bf -> floatLit sym fpp bf
    ConcreteString x     -> stringLit sym x
    ConcreteComplex x    -> mkComplexLit sym x
    ConcreteBV w x       -> bvLit sym w x
@@ -3067,7 +3068,7 @@ from the value @f i@ where @i@ is the smallest value in the range @[l..h]@
 such that @p i@ is true.  If @p i@ is true for no such value, then
 this returns the value @f h@. -}
 muxRange :: (IsExpr e, Monad m) =>
-   (Natural -> m (e BaseBoolType)) 
+   (Natural -> m (e BaseBoolType))
       {- ^ Returns predicate that holds if we have found the value we are looking
            for.  It is assumed that the predicate must hold for a unique integer in
            the range.
