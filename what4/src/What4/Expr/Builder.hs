@@ -1091,6 +1091,19 @@ sbConcreteLookup sym arr0 mcidx idx
   | Just (ConstantArray _ _ v) <- asApp arr0 = do
       return v
 
+  | Just (UpdateArray range idx_tps arr update_idx v) <- asApp arr0
+  , Ctx.Empty Ctx.:> BaseBVRepr{} <- idx_tps
+  , Ctx.Empty Ctx.:> idx0 <- idx
+  , Ctx.Empty Ctx.:> update_idx0 <- update_idx = do
+    diff <- bvSub sym idx0 update_idx0
+    is_diff_zero <- bvEq sym diff =<< bvLit sym (bvWidth diff) (BV.zero (bvWidth diff))
+    case asConstantPred is_diff_zero of
+      Just True -> return v
+      Just False -> sbConcreteLookup sym arr mcidx idx
+      _ -> do
+        (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr0 idx
+        sbMakeExpr sym (SelectArray range sliced_arr sliced_idx)
+
     -- A lookup in an array copy is a lookup in the src array when inside the copy range
   | Just (CopyArray w _a_repr _dest_arr dest_begin_idx src_arr src_begin_idx _len dest_end_idx _src_end_idx) <- asApp arr0
   , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
