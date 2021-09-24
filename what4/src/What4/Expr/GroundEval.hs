@@ -47,6 +47,7 @@ import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Foldable
 import qualified Data.Map.Strict as Map
 import           Data.Maybe ( fromMaybe )
+import           Data.Parameterized.Ctx
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
@@ -57,6 +58,7 @@ import qualified LibBF as BF
 import           What4.BaseTypes
 import           What4.Interface
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
@@ -357,18 +359,27 @@ evalGroundApp f a0 = do
     ------------------------------------------------------------------------
     -- Operations that introduce irrational numbers.
 
-    Pi -> return $ fromDouble pi
-    RealSin x -> fromDouble . sin . toDouble <$> f x
-    RealCos x -> fromDouble . cos . toDouble <$> f x
-    RealATan2 x y -> do
-      xv <- f x
-      yv <- f y
-      return $ fromDouble (atan2 (toDouble xv) (toDouble yv))
-    RealSinh x -> fromDouble . sinh . toDouble <$> f x
-    RealCosh x -> fromDouble . cosh . toDouble <$> f x
+    RealSpecialFunction fn (SFn.SpecialFnArgs args) ->
+      let sf1 :: (Double -> Double) ->
+                 Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (EmptyCtx ::> SFn.R) ->
+                 MaybeT IO (GroundValue BaseRealType)
+          sf1 dfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x) = fromDouble . dfn . toDouble <$> f x
+      in case fn of
+        SFn.Pi   -> return $ fromDouble pi
+        SFn.Sin  -> sf1 sin args
+        SFn.Cos  -> sf1 cos args
+        SFn.Sinh -> sf1 sinh args
+        SFn.Cosh -> sf1 cosh args
+        SFn.Exp  -> sf1 exp args
+        SFn.Log  -> sf1 log args
+        SFn.Arctan2 ->
+          case args of
+            Ctx.Empty Ctx.:> SFn.SpecialFnArg y Ctx.:> SFn.SpecialFnArg x ->
+              do yv <- f y
+                 xv <- f x
+                 return $ fromDouble (atan2 (toDouble yv) (toDouble xv))
 
-    RealExp x -> fromDouble . exp . toDouble <$> f x
-    RealLog x -> fromDouble . log . toDouble <$> f x
+        _ -> mzero -- TODO, other functions as well
 
     ------------------------------------------------------------------------
     -- Bitvector Operations
@@ -474,6 +485,8 @@ evalGroundApp f a0 = do
          case z of
            Just i | minSigned w <= i && i <= maxSigned w -> pure (BV.mkBV w i)
            _ -> mzero
+
+    FloatSpecialFunction _ _ _ -> mzero -- TODO? evaluate concretely?
 
     ------------------------------------------------------------------------
     -- Array Operations

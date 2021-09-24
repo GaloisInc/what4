@@ -78,6 +78,7 @@ import           What4.Concrete
 import           What4.Interface
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.Expr.BoolMap (BoolMap, Polarity(..), BoolMapView(..), Wrap(..))
 import qualified What4.Expr.BoolMap as BM
@@ -157,6 +158,7 @@ data BVOrNote w = BVOrNote !IncrHash !(BVD.BVDomain w)
 
 newtype BVOrSet e w = BVOrSet (AM.AnnotatedMap (Wrap e (BaseBVType w)) (BVOrNote w) ())
 
+
 -- | Type @'App' e tp@ encodes the top-level application of an 'Expr'
 -- expression. It includes first-order expression forms that do not
 -- bind variables (contrast with 'NonceApp').
@@ -234,16 +236,10 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   ------------------------------------------------------------------------
   -- Operations that introduce irrational numbers.
 
-  Pi :: App e BaseRealType
-
-  RealSin   :: !(e BaseRealType) -> App e BaseRealType
-  RealCos   :: !(e BaseRealType) -> App e BaseRealType
-  RealATan2 :: !(e BaseRealType) -> !(e BaseRealType) -> App e BaseRealType
-  RealSinh  :: !(e BaseRealType) -> App e BaseRealType
-  RealCosh  :: !(e BaseRealType) -> App e BaseRealType
-
-  RealExp :: !(e BaseRealType) -> App e BaseRealType
-  RealLog :: !(e BaseRealType) -> App e BaseRealType
+  RealSpecialFunction ::
+    !(SFn.SpecialFunction args) ->
+    !(SFn.SpecialFnArgs e BaseRealType args) ->
+    App e (BaseRealType)
 
   --------------------------------
   -- Bitvector operations
@@ -497,6 +493,12 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     -> !(e (BaseFloatType fpp))
     -> App e (BaseBVType w)
   FloatToReal :: !(e (BaseFloatType fpp)) -> App e BaseRealType
+
+  FloatSpecialFunction ::
+    !(FloatPrecisionRepr fpp) ->
+    !(SFn.SpecialFunction args) ->
+    !(SFn.SpecialFnArgs e (BaseFloatType fpp) args) ->
+    App e (BaseFloatType fpp)
 
   ------------------------------------------------------------------------
   -- Array operations
@@ -813,7 +815,10 @@ traverseApp =
       , [| BM.traverseVars |]
       )
     , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
-      , [|traverseFC|]
+      , [| traverseFC |]
+      )
+    , ( ConType [t|SFn.SpecialFnArgs|] `TypeApp` AnyType `TypeApp` AnyType `TypeApp` AnyType
+      , [| SFn.traverseSpecialFnArgs |]
       )
     ]
    )
@@ -841,6 +846,8 @@ appEqF = $(structuralTypeEquality [t|App|]
            , (ConType [t|SR.SemiRingRepr|] `TypeApp` AnyType
              , [|testEquality|])
            , (ConType [t|SR.OrderedSemiRingRepr|] `TypeApp` AnyType
+             , [|testEquality|])
+           , (ConType [t|SFn.SpecialFunction|] `TypeApp` AnyType
              , [|testEquality|])
            , (ConType [t|WSum.WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
              , [|testEquality|])
@@ -884,23 +891,22 @@ isNonLinearApp app = case app of
   IntDiv {} -> True
   IntMod {} -> True
   IntDivisible {} -> True
+
   RealDiv {} -> True
   RealSqrt {} -> True
-  RealSin {} -> True
-  RealCos {} -> True
-  RealATan2 {} -> True
-  RealSinh {} -> True
-  RealCosh {} -> True
-  RealExp {} -> True
-  RealLog {} -> True
+  RealSpecialFunction{} -> True
+
   BVUdiv {} -> True
   BVUrem {} -> True
   BVSdiv {} -> True
   BVSrem {} -> True
+
   FloatSqrt {} -> True
   FloatMul {} -> True
   FloatDiv {} -> True
   FloatRem {} -> True
+  FloatSpecialFunction{} -> True
+
   _ -> False
 
 
@@ -1792,15 +1798,7 @@ appType a =
     FloorReal{} -> knownRepr
     CeilReal{}  -> knownRepr
 
-    Pi -> knownRepr
-    RealSin{}   -> knownRepr
-    RealCos{}   -> knownRepr
-    RealATan2{} -> knownRepr
-    RealSinh{}  -> knownRepr
-    RealCosh{}  -> knownRepr
-
-    RealExp{} -> knownRepr
-    RealLog{} -> knownRepr
+    RealSpecialFunction{} -> knownRepr
 
     BVUnaryTerm u  -> BaseBVRepr (UnaryBV.width u)
     BVOrBits w _ -> BaseBVRepr w
@@ -1851,6 +1849,7 @@ appType a =
     FloatToBV w _ _ -> BaseBVRepr w
     FloatToSBV w _ _ -> BaseBVRepr w
     FloatToReal{} -> knownRepr
+    FloatSpecialFunction fpp _ _ -> BaseFloatRepr fpp
 
     ArrayMap      idx b _ _ -> BaseArrayRepr idx b
     ConstantArray idx b _   -> BaseArrayRepr idx b
@@ -1942,14 +1941,17 @@ abstractEval f a0 = do
 
     RealDiv _ _ -> ravUnbounded
     RealSqrt _  -> ravUnbounded
-    Pi -> ravConcreteRange 3.14 3.15
-    RealSin _ -> ravConcreteRange (-1) 1
-    RealCos _ -> ravConcreteRange (-1) 1
-    RealATan2 _ _ -> ravUnbounded
-    RealSinh _ -> ravUnbounded
-    RealCosh _ -> ravUnbounded
-    RealExp _ -> ravUnbounded
-    RealLog _ -> ravUnbounded
+
+    RealSpecialFunction fn _ ->
+      case fn of
+        SFn.Pi -> ravConcreteRange 3.14 3.15
+        -- TODO, other constants...
+
+        SFn.Sin -> ravConcreteRange (-1) 1
+        SFn.Cos -> ravConcreteRange (-1) 1
+
+        -- TODO, is there other interesting range information?
+        _ -> ravUnbounded
 
     BVUnaryTerm u -> UnaryBV.domain asConstantPred u
     BVConcat _ x y -> BVD.concat (bvWidth x) (f x) (bvWidth y) (f y)
@@ -2003,6 +2005,7 @@ abstractEval f a0 = do
     FloatToBV w _ _ -> BVD.any w
     FloatToSBV w _ _ -> BVD.any w
     FloatToReal{} -> ravUnbounded
+    FloatSpecialFunction{} -> ()
 
     ArrayMap _ bRepr m d ->
       withAbstractable bRepr $
@@ -2113,14 +2116,8 @@ reduceApp sym unary a0 = do
     RealDiv x y -> realDiv sym x y
     RealSqrt x  -> realSqrt sym x
 
-    Pi -> realPi sym
-    RealSin x -> realSin sym x
-    RealCos x -> realCos sym x
-    RealATan2 y x -> realAtan2 sym y x
-    RealSinh x -> realSinh sym x
-    RealCosh x -> realCosh sym x
-    RealExp x -> realExp sym x
-    RealLog x -> realLog sym x
+    RealSpecialFunction fn (SFn.SpecialFnArgs args) ->
+      realSpecialFunction sym fn args
 
     BVOrBits w bs ->
       case bvOrToList bs of
@@ -2178,6 +2175,8 @@ reduceApp sym unary a0 = do
     FloatToBV   w   r x -> floatToBV sym w r x
     FloatToSBV  w   r x -> floatToSBV sym w r x
     FloatToReal x -> floatToReal sym x
+    FloatSpecialFunction fpp fn (SFn.SpecialFnArgs args) ->
+      floatSpecialFunction sym fpp fn args
 
     ArrayMap _ _ m def_map ->
       arrayUpdateAtIdxLits sym m def_map
@@ -2396,15 +2395,8 @@ ppApp' a0 = do
     RealDiv x y -> ppSExpr "divReal" [x, y]
     RealSqrt x  -> ppSExpr "sqrt" [x]
 
-    Pi -> prettyApp "pi" []
-    RealSin x     -> ppSExpr "sin" [x]
-    RealCos x     -> ppSExpr "cos" [x]
-    RealATan2 x y -> ppSExpr "atan2" [x, y]
-    RealSinh x    -> ppSExpr "sinh" [x]
-    RealCosh x    -> ppSExpr "cosh" [x]
-
-    RealExp x -> ppSExpr "exp" [x]
-    RealLog x -> ppSExpr "log" [x]
+    RealSpecialFunction fn (SFn.SpecialFnArgs xs) ->
+      prettyApp (Text.pack (show fn)) (toListFC (\ (SFn.SpecialFnArg x) -> exprPrettyArg x) xs)
 
     --------------------------------
     -- Bitvector operations
@@ -2467,6 +2459,8 @@ ppApp' a0 = do
     FloatToBV _ r x -> ppSExpr (Text.pack $ "floatToBV " <> show r) [x]
     FloatToSBV _ r x -> ppSExpr (Text.pack $ "floatToSBV " <> show r) [x]
     FloatToReal x -> ppSExpr "floatToReal " [x]
+    FloatSpecialFunction _fpp fn (SFn.SpecialFnArgs args) ->
+      prettyApp (Text.pack (show fn)) (toListFC (\ (SFn.SpecialFnArg x) -> exprPrettyArg x) args)
 
     -------------------------------------
     -- Arrays

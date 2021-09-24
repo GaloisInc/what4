@@ -116,14 +116,7 @@ appTheory a0 =
 
     ----------------------------
     -- Computable number operations
-    Pi -> ComputableArithTheory
-    RealSin{}   -> ComputableArithTheory
-    RealCos{}   -> ComputableArithTheory
-    RealATan2{} -> ComputableArithTheory
-    RealSinh{}  -> ComputableArithTheory
-    RealCosh{}  -> ComputableArithTheory
-    RealExp{}   -> ComputableArithTheory
-    RealLog{}   -> ComputableArithTheory
+    RealSpecialFunction{} -> ComputableArithTheory
 
     ----------------------------
     -- Bitvector operations
@@ -178,6 +171,8 @@ appTheory a0 =
     FloatToBV{}       -> FloatingPointTheory
     FloatToSBV{}      -> FloatingPointTheory
     FloatToReal{}     -> FloatingPointTheory
+
+    FloatSpecialFunction{} -> ComputableArithTheory -- TODO? is this right?
 
     --------------------------------
     -- Conversions.

@@ -15,7 +15,7 @@ may reasonably be used in a multithreaded context.  In particular,
 nonce values are generated atomically, and other IORefs used in this
 module are modified or written atomically, so modifications should
 propagate in the expected sequentially-consistent ways.  Of course,
-threads may still clobber state others have set (e.g., the current 
+threads may still clobber state others have set (e.g., the current
 program location) so the potential for truly multithreaded use is
 somewhat limited.
 -}
@@ -187,7 +187,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.Binary.IEEE754 as IEEE754
-import           Data.Functor.Product
+
 import           Data.Hashable
 import           Data.IORef
 import           Data.Kind
@@ -216,6 +216,7 @@ import           What4.Interface
 import           What4.InterpretedFloatingPoint
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
 import           What4.Expr.App
 import qualified What4.Expr.ArrayUpdateMap as AUM
@@ -1210,8 +1211,8 @@ sliceArrayLookupUpdate sym arr0 lookup_idx
         (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr lookup_idx
         sliced_begin_idx <- bvAdd sym begin_idx =<<
           bvSub sym (Ctx.last sliced_idx) (Ctx.last lookup_idx)
-        sliced_arr <- arraySet sym sliced_arr sliced_begin_idx val len
-        return (sliced_arr, sliced_idx)
+        sliced_arr' <- arraySet sym sliced_arr sliced_begin_idx val len
+        return (sliced_arr', sliced_idx)
 
     -- Lookups on mux arrays just distribute over mux.
   | Just (BaseIte _ _ p x y) <- asApp arr0 = do
@@ -3319,52 +3320,44 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         | sbFloatReduce sym -> realLit sym (toRational (sqrt_dbl (fromRational r)))
       _ -> sbMakeExpr sym (RealSqrt x)
 
-  realPi sym = do
-    if sbFloatReduce sym then
-      realLit sym (toRational (pi :: Double))
-     else
-      sbMakeExpr sym Pi
+  realSpecialFunction sym fn Empty
+    | sbFloatReduce sym =
+        case fn of
+          SFn.Pi -> realLit sym (toRational (pi :: Double))
+          -- TODO, other constants
 
-  realSin sym x =
-    case asRational x of
-      Just 0 -> realLit sym 0
-      Just c | sbFloatReduce sym -> realLit sym (toRational (sin (toDouble c)))
-      _ -> sbMakeExpr sym (RealSin x)
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs Empty))
 
-  realCos sym x =
-    case asRational x of
-      Just 0 -> realLit sym 1
-      Just c | sbFloatReduce sym -> realLit sym (toRational (cos (toDouble c)))
-      _ -> sbMakeExpr sym (RealCos x)
+  realSpecialFunction sym fn args@(Empty :> SFn.SpecialFnArg x)
+    | Just c <- asRational x =
+        case fn of
+          SFn.Sin
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (sin (toDouble c)))
+          SFn.Cos
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (cos (toDouble c)))
+          SFn.Sinh
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (sinh (toDouble c)))
+          SFn.Cosh
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (cosh (toDouble c)))
+          SFn.Exp
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (exp (toDouble c)))
+          SFn.Log
+            | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
-  realAtan2 sb y x = do
+  realSpecialFunction sym SFn.Arctan2 args@(Empty :> SFn.SpecialFnArg y :> SFn.SpecialFnArg x) =
     case (asRational y, asRational x) of
-      (Just 0, _) -> realLit sb 0
-      (Just yc, Just xc) | xc /= 0, sbFloatReduce sb -> do
-        realLit sb (toRational (atan2 (toDouble yc) (toDouble xc)))
-      _ -> sbMakeExpr sb (RealATan2 y x)
+      (Just 0, _) -> realLit sym 0
+      (Just yc, Just xc) | xc /= 0, sbFloatReduce sym -> do
+        realLit sym (toRational (atan2 (toDouble yc) (toDouble xc)))
+      _ -> sbMakeExpr sym (RealSpecialFunction SFn.Arctan2 (SFn.SpecialFnArgs args))
 
-  realSinh sb x =
-    case asRational x of
-      Just 0 -> realLit sb 0
-      Just c | sbFloatReduce sb -> realLit sb (toRational (sinh (toDouble c)))
-      _ -> sbMakeExpr sb (RealSinh x)
-
-  realCosh sb x =
-    case asRational x of
-      Just 0 -> realLit sb 1
-      Just c | sbFloatReduce sb -> realLit sb (toRational (cosh (toDouble c)))
-      _ -> sbMakeExpr sb (RealCosh x)
-
-  realExp sym x
-    | Just 0 <- asRational x = realLit sym 1
-    | Just c <- asRational x, sbFloatReduce sym = realLit sym (toRational (exp (toDouble c)))
-    | otherwise = sbMakeExpr sym (RealExp x)
-
-  realLog sym x =
-    case asRational x of
-      Just c | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
-      _ -> sbMakeExpr sym (RealLog x)
+  realSpecialFunction sym fn args = sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
   ----------------------------------------------------------------------
   -- IEEE-754 floating-point operations
@@ -3565,6 +3558,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
     | otherwise = sbMakeExpr sym (FloatToReal x)
 
+  floatSpecialFunction sym fpp fn args =
+    sbMakeExpr sym (FloatSpecialFunction fpp fn (SFn.SpecialFnArgs args))
+
   ----------------------------------------------------------------------
   -- Cplx operations
 
@@ -3755,6 +3751,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatToBV sym w _ x = realToBV sym x w
   iFloatToSBV sym w _ x = realToSBV sym x w
   iFloatToReal _ = return
+  iFloatSpecialFunction sym _ fn args = realSpecialFunction sym fn args
   iFloatBaseTypeRepr _ _ = knownRepr
 
 type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatUninterpreted)) fi =
@@ -3835,6 +3832,10 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
                     "uninterpreted_float_to_real"
                     (Ctx.empty Ctx.:> x)
                     knownRepr
+
+  iFloatSpecialFunction sym fi fn args =
+    floatUninterpSpecialFn sym (iFloatBaseTypeRepr sym fi) fn args
+
   iFloatBaseTypeRepr _ = floatInfoToBVTypeRepr
 
 floatUninterpArithBinOp
@@ -3842,6 +3843,31 @@ floatUninterpArithBinOp
 floatUninterpArithBinOp fn sym x y =
   let ret_type = exprType x
   in  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x Ctx.:> y) ret_type
+
+floatUninterpSpecialFn
+  :: (e ~ Expr t)
+  => ExprBuilder t sf tfs
+  -> BaseTypeRepr bt
+  -> SFn.SpecialFunction args
+  -> Assignment (SFn.SpecialFnArg e bt) args
+  -> IO (e bt)
+floatUninterpSpecialFn sym btr fn Ctx.Empty =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name Ctx.Empty btr freshTotalUninterpFn
+     applySymFn sym fn' Ctx.Empty
+
+floatUninterpSpecialFn sym btr fn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x) =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name (Ctx.Empty Ctx.:> btr) btr freshTotalUninterpFn
+     applySymFn sym fn' (Ctx.Empty Ctx.:> x)
+
+floatUninterpSpecialFn sym btr fn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x Ctx.:> SFn.SpecialFnArg y) =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name (Ctx.Empty Ctx.:> btr Ctx.:> btr) btr freshTotalUninterpFn
+     applySymFn sym fn' (Ctx.Empty Ctx.:> x Ctx.:> y)
+
+floatUninterpSpecialFn _sym _btr fn _args =
+  fail $ unwords ["Special function with unexpected arity", show fn]
 
 floatUninterpArithBinOpR
   :: (e ~ Expr t)
@@ -3991,6 +4017,8 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatToBV = floatToBV
   iFloatToSBV = floatToSBV
   iFloatToReal = floatToReal
+  iFloatSpecialFunction sym fi fn args =
+    floatSpecialFunction sym (floatInfoToPrecisionRepr fi) fn args
   iFloatBaseTypeRepr _ = BaseFloatRepr . floatInfoToPrecisionRepr
 
 
