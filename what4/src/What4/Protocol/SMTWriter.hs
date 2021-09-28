@@ -429,17 +429,16 @@ class Num v => SupportTermOps v where
   realDiv :: v -> v -> v
 
   realSin :: v -> v
-
   realCos :: v -> v
+  realTan :: v -> v
 
   realATan2 :: v -> v -> v
 
   realSinh :: v -> v
-
   realCosh :: v -> v
+  realTanh :: v -> v
 
   realExp  :: v -> v
-
   realLog  :: v -> v
 
   -- | Apply the arguments to the given function.
@@ -2148,8 +2147,10 @@ appSMTExpr ae = do
       case fn of
         SFn.Sin  -> sf1 realSin  args
         SFn.Cos  -> sf1 realCos  args
+        SFn.Tan  -> sf1 realTan  args
         SFn.Sinh -> sf1 realSinh args
         SFn.Cosh -> sf1 realCosh args
+        SFn.Tanh -> sf1 realTanh args
         SFn.Exp  -> sf1 realExp  args
         SFn.Log  -> sf1 realLog  args
         SFn.Arctan2 ->
