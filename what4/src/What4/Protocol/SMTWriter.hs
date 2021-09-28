@@ -153,6 +153,7 @@ import           What4.ProblemFeatures
 import           What4.ProgramLoc
 import           What4.SatResult
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import qualified What4.Utils.BVDomain as BVD
@@ -428,17 +429,16 @@ class Num v => SupportTermOps v where
   realDiv :: v -> v -> v
 
   realSin :: v -> v
-
   realCos :: v -> v
+  realTan :: v -> v
 
   realATan2 :: v -> v -> v
 
   realSinh :: v -> v
-
   realCosh :: v -> v
+  realTanh :: v -> v
 
   realExp  :: v -> v
-
   realLog  :: v -> v
 
   -- | Apply the arguments to the given function.
@@ -2136,37 +2136,30 @@ appSMTExpr ae = do
       addSideCondition "real sqrt" $ v .>= 0
       -- Return variable
       return nm
-    Pi -> do
-      unsupportedTerm i
-    RealSin xe -> do
+
+    RealSpecialFunction fn (SFn.SpecialFnArgs args) -> do
       checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realSin x
-    RealCos xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realCos x
-    RealATan2 xe ye -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      y <- mkBaseExpr ye
-      freshBoundTerm RealTypeMap $ realATan2 x y
-    RealSinh xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realSinh x
-    RealCosh xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realCosh x
-    RealExp xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realExp x
-    RealLog xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realLog x
+      let sf1 :: (Term h -> Term h) ->
+                 Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (Ctx.EmptyCtx Ctx.::> SFn.R) ->
+                 SMTCollector t h (SMTExpr h BaseRealType)
+          sf1 tmfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg xe) =
+             freshBoundTerm RealTypeMap . tmfn =<< mkBaseExpr xe
+      case fn of
+        SFn.Sin  -> sf1 realSin  args
+        SFn.Cos  -> sf1 realCos  args
+        SFn.Tan  -> sf1 realTan  args
+        SFn.Sinh -> sf1 realSinh args
+        SFn.Cosh -> sf1 realCosh args
+        SFn.Tanh -> sf1 realTanh args
+        SFn.Exp  -> sf1 realExp  args
+        SFn.Log  -> sf1 realLog  args
+        SFn.Arctan2 ->
+          case args of
+            Ctx.Empty Ctx.:> SFn.SpecialFnArg ye Ctx.:> SFn.SpecialFnArg xe ->
+              do y <- mkBaseExpr ye
+                 x <- mkBaseExpr xe
+                 freshBoundTerm RealTypeMap $ realATan2 y x
+        _ -> unsupportedTerm i -- TODO? more functions?
 
     ------------------------------------------
     -- Bitvector operations
@@ -2510,6 +2503,7 @@ appSMTExpr ae = do
     FloatToReal x -> do
       xe <- mkBaseExpr x
       freshBoundTerm RealTypeMap $ floatToReal xe
+    FloatSpecialFunction{} -> unsupportedTerm i
 
     ------------------------------------------------------------------------
     -- Array Operations

@@ -306,18 +306,7 @@ bitblastExpr h ae = do
     SemiRingLe  OrderedSemiRingRealRepr _ _ -> realFail
     RealDiv{} -> realFail
     RealSqrt{} -> realFail
-
-    --------------------------------------------------------------------
-    -- Operations that introduce irrational numbers.
-
-    Pi -> realFail
-    RealSin{} -> realFail
-    RealCos{} -> realFail
-    RealATan2{} -> realFail
-    RealSinh{} -> realFail
-    RealCosh{} -> realFail
-    RealExp{} -> realFail
-    RealLog{} -> realFail
+    RealSpecialFunction{} -> realFail
 
     --------------------------------------------------------------------
     -- Bitvector operations
@@ -487,6 +476,7 @@ bitblastExpr h ae = do
     FloatToSBV{} -> floatFail
     FloatToReal{} -> floatFail
     FloatToBinary{} -> floatFail
+    FloatSpecialFunction{} -> floatFail
 
     ------------------------------------------------------------------------
     -- Array operations
@@ -495,6 +485,9 @@ bitblastExpr h ae = do
     ConstantArray{} -> arrayFail
     SelectArray{} -> arrayFail
     UpdateArray{} -> arrayFail
+    CopyArray{} -> arrayFail
+    SetArray{} -> arrayFail
+    EqualArrayRange{} -> arrayFail
 
     ------------------------------------------------------------------------
     -- String operations
