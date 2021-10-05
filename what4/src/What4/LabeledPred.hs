@@ -12,7 +12,9 @@
 ------------------------------------------------------------------------
 
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -47,7 +49,7 @@ data LabeledPred pred msg
        -- | Message added when assumption/assertion was made.
      , _labeledPredMsg :: !msg
      }
-   deriving (Eq, Data, Functor, Generic, Generic1, Ord, Typeable)
+   deriving (Eq, Data, Functor, Foldable, Generic, Generic1, Ord, Show, Traversable, Typeable)
 
 $(deriveBifunctor     ''LabeledPred)
 $(deriveBifoldable    ''LabeledPred)
