@@ -280,11 +280,19 @@ intModRange _ y
 
 
 addRange :: Num tp => ValueRange tp -> ValueRange tp -> ValueRange tp
-addRange (SingleRange x) (SingleRange y) = SingleRange (x+y)
-addRange (SingleRange x) (MultiRange ly uy) = MultiRange ((x+) <$> ly) ((x+) <$> uy)
-addRange (MultiRange lx ux) (SingleRange y) = MultiRange ((y+) <$> lx) ((y+) <$> ux)
-addRange (MultiRange lx ux) (MultiRange ly uy) =
-  MultiRange ((+) <$> lx <*> ly) ((+) <$> ux <*> uy)
+addRange (SingleRange x) y = mapRange (x+) y
+addRange x (SingleRange y) = mapRange (y+) x
+addRange UnboundedRange _ = UnboundedRange
+addRange _ UnboundedRange = UnboundedRange
+addRange (MinRange _) (MaxRange _) = UnboundedRange
+addRange (MaxRange _) (MinRange _) = UnboundedRange
+addRange (MinRange lx) (MinRange ly) = MinRange (lx+ly)
+addRange (MaxRange ux) (MaxRange uy) = MaxRange (ux+uy)
+addRange (MinRange lx) (IntervalRange ly _) = MinRange (lx+ly)
+addRange (IntervalRange lx _) (MinRange ly) = MinRange (lx+ly)
+addRange (MaxRange ux) (IntervalRange _ uy) = MaxRange (ux+uy)
+addRange (IntervalRange _ ux) (MaxRange uy) = MaxRange (ux+uy)
+addRange (IntervalRange lx ux) (IntervalRange ly uy) = IntervalRange (lx+ly) (ux+uy)
 
 -- | Return 'Just True if the range only contains an integer, 'Just False' if it
 -- contains no integers, and 'Nothing' if the range contains both integers and
@@ -298,21 +306,15 @@ rangeIsInteger (MultiRange (Inclusive l) (Inclusive u))
 rangeIsInteger _ = Nothing
 
 -- | Multiply a range by a scalar value
-rangeScalarMul :: (Ord tp, Num tp) =>  tp -> ValueRange tp -> ValueRange tp
-rangeScalarMul x (SingleRange y) = SingleRange (x*y)
-rangeScalarMul x (MultiRange ly uy)
-  | x <  0 = MultiRange ((x*) <$> uy) ((x*) <$> ly)
-  | x == 0 = SingleRange 0
-  | otherwise = assert (x > 0) $ MultiRange ((x*) <$> ly) ((x*) <$> uy)
+rangeScalarMul :: (Ord tp, Num tp) => tp -> ValueRange tp -> ValueRange tp
+rangeScalarMul x r =
+  case compare x 0 of
+    LT -> mapAntiRange (x *) r
+    EQ -> SingleRange 0
+    GT -> mapRange (x *) r
 
 negateRange :: (Num tp) => ValueRange tp -> ValueRange tp
-negateRange r =
-  case r of
-    SingleRange x -> SingleRange (negate x)
-    UnboundedRange -> UnboundedRange
-    MinRange lo -> MaxRange (negate lo)
-    MaxRange hi -> MinRange (negate hi)
-    IntervalRange lo hi -> IntervalRange (negate hi) (negate lo)
+negateRange = mapAntiRange negate
 
 -- | Multiply two ranges together.
 mulRange :: (Ord tp, Num tp) => ValueRange tp -> ValueRange tp -> ValueRange tp
@@ -440,6 +442,7 @@ asSingleRange :: ValueRange tp -> Maybe tp
 asSingleRange (SingleRange x) = Just x
 asSingleRange _ = Nothing
 
+-- | Map a monotonic function over a range.
 mapRange :: (a -> b) -> ValueRange a -> ValueRange b
 mapRange f r =
   case r of
@@ -448,6 +451,16 @@ mapRange f r =
     MinRange l -> MinRange (f l)
     MaxRange h -> MaxRange (f h)
     IntervalRange l h -> IntervalRange (f l) (f h)
+
+-- | Map an anti-monotonic function over a range.
+mapAntiRange :: (a -> b) -> ValueRange a -> ValueRange b
+mapAntiRange f r =
+  case r of
+    SingleRange x -> SingleRange (f x)
+    UnboundedRange -> UnboundedRange
+    MinRange l -> MaxRange (f l)
+    MaxRange h -> MinRange (f h)
+    IntervalRange l h -> IntervalRange (f h) (f l)
 
 ------------------------------------------------------------------------
 -- AbstractValue definition.
