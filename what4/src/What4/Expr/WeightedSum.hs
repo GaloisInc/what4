@@ -482,10 +482,10 @@ scale sr c wsum
   | SR.eq sr c (SR.zero sr) = constant sr (SR.zero sr)
   | otherwise = unfilteredSum sr m' (SR.mul sr c (wsum^.sumOffset))
   where
-    m' = runIdentity (AM.traverseMaybeWithKey f (wsum^.sumMap))
+    m' = AM.mapMaybeWithKey f (wsum^.sumMap)
     f (WrapF t) _ x
-      | SR.eq sr (SR.zero sr) cx = return Nothing
-      | otherwise = return (Just (mkNote sr cx t, cx))
+      | SR.eq sr (SR.zero sr) cx = Nothing
+      | otherwise = Just (mkNote sr cx t, cx)
       where cx = SR.mul sr c x
 
 -- | Produce a weighted sum from a list of terms and an offset.
