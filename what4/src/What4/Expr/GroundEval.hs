@@ -364,6 +364,14 @@ evalGroundApp f a0 = do
                  Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (EmptyCtx ::> SFn.R) ->
                  MaybeT IO (GroundValue BaseRealType)
           sf1 dfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x) = fromDouble . dfn . toDouble <$> f x
+
+          sf2 :: (Double -> Double -> Double) ->
+                 Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (EmptyCtx ::> SFn.R ::> SFn.R) ->
+                 MaybeT IO (GroundValue BaseRealType)
+          sf2 dfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x Ctx.:> SFn.SpecialFnArg y) =
+            do xv <- f x
+               yv <- f y
+               return $ fromDouble (dfn (toDouble xv) (toDouble yv))
       in case fn of
         SFn.Pi   -> return $ fromDouble pi
         SFn.Sin  -> sf1 sin args
@@ -372,12 +380,8 @@ evalGroundApp f a0 = do
         SFn.Cosh -> sf1 cosh args
         SFn.Exp  -> sf1 exp args
         SFn.Log  -> sf1 log args
-        SFn.Arctan2 ->
-          case args of
-            Ctx.Empty Ctx.:> SFn.SpecialFnArg y Ctx.:> SFn.SpecialFnArg x ->
-              do yv <- f y
-                 xv <- f x
-                 return $ fromDouble (atan2 (toDouble yv) (toDouble xv))
+        SFn.Arctan2 -> sf2 atan2 args
+        SFn.Pow     -> sf2 (**) args
 
         _ -> mzero -- TODO, other functions as well
 
