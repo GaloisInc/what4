@@ -3355,12 +3355,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just yc <- asRational y =
         case fn of
           SFn.Arctan2
-            | yc == 0 -> realLit sym 0
-            | yc /= 0, sbFloatReduce sym ->
-              realLit sym (toRational (atan2 (toDouble xc) (toDouble yc)))
+            | sbFloatReduce sym -> realLit sym (toRational (atan2 (toDouble xc) (toDouble yc)))
           SFn.Pow
             | yc == 0 -> realLit sym 1
-            | yc /= 0, sbFloatReduce sym ->
+            | sbFloatReduce sym ->
               realLit sym (toRational (toDouble xc ** toDouble yc))
           _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
