@@ -131,7 +131,8 @@ data SpecialFunction (args :: Ctx Type) where
   Hypot   :: SpecialFunction (EmptyCtx ::> R ::> R) -- hypot(x,y) = sqrt(x^2 + y^2)
   Arctan2 :: SpecialFunction (EmptyCtx ::> R ::> R) -- atan2(y,x) = atan(y/x)
 
-  -- natural exponential and logarithm
+  -- exponential and logarithm functions
+  Pow     :: SpecialFunction (EmptyCtx ::> R ::> R) -- x^y
   Exp     :: SpecialFunction (EmptyCtx ::> R) -- exp(x)
   Log     :: SpecialFunction (EmptyCtx ::> R) -- ln(x)
   Expm1   :: SpecialFunction (EmptyCtx ::> R) -- exp(x) - 1
@@ -179,6 +180,7 @@ instance Show (SpecialFunction args) where
     Hypot          -> "hypot"
     Arctan2        -> "atan2"
 
+    Pow            -> "pow"
     Exp            -> "exp"
     Log            -> "ln"
     Expm1          -> "expm1"
@@ -264,6 +266,7 @@ specialFnSymmetry fn = case fn of
     Arccosh        -> Ctx.Empty :> NoSymmetry
     Arctanh        -> Ctx.Empty :> OddFunction
 
+    Pow            -> Ctx.Empty :> NoSymmetry :> NoSymmetry
     Exp            -> Ctx.Empty :> NoSymmetry
     Log            -> Ctx.Empty :> NoSymmetry
     Expm1          -> Ctx.Empty :> NoSymmetry
@@ -312,6 +315,7 @@ specialFnRange fn = case fn of
     Arccosh        -> RealInterval (Incl Zero)   (Incl PosInf)
     Arctanh        -> RealInterval (Incl NegInf) (Incl PosInf)
 
+    Pow            -> RealInterval (Incl NegInf) (Incl PosInf)
     Exp            -> RealInterval (Incl Zero)   (Incl PosInf)
     Log            -> RealInterval (Incl NegInf) (Incl PosInf)
     Expm1          -> RealInterval (Incl NegOne) (Incl PosInf)
@@ -359,6 +363,8 @@ specialFnDomain fn = case fn of
     Arccosh        -> Ctx.Empty :> RealInterval (Incl PosOne) (Incl PosInf)
     Arctanh        -> Ctx.Empty :> RealInterval (Incl NegOne) (Incl PosOne)
 
+    Pow            -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)
+                                :> RealInterval (Incl NegInf) (Incl PosInf)
     Exp            -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)
     Log            -> Ctx.Empty :> RealInterval (Incl Zero)   (Incl PosInf)
     Expm1          -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)

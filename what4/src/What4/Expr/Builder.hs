@@ -3350,12 +3350,19 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
           _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
-  realSpecialFunction sym SFn.Arctan2 args@(Empty :> SFn.SpecialFnArg y :> SFn.SpecialFnArg x) =
-    case (asRational y, asRational x) of
-      (Just 0, _) -> realLit sym 0
-      (Just yc, Just xc) | xc /= 0, sbFloatReduce sym -> do
-        realLit sym (toRational (atan2 (toDouble yc) (toDouble xc)))
-      _ -> sbMakeExpr sym (RealSpecialFunction SFn.Arctan2 (SFn.SpecialFnArgs args))
+  realSpecialFunction sym fn args@(Empty :> SFn.SpecialFnArg x :> SFn.SpecialFnArg y)
+    | Just xc <- asRational x,
+      Just yc <- asRational y =
+        case fn of
+          SFn.Arctan2
+            | yc == 0 -> realLit sym 0
+            | yc /= 0, sbFloatReduce sym ->
+              realLit sym (toRational (atan2 (toDouble xc) (toDouble yc)))
+          SFn.Pow
+            | yc == 0 -> realLit sym 1
+            | yc /= 0, sbFloatReduce sym ->
+              realLit sym (toRational (toDouble xc ** toDouble yc))
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
   realSpecialFunction sym fn args = sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
