@@ -146,6 +146,10 @@ data SpecialFunction (args :: Ctx Type) where
   Exp10   :: SpecialFunction (EmptyCtx ::> R) -- 10^x
   Log10   :: SpecialFunction (EmptyCtx ::> R) -- log_10(x)
 
+  -- lossy conversions
+  Ceiling :: SpecialFunction (EmptyCtx ::> R) -- ceil(x)
+  Floor   :: SpecialFunction (EmptyCtx ::> R) -- floor(x)
+
 instance Show (SpecialFunction args) where
   show fn = case fn of
     Pi             -> "pi"
@@ -189,6 +193,9 @@ instance Show (SpecialFunction args) where
     Log2           -> "log2"
     Exp10          -> "exp10"
     Log10          -> "log10"
+
+    Ceiling        -> "ceiling"
+    Floor          -> "floor"
 
 -- | Values that can appear in the definition of domain and
 --   range intervals for special functions.
@@ -279,6 +286,9 @@ specialFnSymmetry fn = case fn of
     Hypot          -> Ctx.Empty :> EvenFunction :> EvenFunction
     Arctan2        -> Ctx.Empty :> OddFunction :> NoSymmetry
 
+    Ceiling        -> Ctx.Empty :> NoSymmetry
+    Floor          -> Ctx.Empty :> NoSymmetry
+
 
 -- | Compute the range of values that may be returned by the given special function
 --   as its arguments take on the possible values of its domain.  This may include
@@ -327,6 +337,9 @@ specialFnRange fn = case fn of
 
     Hypot          -> RealInterval (Incl Zero) (Incl PosInf)
     Arctan2        -> RealInterval (Incl NegPi) (Incl PosPi)
+
+    Ceiling        -> RealInterval (Incl NegInf) (Incl PosInf)
+    Floor          -> RealInterval (Incl NegInf) (Incl PosInf)
 
 
 -- | Compute the domain of the given special function.  As a mathematical
@@ -378,6 +391,9 @@ specialFnDomain fn = case fn of
                                 :> RealInterval (Incl NegInf) (Incl PosInf)
     Arctan2        -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)
                                 :> RealInterval (Incl NegInf) (Incl PosInf)
+
+    Ceiling        -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)
+    Floor          -> Ctx.Empty :> RealInterval (Incl NegInf) (Incl PosInf)
 
 -- | Data type for wrapping the actual arguments to special functions.
 data SpecialFnArg (e :: k -> Type) (tp::k) (r::Type) where

@@ -3348,6 +3348,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             | sbFloatReduce sym -> realLit sym (toRational (exp (toDouble c)))
           SFn.Log
             | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
+          SFn.Ceiling
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (ceiling (toDouble c) :: Integer))
+          SFn.Floor
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (floor (toDouble c) :: Integer))
           _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
   realSpecialFunction sym fn args@(Empty :> SFn.SpecialFnArg x :> SFn.SpecialFnArg y)

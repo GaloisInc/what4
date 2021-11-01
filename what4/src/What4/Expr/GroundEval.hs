@@ -373,13 +373,15 @@ evalGroundApp f a0 = do
                yv <- f y
                return $ fromDouble (dfn (toDouble xv) (toDouble yv))
       in case fn of
-        SFn.Pi   -> return $ fromDouble pi
-        SFn.Sin  -> sf1 sin args
-        SFn.Cos  -> sf1 cos args
-        SFn.Sinh -> sf1 sinh args
-        SFn.Cosh -> sf1 cosh args
-        SFn.Exp  -> sf1 exp args
-        SFn.Log  -> sf1 log args
+        SFn.Pi      -> return $ fromDouble pi
+        SFn.Sin     -> sf1 sin args
+        SFn.Cos     -> sf1 cos args
+        SFn.Sinh    -> sf1 sinh args
+        SFn.Cosh    -> sf1 cosh args
+        SFn.Exp     -> sf1 exp args
+        SFn.Log     -> sf1 log args
+        SFn.Ceiling -> sf1 (fromInteger . ceiling) args
+        SFn.Floor   -> sf1 (fromInteger . floor) args
         SFn.Arctan2 -> sf2 atan2 args
         SFn.Pow     -> sf2 (**) args
 
