@@ -1091,6 +1091,13 @@ sbConcreteLookup sym arr0 mcidx idx
   | Just (ConstantArray _ _ v) <- asApp arr0 = do
       return v
 
+    -- A lookup in an array update with symbolic update index is (i) the update
+    -- value when the difference between the lookup index and the update index
+    -- is zero, or (ii) a lookup in the update base array when the difference
+    -- is a concrete non-zero number. Computing the difference instead of
+    -- checking equality is more accurate because it enables the semi-rings and
+    -- abstract domains simplifications (for example, `x` - `x + 1` simplifies
+    -- to `1`)
   | Just (UpdateArray range idx_tps arr update_idx v) <- asApp arr0
   , Ctx.Empty Ctx.:> BaseBVRepr{} <- idx_tps
   , Ctx.Empty Ctx.:> idx0 <- idx
