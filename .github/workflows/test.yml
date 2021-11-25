@@ -34,17 +34,20 @@ jobs:
         if: matrix.ghc != '9.0.1'
         with:
           nix_path: nixpkgs=channel:nixos-20.09
+          install_url: https://releases.nixos.org/nix/nix-2.4/install
       - uses: cachix/install-nix-action@v16
         name: Nix 21.05 base
         if: matrix.ghc == '9.0.1'
         with:
           nix_path: nixpkgs=channel:nixos-21.05
+          install_url: https://releases.nixos.org/nix/nix-2.4/install
       - uses: cachix/install-nix-action@v16
         name: Nix unstable base
         # if: matrix.ghc == '9.0.1'
         if: false  # not currently needed, but may be in the future
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          install_url: https://releases.nixos.org/nix/nix-2.4/install
       - uses: actions/cache@v2
         name: Cache builds
         with:
@@ -65,7 +68,7 @@ jobs:
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
           echo GHC=$GHC >> $GITHUB_ENV
           echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
-          echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
+          echo ZLIB_LOC="$(nix eval --raw nixpkgs#zlib)/lib" >> $GITHUB_ENV
           echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
 
       - name: Package's Cabal/GHC compatibility
@@ -110,11 +113,11 @@ jobs:
         shell: bash
         run: |
           cd what4
-          echo Boolector version $(nix eval nixpkgs.boolector.version)
-          echo CVC4 version $(nix eval nixpkgs.cvc4.version)
-          echo Yices version $(nix eval nixpkgs.yices.version)
-          echo Z3 version $(nix eval nixpkgs.z3.version)
-          echo STP version $(nix eval nixpkgs.z3.version)
+          echo Boolector version $(nix eval nixpkgs#boolector.version)
+          echo CVC4 version $(nix eval nixpkgs#cvc4.version)
+          echo Yices version $(nix eval nixpkgs#yices.version)
+          echo Z3 version $(nix eval nixpkgs#z3.version)
+          echo STP version $(nix eval nixpkgs#stp.version)
           nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 stp yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
       - name: Documentation
         shell: bash
