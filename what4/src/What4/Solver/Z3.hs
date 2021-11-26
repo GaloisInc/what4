@@ -33,6 +33,7 @@ import           Control.Monad ( when )
 import           Data.Bits
 import           Data.String
 import           Data.Text (Text)
+import qualified Data.Text as T
 import           System.IO
 
 import           What4.BaseTypes
@@ -167,7 +168,7 @@ instance SMT2.SMTLib2GenericSolver Z3 where
                       Just (ConcreteInteger n) | n > 0 -> ["-t:" ++ show n]
                       _ -> []
     tactic <- getOpt =<< getOptionSetting z3Tactic cfg
-    let tacticOpt = if tactic /= z3TacticDefault then ["tactic.default_tactic=" ++ show tactic] else []
+    let tacticOpt = if tactic /= z3TacticDefault then ["tactic.default_tactic=" ++ T.unpack tactic] else []
     return $ tacticOpt ++ ["-smt2", "-in"] ++ extraOpts
 
   getErrorBehavior _ = SMT2.queryErrorBehavior
