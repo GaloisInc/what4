@@ -3,6 +3,20 @@ on:
   - push
   - pull_request
 
+# This CI configuration uses nix tooling to obtain the needed GHC and
+# cabal-install packages, as well as the external dependencies
+# (solvers, libz, libgmp, etc.).  The cabal + cabal project files
+# handle Haskell-level dependencies within the nix shell used for the
+# build.
+#
+# Variable aspects of this CI configuration:
+#
+# * GHC versions
+#   - specified in the strategy matrix
+#   - provided via nix: ensure the nix base and NIXPKGS used provide the requested GHC version
+# * nix tool version 2.4
+#   - all nix operations use new tool suite and cmdline interface (available in 2.4) instead of older format
+
 # The CACHE_VERSION can be updated to force the use of a new cache if
 # the current cache contents become corrupted/invalid.  This can
 # sometimes happen when (for example) the OS version is changed but
