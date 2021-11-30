@@ -86,6 +86,8 @@ module What4.Solver
   , Z3(..)
   , z3Path
   , z3Timeout
+  , z3Tactic
+  , z3TacticDefault
   , z3Adapter
   , runZ3InOverride
   , withZ3

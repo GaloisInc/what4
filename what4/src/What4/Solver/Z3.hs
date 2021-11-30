@@ -21,6 +21,8 @@ module What4.Solver.Z3
   , z3Path
   , z3Timeout
   , z3Options
+  , z3Tactic
+  , z3TacticDefault
   , z3Features
   , runZ3InOverride
   , withZ3
@@ -30,6 +32,7 @@ module What4.Solver.Z3
 import           Control.Monad ( when )
 import           Data.Bits
 import           Data.String
+import           Data.Text (Text)
 import           System.IO
 
 import           What4.BaseTypes
@@ -69,6 +72,13 @@ z3TimeoutOLD = configOption knownRepr "z3_timeout"
 z3StrictParsing  :: ConfigOption BaseBoolType
 z3StrictParsing = configOption knownRepr "solver.z3.strict_parsing"
 
+-- | Z3 tactic
+z3Tactic :: ConfigOption (BaseStringType Unicode)
+z3Tactic = configOption knownRepr "solver.z3.tactic"
+
+z3TacticDefault :: Text
+z3TacticDefault = ""
+
 z3Options :: [ConfigDesc]
 z3Options =
   let mkPath co = mkOpt co
@@ -83,6 +93,7 @@ z3Options =
       t = mkTmo z3Timeout
   in [ p, t
      , copyOpt (const $ configOptionText z3StrictParsing) strictSMTParseOpt
+     , mkOpt z3Tactic stringOptSty (Just "Z3 tactic") (Just (ConcreteString (UnicodeLiteral z3TacticDefault)))
      , deprecatedOpt [p] $ mkPath z3PathOLD
      , deprecatedOpt [t] $ mkTmo z3TimeoutOLD
      ] <> SMT2.smtlib2Options
@@ -155,7 +166,9 @@ instance SMT2.SMTLib2GenericSolver Z3 where
     let extraOpts = case timeout of
                       Just (ConcreteInteger n) | n > 0 -> ["-t:" ++ show n]
                       _ -> []
-    return $ ["-smt2", "-in"] ++ extraOpts
+    tactic <- getOpt =<< getOptionSetting z3Tactic cfg
+    let tacticOpt = if tactic /= z3TacticDefault then ["tactic.default_tactic=" ++ show tactic] else []
+    return $ tacticOpt ++ ["-smt2", "-in"] ++ extraOpts
 
   getErrorBehavior _ = SMT2.queryErrorBehavior
 
