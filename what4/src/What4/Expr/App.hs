@@ -937,7 +937,7 @@ instance TestEquality e => TestEquality (NonceApp t e) where
            ]
           )
 
-instance HashableF e => HashableF (NonceApp t e) where
+instance (HashableF e, TestEquality e) => HashableF (NonceApp t e) where
   hashWithSaltF = $(structuralHashWithSalt [t|NonceApp|]
                       [ (DataArg 1 `TypeApp` AnyType, [|hashWithSaltF|]) ])
 
@@ -1697,6 +1697,9 @@ asMatlabSolverFn f
   | MatlabSolverFnInfo g _ _ <- symFnInfo f = Just g
   | otherwise = Nothing
 
+
+instance Eq (ExprSymFn t args tp) where
+  x == y = isJust (testExprSymFnEq x y)
 
 instance Hashable (ExprSymFn t args tp) where
   hashWithSalt s f = s `hashWithSalt` symFnId f

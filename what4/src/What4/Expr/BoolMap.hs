@@ -63,7 +63,7 @@ instance TestEquality f => Eq (Wrap f x) where
   Wrap a == Wrap b = isJust $ testEquality a b
 instance OrdF f => Ord (Wrap f x) where
   compare (Wrap a) (Wrap b) = toOrdering $ compareF a b
-instance HashableF f => Hashable (Wrap f x) where
+instance (HashableF f, TestEquality f) => Hashable (Wrap f x) where
   hashWithSalt s (Wrap a) = hashWithSaltF s a
 
 -- | This data structure keeps track of a collection of expressions

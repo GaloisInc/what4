@@ -106,7 +106,7 @@ instance (TestEquality e, HasAbsValue e, HashableF e) => Eq (StringSeq e si) whe
 instance (HasAbsValue e, HashableF e) => HashableF (StringSeq e) where
   hashWithSaltF s (StringSeq _si xs) = hashWithSalt s (sft_hash xs)
 
-instance (HasAbsValue e, HashableF e) => Hashable (StringSeq e si) where
+instance (HasAbsValue e, HashableF e, TestEquality e) => Hashable (StringSeq e si) where
   hashWithSalt = hashWithSaltF
 
 singleton :: (HasAbsValue e, HashableF e, IsExpr e) => StringInfoRepr si -> e (BaseStringType si) -> StringSeq e si

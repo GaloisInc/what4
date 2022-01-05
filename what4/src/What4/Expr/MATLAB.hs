@@ -731,9 +731,13 @@ testSolverFnEq = $(structuralTypeEquality [t|MatlabSolverFn|]
                    ]
                   )
 
+instance TestEquality f => Eq (MatlabSolverFn f args tp) where
+  x == y = isJust (testSolverFnEq x y)
+
 instance ( Hashable (f BaseRealType)
          , Hashable (f BaseIntegerType)
          , HashableF f
+         , TestEquality f
          )
          => Hashable (MatlabSolverFn f args tp) where
   hashWithSalt = $(structuralHashWithSalt [t|MatlabSolverFn|] [])

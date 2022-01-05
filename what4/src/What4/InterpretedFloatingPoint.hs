@@ -107,6 +107,8 @@ instance ShowF FloatInfoRepr
 
 instance TestEquality FloatInfoRepr where
   testEquality = $(structuralTypeEquality [t|FloatInfoRepr|] [])
+instance Eq (FloatInfoRepr fi) where
+  x == y = isJust (testEquality x y)
 instance OrdF FloatInfoRepr where
   compareF = $(structuralTypeOrd [t|FloatInfoRepr|] [])
 
