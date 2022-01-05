@@ -543,7 +543,7 @@ instance TestEquality (SymExpr sym) => Eq (SymNat sym) where
 instance OrdF (SymExpr sym) => Ord (SymNat sym) where
   compare (SymNat x) (SymNat y) = toOrdering (compareF x y)
 
-instance HashableF (SymExpr sym) => Hashable (SymNat sym) where
+instance (HashableF (SymExpr sym), TestEquality (SymExpr sym)) => Hashable (SymNat sym) where
   hashWithSalt s (SymNat x) = hashWithSaltF s x
 
 ------------------------------------------------------------------------

@@ -25,6 +25,9 @@ data OnlyIntRepr tp
 instance TestEquality OnlyIntRepr where
   testEquality OnlyIntRepr OnlyIntRepr = Just Refl
 
+instance Eq (OnlyIntRepr tp) where
+  OnlyIntRepr == OnlyIntRepr = True
+
 instance Hashable (OnlyIntRepr tp) where
   hashWithSalt s OnlyIntRepr = s
 

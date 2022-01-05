@@ -398,6 +398,9 @@ instance Hashable (SpecialFunction args) where
 instance TestEquality SpecialFunction where
   testEquality = $(structuralTypeEquality [t|SpecialFunction|] [])
 
+instance Eq (SpecialFunction args) where
+  x == y = isJust (testEquality x y)
+
 instance OrdF SpecialFunction where
   compareF = $(structuralTypeOrd [t|SpecialFunction|] [])
 
@@ -424,7 +427,7 @@ instance OrdF e => Eq (SpecialFnArgs e tp r) where
 instance OrdF e => Ord (SpecialFnArgs e tp r) where
   compare (SpecialFnArgs xs) (SpecialFnArgs ys) = compare xs ys
 
-instance HashableF e => Hashable (SpecialFnArgs e tp args) where
+instance (HashableF e, OrdF e) => Hashable (SpecialFnArgs e tp args) where
   hashWithSalt s (SpecialFnArgs xs) = hashWithSaltF s xs
 
 

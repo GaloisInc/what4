@@ -233,9 +233,13 @@ $(return [])
 
 instance TestEquality BVFlavorRepr where
   testEquality = $(structuralTypeEquality [t|BVFlavorRepr|] [])
+instance Eq (BVFlavorRepr fv) where
+  x == y = isJust (testEquality x y)
 
 instance TestEquality OrderedSemiRingRepr where
   testEquality = $(structuralTypeEquality [t|OrderedSemiRingRepr|] [])
+instance Eq (OrderedSemiRingRepr sr) where
+  x == y = isJust (testEquality x y)
 
 instance TestEquality SemiRingRepr where
   testEquality =
@@ -243,6 +247,8 @@ instance TestEquality SemiRingRepr where
       [ (ConType [t|NatRepr|] `TypeApp` AnyType, [|testEquality|])
       , (ConType [t|BVFlavorRepr|] `TypeApp` AnyType, [|testEquality|])
       ])
+instance Eq (SemiRingRepr sr) where
+  x == y = isJust (testEquality x y)
 
 instance OrdF BVFlavorRepr where
   compareF = $(structuralTypeOrd [t|BVFlavorRepr|] [])

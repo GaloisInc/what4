@@ -1,3 +1,14 @@
+# next (TBA)
+
+* Allow building with `hashable-1.4.*`:
+  * Add `Eq` instances for all data types with `Hashable` instances that
+    were missing corresponding `Eq` instances. This is required since
+    `hashable-1.4.0.0` adds an `Eq` superclass to `Hashable`.
+  * Some `Hashable` instances now have extra constraints to match the
+    constraints in their corresponding `Eq` instances. For example,
+    the `Hashable` instance for `SymNat` now has an extra `TestEquality`
+    constraint to match its `Eq` instance.
+
 # 1.2.1 (June 2021)
 
 * Include test suite data in the Hackage tarball.

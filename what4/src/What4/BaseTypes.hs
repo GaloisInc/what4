@@ -311,6 +311,8 @@ instance TestEquality BaseTypeRepr where
                      )
                    ]
                   )
+instance Eq (BaseTypeRepr bt) where
+  x == y = isJust (testEquality x y)
 
 instance OrdF BaseTypeRepr where
   compareF = $(structuralTypeOrd [t|BaseTypeRepr|]
@@ -328,6 +330,8 @@ instance TestEquality FloatPrecisionRepr where
   testEquality = $(structuralTypeEquality [t|FloatPrecisionRepr|]
       [(TypeApp (ConType [t|NatRepr|]) AnyType, [|testEquality|])]
     )
+instance Eq (FloatPrecisionRepr fpp) where
+  x == y = isJust (testEquality x y)
 instance OrdF FloatPrecisionRepr where
   compareF = $(structuralTypeOrd [t|FloatPrecisionRepr|]
       [(TypeApp (ConType [t|NatRepr|]) AnyType, [|compareF|])]
@@ -335,5 +339,7 @@ instance OrdF FloatPrecisionRepr where
 
 instance TestEquality StringInfoRepr where
   testEquality = $(structuralTypeEquality [t|StringInfoRepr|] [])
+instance Eq (StringInfoRepr si) where
+  x == y = isJust (testEquality x y)
 instance OrdF StringInfoRepr where
   compareF = $(structuralTypeOrd [t|StringInfoRepr|] [])
