@@ -56,7 +56,6 @@ module What4.Expr.Builder
   , curProgramLoc
   , sbUnaryThreshold
   , sbCacheStartSize
-  , sbBVDomainRangeLimit
   , sbUserState
   , exprCounter
   , startCaching
@@ -71,7 +70,6 @@ module What4.Expr.Builder
 
     -- * configuration options
   , unaryThresholdOption
-  , bvdomainRangeLimitOption
   , cacheStartSizeOption
   , cacheTerms
 
@@ -372,8 +370,6 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
           -- | The maximum number of distinct values a term may have and use the
           -- unary representation.
         , sbUnaryThreshold :: !(CFG.OptionSetting BaseIntegerType)
-          -- | The maximum number of distinct ranges in a BVDomain expression.
-        , sbBVDomainRangeLimit :: !(CFG.OptionSetting BaseIntegerType)
           -- | The starting size when building a new cache
         , sbCacheStartSize :: !(CFG.OptionSetting BaseIntegerType)
           -- | Counter to generate new unique identifiers for elements and functions.
@@ -687,21 +683,6 @@ unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInte
         help = Just "Maximum number of values in unary bitvector encoding."
 
 ------------------------------------------------------------------------
--- Configuration option for controlling how many disjoint ranges
--- should be allowed in bitvector domains.
-
--- | Maximum number of ranges in bitvector abstract domains.
---
---   This option is named \"backend.bvdomain_range_limit\"
-bvdomainRangeLimitOption :: CFG.ConfigOption BaseIntegerType
-bvdomainRangeLimitOption = CFG.configOption BaseIntegerRepr "backend.bvdomain_range_limit"
-
-bvdomainRangeLimitDesc :: CFG.ConfigDesc
-bvdomainRangeLimitDesc = CFG.mkOpt bvdomainRangeLimitOption sty help (Just (ConcreteInteger 2))
-  where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just "Maximum number of ranges in bitvector domains."
-
-------------------------------------------------------------------------
 -- Cache start size
 
 -- | Starting size for element cache when caching is enabled.
@@ -785,11 +766,9 @@ newExprBuilder floatMode st gen = do
   -- Set up configuration options
   cfg <- CFG.initialConfig 0
            [ unaryThresholdDesc
-           , bvdomainRangeLimitDesc
            , cacheStartSizeDesc
            ]
   unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
-  domainRangeSetting <- CFG.getOptionSetting bvdomainRangeLimitOption cfg
   cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
   CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
   nonLinearOps <- newIORef 0
@@ -800,7 +779,6 @@ newExprBuilder floatMode st gen = do
                , sbConfiguration = cfg
                , sbFloatReduce = True
                , sbUnaryThreshold = unarySetting
-               , sbBVDomainRangeLimit = domainRangeSetting
                , sbCacheStartSize = cacheStartSetting
                , sbProgramLoc = loc_ref
                , exprCounter = gen
