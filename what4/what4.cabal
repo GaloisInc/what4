@@ -97,6 +97,7 @@ library
     bv-sized >= 1.0.0,
     bytestring >= 0.10,
     deriving-compat >= 0.5,
+    concurrent-extra >= 0.7 && < 0.8,
     config-value >= 0.8 && < 0.9,
     containers >= 0.5.0.0,
     data-binary-ieee754,

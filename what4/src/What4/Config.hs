@@ -66,14 +66,16 @@
 --       (i.e., to undo extendConfig)
 --
 --
--- Note regarding concurrency: the configuration data structures in this
--- module are implemented using MVars, and may safely be used in a multithreaded
--- way; configuration changes made in one thread will be visible to others
--- in a properly synchronized way.  Of course, if one desires to isolate
--- configuration changes in different threads from each other, separate
--- configuration objects are required. As noted in the documentation for
--- 'opt_onset', the validation procedures for options should not
--- look up the value of other options, or deadlock may occur.
+-- Note regarding concurrency: the configuration data structures in
+-- this module are implemented using MVars, and may safely be used in
+-- a multithreaded way; configuration changes made in one thread will
+-- be visible to others in a properly synchronized way.  Of course, if
+-- one desires to isolate configuration changes in different threads
+-- from each other, separate configuration objects are required. The
+-- @splitConfig@ operation may be useful to partially isolate
+-- configuration objects.  As noted in the documentation for
+-- 'opt_onset', the validation procedures for options should not look
+-- up the value of other options, or deadlock may occur.
 ------------------------------------------------------------------------------
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -150,6 +152,8 @@ module What4.Config
   , Config
   , initialConfig
   , extendConfig
+  , tryExtendConfig
+  , splitConfig
 
   , getOptionSetting
   , getOptionSettingFromText
@@ -168,6 +172,7 @@ module What4.Config
 
 import           Control.Applicative ( Const(..), (<|>) )
 import           Control.Concurrent.MVar
+import qualified Control.Concurrent.ReadWriteVar as RWV
 import           Control.Lens ((&))
 import qualified Control.Lens.Combinators as LC
 import           Control.Monad.Catch
@@ -750,14 +755,25 @@ traverseSubtree ps0 f = go ps0 []
            here = traverse (f (reverse (p:revPath)))
 
 
+-- | Add an option to the given @ConfigMap@.  If the
+--   option cannot be added (because it already exists
+--   in the map) the map is instead returned unchanged.
+tryInsertOption ::
+  (MonadIO m, MonadCatch m) =>
+  ConfigMap -> ConfigDesc -> m ConfigMap
+tryInsertOption m d =
+  catch (insertOption m d)
+    (\OptCreateFailure{} -> return m)
+
 -- | Add an option to the given @ConfigMap@ or throws an
 -- 'OptCreateFailure' exception on error.
 --
 -- Inserting an option multiple times is idempotent under equivalency
 -- modulo the opt_onset in the option's style, otherwise it is an
 -- error.
-insertOption :: (MonadIO m, MonadThrow m)
-             => ConfigMap -> ConfigDesc -> m ConfigMap
+insertOption ::
+  (MonadIO m, MonadThrow m) =>
+  ConfigMap -> ConfigDesc -> m ConfigMap
 insertOption m d@(ConfigDesc o@(ConfigOption _tp (p:|ps)) sty h newRepls) =
   adjustConfigMap p ps f m
   where
@@ -881,6 +897,7 @@ insertOption m d@(ConfigDesc o@(ConfigOption _tp (p:|ps)) sty h newRepls) =
                  (pretty $ "already exists with type " <> show (opt_type sty'))
 
 data OptCreateFailure = OptCreateFailure ConfigDesc (Doc Void)
+
 instance Exception OptCreateFailure
 instance Show OptCreateFailure where
   show (OptCreateFailure cfgdesc msg) =
@@ -890,28 +907,46 @@ instance Show OptCreateFailure where
 ------------------------------------------------------------------------
 -- Config
 
--- | The main configuration datatype.  It consists of an MVar
+-- | The main configuration datatype.  It consists of an Read/Write var
 --   containing the actual configuration data.
-newtype Config = Config (MVar ConfigMap)
+newtype Config = Config (RWV.RWVar ConfigMap)
 
 -- | Construct a new configuration from the given configuration
 --   descriptions.
-initialConfig :: Integer           -- ^ Initial value for the `verbosity` option
-              -> [ConfigDesc]      -- ^ Option descriptions to install
-              -> IO (Config)
+initialConfig ::
+  Integer      {- ^ Initial value for the `verbosity` option -} ->
+  [ConfigDesc] {- ^ Option descriptions to install -} ->
+  IO (Config)
 initialConfig initVerbosity ts = do
-   cfg <- Config <$> newMVar Map.empty
+   cfg <- Config <$> RWV.new Map.empty
    extendConfig (builtInOpts initVerbosity ++ ts) cfg
    return cfg
 
 -- | Extend an existing configuration with new options.  An
 --   'OptCreateFailure' exception will be raised if any of the given
 --   options clash with options that already exists.
-extendConfig :: [ConfigDesc]
-             -> Config
-             -> IO ()
+extendConfig :: [ConfigDesc] -> Config -> IO ()
 extendConfig ts (Config cfg) =
-  modifyMVar_ cfg (\m -> foldM insertOption m ts)
+  RWV.modify_ cfg (\m -> foldM insertOption m ts)
+
+
+-- | Extend an existing configuration with new options. If any
+--   of the given options are already present in the configuration,
+--   nothing is done for that option and it is silently skipped.
+tryExtendConfig :: [ConfigDesc] -> Config -> IO ()
+tryExtendConfig ts (Config cfg) =
+  RWV.modify_ cfg (\m -> foldM tryInsertOption m ts)
+
+-- | Create a new configuration object that shares the option
+--   settings currently in the given input config. However,
+--   an options added to either configuration using @extendConfig@
+--   will not be propigated to the other .
+--
+--   To restate, option settings that already exist in the
+--   input configuration will be shared between both; changes
+--   to those options will be visible in both configurations.
+splitConfig :: Config -> IO Config
+splitConfig (Config cfg) = Config <$> (RWV.with cfg RWV.new)
 
 -- | Verbosity of the simulator.  This option controls how much
 --   informational and debugging output is generated.
@@ -1050,7 +1085,8 @@ getOptionSetting ::
   Config ->
   IO (OptionSetting tp)
 getOptionSetting o@(ConfigOption tp (p:|ps)) (Config cfg) =
-   readMVar cfg >>= getConst . adjustConfigMap p ps f
+   RWV.with cfg (getConst . adjustConfigMap p ps f)
+
  where
   f Nothing  = Const (throwM $ OptGetFailure (OCfg $ Some o) "not found")
   f (Just x) = Const (leafToSetting x)
@@ -1082,7 +1118,7 @@ getOptionSettingFromText ::
 getOptionSettingFromText nm (Config cfg) =
    case splitPath nm of
      Nothing -> throwM $ OptGetFailure (OName "") "Illegal empty name for option"
-     Just (p:|ps) -> readMVar cfg >>= (getConst . adjustConfigMap p ps (f (p:|ps)))
+     Just (p:|ps) -> RWV.with cfg (getConst . adjustConfigMap p ps (f (p:|ps)))
   where
   f (p:|ps) Nothing  = Const (throwM $ OptGetFailure
                               (OName (Text.intercalate "." (p:ps)))
@@ -1119,8 +1155,8 @@ getConfigValues ::
   Config ->
   IO [ConfigValue]
 getConfigValues prefix (Config cfg) =
-  do m <- readMVar cfg
-     let ps = dropWhile Text.null $ Text.splitOn "." prefix
+  RWV.with cfg $ \m ->
+  do let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq ConfigValue) IO ConfigLeaf
          f [] _ = throwM $ OptGetFailure (OName prefix)
                   "illegal empty option prefix name"
@@ -1158,8 +1194,8 @@ configHelp ::
   Config ->
   IO [Doc Void]
 configHelp prefix (Config cfg) =
-  do m <- readMVar cfg
-     let ps = dropWhile Text.null $ Text.splitOn "." prefix
+  RWV.with cfg $ \m ->
+  do let ps = dropWhile Text.null $ Text.splitOn "." prefix
          f :: [Text] -> ConfigLeaf -> WriterT (Seq (Doc Void)) IO ConfigLeaf
          f nm leaf = do d <- liftIO (ppConfigLeaf nm leaf)
                         tell (Seq.singleton d)

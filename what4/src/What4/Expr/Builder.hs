@@ -54,12 +54,14 @@ module What4.Expr.Builder
   , sbMakeExpr
   , sbNonceExpr
   , curProgramLoc
-  , sbUnaryThreshold
-  , sbCacheStartSize
-  , sbUserState
+  , unaryThreshold
+  , cacheStartSize
+  , userState
   , exprCounter
   , startCaching
   , stopCaching
+  , exprBuilderSplitConfig
+  , exprBuilderFreshConfig
 
     -- * Specialized representations
   , bvUnary
@@ -350,10 +352,10 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
         , sbCacheStartSize :: !(CFG.OptionSetting BaseIntegerType)
 
           -- | Counter to generate new unique identifiers for elements and functions.
-        , exprCounter :: !(NonceGenerator IO t)
+        , sbExprCounter :: !(NonceGenerator IO t)
 
           -- | Reference to current allocator for expressions.
-        , curAllocator :: !(IORef (ExprAllocator t))
+        , sbCurAllocator :: !(IORef (ExprAllocator t))
 
           -- | Number of times an 'Expr' for a non-linear operation has been
           -- created.
@@ -384,6 +386,69 @@ type instance SymExpr (ExprBuilder t st fs) = Expr t
 type instance BoundVar (ExprBuilder t st fs) = ExprBoundVar t
 type instance SymAnnotation (ExprBuilder t st fs) = Nonce t
 
+exprCounter :: Getter (ExprBuilder t st fs) (NonceGenerator IO t)
+exprCounter = to sbExprCounter
+
+userState :: Lens' (ExprBuilder t st fs) (st t)
+userState = lens sbUserState (\sym st -> sym{ sbUserState = st })
+
+unaryThreshold :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
+unaryThreshold = to sbUnaryThreshold
+
+cacheStartSize :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
+cacheStartSize = to sbCacheStartSize
+
+-- | Return a new expr builder where the configuaration object has
+--   been "split" using the @splitConfig@ operation.
+--   The returned sym will share any preexisting options with the
+--   input sym, but any new options added with @extendConfig@
+--   will not be shared. This may be useful if the expression builder
+--   needs to be shared across threads, or sequentially for
+--   separate use cases.  Note, however, that hash consing settings,
+--   solver loggers and the current program location will be shared.
+exprBuilderSplitConfig :: ExprBuilder t st fs -> IO (ExprBuilder t st fs)
+exprBuilderSplitConfig sym =
+  do cfg' <- CFG.splitConfig (sbConfiguration sym)
+     return sym{ sbConfiguration = cfg' }
+
+
+-- | Return a new expr builder where all configuration settings have
+--   been isolated from the original. The @Config@ object of the
+--   output expr builder will have only the default options that are
+--   installed via @newExprBuilder@, and configuration changes
+--   to either expr builder will not be visible to the other.
+--   This includes caching settings, the current program location,
+--   and installed solver loggers.
+exprBuilderFreshConfig :: ExprBuilder t st fs -> IO (ExprBuilder t st fs)
+exprBuilderFreshConfig sym =
+  do let gen = sbExprCounter sym
+     es <- newStorage gen
+
+     loc_ref       <- newIORef initializationLoc
+     storage_ref   <- newIORef es
+     logger_ref    <- newIORef Nothing
+     bindings_ref  <- newIORef =<< readIORef (sbVarBindings sym)
+
+     -- Set up configuration options
+     cfg <- CFG.initialConfig 0
+              [ unaryThresholdDesc
+              , cacheStartSizeDesc
+              ]
+     unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
+     cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
+     CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
+     nonLinearOps <- newIORef 0
+
+     return sym { sbConfiguration = cfg
+                , sbFloatReduce = True
+                , sbUnaryThreshold = unarySetting
+                , sbCacheStartSize = cacheStartSetting
+                , sbProgramLoc = loc_ref
+                , sbCurAllocator = storage_ref
+                , sbNonLinearOps = nonLinearOps
+                , sbVarBindings = bindings_ref
+                , sbSolverLogger = logger_ref
+                }
 
 ------------------------------------------------------------------------
 -- IdxCache
@@ -482,7 +547,7 @@ sbNonceExpr :: ExprBuilder t st fs
            -> NonceApp t (Expr t) tp
            -> IO (Expr t tp)
 sbNonceExpr sym a = do
-  s <- readIORef (curAllocator sym)
+  s <- readIORef (sbCurAllocator sym)
   pc <- curProgramLoc sym
   nonceExpr s pc a (quantAbsEval exprAbsValue a)
 
@@ -496,7 +561,7 @@ semiRingLit sb sr x = do
 
 sbMakeExpr :: ExprBuilder t st fs -> App (Expr t) tp -> IO (Expr t tp)
 sbMakeExpr sym a = do
-  s <- readIORef (curAllocator sym)
+  s <- readIORef (sbCurAllocator sym)
   pc <- curProgramLoc sym
   let v = abstractEval exprAbsValue a
   when (isNonLinearApp a) $
@@ -540,10 +605,10 @@ sbMakeBoundVar sym nm tp k absVal = do
 
 -- | Create fresh index
 sbFreshIndex :: ExprBuilder t st fs -> IO (Nonce t (tp::BaseType))
-sbFreshIndex sb = freshNonce (exprCounter sb)
+sbFreshIndex sb = freshNonce (sbExprCounter sb)
 
 sbFreshSymFnNonce :: ExprBuilder t st fs -> IO (Nonce t (ctx:: Ctx BaseType))
-sbFreshSymFnNonce sb = freshNonce (exprCounter sb)
+sbFreshSymFnNonce sb = freshNonce (sbExprCounter sb)
 
 ------------------------------------------------------------------------
 -- Configuration option for controlling the maximum number of value a unary
@@ -604,8 +669,8 @@ newExprBuilder floatMode st gen = do
                , sbUnaryThreshold = unarySetting
                , sbCacheStartSize = cacheStartSetting
                , sbProgramLoc = loc_ref
-               , exprCounter = gen
-               , curAllocator = storage_ref
+               , sbExprCounter = gen
+               , sbCurAllocator = storage_ref
                , sbNonLinearOps = nonLinearOps
                , sbUserState = st
                , sbVarBindings = bindings_ref
@@ -622,15 +687,15 @@ getSymbolVarBimap sym = readIORef (sbVarBindings sym)
 -- | Stop caching applications in backend.
 stopCaching :: ExprBuilder t st fs -> IO ()
 stopCaching sb = do
-  s <- newStorage (exprCounter sb)
-  atomicWriteIORef (curAllocator sb) s
+  s <- newStorage (sbExprCounter sb)
+  atomicWriteIORef (sbCurAllocator sb) s
 
 -- | Restart caching applications in backend (clears cache if it is currently caching).
 startCaching :: ExprBuilder t st fs -> IO ()
 startCaching sb = do
   sz <- CFG.getOpt (sbCacheStartSize sb)
-  s <- newCachedStorage (exprCounter sb) (fromInteger sz)
-  atomicWriteIORef (curAllocator sb) s
+  s <- newCachedStorage (sbExprCounter sb) (fromInteger sz)
+  atomicWriteIORef (sbCurAllocator sb) s
 
 bvBinDivOp :: (1 <= w)
             => (NatRepr w -> BV.BV w -> BV.BV w -> BV.BV w)
@@ -1540,7 +1605,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just f  -> f ev
 
   getStatistics sb = do
-    allocs <- countNoncesGenerated (exprCounter sb)
+    allocs <- countNoncesGenerated (sbExprCounter sb)
     nonLinearOps <- readIORef (sbNonLinearOps sb)
     return $ Statistics { statAllocs = allocs
                         , statNonLinearOps = nonLinearOps }
