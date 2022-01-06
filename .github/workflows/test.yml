@@ -28,7 +28,7 @@ env:
 
 jobs:
   linux:
-    name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }}
+    name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
     env:
@@ -37,6 +37,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         ghc: [9.0.1, 8.10.4, 8.8.4, 8.6.5]
+        z3: [4.8.8, 4.8.10, 4.8.11, 4.8.12]
         allow-failure: [false]
       fail-fast: false
     steps:
@@ -81,6 +82,11 @@ jobs:
         run:
           echo NIXPKGS=github:NixOS/nixpkgs/nixos-unstable >> $GITHUB_ENV
 
+      - uses: cachix/cachix-action@v10
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_SIGNING_KEY }}'
+
       - uses: actions/cache@v2
         name: Cache builds
         with:
@@ -101,6 +107,18 @@ jobs:
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
           echo NS="nix shell github:nixos/nixpkgs/21.05#cabal-install ${NIXPKGS}#$GHC ${NIXPKGS}#gmp ${NIXPKGS}#zlib ${NIXPKGS}#zlib.dev" >> $GITHUB_ENV
+          # echo GHC=$GHC >> $GITHUB_ENV
+          # echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
+          # echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
+          declare -A z3_sha
+          z3_sha=([4.8.8]=sha256-qpmi75I27m89dhKSy8D2zkzqKpLoFBPRBrhzDB8axeY=
+                  [4.8.9]=sha256-vfP9GXdKfXQ8+q97gEGbg4VghA1sVD1Py22IBgL+y8I=
+                  [4.8.10]=sha256-jvn1RtSqmhRTA9I+VDDVGW3KID38WiFGl/vGB6ioPvA=
+                  [4.8.11]=sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc=
+                  [4.8.12]=sha256-oLsdiZQ5ZIWn0Hr/zuWL5EcolOx9X+1sRE/VAQ9rbPE=
+                  )
+          z3=${{ matrix.z3 }}
+          echo Z3PKG="z3.overrideAttrs (_: { version = \"${z3}\"; src=fetchFromGitHub { owner=\"Z3Prover\"; repo=\"z3\"; rev=\"z3-${z3}\"; sha256 = \"${z3_sha[${z3}]}\"; }; })" >> $GITHUB_ENV
 
       - name: Cabal update
         shell: bash
@@ -151,6 +169,20 @@ jobs:
         run: |
           cd what4
           $NS -c cabal build
+
+      - name: Build Z3 version ${{ matrix.z3 }}
+        shell: bash
+        run: |
+          declare -A z3_sha
+          z3_sha=([4.8.8]=sha256-qpmi75I27m89dhKSy8D2zkzqKpLoFBPRBrhzDB8axeY=
+                  [4.8.9]=sha256-vfP9GXdKfXQ8+q97gEGbg4VghA1sVD1Py22IBgL+y8I=
+                  [4.8.10]=sha256-jvn1RtSqmhRTA9I+VDDVGW3KID38WiFGl/vGB6ioPvA=
+                  [4.8.11]=sha256-K/18FS4zvqLbspZvTeLbC0mW3tCPf5di2GysVWtFwZc=
+                  [4.8.12]=sha256-oLsdiZQ5ZIWn0Hr/zuWL5EcolOx9X+1sRE/VAQ9rbPE=
+                  )
+          z3=${{ matrix.z3 }}
+          nix-build -E "with import <nixpkgs> {}; pkgs.${Z3PKG}"
+
       - name: Test
         shell: bash
         run: |
@@ -159,8 +191,9 @@ jobs:
           echo CVC4 version $(nix eval ${NIXPKGS}#cvc4.version)
           echo STP version $(nix eval ${NIXPKGS}#stp.version)
           echo Yices version $(nix eval ${NIXPKGS}#yices.version)
-          echo Z3 version $(nix eval ${NIXPKGS}#z3.version)
-          $NS ${NIXPKGS}#abc-verifier ${NIXPKGS}#boolector ${NIXPKGS}#cvc4 ${NIXPKGS}#stp ${NIXPKGS}#yices ${NIXPKGS}#z3 -c cabal test
+          echo Z3 version {{ matrix.z3 }}
+          $NS ${NIXPKGS}#abc-verifier ${NIXPKGS}#boolector ${NIXPKGS}#cvc4 ${NIXPKGS}#stp ${NIXPKGS}#yices ${Z3PKG} -c cabal test
+
       - name: Documentation
         shell: bash
         run: |
