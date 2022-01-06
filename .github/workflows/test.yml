@@ -37,7 +37,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         ghc: [9.0.1, 8.10.4, 8.8.4]
-        z3: [4.8.8, 4.8.10, 4.8.11, 4.8.12]
+        z3: [4_8_8, 4_8_10, 4_8_11, 4_8_12, 4_8_13, 4_8_14]
         allow-failure: [false]
       fail-fast: false
     steps:
