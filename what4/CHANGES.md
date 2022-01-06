@@ -1,5 +1,9 @@
 # next (TBA)
 
+* Add operations for increased control over the scope of
+  configuration options, both in the `What4.Confg` and
+  `What4.Expr.Builder` modules.
+
 * Allow building with `hashable-1.4.*`:
   * Add `Eq` instances for all data types with `Hashable` instances that
     were missing corresponding `Eq` instances. This is required since
