@@ -143,6 +143,7 @@ library
     What4.IndexLit
     What4.Interface
     What4.InterpretedFloatingPoint
+    What4.FloatMode
     What4.LabeledPred
     What4.Panic
     What4.Partial
@@ -157,6 +158,7 @@ library
     What4.WordMap
 
     What4.Expr
+    What4.Expr.Allocator
     What4.Expr.App
     What4.Expr.ArrayUpdateMap
     What4.Expr.AppTheory

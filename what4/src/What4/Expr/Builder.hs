@@ -210,12 +210,15 @@ import qualified LibBF as BF
 import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
+import           What4.FloatMode
 import           What4.Interface
 import           What4.InterpretedFloatingPoint
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
+
+import           What4.Expr.Allocator
 import           What4.Expr.App
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.Expr.BoolMap (BoolMap, Polarity(..), BoolMapView(..))
@@ -318,39 +321,7 @@ data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 ------------------------------------------------------------------------
 -- ExprBuilder
 
--- | Mode flag for how floating-point values should be interpreted.
-data FloatMode where
-  FloatIEEE :: FloatMode
-  FloatUninterpreted :: FloatMode
-  FloatReal :: FloatMode
-type FloatIEEE = 'FloatIEEE
-type FloatUninterpreted = 'FloatUninterpreted
-type FloatReal = 'FloatReal
-
 data Flags (fi :: FloatMode)
-
-
-data FloatModeRepr :: FloatMode -> Type where
-  FloatIEEERepr          :: FloatModeRepr FloatIEEE
-  FloatUninterpretedRepr :: FloatModeRepr FloatUninterpreted
-  FloatRealRepr          :: FloatModeRepr FloatReal
-
-instance Show (FloatModeRepr fm) where
-  showsPrec _ FloatIEEERepr          = showString "FloatIEEE"
-  showsPrec _ FloatUninterpretedRepr = showString "FloatUninterpreted"
-  showsPrec _ FloatRealRepr          = showString "FloatReal"
-
-instance ShowF FloatModeRepr
-
-instance KnownRepr FloatModeRepr FloatIEEE          where knownRepr = FloatIEEERepr
-instance KnownRepr FloatModeRepr FloatUninterpreted where knownRepr = FloatUninterpretedRepr
-instance KnownRepr FloatModeRepr FloatReal          where knownRepr = FloatRealRepr
-
-instance TestEquality FloatModeRepr where
-  testEquality FloatIEEERepr           FloatIEEERepr           = return Refl
-  testEquality FloatUninterpretedRepr  FloatUninterpretedRepr  = return Refl
-  testEquality FloatRealRepr           FloatRealRepr           = return Refl
-  testEquality _ _ = Nothing
 
 
 -- | Cache for storing dag terms.
@@ -359,38 +330,50 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
    = forall fm. (fs ~ (Flags fm)) =>
      SB { sbTrue  :: !(BoolExpr t)
         , sbFalse :: !(BoolExpr t)
+
           -- | Constant zero.
         , sbZero  :: !(RealExpr t)
+
           -- | Configuration object for this symbolic backend
         , sbConfiguration :: !CFG.Config
+
           -- | Flag used to tell the backend whether to evaluate
           -- ground rational values as double precision floats when
           -- a function cannot be evaluated as a rational.
         , sbFloatReduce :: !Bool
+
           -- | The maximum number of distinct values a term may have and use the
           -- unary representation.
         , sbUnaryThreshold :: !(CFG.OptionSetting BaseIntegerType)
+
           -- | The starting size when building a new cache
         , sbCacheStartSize :: !(CFG.OptionSetting BaseIntegerType)
+
           -- | Counter to generate new unique identifiers for elements and functions.
         , exprCounter :: !(NonceGenerator IO t)
+
           -- | Reference to current allocator for expressions.
         , curAllocator :: !(IORef (ExprAllocator t))
+
           -- | Number of times an 'Expr' for a non-linear operation has been
           -- created.
         , sbNonLinearOps :: !(IORef Integer)
+
           -- | The current program location
         , sbProgramLoc :: !(IORef ProgramLoc)
-          -- | Additional state maintained by the state manager
+
+          -- | User-provided state
         , sbUserState :: !(st t)
 
         , sbVarBindings :: !(IORef (SymbolVarBimap t))
+
         , sbUninterpFnCache :: !(IORef (Map (SolverSymbol, Some (Ctx.Assignment BaseTypeRepr)) (SomeSymFn (ExprBuilder t st fs))))
+
           -- | Cache for Matlab functions
-        , sbMatlabFnCache
-          :: !(PH.HashTable RealWorld (MatlabFnWrapper t) (ExprSymFnWrapper t))
-        , sbSolverLogger
-          :: !(IORef (Maybe (SolverEvent -> IO ())))
+        , sbMatlabFnCache :: !(PH.HashTable RealWorld (MatlabFnWrapper t) (ExprSymFnWrapper t))
+
+        , sbSolverLogger :: !(IORef (Maybe (SolverEvent -> IO ())))
+
           -- | Flag dictating how floating-point values/operations are translated
           -- when passed to the solver.
         , sbFloatMode :: !(FloatModeRepr fm)
@@ -400,109 +383,6 @@ type instance SymFn (ExprBuilder t st fs) = ExprSymFn t
 type instance SymExpr (ExprBuilder t st fs) = Expr t
 type instance BoundVar (ExprBuilder t st fs) = ExprBoundVar t
 type instance SymAnnotation (ExprBuilder t st fs) = Nonce t
-
-------------------------------------------------------------------------
--- | ExprAllocator provides an interface for creating expressions from
--- an applications.
--- Parameter @t@ is a phantom type brand used to track nonces.
-data ExprAllocator t
-   = ExprAllocator { appExpr  :: forall tp
-                            .  ProgramLoc
-                            -> App (Expr t) tp
-                            -> AbstractValue tp
-                            -> IO (Expr t tp)
-                  , nonceExpr :: forall tp
-                             .  ProgramLoc
-                             -> NonceApp t (Expr t) tp
-                             -> AbstractValue tp
-                             -> IO (Expr t tp)
-                  }
-
-
-------------------------------------------------------------------------
--- Uncached storage
-
--- | Create a new storage that does not do hash consing.
-newStorage :: NonceGenerator IO t -> IO (ExprAllocator t)
-newStorage g = do
-  return $! ExprAllocator { appExpr = uncachedExprFn g
-                         , nonceExpr = uncachedNonceExpr g
-                         }
-
-uncachedExprFn :: NonceGenerator IO t
-              -> ProgramLoc
-              -> App (Expr t) tp
-              -> AbstractValue tp
-              -> IO (Expr t tp)
-uncachedExprFn g pc a v = do
-  n <- freshNonce g
-  return $! mkExpr n pc a v
-
-uncachedNonceExpr :: NonceGenerator IO t
-                 -> ProgramLoc
-                 -> NonceApp t (Expr t) tp
-                 -> AbstractValue tp
-                 -> IO (Expr t tp)
-uncachedNonceExpr g pc p v = do
-  n <- freshNonce g
-  return $! NonceAppExpr $ NonceAppExprCtor { nonceExprId = n
-                                          , nonceExprLoc = pc
-                                          , nonceExprApp = p
-                                          , nonceExprAbsValue = v
-                                          }
-
-------------------------------------------------------------------------
--- Cached storage
-
-cachedNonceExpr :: NonceGenerator IO t
-               -> PH.HashTable RealWorld (NonceApp t (Expr t)) (Expr t)
-               -> ProgramLoc
-               -> NonceApp t (Expr t) tp
-               -> AbstractValue tp
-               -> IO (Expr t tp)
-cachedNonceExpr g h pc p v = do
-  me <- stToIO $ PH.lookup h p
-  case me of
-    Just e -> return e
-    Nothing -> do
-      n <- freshNonce g
-      let e = NonceAppExpr $ NonceAppExprCtor { nonceExprId = n
-                                            , nonceExprLoc = pc
-                                            , nonceExprApp = p
-                                            , nonceExprAbsValue = v
-                                            }
-      seq e $ stToIO $ PH.insert h p e
-      return $! e
-
-
-cachedAppExpr :: forall t tp
-               . NonceGenerator IO t
-              -> PH.HashTable RealWorld (App (Expr t)) (Expr t)
-              -> ProgramLoc
-              -> App (Expr t) tp
-              -> AbstractValue tp
-              -> IO (Expr t tp)
-cachedAppExpr g h pc a v = do
-  me <- stToIO $ PH.lookup h a
-  case me of
-    Just e -> return e
-    Nothing -> do
-      n <- freshNonce g
-      let e = mkExpr n pc a v
-      seq e $ stToIO $ PH.insert h a e
-      return e
-
--- | Create a storage that does hash consing.
-newCachedStorage :: forall t
-                  . NonceGenerator IO t
-                 -> Int
-                 -> IO (ExprAllocator t)
-newCachedStorage g sz = stToIO $ do
-  appCache  <- PH.newSized sz
-  predCache <- PH.newSized sz
-  return $ ExprAllocator { appExpr = cachedAppExpr g appCache
-                        , nonceExpr = cachedNonceExpr g predCache
-                        }
 
 
 ------------------------------------------------------------------------
@@ -682,63 +562,6 @@ unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInte
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
         help = Just "Maximum number of values in unary bitvector encoding."
 
-------------------------------------------------------------------------
--- Cache start size
-
--- | Starting size for element cache when caching is enabled.
---
---   This option is named \"backend.cache_start_size\"
-cacheStartSizeOption :: CFG.ConfigOption BaseIntegerType
-cacheStartSizeOption = CFG.configOption BaseIntegerRepr "backend.cache_start_size"
-
--- | The configuration option for setting the size of the initial hash set
--- used by simple builder
-cacheStartSizeDesc :: CFG.ConfigDesc
-cacheStartSizeDesc = CFG.mkOpt cacheStartSizeOption sty help (Just (ConcreteInteger 100000))
-  where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
-        help = Just "Starting size for element cache"
-
-------------------------------------------------------------------------
--- Cache terms
-
--- | Indicates if we should cache terms.  When enabled, hash-consing
---   is used to find and deduplicate common subexpressions.
---
---   This option is named \"use_cache\"
-cacheTerms :: CFG.ConfigOption BaseBoolType
-cacheTerms = CFG.configOption BaseBoolRepr "use_cache"
-
-cacheOptStyle ::
-  NonceGenerator IO t ->
-  IORef (ExprAllocator t) ->
-  CFG.OptionSetting BaseIntegerType ->
-  CFG.OptionStyle BaseBoolType
-cacheOptStyle gen storageRef szSetting =
-  CFG.boolOptSty & CFG.set_opt_onset
-        (\mb b -> f (fmap fromConcreteBool mb) (fromConcreteBool b) >> return CFG.optOK)
- where
- f :: Maybe Bool -> Bool -> IO ()
- f mb b | mb /= Just b = if b then start else stop
-        | otherwise = return ()
-
- stop  = do s <- newStorage gen
-            atomicWriteIORef storageRef s
-
- start = do sz <- CFG.getOpt szSetting
-            s <- newCachedStorage gen (fromInteger sz)
-            atomicWriteIORef storageRef s
-
-cacheOptDesc ::
-  NonceGenerator IO t ->
-  IORef (ExprAllocator t) ->
-  CFG.OptionSetting BaseIntegerType ->
-  CFG.ConfigDesc
-cacheOptDesc gen storageRef szSetting =
-  CFG.mkOpt
-    cacheTerms
-    (cacheOptStyle gen storageRef szSetting)
-    (Just "Use hash-consing during term construction")
-    (Just (ConcreteBool False))
 
 
 newExprBuilder ::
