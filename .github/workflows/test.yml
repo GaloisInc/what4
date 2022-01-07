@@ -28,7 +28,7 @@ env:
 
 jobs:
   linux:
-    name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }}
+    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
     env:
