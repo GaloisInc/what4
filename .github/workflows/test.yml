@@ -67,15 +67,15 @@ jobs:
           install_url: https://releases.nixos.org/nix/nix-2.4/install
 
       - name: Set GHC 9.0 nix base
-        if: matrix.ghc == '9.0.1'
+        if: matrix.ghc == '9.0.2'
         run:
-          echo NIXPKGS=github:NixOS/nixpkgs/21.05 >> $GITHUB_ENV
-      - name: Set GHC 8.10.4 nix base
-        if: matrix.ghc == '8.10.4'
+          echo NIXPKGS=github:NixOS/nixpkgs/nixpkgs-unstable >> $GITHUB_ENV
+      - name: Set GHC 8.10.7 nix base
+        if: matrix.ghc == '8.10.7'
         run:
-          echo NIXPKGS=github:NixOS/nixpkgs/21.05 >> $GITHUB_ENV
+          echo NIXPKGS=github:NixOS/nixpkgs/21.11 >> $GITHUB_ENV
       - name: Set GHC 8.x nix base
-        if: matrix.ghc != '9.0.1' && matrix.ghc != '8.10.4'
+        if: matrix.ghc != '9.0.2' && matrix.ghc != '8.10.4'
         run:
           echo NIXPKGS=github:NixOS/nixpkgs/20.09 >> $GITHUB_ENV
       - name: Setup GHC ?? base
