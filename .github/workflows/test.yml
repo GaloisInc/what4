@@ -66,23 +66,6 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           install_url: https://releases.nixos.org/nix/nix-2.4/install
 
-      - name: Set GHC 9.0 nix base
-        if: matrix.ghc == '9.0.2'
-        run:
-          echo NIXPKGS=github:NixOS/nixpkgs/nixpkgs-unstable >> $GITHUB_ENV
-      - name: Set GHC 8.10.7 nix base
-        if: matrix.ghc == '8.10.7'
-        run:
-          echo NIXPKGS=github:NixOS/nixpkgs/21.11 >> $GITHUB_ENV
-      - name: Set GHC 8.x nix base
-        if: matrix.ghc != '9.0.2' && matrix.ghc != '8.10.4'
-        run:
-          echo NIXPKGS=github:NixOS/nixpkgs/20.09 >> $GITHUB_ENV
-      - name: Setup GHC ?? base
-        if: false  # not currently needed, but may be in the future
-        run:
-          echo NIXPKGS=github:NixOS/nixpkgs/nixos-unstable >> $GITHUB_ENV
-
       - uses: cachix/cachix-action@v10
         with:
           name: galois
@@ -107,7 +90,7 @@ jobs:
         # includes for zlib) as well as the cabal-install tool.
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
-          echo NS="nix shell github:nixos/nixpkgs/21.05#cabal-install ${NIXPKGS}#$GHC ${NIXPKGS}#gmp ${NIXPKGS}#zlib ${NIXPKGS}#zlib.dev" >> $GITHUB_ENV
+          echo NS="nix shell github:nixos/nixpkgs/21.05#cabal-install nixpkgs#$GHC nixpkgs#gmp nixpkgs#zlib nixpkgs#zlib.dev" >> $GITHUB_ENV
 
       - name: Cabal update
         shell: bash
@@ -146,11 +129,11 @@ jobs:
         # following adds a zlib package-specific stanza for these.
         run: |
           cd what4
-          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw ${NIXPKGS}#zlib)/lib --extra-include-dirs=$(nix eval --raw ${NIXPKGS}#zlib.dev)/include
+          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw nixpkgs#zlib)/lib --extra-include-dirs=$(nix eval --raw nixpkgs#zlib.dev)/include
           echo "" >> ../cabal.project.local
           echo package zlib >> ../cabal.project.local
-          echo "  extra-lib-dirs: $(nix eval --raw ${NIXPKGS}#zlib)/lib" >> ../cabal.project.local
-          echo "  extra-include-dirs: $(nix eval --raw ${NIXPKGS}#zlib.dev)/include" >> ../cabal.project.local
+          echo "  extra-lib-dirs: $(nix eval --raw nixpkgs#zlib)/lib" >> ../cabal.project.local
+          echo "  extra-include-dirs: $(nix eval --raw nixpkgs#zlib.dev)/include" >> ../cabal.project.local
           cp ../cabal.project.local ./
 
       - name: Build
@@ -163,12 +146,12 @@ jobs:
         shell: bash
         run: |
           cd what4
-          echo Boolector version $(nix eval ${NIXPKGS}#boolector.version)
-          echo CVC4 version $(nix eval ${NIXPKGS}#cvc4.version)
-          echo STP version $(nix eval ${NIXPKGS}#stp.version)
-          echo Yices version $(nix eval ${NIXPKGS}#yices.version)
+          echo Boolector version $(nix eval nixpkgs#boolector.version)
+          echo CVC4 version $(nix eval nixpkgs#cvc4.version)
+          echo STP version $(nix eval nixpkgs#stp.version)
+          echo Yices version $(nix eval nixpkgs#yices.version)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version)
-          $NS ${NIXPKGS}#abc-verifier ${NIXPKGS}#boolector ${NIXPKGS}#cvc4 ${NIXPKGS}#stp ${NIXPKGS}#yices github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
+          $NS nixpkgs#abc-verifier nixpkgs#boolector nixpkgs#cvc4 nixpkgs#stp nixpkgs#yices github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
 
       - name: Documentation
         shell: bash
