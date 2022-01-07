@@ -75,10 +75,10 @@ jobs:
         # includes for zlib) as well as the cabal-install tool.
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
-          case $GHC in
-            ghc865) GHC_NIXPKGS=github:nixos/nixpkgs/20.09 ;;
-            ghc902) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-unstable ;;
-            *)      GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
+          case ${{ matrix.ghc }} in
+            8.6.5) GHC_NIXPKGS=github:nixos/nixpkgs/20.09 ;;
+            9.0.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-unstable ;;
+            *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
           echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} ${GHC_NIXPKGS}#gmp ${GHC_NIXPKGS}#zlib ${GHC_NIXPKGS}#zlib.dev" >> $GITHUB_ENV
 
