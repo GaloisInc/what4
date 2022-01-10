@@ -166,7 +166,7 @@ instance OrdF f => Ord (WrapF f i) where
 instance TestEquality f => Eq (WrapF f i) where
   (WrapF x) == (WrapF y) = isJust $ testEquality x y
 
-instance HashableF f => Hashable (WrapF f i) where
+instance (HashableF f, TestEquality f) => Hashable (WrapF f i) where
   hashWithSalt s (WrapF x) = hashWithSaltF s x
 
 traverseWrap :: Functor m => (f (SR.SemiRingBase i) -> m (g (SR.SemiRingBase i))) -> WrapF f i -> m (WrapF g i)
@@ -303,6 +303,9 @@ instance OrdF f => TestEquality (SemiRingProduct f) where
            unless (AM.eqBy (SR.occ_eq (prodRepr x)) (_prodMap x) (_prodMap y)) Nothing
            return Refl
 
+instance OrdF f => Eq (SemiRingProduct f sr) where
+  x == y = isJust (testEquality x y)
+
 instance OrdF f => TestEquality (WeightedSum f) where
   testEquality x y
     | sumMapHash x /= sumMapHash y = Nothing
@@ -311,6 +314,9 @@ instance OrdF f => TestEquality (WeightedSum f) where
             unless (SR.eq (sumRepr x) (_sumOffset x) (_sumOffset y)) Nothing
             unless (AM.eqBy (SR.eq (sumRepr x)) (_sumMap x) (_sumMap y)) Nothing
             return Refl
+
+instance OrdF f => Eq (WeightedSum f sr) where
+  x == y = isJust (testEquality x y)
 
 
 -- | Created a weighted sum directly from a map and constant.
@@ -482,10 +488,10 @@ scale sr c wsum
   | SR.eq sr c (SR.zero sr) = constant sr (SR.zero sr)
   | otherwise = unfilteredSum sr m' (SR.mul sr c (wsum^.sumOffset))
   where
-    m' = runIdentity (AM.traverseMaybeWithKey f (wsum^.sumMap))
+    m' = AM.mapMaybeWithKey f (wsum^.sumMap)
     f (WrapF t) _ x
-      | SR.eq sr (SR.zero sr) cx = return Nothing
-      | otherwise = return (Just (mkNote sr cx t, cx))
+      | SR.eq sr (SR.zero sr) cx = Nothing
+      | otherwise = Just (mkNote sr cx t, cx)
       where cx = SR.mul sr c x
 
 -- | Produce a weighted sum from a list of terms and an offset.

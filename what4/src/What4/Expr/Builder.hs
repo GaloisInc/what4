@@ -15,7 +15,7 @@ may reasonably be used in a multithreaded context.  In particular,
 nonce values are generated atomically, and other IORefs used in this
 module are modified or written atomically, so modifications should
 propagate in the expected sequentially-consistent ways.  Of course,
-threads may still clobber state others have set (e.g., the current 
+threads may still clobber state others have set (e.g., the current
 program location) so the potential for truly multithreaded use is
 somewhat limited.
 -}
@@ -187,6 +187,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.Binary.IEEE754 as IEEE754
+
 import           Data.Hashable
 import           Data.IORef
 import           Data.Kind
@@ -215,6 +216,7 @@ import           What4.Interface
 import           What4.InterpretedFloatingPoint
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
 import           What4.Expr.App
 import qualified What4.Expr.ArrayUpdateMap as AUM
@@ -226,6 +228,7 @@ import qualified What4.Expr.WeightedSum as WSum
 import qualified What4.Expr.StringSeq as SSeq
 import           What4.Expr.UnaryBV (UnaryBV)
 import qualified What4.Expr.UnaryBV as UnaryBV
+import qualified What4.Expr.VarIdentification as VI
 
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
@@ -1087,11 +1090,77 @@ sbConcreteLookup sym arr0 mcidx idx
     -- Lookups on constant arrays just return value
   | Just (ConstantArray _ _ v) <- asApp arr0 = do
       return v
-    -- Lookups on mux arrays just distribute over mux.
-  | Just (BaseIte _ _ p x y) <- asApp arr0 = do
-      xv <- sbConcreteLookup sym x mcidx idx
-      yv <- sbConcreteLookup sym y mcidx idx
-      baseTypeIte sym p xv yv
+
+    -- A lookup in an array update with symbolic update index is (i) the update
+    -- value when the difference between the lookup index and the update index
+    -- is zero, or (ii) a lookup in the update base array when the difference
+    -- is a concrete non-zero number. Computing the difference instead of
+    -- checking equality is more accurate because it enables the semi-rings and
+    -- abstract domains simplifications (for example, `x` - `x + 1` simplifies
+    -- to `1`)
+  | Just (UpdateArray range idx_tps arr update_idx v) <- asApp arr0
+  , Ctx.Empty Ctx.:> BaseBVRepr{} <- idx_tps
+  , Ctx.Empty Ctx.:> idx0 <- idx
+  , Ctx.Empty Ctx.:> update_idx0 <- update_idx = do
+    diff <- bvSub sym idx0 update_idx0
+    is_diff_zero <- bvEq sym diff =<< bvLit sym (bvWidth diff) (BV.zero (bvWidth diff))
+    case asConstantPred is_diff_zero of
+      Just True -> return v
+      Just False -> sbConcreteLookup sym arr mcidx idx
+      _ -> do
+        (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr0 idx
+        sbMakeExpr sym (SelectArray range sliced_arr sliced_idx)
+
+    -- A lookup in an array copy is a lookup in the src array when inside the copy range
+  | Just (CopyArray w _a_repr _dest_arr dest_begin_idx src_arr src_begin_idx _len dest_end_idx _src_end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just dest_begin_idx_unsigned <- BV.asUnsigned <$> asBV dest_begin_idx
+  , Just dest_end_idx_unsigned <- BV.asUnsigned <$> asBV dest_end_idx
+  , dest_begin_idx_unsigned <= lookup_idx_unsigned
+  , lookup_idx_unsigned < dest_end_idx_unsigned = do
+    new_lookup_idx <- bvAdd sym src_begin_idx =<<
+      (bvLit sym w $ BV.mkBV w $ lookup_idx_unsigned - dest_begin_idx_unsigned)
+    arrayLookup sym src_arr $ singleton new_lookup_idx
+    -- A lookup in an array copy is a lookup in the dest array when outside the copy range
+  | Just (CopyArray _w _a_repr dest_arr dest_begin_idx _src_arr _src_begin_idx _len _dest_end_idx _src_end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just dest_begin_idx_unsigned <- BV.asUnsigned <$> asBV dest_begin_idx
+  , lookup_idx_unsigned < dest_begin_idx_unsigned =
+    sbConcreteLookup sym dest_arr mcidx idx
+    -- A lookup in an array copy is a lookup in the dest array when outside the copy range
+  | Just (CopyArray _w _a_repr dest_arr _dest_begin_idx _src_arr _src_begin_idx _len dest_end_idx _src_end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just dest_end_idx_unsigned <- BV.asUnsigned <$> asBV dest_end_idx
+  , dest_end_idx_unsigned <= lookup_idx_unsigned =
+    sbConcreteLookup sym dest_arr mcidx idx
+
+    -- A lookup in an array set returns the value when inside the set range
+  | Just (SetArray _w _a_repr _arr begin_idx val _len end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just begin_idx_unsigned <- BV.asUnsigned <$> asBV begin_idx
+  , Just end_idx_unsigned <- BV.asUnsigned <$> asBV end_idx
+  , begin_idx_unsigned <= lookup_idx_unsigned
+  , lookup_idx_unsigned < end_idx_unsigned =
+    return val
+    -- A lookup in an array set is a lookup in the inner array when outside the set range
+  | Just (SetArray _w _a_repr arr begin_idx _val _len _end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just begin_idx_unsigned <- BV.asUnsigned <$> asBV begin_idx
+  , lookup_idx_unsigned < begin_idx_unsigned =
+    sbConcreteLookup sym arr mcidx idx
+    -- A lookup in an array set is a lookup in the inner array when outside the set range
+  | Just (SetArray _w _a_repr arr _begin_idx _val _len end_idx) <- asApp arr0
+  , Just (Empty :> (BVIndexLit _ lookup_idx_bv)) <- mcidx
+  , lookup_idx_unsigned <- BV.asUnsigned lookup_idx_bv
+  , Just end_idx_unsigned <- BV.asUnsigned <$> asBV end_idx
+  , end_idx_unsigned <= lookup_idx_unsigned =
+    sbConcreteLookup sym arr mcidx idx
+
   | Just (MapOverArrays f _ args) <- asNonceApp arr0 = do
       let eval :: ArrayResultWrapper (Expr t) (d::>tp) utp
                -> IO (Expr t utp)
@@ -1100,8 +1169,95 @@ sbConcreteLookup sym arr0 mcidx idx
     -- Create select index.
   | otherwise = do
     case exprType arr0 of
-      BaseArrayRepr _ range ->
-        sbMakeExpr sym (SelectArray range arr0 idx)
+      BaseArrayRepr _ range -> do
+        (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr0 idx
+        sbMakeExpr sym (SelectArray range sliced_arr sliced_idx)
+
+-- | Simplify an array lookup expression by slicing the array w.r.t. the index.
+--
+-- Remove array update, copy and set operations at indices that are different
+-- from the lookup index.
+sliceArrayLookupUpdate ::
+  ExprBuilder t st fs ->
+  Expr t (BaseArrayType (d::>tp) range) ->
+  Ctx.Assignment (Expr t) (d::>tp) ->
+  IO (Expr t (BaseArrayType (d::>tp) range), Ctx.Assignment (Expr t) (d::>tp))
+sliceArrayLookupUpdate sym arr0 lookup_idx
+  | Just (ArrayMap _ _ entry_map arr) <- asApp arr0 =
+    case asConcreteIndices lookup_idx of
+      Just lookup_concrete_idx ->
+        case AUM.lookup lookup_concrete_idx entry_map of
+          Just val -> do
+            arr_base <- arrayUpdateBase sym arr
+            sliced_arr <- arrayUpdate sym arr_base lookup_idx val
+            return (sliced_arr, lookup_idx)
+          Nothing -> sliceArrayLookupUpdate sym arr lookup_idx
+      Nothing ->
+        return (arr0, lookup_idx)
+
+  | Just (CopyArray _w _a_repr dest_arr dest_begin_idx src_arr src_begin_idx len dest_end_idx _src_end_idx) <- asApp arr0 = do
+    p0 <- bvUle sym dest_begin_idx (Ctx.last lookup_idx)
+    p1 <- bvUlt sym (Ctx.last lookup_idx) dest_end_idx
+    case (asConstantPred p0, asConstantPred p1) of
+      (Just True, Just True) -> do
+        new_lookup_idx <- bvAdd sym src_begin_idx =<<
+          bvSub sym (Ctx.last lookup_idx) dest_begin_idx
+        sliceArrayLookupUpdate sym src_arr $ singleton new_lookup_idx
+      (Just False, _) ->
+        sliceArrayLookupUpdate sym dest_arr lookup_idx
+      (_, Just False) ->
+        sliceArrayLookupUpdate sym dest_arr lookup_idx
+      _ -> do
+        (sliced_dest_arr, sliced_dest_idx) <- sliceArrayLookupUpdate sym dest_arr lookup_idx
+        sliced_dest_begin_idx <- bvAdd sym dest_begin_idx =<<
+          bvSub sym (Ctx.last sliced_dest_idx) (Ctx.last lookup_idx)
+        sliced_arr <- arrayCopy sym sliced_dest_arr sliced_dest_begin_idx src_arr src_begin_idx len
+        return (sliced_arr, sliced_dest_idx)
+
+    -- A lookup in an array set returns the value when inside the set range
+  | Just (SetArray _w _a_repr arr begin_idx val len end_idx) <- asApp arr0 = do
+    p0 <- bvUle sym begin_idx (Ctx.last lookup_idx)
+    p1 <- bvUlt sym (Ctx.last lookup_idx) end_idx
+    case (asConstantPred p0, asConstantPred p1) of
+      (Just True, Just True) -> do
+        arr_base <- arrayUpdateBase sym arr
+        sliced_arr <- arrayUpdate sym arr_base lookup_idx val
+        return (sliced_arr, lookup_idx)
+      (Just False, _) ->
+        sliceArrayLookupUpdate sym arr lookup_idx
+      (_, Just False) ->
+        sliceArrayLookupUpdate sym arr lookup_idx
+      _ -> do
+        (sliced_arr, sliced_idx) <- sliceArrayLookupUpdate sym arr lookup_idx
+        sliced_begin_idx <- bvAdd sym begin_idx =<<
+          bvSub sym (Ctx.last sliced_idx) (Ctx.last lookup_idx)
+        sliced_arr' <- arraySet sym sliced_arr sliced_begin_idx val len
+        return (sliced_arr', sliced_idx)
+
+    -- Lookups on mux arrays just distribute over mux.
+  | Just (BaseIte _ _ p x y) <- asApp arr0 = do
+      (x', i') <- sliceArrayLookupUpdate sym x lookup_idx
+      (y', j') <- sliceArrayLookupUpdate sym y lookup_idx
+      sliced_arr <- baseTypeIte sym p x' y'
+      sliced_idx <- Ctx.zipWithM (baseTypeIte sym p) i' j'
+      return (sliced_arr, sliced_idx)
+
+  | otherwise = return (arr0, lookup_idx)
+
+arrayUpdateBase ::
+  ExprBuilder t st fs ->
+  Expr t (BaseArrayType (d::>tp) range) ->
+  IO (Expr t (BaseArrayType (d::>tp) range))
+arrayUpdateBase sym arr0 = case asApp arr0 of
+  Just (UpdateArray _ _ arr _ _) -> arrayUpdateBase sym arr
+  Just (ArrayMap _ _ _ arr) -> arrayUpdateBase sym arr
+  Just (CopyArray _ _ arr _ _ _ _ _ _) -> arrayUpdateBase sym arr
+  Just (SetArray _ _ arr _ _ _ _) -> arrayUpdateBase sym arr
+  Just (BaseIte _ _ p x y) -> do
+    x' <- arrayUpdateBase sym x
+    y' <- arrayUpdateBase sym y
+    baseTypeIte sym p x' y'
+  _ -> return arr0
 
 ----------------------------------------------------------------------
 -- Expression builder instances
@@ -2910,6 +3066,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   arrayLookup sym arr idx =
     sbConcreteLookup sym arr (asConcreteIndices idx) idx
 
+  arrayCopy sym dest_arr dest_idx src_arr src_idx len = case exprType dest_arr of
+    (BaseArrayRepr _ a_repr) -> do
+      dest_end_idx <- bvAdd sym dest_idx len
+      src_end_idx <- bvAdd sym src_idx len
+      sbMakeExpr sym (CopyArray (bvWidth dest_idx) a_repr dest_arr dest_idx src_arr src_idx len dest_end_idx src_end_idx)
+
+  arraySet sym arr idx val len = do
+    end_idx <- bvAdd sym idx len
+    sbMakeExpr sym (SetArray (bvWidth idx) (exprType val) arr idx val len end_idx)
+
+  arrayRangeEq sym x_arr x_idx y_arr y_idx len = case exprType x_arr of
+    (BaseArrayRepr _ a_repr) -> do
+      x_end_idx <- bvAdd sym x_idx len
+      y_end_idx <- bvAdd sym y_idx len
+      sbMakeExpr sym (EqualArrayRange (bvWidth x_idx) a_repr x_arr x_idx y_arr y_idx len x_end_idx y_end_idx)
+
   -- | Create an array from a map of concrete indices to values.
   arrayUpdateAtIdxLits sym m def_map = do
     BaseArrayRepr idx_tps baseRepr <- return $ exprType def_map
@@ -3168,52 +3340,49 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         | sbFloatReduce sym -> realLit sym (toRational (sqrt_dbl (fromRational r)))
       _ -> sbMakeExpr sym (RealSqrt x)
 
-  realPi sym = do
-    if sbFloatReduce sym then
-      realLit sym (toRational (pi :: Double))
-     else
-      sbMakeExpr sym Pi
+  realSpecialFunction sym fn Empty
+    | sbFloatReduce sym =
+        case fn of
+          SFn.Pi -> realLit sym (toRational (pi :: Double))
+          -- TODO, other constants
 
-  realSin sym x =
-    case asRational x of
-      Just 0 -> realLit sym 0
-      Just c | sbFloatReduce sym -> realLit sym (toRational (sin (toDouble c)))
-      _ -> sbMakeExpr sym (RealSin x)
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs Empty))
 
-  realCos sym x =
-    case asRational x of
-      Just 0 -> realLit sym 1
-      Just c | sbFloatReduce sym -> realLit sym (toRational (cos (toDouble c)))
-      _ -> sbMakeExpr sym (RealCos x)
+  realSpecialFunction sym fn args@(Empty :> SFn.SpecialFnArg x)
+    | Just c <- asRational x =
+        case fn of
+          SFn.Sin
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (sin (toDouble c)))
+          SFn.Cos
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (cos (toDouble c)))
+          SFn.Sinh
+            | c == 0 -> realLit sym 0
+            | sbFloatReduce sym -> realLit sym (toRational (sinh (toDouble c)))
+          SFn.Cosh
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (cosh (toDouble c)))
+          SFn.Exp
+            | c == 0 -> realLit sym 1
+            | sbFloatReduce sym -> realLit sym (toRational (exp (toDouble c)))
+          SFn.Log
+            | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
-  realAtan2 sb y x = do
-    case (asRational y, asRational x) of
-      (Just 0, _) -> realLit sb 0
-      (Just yc, Just xc) | xc /= 0, sbFloatReduce sb -> do
-        realLit sb (toRational (atan2 (toDouble yc) (toDouble xc)))
-      _ -> sbMakeExpr sb (RealATan2 y x)
+  realSpecialFunction sym fn args@(Empty :> SFn.SpecialFnArg x :> SFn.SpecialFnArg y)
+    | Just xc <- asRational x,
+      Just yc <- asRational y =
+        case fn of
+          SFn.Arctan2
+            | sbFloatReduce sym -> realLit sym (toRational (atan2 (toDouble xc) (toDouble yc)))
+          SFn.Pow
+            | yc == 0 -> realLit sym 1
+            | sbFloatReduce sym ->
+              realLit sym (toRational (toDouble xc ** toDouble yc))
+          _ -> sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
-  realSinh sb x =
-    case asRational x of
-      Just 0 -> realLit sb 0
-      Just c | sbFloatReduce sb -> realLit sb (toRational (sinh (toDouble c)))
-      _ -> sbMakeExpr sb (RealSinh x)
-
-  realCosh sb x =
-    case asRational x of
-      Just 0 -> realLit sb 1
-      Just c | sbFloatReduce sb -> realLit sb (toRational (cosh (toDouble c)))
-      _ -> sbMakeExpr sb (RealCosh x)
-
-  realExp sym x
-    | Just 0 <- asRational x = realLit sym 1
-    | Just c <- asRational x, sbFloatReduce sym = realLit sym (toRational (exp (toDouble c)))
-    | otherwise = sbMakeExpr sym (RealExp x)
-
-  realLog sym x =
-    case asRational x of
-      Just c | c > 0, sbFloatReduce sym -> realLit sym (toRational (log (toDouble c)))
-      _ -> sbMakeExpr sym (RealLog x)
+  realSpecialFunction sym fn args = sbMakeExpr sym (RealSpecialFunction fn (SFn.SpecialFnArgs args))
 
   ----------------------------------------------------------------------
   -- IEEE-754 floating-point operations
@@ -3414,6 +3583,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
     | otherwise = sbMakeExpr sym (FloatToReal x)
 
+  floatSpecialFunction sym fpp fn args =
+    sbMakeExpr sym (FloatSpecialFunction fpp fn (SFn.SpecialFnArgs args))
+
   ----------------------------------------------------------------------
   -- Cplx operations
 
@@ -3604,6 +3776,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatToBV sym w _ x = realToBV sym x w
   iFloatToSBV sym w _ x = realToSBV sym x w
   iFloatToReal _ = return
+  iFloatSpecialFunction sym _ fn args = realSpecialFunction sym fn args
   iFloatBaseTypeRepr _ _ = knownRepr
 
 type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatUninterpreted)) fi =
@@ -3684,6 +3857,10 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
                     "uninterpreted_float_to_real"
                     (Ctx.empty Ctx.:> x)
                     knownRepr
+
+  iFloatSpecialFunction sym fi fn args =
+    floatUninterpSpecialFn sym (iFloatBaseTypeRepr sym fi) fn args
+
   iFloatBaseTypeRepr _ = floatInfoToBVTypeRepr
 
 floatUninterpArithBinOp
@@ -3691,6 +3868,31 @@ floatUninterpArithBinOp
 floatUninterpArithBinOp fn sym x y =
   let ret_type = exprType x
   in  mkUninterpFnApp sym fn (Ctx.empty Ctx.:> x Ctx.:> y) ret_type
+
+floatUninterpSpecialFn
+  :: (e ~ Expr t)
+  => ExprBuilder t sf tfs
+  -> BaseTypeRepr bt
+  -> SFn.SpecialFunction args
+  -> Assignment (SFn.SpecialFnArg e bt) args
+  -> IO (e bt)
+floatUninterpSpecialFn sym btr fn Ctx.Empty =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name Ctx.Empty btr freshTotalUninterpFn
+     applySymFn sym fn' Ctx.Empty
+
+floatUninterpSpecialFn sym btr fn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x) =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name (Ctx.Empty Ctx.:> btr) btr freshTotalUninterpFn
+     applySymFn sym fn' (Ctx.Empty Ctx.:> x)
+
+floatUninterpSpecialFn sym btr fn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x Ctx.:> SFn.SpecialFnArg y) =
+  do fn_name <- unsafeUserSymbol ("uninterpreted_" ++ show fn)
+     fn' <- cachedUninterpFn sym fn_name (Ctx.Empty Ctx.:> btr Ctx.:> btr) btr freshTotalUninterpFn
+     applySymFn sym fn' (Ctx.Empty Ctx.:> x Ctx.:> y)
+
+floatUninterpSpecialFn _sym _btr fn _args =
+  fail $ unwords ["Special function with unexpected arity", show fn]
 
 floatUninterpArithBinOpR
   :: (e ~ Expr t)
@@ -3840,6 +4042,8 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatToBV = floatToBV
   iFloatToSBV = floatToSBV
   iFloatToReal = floatToReal
+  iFloatSpecialFunction sym fi fn args =
+    floatSpecialFunction sym (floatInfoToPrecisionRepr fi) fn args
   iFloatBaseTypeRepr _ = BaseFloatRepr . floatInfoToPrecisionRepr
 
 
@@ -3903,6 +4107,9 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
     v <- sbMakeBoundVar sym nm tp LatchVarKind Nothing
     updateVarBinding sym nm (VarSymbolBinding v)
     return $! BoundVarExpr v
+
+  exprUninterpConstants _sym expr =
+    (runST $ VI.collectVarInfo $ VI.recordExprVars VI.ExistsOnly expr) ^. VI.uninterpConstants
 
   freshBoundVar sym nm tp =
     sbMakeBoundVar sym nm tp QuantifierVarKind Nothing

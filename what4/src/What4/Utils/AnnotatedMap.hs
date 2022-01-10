@@ -33,6 +33,7 @@ module What4.Utils.AnnotatedMap
   , unionWithKeyMaybe
   , filter
   , mapMaybe
+  , mapMaybeWithKey
   , traverseMaybeWithKey
   , difference
   , mergeWithKey
@@ -284,6 +285,15 @@ mapMaybe ::
 mapMaybe f (AnnotatedMap ft) =
   AnnotatedMap (mapMaybeFingerTree g ft)
   where g (Entry k v a) = Entry k v <$> f a
+
+mapMaybeWithKey ::
+  (Ord k, Semigroup v2) =>
+  (k -> v1 -> a1 -> Maybe (v2, a2)) ->
+  AnnotatedMap k v1 a1 -> AnnotatedMap k v2 a2
+mapMaybeWithKey f (AnnotatedMap ft) =
+  AnnotatedMap (mapMaybeFingerTree g ft)
+  where
+    g (Entry k v1 x1) = (\(v2, x2) -> Entry k v2 x2) <$> f k v1 x1
 
 traverseMaybeWithKey ::
   (Applicative f, Ord k, Semigroup v2) =>

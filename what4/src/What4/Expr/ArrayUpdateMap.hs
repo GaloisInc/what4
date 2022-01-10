@@ -65,7 +65,7 @@ newtype ArrayUpdateMap e ctx tp =
 instance TestEquality e => Eq (ArrayUpdateMap e ctx tp) where
   ArrayUpdateMap m1 == ArrayUpdateMap m2 = AM.eqBy (\ x y -> isJust $ testEquality x y) m1 m2
 
-instance Hashable (ArrayUpdateMap e ctx tp) where
+instance TestEquality e => Hashable (ArrayUpdateMap e ctx tp) where
   hashWithSalt s (ArrayUpdateMap m) =
     case AM.annotation m of
       Nothing  -> hashWithSalt s (111::Int)

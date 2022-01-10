@@ -49,6 +49,7 @@ module What4.Concrete
 import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           LibBF (BigFloat)
 import qualified Numeric as N
 import qualified Prettyprinter as PP
 
@@ -68,6 +69,7 @@ data ConcreteVal tp where
   ConcreteBool    :: Bool -> ConcreteVal BaseBoolType
   ConcreteInteger :: Integer -> ConcreteVal BaseIntegerType
   ConcreteReal    :: Rational -> ConcreteVal BaseRealType
+  ConcreteFloat   :: FloatPrecisionRepr fpp -> BigFloat -> ConcreteVal (BaseFloatType fpp)
   ConcreteString  :: StringLiteral si -> ConcreteVal (BaseStringType si)
   ConcreteComplex :: Complex Rational -> ConcreteVal BaseComplexType
   ConcreteBV      ::
@@ -106,13 +108,14 @@ fromConcreteBV (ConcreteBV _w x) = x
 -- | Compute the type representative for a concrete value.
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
 concreteType = \case
-  ConcreteBool{}     -> BaseBoolRepr
-  ConcreteInteger{}  -> BaseIntegerRepr
-  ConcreteReal{}     -> BaseRealRepr
-  ConcreteString s   -> BaseStringRepr (stringLiteralInfo s)
-  ConcreteComplex{}  -> BaseComplexRepr
-  ConcreteBV w _     -> BaseBVRepr w
-  ConcreteStruct xs  -> BaseStructRepr (fmapFC concreteType xs)
+  ConcreteBool{}            -> BaseBoolRepr
+  ConcreteInteger{}         -> BaseIntegerRepr
+  ConcreteReal{}            -> BaseRealRepr
+  ConcreteFloat fpp _       -> BaseFloatRepr fpp
+  ConcreteString s          -> BaseStringRepr (stringLiteralInfo s)
+  ConcreteComplex{}         -> BaseComplexRepr
+  ConcreteBV w _            -> BaseBVRepr w
+  ConcreteStruct xs         -> BaseStructRepr (fmapFC concreteType xs)
   ConcreteArray idxTy def _ -> BaseArrayRepr idxTy (concreteType def)
 
 $(return [])
@@ -123,6 +126,7 @@ instance TestEquality ConcreteVal where
      , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType, [|testEqualityFC testEquality|])
      , (ConType [t|ConcreteVal|] `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|StringLiteral|] `TypeApp` AnyType, [|testEquality|])
+     , (ConType [t|FloatPrecisionRepr|] `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|Map|] `TypeApp` AnyType `TypeApp` AnyType, [|\x y -> if x == y then Just Refl else Nothing|])
      ])
 
@@ -135,6 +139,7 @@ instance OrdF ConcreteVal where
      , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType, [|compareFC compareF|])
      , (ConType [t|ConcreteVal|] `TypeApp` AnyType, [|compareF|])
      , (ConType [t|StringLiteral|] `TypeApp` AnyType, [|compareF|])
+     , (ConType [t|FloatPrecisionRepr|] `TypeApp` AnyType, [|compareF|])
      , (ConType [t|Map|] `TypeApp` AnyType `TypeApp` AnyType, [|\x y -> fromOrdering (compare x y)|])
      ])
 
@@ -151,6 +156,7 @@ ppConcrete = \case
   ConcreteBool x -> PP.pretty x
   ConcreteInteger x -> PP.pretty x
   ConcreteReal x -> ppRational x
+  ConcreteFloat _fpp bf -> PP.viaShow bf
   ConcreteString x -> PP.viaShow x
   ConcreteBV w x -> PP.pretty ("0x" ++ (N.showHex (BV.asUnsigned x) (":[" ++ show w ++ "]")))
   ConcreteComplex (r :+ i) -> PP.pretty "complex(" PP.<> ppRational r PP.<> PP.pretty ", " PP.<> ppRational i PP.<> PP.pretty ")"

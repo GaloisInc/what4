@@ -135,6 +135,8 @@ instance Eq p => TestEquality (UnaryBV p) where
       Just Refl
     else
       Nothing
+instance Eq p => Eq (UnaryBV p n) where
+  x == y = isJust (testEquality x y)
 
 instance Hashable p => Hashable (UnaryBV p n) where
   hashWithSalt s0 u = Map.foldlWithKey' go s0 (unaryBVMap u)

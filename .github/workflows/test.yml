@@ -3,6 +3,20 @@ on:
   - push
   - pull_request
 
+# This CI configuration uses nix tooling to obtain the needed GHC and
+# cabal-install packages, as well as the external dependencies
+# (solvers, libz, libgmp, etc.).  The cabal + cabal project files
+# handle Haskell-level dependencies within the nix shell used for the
+# build.
+#
+# Variable aspects of this CI configuration:
+#
+# * GHC versions
+#   - specified in the strategy matrix
+#   - provided via nix: ensure the nix base and NIXPKGS used provide the requested GHC version
+# * nix tool version 2.4
+#   - all nix operations use new tool suite and cmdline interface (available in 2.4) instead of older format
+
 # The CACHE_VERSION can be updated to force the use of a new cache if
 # the current cache contents become corrupted/invalid.  This can
 # sometimes happen when (for example) the OS version is changed but
@@ -10,11 +24,11 @@ on:
 # (e.g. cabal complains it can't find a valid version of the "happy"
 # tool).
 env:
-  CACHE_VERSION: 1
+  CACHE_VERSION: 2
 
 jobs:
   linux:
-    name: Testing ${{ matrix.os }} GHC-${{ matrix.ghc }}
+    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
     env:
@@ -22,29 +36,26 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        ghc: [9.0.1, 8.10.4, 8.8.4, 8.6.5]
+        ghc: [9.0.2, 8.10.7, 8.8.4, 8.6.5]
+        z3: [4_8_8, 4_8_9, 4_8_10, 4_8_11, 4_8_12, 4_8_13, 4_8_14]
         allow-failure: [false]
       fail-fast: false
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
-      - uses: cachix/install-nix-action@v12
-        name: Nix 20.09 base
-        if: matrix.ghc != '9.0.1'
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v16
         with:
-          nix_path: nixpkgs=channel:nixos-20.09
-      - uses: cachix/install-nix-action@v12
-        name: Nix 21.05 base
-        if: matrix.ghc == '9.0.1'
+          nix_path: nixpkgs=channel:nixos-21.11
+          install_url: https://releases.nixos.org/nix/nix-2.4/install
+
+      - uses: cachix/cachix-action@v10
         with:
-          nix_path: nixpkgs=channel:nixos-21.05
-      - uses: cachix/install-nix-action@v12
-        name: Nix unstable base
-        # if: matrix.ghc == '9.0.1'
-        if: false  # not currently needed, but may be in the future
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
       - uses: actions/cache@v2
         name: Cache builds
         with:
@@ -57,16 +68,24 @@ jobs:
             ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
           restore-keys: |
             ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-
-      - name: Cabal update
-        shell: bash
-        run: nix-shell -p cabal-install --run 'cabal update'
+
       - name: Setup Environment Vars
+        # Setup a nix shell environment command that will supply the
+        # appropriate GHC version as well as dependent libraries (and
+        # includes for zlib) as well as the cabal-install tool.
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
-          echo GHC=$GHC >> $GITHUB_ENV
-          echo GHCPKGS=haskell.packages.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g) >> $GITHUB_ENV
-          echo ZLIB_LOC="$(nix eval --raw nixpkgs.zlib)/lib" >> $GITHUB_ENV
-          echo NS="nix-shell -p cabal-install $GHC gmp zlib --run" >> $GITHUB_ENV
+          case ${{ matrix.ghc }} in
+            8.6.5) GHC_NIXPKGS=github:nixos/nixpkgs/20.09 ;;
+            9.0.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-unstable ;;
+            9.2.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-unstable ;;
+            *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
+          esac
+          echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} nixpkgs#gmp nixpkgs#zlib nixpkgs#zlib.dev" >> $GITHUB_ENV
+
+      - name: Cabal update
+        shell: bash
+        run: $NS -c cabal update
 
       - name: Package's Cabal/GHC compatibility
         shell: bash
@@ -80,7 +99,7 @@ jobs:
           defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
           setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
           setup_bin() { echo setup.${{ matrix.ghc }}; }
-          with_ghc()  { nix-shell -p $GHC --run "$(echo ${@})"; }
+          with_ghc()  { $NS -c ${@}; }
           (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
           (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
           (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
@@ -88,36 +107,45 @@ jobs:
       - name: Cabal check
         shell: bash
         run: |
-          (cd what4;     $NS 'cabal check')
-          (cd what4-abc; $NS 'cabal check')
-          (cd what4-blt; $NS 'cabal check')
+          (cd what4;     $NS -c cabal check)
+          (cd what4-abc; $NS -c cabal check)
+          (cd what4-blt; $NS -c cabal check)
 
-      - name: Cabal configure
+      - name: Cabal configure what4
         shell: bash
-        # Note: the explicit LD_LIBRARY_PATH is needed for GHC 8.6.5
-        # which doesn't seem to process the --extra-lib-dirs
-        # correctly.  When only GHC 8.8 or later are supported, the
-        # LD_LIBRARY_PATH manipulation may be removed for all steps.
+        # Note: the extra-lib-dirs and extra-include-dirs specified on
+        # the command-line are placed at the top-level of the
+        # generated cabal.project.local, but only apply to the primary
+        # package.  The zlib dependency also needs these flags, so the
+        # following adds a zlib package-specific stanza for these.
         run: |
           cd what4
-          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs="$ZLIB_LOC"'
+          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw nixpkgs#zlib)/lib --extra-include-dirs=$(nix eval --raw nixpkgs#zlib.dev)/include
+          echo "" >> ../cabal.project.local
+          echo package zlib >> ../cabal.project.local
+          echo "  extra-lib-dirs: $(nix eval --raw nixpkgs#zlib)/lib" >> ../cabal.project.local
+          echo "  extra-include-dirs: $(nix eval --raw nixpkgs#zlib.dev)/include" >> ../cabal.project.local
+          cp ../cabal.project.local ./
+
       - name: Build
         shell: bash
         run: |
           cd what4
-          $NS 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal build --extra-lib-dirs="$ZLIB_LOC"'
+          $NS -c cabal build
+
       - name: Test
         shell: bash
         run: |
           cd what4
-          echo Boolector version $(nix eval nixpkgs.boolector.version)
-          echo CVC4 version $(nix eval nixpkgs.cvc4.version)
-          echo Yices version $(nix eval nixpkgs.yices.version)
-          echo Z3 version $(nix eval nixpkgs.z3.version)
-          echo STP version $(nix eval nixpkgs.z3.version)
-          nix-shell -p cabal-install $GHC abc-verifier boolector cvc4 stp yices z3 zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal test --extra-lib-dirs="$ZLIB_LOC"'
+          echo Boolector version $(nix eval nixpkgs#boolector.version)
+          echo CVC4 version $(nix eval nixpkgs#cvc4.version)
+          echo STP version $(nix eval nixpkgs#stp.version)
+          echo Yices version $(nix eval nixpkgs#yices.version)
+          echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version)
+          $NS nixpkgs#abc-verifier nixpkgs#boolector nixpkgs#cvc4 nixpkgs#stp nixpkgs#yices github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
+
       - name: Documentation
         shell: bash
         run: |
           cd what4
-          nix-shell -p cabal-install $GHC zlib --run 'LD_LIBRARY_PATH="$ZLIB_LOC:$LD_LIBRARY_PATH" cabal haddock what4 --extra-lib-dirs="$ZLIB_LOC"'
+          $NS -c cabal haddock what4

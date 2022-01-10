@@ -152,6 +152,7 @@ import           What4.ProblemFeatures
 import           What4.ProgramLoc
 import           What4.SatResult
 import qualified What4.SemiRing as SR
+import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import qualified What4.Utils.BVDomain as BVD
@@ -427,17 +428,16 @@ class Num v => SupportTermOps v where
   realDiv :: v -> v -> v
 
   realSin :: v -> v
-
   realCos :: v -> v
+  realTan :: v -> v
 
   realATan2 :: v -> v -> v
 
   realSinh :: v -> v
-
   realCosh :: v -> v
+  realTanh :: v -> v
 
   realExp  :: v -> v
-
   realLog  :: v -> v
 
   -- | Apply the arguments to the given function.
@@ -2135,37 +2135,30 @@ appSMTExpr ae = do
       addSideCondition "real sqrt" $ v .>= 0
       -- Return variable
       return nm
-    Pi -> do
-      unsupportedTerm i
-    RealSin xe -> do
+
+    RealSpecialFunction fn (SFn.SpecialFnArgs args) -> do
       checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realSin x
-    RealCos xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realCos x
-    RealATan2 xe ye -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      y <- mkBaseExpr ye
-      freshBoundTerm RealTypeMap $ realATan2 x y
-    RealSinh xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realSinh x
-    RealCosh xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realCosh x
-    RealExp xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realExp x
-    RealLog xe -> do
-      checkComputableSupport i
-      x <- mkBaseExpr xe
-      freshBoundTerm RealTypeMap $ realLog x
+      let sf1 :: (Term h -> Term h) ->
+                 Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (Ctx.EmptyCtx Ctx.::> SFn.R) ->
+                 SMTCollector t h (SMTExpr h BaseRealType)
+          sf1 tmfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg xe) =
+             freshBoundTerm RealTypeMap . tmfn =<< mkBaseExpr xe
+      case fn of
+        SFn.Sin  -> sf1 realSin  args
+        SFn.Cos  -> sf1 realCos  args
+        SFn.Tan  -> sf1 realTan  args
+        SFn.Sinh -> sf1 realSinh args
+        SFn.Cosh -> sf1 realCosh args
+        SFn.Tanh -> sf1 realTanh args
+        SFn.Exp  -> sf1 realExp  args
+        SFn.Log  -> sf1 realLog  args
+        SFn.Arctan2 ->
+          case args of
+            Ctx.Empty Ctx.:> SFn.SpecialFnArg ye Ctx.:> SFn.SpecialFnArg xe ->
+              do y <- mkBaseExpr ye
+                 x <- mkBaseExpr xe
+                 freshBoundTerm RealTypeMap $ realATan2 y x
+        _ -> unsupportedTerm i -- TODO? more functions?
 
     ------------------------------------------
     -- Bitvector operations
@@ -2509,6 +2502,7 @@ appSMTExpr ae = do
     FloatToReal x -> do
       xe <- mkBaseExpr x
       freshBoundTerm RealTypeMap $ floatToReal xe
+    FloatSpecialFunction{} -> unsupportedTerm i
 
     ------------------------------------------------------------------------
     -- Array Operations
@@ -2614,6 +2608,70 @@ appSMTExpr ae = do
               let cond = andAll (zipWith (.==) updated_idx idx_terms)
               let expr = ite cond value base_array_value
               SMTName array_type <$> freshBoundFn args resType expr
+
+    CopyArray _w_repr _a_repr dest_arr dest_idx src_arr src_idx len _dest_end_idx _src_end_idx -> do
+      dest_arr_typed_expr <- mkExpr dest_arr
+      let arr_type = smtExprType dest_arr_typed_expr
+      dest_idx_typed_expr <- mkExpr dest_idx
+      let dest_idx_expr = asBase dest_idx_typed_expr
+      let idx_type = smtExprType dest_idx_typed_expr
+      src_arr_typed_expr <- mkExpr src_arr
+      src_idx_expr <- mkBaseExpr src_idx
+      len_expr <- mkBaseExpr len
+
+      res <- freshConstant "array_copy" arr_type
+
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe dest_idx_expr i_expr) .&& (bvULt i_expr (bvAdd dest_idx_expr len_expr)))
+            (asBase (smt_array_select src_arr_typed_expr [bvAdd src_idx_expr (bvSub i_expr dest_idx_expr)]))
+            (asBase (smt_array_select dest_arr_typed_expr [i_expr]))
+      addSideCondition "array copy" $ forallResult cr
+      addSideCondition "array copy" $ bvULt dest_idx_expr (bvAdd dest_idx_expr len_expr)
+      addSideCondition "array copy" $ bvULt src_idx_expr (bvAdd src_idx_expr len_expr)
+
+      return res
+
+    SetArray _w_repr _a_repr arr idx val len _end_idx -> do
+      arr_typed_expr <- mkExpr arr
+      let arr_type = smtExprType arr_typed_expr
+      idx_typed_expr <- mkExpr idx
+      let idx_expr = asBase idx_typed_expr
+      let idx_type = smtExprType idx_typed_expr
+      val_expr <- mkBaseExpr val
+      len_expr <- mkBaseExpr len
+
+      res <- freshConstant "array_set" arr_type
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ asBase (smt_array_select res [i_expr]) .==
+          ite ((bvULe idx_expr i_expr) .&& (bvULt i_expr (bvAdd idx_expr len_expr)))
+            val_expr
+            (asBase (smt_array_select arr_typed_expr [i_expr]))
+      addSideCondition "array set" $ forallResult cr
+      addSideCondition "array set" $ bvULt idx_expr (bvAdd idx_expr len_expr)
+
+      return res
+
+    EqualArrayRange _w_repr _a_repr x_arr x_idx y_arr y_idx len _x_end_idx _y_end_idx -> do
+      x_arr_typed_expr <- mkExpr x_arr
+      x_idx_typed_expr <- mkExpr x_idx
+      let x_idx_expr = asBase x_idx_typed_expr
+      let idx_type = smtExprType x_idx_typed_expr
+      y_arr_typed_expr <- mkExpr y_arr
+      y_idx_expr <- mkBaseExpr y_idx
+      len_expr <- mkBaseExpr len
+
+      cr <- liftIO $ withConnEntryStack conn $ runInSandbox conn $ do
+        i_expr <- asBase <$> freshConstant "i" idx_type
+        return $ impliesExpr ((bvULe x_idx_expr i_expr) .&& (bvULt i_expr (bvAdd x_idx_expr len_expr)))
+          ((asBase (smt_array_select x_arr_typed_expr [i_expr])) .==
+            (asBase (smt_array_select y_arr_typed_expr [bvAdd y_idx_expr (bvSub i_expr x_idx_expr)])))
+      addSideCondition "array range equal" $ bvULt x_idx_expr (bvAdd x_idx_expr len_expr)
+      addSideCondition "array range equal" $ bvULt y_idx_expr (bvAdd y_idx_expr len_expr)
+
+      freshBoundTerm BoolTypeMap $ forallResult cr
 
     ------------------------------------------------------------------------
     -- Conversions.

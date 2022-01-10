@@ -192,16 +192,7 @@ appVerilogExpr app =
     RealSqrt _ -> doNotSupportError "real numbers"
 
     -- Irrational numbers
-    Pi -> doNotSupportError "real numbers"
-
-    RealSin _ -> doNotSupportError "real numbers"
-    RealCos _ -> doNotSupportError "real numbers"
-    RealATan2 _ _ -> doNotSupportError "real numbers"
-    RealSinh _ -> doNotSupportError "real numbers"
-    RealCosh _ -> doNotSupportError "real numbers"
-
-    RealExp _ -> doNotSupportError "real numbers"
-    RealLog _ -> doNotSupportError "real numbers"
+    RealSpecialFunction{} -> doNotSupportError "real numbers"
     RoundEvenReal _ -> doNotSupportError "real numbers"
 
     -- Bitvector operations
@@ -335,12 +326,16 @@ appVerilogExpr app =
     FloatToBV _ _ _ -> doNotSupportError "floats"
     FloatToSBV _ _ _ -> doNotSupportError "floats"
     FloatToReal _ -> doNotSupportError "floats"
+    FloatSpecialFunction _ _ _ -> doNotSupportError "floats"
 
     -- Array operations
     ArrayMap _ _ _ _ -> doNotSupportError "arrays"
     ConstantArray _ _ _ -> doNotSupportError "arrays"
     UpdateArray _ _ _ _ _ -> doNotSupportError "arrays"
     SelectArray _ _ _ -> doNotSupportError "arrays"
+    CopyArray _ _ _ _ _ _ _ _ _ -> doNotSupportError "arrays"
+    SetArray _ _ _ _ _ _ _ -> doNotSupportError "arrays"
+    EqualArrayRange _ _ _ _ _ _ _ _ _ -> doNotSupportError "arrays"
 
     -- Conversions
     IntegerToReal _ -> doNotSupportError "integers"

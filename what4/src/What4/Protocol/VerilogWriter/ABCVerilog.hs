@@ -16,6 +16,7 @@ import Data.BitVector.Sized
 import Data.Parameterized.NatRepr
 import Data.Parameterized.Some
 import Data.String
+import qualified Data.Text as T
 import Data.Word
 import Prettyprinter
 import What4.BaseTypes
@@ -48,7 +49,7 @@ typeDoc ty isSigned (BaseBVRepr w) =
 typeDoc _ _ _ = "<type error>"
 
 identDoc :: Identifier -> Doc ()
-identDoc = pretty
+identDoc = pretty . T.replace "!" "_"
 
 lhsDoc :: LHS -> Doc ()
 lhsDoc (LHS name) = identDoc name

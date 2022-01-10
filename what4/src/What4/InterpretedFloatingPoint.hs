@@ -46,6 +46,8 @@ import Data.Bits
 import Data.Hashable
 import Data.Kind
 import Data.Parameterized.Classes
+import Data.Parameterized.Context (Assignment, EmptyCtx, (::>))
+import qualified Data.Parameterized.Context as Ctx
 import Data.Parameterized.TH.GADT
 import Data.Ratio
 import Data.Word ( Word16, Word64 )
@@ -54,6 +56,7 @@ import Prettyprinter
 
 import What4.BaseTypes
 import What4.Interface
+import What4.SpecialFunctions
 
 -- | This data kind describes the types of floating-point formats.
 -- This consist of the standard IEEE 754-2008 binary floating point formats,
@@ -104,6 +107,8 @@ instance ShowF FloatInfoRepr
 
 instance TestEquality FloatInfoRepr where
   testEquality = $(structuralTypeEquality [t|FloatInfoRepr|] [])
+instance Eq (FloatInfoRepr fi) where
+  x == y = isJust (testEquality x y)
 instance OrdF FloatInfoRepr where
   compareF = $(structuralTypeOrd [t|FloatInfoRepr|] [])
 
@@ -452,6 +457,44 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
     -> IO (SymBV sym w)
   -- | Convert a floating point number to a real number.
   iFloatToReal :: sym -> SymInterpretedFloat sym fi -> IO (SymReal sym)
+
+  -- | Apply a special function to floating-point arguments
+  iFloatSpecialFunction
+    :: sym
+    -> FloatInfoRepr fi
+    -> SpecialFunction args
+    -> Assignment (SpecialFnArg (SymExpr sym) (SymInterpretedFloatType sym fi)) args
+    -> IO (SymInterpretedFloat sym fi)
+
+  -- | Access a 0-arity special function constant
+  iFloatSpecialFunction0
+    :: sym
+    -> FloatInfoRepr fi
+    -> SpecialFunction EmptyCtx
+    -> IO (SymInterpretedFloat sym fi)
+  iFloatSpecialFunction0 sym fi fn =
+    iFloatSpecialFunction sym fi fn Ctx.Empty
+
+  -- | Apply a 1-argument special function
+  iFloatSpecialFunction1
+    :: sym
+    -> FloatInfoRepr fi
+    -> SpecialFunction (EmptyCtx ::> R)
+    -> SymInterpretedFloat sym fi
+    -> IO (SymInterpretedFloat sym fi)
+  iFloatSpecialFunction1 sym fi fn x =
+    iFloatSpecialFunction sym fi fn (Ctx.Empty Ctx.:> SpecialFnArg x)
+
+  -- | Apply a 2-argument special function
+  iFloatSpecialFunction2
+    :: sym
+    -> FloatInfoRepr fi
+    -> SpecialFunction (EmptyCtx ::> R ::> R)
+    -> SymInterpretedFloat sym fi
+    -> SymInterpretedFloat sym fi
+    -> IO (SymInterpretedFloat sym fi)
+  iFloatSpecialFunction2 sym fi fn x y =
+    iFloatSpecialFunction sym fi fn (Ctx.Empty Ctx.:> SpecialFnArg x Ctx.:> SpecialFnArg y)
 
   -- | The associated BaseType representative of the floating point
   -- interpretation for each format.

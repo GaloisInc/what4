@@ -14,3 +14,12 @@ Research Projects Agency (DARPA) under Contract No. HR0011-19-C-0070.
 The views, opinions, and/or findings expressed are those of the
 author(s) and should not be interpreted as representing the official
 views or policies of the Department of Defense or the U.S. Government.
+
+
+# Solver Compatibility
+
+| Feature       | ABC  | Boolector | CVC4   | Dreal | STP      | Yices    | Z3                            |
+|---------------|------|-----------|--------|-------|----------|----------|-------------------------------|
+| Supported     | yes  | 3.2.2, ?  | 1.8, ? | yes   | 2.3.3, ? | 2.6.4, ? | 4.8.8 -- 4.8.14               |
+| goal timeouts |      |           |        |       |          |          | yes except 4.8.12 and GHC < 9 |
+|               |      |           |        |       |          |          |                               |

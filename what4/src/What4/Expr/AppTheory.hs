@@ -16,8 +16,8 @@ module What4.Expr.AppTheory
   , typeTheory
   ) where
 
+import           What4.Expr.App
 import           What4.BaseTypes
-import           What4.Expr.Builder
 import qualified What4.SemiRing as SR
 import qualified What4.Expr.WeightedSum as WSum
 
@@ -116,14 +116,7 @@ appTheory a0 =
 
     ----------------------------
     -- Computable number operations
-    Pi -> ComputableArithTheory
-    RealSin{}   -> ComputableArithTheory
-    RealCos{}   -> ComputableArithTheory
-    RealATan2{} -> ComputableArithTheory
-    RealSinh{}  -> ComputableArithTheory
-    RealCosh{}  -> ComputableArithTheory
-    RealExp{}   -> ComputableArithTheory
-    RealLog{}   -> ComputableArithTheory
+    RealSpecialFunction{} -> ComputableArithTheory
 
     ----------------------------
     -- Bitvector operations
@@ -179,6 +172,8 @@ appTheory a0 =
     FloatToSBV{}      -> FloatingPointTheory
     FloatToReal{}     -> FloatingPointTheory
 
+    FloatSpecialFunction{} -> ComputableArithTheory -- TODO? is this right?
+
     --------------------------------
     -- Conversions.
 
@@ -201,6 +196,9 @@ appTheory a0 =
     ConstantArray{} -> ArrayTheory
     SelectArray{} -> ArrayTheory
     UpdateArray{} -> ArrayTheory
+    CopyArray{} -> ArrayTheory
+    SetArray{} -> ArrayTheory
+    EqualArrayRange{} -> ArrayTheory
 
     ---------------------
     -- String operations

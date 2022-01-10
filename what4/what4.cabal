@@ -150,6 +150,7 @@ library
     What4.ProgramLoc
     What4.SatResult
     What4.SemiRing
+    What4.SpecialFunctions
     What4.Symbol
     What4.SFloat
     What4.SWord

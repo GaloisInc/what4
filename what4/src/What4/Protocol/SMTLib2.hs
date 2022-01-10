@@ -587,9 +587,11 @@ instance SupportTermOps Term where
   realDiv x y = x SMT2../ [y]
   realSin = un_app "sin"
   realCos = un_app "cos"
+  realTan = un_app "tan"
   realATan2 = bin_app "atan2"
   realSinh = un_app "sinh"
   realCosh = un_app "cosh"
+  realTanh = un_app "tanh"
   realExp = un_app "exp"
   realLog = un_app "log"
 

@@ -206,6 +206,7 @@ import           Data.Parameterized.TraversableFC
 import qualified Data.Parameterized.Vector as Vector
 import           Data.Ratio
 import           Data.Scientific (Scientific)
+import           Data.Set (Set)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           LibBF (BigFloat)
@@ -218,6 +219,7 @@ import           What4.IndexLit
 import           What4.ProgramLoc
 import           What4.Concrete
 import           What4.SatResult
+import           What4.SpecialFunctions
 import           What4.Symbol
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
@@ -541,7 +543,7 @@ instance TestEquality (SymExpr sym) => Eq (SymNat sym) where
 instance OrdF (SymExpr sym) => Ord (SymNat sym) where
   compare (SymNat x) (SymNat y) = toOrdering (compareF x y)
 
-instance HashableF (SymExpr sym) => Hashable (SymNat sym) where
+instance (HashableF (SymExpr sym), TestEquality (SymExpr sym)) => Hashable (SymNat sym) where
   hashWithSalt s (SymNat x) = hashWithSaltF s x
 
 ------------------------------------------------------------------------
@@ -1381,6 +1383,59 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
               -> Ctx.Assignment (SymExpr sym) (idx::>tp)
               -> IO (SymExpr sym b)
 
+  -- | Copy elements from the source array to the destination array.
+  --
+  -- @'arrayCopy' sym dest_arr dest_idx src_arr src_idx len@ copies the elements
+  -- from @src_arr@ at indices @[src_idx .. (src_idx + len - 1)]@ into
+  -- @dest_arr@ at indices @[dest_idx .. (dest_idx + len - 1)]@.
+  --
+  -- The result is undefined if either @dest_idx + len@ or @src_idx + len@
+  -- wraps around.
+  arrayCopy ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @dest_arr@ -}  ->
+    SymBV sym w {- ^ @dest_idx@ -} ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @src_arr@ -} ->
+    SymBV sym w {- ^ @src_idx@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Set elements of the given array.
+  --
+  -- @'arraySet' sym arr idx val len@ sets the elements of @arr@ at indices
+  -- @[idx .. (idx + len - 1)]@ to @val@.
+  --
+  -- The result is undefined if @idx + len@ wraps around.
+  arraySet ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @arr@ -} ->
+    SymBV sym w {- ^ @idx@ -} ->
+    SymExpr sym a {- ^ @val@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (SymArray sym (SingleCtx (BaseBVType w)) a)
+
+  -- | Check whether the lhs array and rhs array are equal at a range of
+  --   indices.
+  --
+  -- @'arrayRangeEq' sym lhs_arr lhs_idx rhs_arr rhs_idx len@ checks whether the
+  -- elements of @lhs_arr@ at indices @[lhs_idx .. (lhs_idx + len - 1)]@ and the
+  -- elements of @rhs_arr@ at indices @[rhs_idx .. (rhs_idx + len - 1)]@ are
+  -- equal.
+  --
+  -- The result is undefined if either @lhs_idx + len@ or @rhs_idx + len@
+  -- wraps around.
+  arrayRangeEq ::
+    (1 <= w) =>
+    sym ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @lhs_arr@ -} ->
+    SymBV sym w {- ^ @lhs_idx@ -} ->
+    SymArray sym (SingleCtx (BaseBVType w)) a {- ^ @rhs_arr@ -} ->
+    SymBV sym w {- ^ @rhs_idx@ -} ->
+    SymBV sym w {- ^ @len@ -} ->
+    IO (Pred sym)
+
   -- | Create an array from a map of concrete indices to values.
   --
   -- This is implemented, but designed to be overridden for efficiency.
@@ -1803,52 +1858,44 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- if @x@ is negative.
   realSqrt :: sym -> SymReal sym -> IO (SymReal sym)
 
-  -- | @realAtan2 sym y x@ returns the arctangent of @y/x@ with a range
-  -- of @-pi@ to @pi@; this corresponds to the angle between the positive
-  -- x-axis and the line from the origin @(x,y)@.
-  --
-  -- When @x@ is @0@ this returns @pi/2 * sgn y@.
-  --
-  -- When @x@ and @y@ are both zero, this function is undefined.
-  realAtan2 :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
-
   -- | Return value denoting pi.
   realPi :: sym -> IO (SymReal sym)
+  realPi sym = realSpecialFunction0 sym Pi
 
   -- | Natural logarithm.  @realLog x@ is undefined
   --   for @x <= 0@.
   realLog :: sym -> SymReal sym -> IO (SymReal sym)
+  realLog sym x = realSpecialFunction1 sym Log x
 
   -- | Natural exponentiation
   realExp :: sym -> SymReal sym -> IO (SymReal sym)
+  realExp sym x = realSpecialFunction1 sym Exp x
 
   -- | Sine trig function
   realSin :: sym -> SymReal sym -> IO (SymReal sym)
+  realSin sym x = realSpecialFunction1 sym Sin x
 
   -- | Cosine trig function
   realCos :: sym -> SymReal sym -> IO (SymReal sym)
+  realCos sym x = realSpecialFunction1 sym Cos x
 
   -- | Tangent trig function.  @realTan x@ is undefined
   --   when @cos x = 0@,  i.e., when @x = pi/2 + k*pi@ for
   --   some integer @k@.
   realTan :: sym -> SymReal sym -> IO (SymReal sym)
-  realTan sym x = do
-    sin_x <- realSin sym x
-    cos_x <- realCos sym x
-    realDiv sym sin_x cos_x
+  realTan sym x = realSpecialFunction1 sym Tan x
 
   -- | Hyperbolic sine
   realSinh :: sym -> SymReal sym -> IO (SymReal sym)
+  realSinh sym x = realSpecialFunction1 sym Sinh x
 
   -- | Hyperbolic cosine
   realCosh :: sym -> SymReal sym -> IO (SymReal sym)
+  realCosh sym x = realSpecialFunction1 sym Cosh x
 
   -- | Hyperbolic tangent
   realTanh :: sym -> SymReal sym -> IO (SymReal sym)
-  realTanh sym x = do
-    sinh_x <- realSinh sym x
-    cosh_x <- realCosh sym x
-    realDiv sym sinh_x cosh_x
+  realTanh sym x = realSpecialFunction1 sym Tanh x
 
   -- | Return absolute value of the real number.
   realAbs :: sym -> SymReal sym -> IO (SymReal sym)
@@ -1866,6 +1913,50 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
         x2 <- realSq sym x
         y2 <- realSq sym y
         realSqrt sym =<< realAdd sym x2 y2
+
+  -- | @realAtan2 sym y x@ returns the arctangent of @y/x@ with a range
+  -- of @-pi@ to @pi@; this corresponds to the angle between the positive
+  -- x-axis and the line from the origin @(x,y)@.
+  --
+  -- When @x@ is @0@ this returns @pi/2 * sgn y@.
+  --
+  -- When @x@ and @y@ are both zero, this function is undefined.
+  realAtan2 :: sym -> SymReal sym -> SymReal sym -> IO (SymReal sym)
+  realAtan2 sym y x = realSpecialFunction2 sym Arctan2 y x
+
+  -- | Apply a special function to real arguments
+  realSpecialFunction
+    :: sym
+    -> SpecialFunction args
+    -> Ctx.Assignment (SpecialFnArg (SymExpr sym) BaseRealType) args
+    -> IO (SymReal sym)
+
+  -- | Access a 0-arity special function constant
+  realSpecialFunction0
+    :: sym
+    -> SpecialFunction EmptyCtx
+    -> IO (SymReal sym)
+  realSpecialFunction0 sym fn =
+    realSpecialFunction sym fn Ctx.Empty
+
+  -- | Apply a 1-argument special function
+  realSpecialFunction1
+    :: sym
+    -> SpecialFunction (EmptyCtx ::> R)
+    -> SymReal sym
+    -> IO (SymReal sym)
+  realSpecialFunction1 sym fn x =
+    realSpecialFunction sym fn (Ctx.Empty Ctx.:> SpecialFnArg x)
+
+  -- | Apply a 2-argument special function
+  realSpecialFunction2
+    :: sym
+    -> SpecialFunction (EmptyCtx ::> R ::> R)
+    -> SymReal sym
+    -> SymReal sym
+    -> IO (SymReal sym)
+  realSpecialFunction2 sym fn x y =
+    realSpecialFunction sym fn (Ctx.Empty Ctx.:> SpecialFnArg x Ctx.:> SpecialFnArg y)
 
   ----------------------------------------------------------------------
   -- IEEE-754 floating-point operations
@@ -2202,6 +2293,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
     -> IO (SymBV sym w)
   -- | Convert a floating point number to a real number.
   floatToReal :: sym -> SymFloat sym fpp -> IO (SymReal sym)
+
+  -- | Apply a special function to floating-point arguments
+  floatSpecialFunction
+    :: sym
+    -> FloatPrecisionRepr fpp
+    -> SpecialFunction args
+    -> Ctx.Assignment (SpecialFnArg (SymExpr sym) (BaseFloatType fpp)) args
+    -> IO (SymFloat sym fpp)
 
   ----------------------------------------------------------------------
   -- Cplx operations
@@ -2667,6 +2766,9 @@ class ( IsExprBuilder sym
     Maybe Rational {- ^ upper bound -} ->
     IO (SymReal sym)
 
+  -- | Return the set of uninterpreted constants in the given expression.
+  exprUninterpConstants :: sym -> SymExpr sym tp -> Set (Some (BoundVar sym))
+
 
   ----------------------------------------------------------------------
   -- Functions needs to support quantifiers.
@@ -2963,14 +3065,14 @@ cplxLogBase base sym x = do
 asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
-    BaseBoolRepr    -> ConcreteBool <$> asConstantPred x
-    BaseIntegerRepr -> ConcreteInteger <$> asInteger x
-    BaseRealRepr    -> ConcreteReal <$> asRational x
+    BaseBoolRepr       -> ConcreteBool <$> asConstantPred x
+    BaseIntegerRepr    -> ConcreteInteger <$> asInteger x
+    BaseRealRepr       -> ConcreteReal <$> asRational x
     BaseStringRepr _si -> ConcreteString <$> asString x
-    BaseComplexRepr -> ConcreteComplex <$> asComplex x
-    BaseBVRepr w    -> ConcreteBV w <$> asBV x
-    BaseFloatRepr _ -> Nothing
-    BaseStructRepr _ -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
+    BaseComplexRepr    -> ConcreteComplex <$> asComplex x
+    BaseBVRepr w       -> ConcreteBV w <$> asBV x
+    BaseFloatRepr fpp  -> ConcreteFloat fpp <$> asFloat x
+    BaseStructRepr _   -> ConcreteStruct <$> (asStruct x >>= traverseFC asConcrete)
     BaseArrayRepr idx _tp -> do
       def <- asConstantArray x
       c_def <- asConcrete def
@@ -2985,6 +3087,7 @@ concreteToSym sym = \case
    ConcreteBool False   -> return (falsePred sym)
    ConcreteInteger x    -> intLit sym x
    ConcreteReal x       -> realLit sym x
+   ConcreteFloat fpp bf -> floatLit sym fpp bf
    ConcreteString x     -> stringLit sym x
    ConcreteComplex x    -> mkComplexLit sym x
    ConcreteBV w x       -> bvLit sym w x
@@ -3010,7 +3113,7 @@ from the value @f i@ where @i@ is the smallest value in the range @[l..h]@
 such that @p i@ is true.  If @p i@ is true for no such value, then
 this returns the value @f h@. -}
 muxRange :: (IsExpr e, Monad m) =>
-   (Natural -> m (e BaseBoolType)) 
+   (Natural -> m (e BaseBoolType))
       {- ^ Returns predicate that holds if we have found the value we are looking
            for.  It is assumed that the predicate must hold for a unique integer in
            the range.

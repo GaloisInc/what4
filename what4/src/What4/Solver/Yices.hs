@@ -279,9 +279,11 @@ instance SupportTermOps YicesTerm where
   realDiv x y = term_app "/" [x, y]
   realSin = errorComputableUnsupported
   realCos = errorComputableUnsupported
+  realTan = errorComputableUnsupported
   realATan2 = errorComputableUnsupported
   realSinh = errorComputableUnsupported
   realCosh = errorComputableUnsupported
+  realTanh = errorComputableUnsupported
   realExp = errorComputableUnsupported
   realLog = errorComputableUnsupported
 
