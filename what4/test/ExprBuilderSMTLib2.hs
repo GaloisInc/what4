@@ -2,17 +2,21 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- for TestShow instance
 
 import           Test.Tasty
+import           Test.Tasty.Checklist as TC
 import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.HUnit
 
@@ -24,6 +28,7 @@ import           Data.Foldable
 import qualified Data.List as L
 import qualified Data.Map as Map
 import           Data.Maybe ( catMaybes, fromMaybe )
+import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
 import qualified Data.Text as Text
 import           System.Environment ( lookupEnv )
 import           System.Exit ( ExitCode(..) )
@@ -55,6 +60,8 @@ data SomePred = forall t . SomePred (BoolExpr t)
 deriving instance Show SomePred
 type SimpleExprBuilder t fs = ExprBuilder t State fs
 
+instance TestShow Text.Text where testShow = show
+instance TestShow (StringLiteral Unicode) where testShow = show
 
 debugOutputFiles :: Bool
 debugOutputFiles = False
@@ -703,7 +710,7 @@ stringTest1 ::
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest1 sym solver =
+stringTest1 sym solver = withChecklist "string1" $
   do let bsx = "asdf\nasdf"     -- length 9
      let bsz = "qwe\x1c\&rty"   -- length 7
      let bsw = "QQ\"QQ"         -- length 5
@@ -726,9 +733,12 @@ stringTest1 sym solver =
          do UnicodeLiteral slit <- groundEval fn s'
             llit <- groundEval fn n
 
-            (fromIntegral (Text.length slit) == llit) @? "model string length"
-            Text.isPrefixOf bsx slit @? "prefix check"
-            Text.isSuffixOf (bsz <> bsw) slit @? "suffix check"
+            slit `checkValues`
+              (Empty
+               :> Val "model string length" (fromIntegral . Text.length) llit
+               :> Got "expected prefix" (Text.isPrefixOf bsx)
+               :> Got "expected suffix" (Text.isSuffixOf (bsz <> bsw))
+              )
 
        _ -> fail "expected satisfiable model"
 
@@ -743,7 +753,7 @@ stringTest2 ::
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest2 sym solver =
+stringTest2 sym solver = withChecklist "string2" $
   do let bsx = "asdf\nasdf"
      let bsz = "qwe\x1c\&rty"
      let bsw = "QQ\"QQ"
@@ -775,17 +785,17 @@ stringTest2 sym solver =
             bzwlit <- groundEval fn bzw
             qlit <- groundEval fn q
 
-            qlit == False @? "correct ite"
-            axlit == bzwlit @? "equal strings"
+            TC.check "correct ite" (False ==) qlit
+            TC.check "equal strings" (axlit ==) bzwlit
 
        _ -> fail "expected satisfable model"
 
 stringTest3 ::
-  OnlineSolver solver =>
+  (OnlineSolver solver)  =>
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest3 sym solver =
+stringTest3 sym solver = withChecklist "string3" $
   do let bsz = "qwe\x1c\&rtyQQ\"QQ"
      z <- stringLit sym (UnicodeLiteral bsz)
 
@@ -822,9 +832,12 @@ stringTest3 sym solver =
             blit <- fromUnicodeLit <$> groundEval fn b
             clit <- fromUnicodeLit <$> groundEval fn c
 
-            alit == (Text.take 9 bsz) @? "correct prefix"
-            blit == (Text.drop (Text.length bsz - 9) bsz) @? "correct suffix"
-            clit == (Text.take 6 (Text.drop 1 bsz)) @? "correct middle"
+            bsz `checkValues`
+              (Empty
+               :> Val "correct prefix" (Text.take 9) alit
+               :> Val "correct suffix" (Text.reverse . Text.take 9 . Text.reverse) blit
+               :> Val "correct middle" (Text.take 6 . Text.drop 1) clit
+              )
 
        _ -> fail "expected satisfable model"
 
@@ -834,7 +847,7 @@ stringTest4 ::
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest4 sym solver =
+stringTest4 sym solver = withChecklist "string4" $
   do let bsx = "str"
      x <- stringLit sym (UnicodeLiteral bsx)
      a <- freshConstant sym (userSymbol' "stra") (BaseStringRepr UnicodeRepr)
@@ -848,8 +861,8 @@ stringTest4 sym solver =
           do alit <- fromUnicodeLit <$> groundEval fn a
              ilit <- groundEval fn i
 
-             Text.isPrefixOf bsx (Text.drop (fromIntegral ilit) alit) @? "correct index"
-             ilit >= 5 @? "index large enough"
+             TC.check "correct index" (Text.isPrefixOf bsx) (Text.drop (fromIntegral ilit) alit)
+             TC.check "index large enough" (>= 5) ilit
 
        _ -> fail "expected satisfable model"
 
@@ -864,8 +877,8 @@ stringTest4 sym solver =
           do alit <- fromUnicodeLit <$> groundEval fn a
              ilit <- groundEval fn i
 
-             not (Text.isInfixOf bsx (Text.drop 5 alit)) @? "substring not found"
-             ilit == (-1) @? "expected neg one"
+             TC.check "substring not found" (not . Text.isInfixOf bsx) (Text.drop 5 alit)
+             TC.check "expected neg one index" (== (-1)) ilit
 
        _ -> fail "expected satisfable model"
 
