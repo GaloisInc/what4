@@ -464,7 +464,8 @@ timeoutTests testLevel solvers =
                if testLevel == "0"
                  then assertBool
                       ("actual duration of " <> show deltaT
-                       <> " is significantly different than expected")
+                       <> " is significantly different than expected"
+                       <> " (will not cause CI failure)")
                       $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
                  else return ()
 
