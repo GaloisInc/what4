@@ -17,7 +17,7 @@ import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
 import           Control.Exception ( try, SomeException )
 import           Control.Lens (folded)
-import           Control.Monad ( forM, void )
+import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
 import           Data.Char ( toLower )
@@ -469,13 +469,14 @@ timeoutTests testLevel solvers =
                       $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
                  else return ()
 
-           , let maybeRunTest = if useableTimeThreshold |<| historical
-                                then id
-                                else ignoreTestBecause $ unwords
-                                     [ "solver runs test faster than"
-                                     , "reasonable timing threshold;"
-                                     , "skipping"
-                                     ]
+           , let maybeRunTest =
+                   let tooFast = unwords
+                                 [ "solver runs test faster than reasonable"
+                                 , "timing threshold; skipping"
+                                 ]
+                   in if useableTimeThreshold |<| historical
+                      then id
+                      else ignoreTestBecause tooFast
              in maybeRunTest $ testCase "Test runs past timeout" $ do
                start <- getTime Monotonic
                rslt <- race
