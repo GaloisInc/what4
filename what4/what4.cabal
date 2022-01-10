@@ -273,8 +273,7 @@ test-suite online-solver-test
 
   main-is: OnlineSolverTest.hs
 
-  -- Disabled for 9.0 until units package is updated
-  if flag(solverTests) && impl(ghc < 9.0)
+  if flag(solverTests)
     buildable: True
     if ! flag(STPTestDisable)
       cpp-options: -DTEST_STP
