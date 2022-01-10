@@ -17,7 +17,7 @@ import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
 import           Control.Exception ( try, SomeException )
 import           Control.Lens (folded)
-import           Control.Monad ( forM, void )
+import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
 import           Data.Char ( toLower )
@@ -54,19 +54,25 @@ import qualified What4.Solver.Yices as Yices
 
 data State t = State
 
-type SolverTestData = (String, AnOnlineSolver, ProblemFeatures, [ConfigDesc], Maybe (ConfigOption BaseIntegerType))
+type SolverTestData = (SolverName, AnOnlineSolver, ProblemFeatures, [ConfigDesc], Maybe (ConfigOption BaseIntegerType))
 
 allOnlineSolvers :: [SolverTestData]
 allOnlineSolvers =
-  [ ("Z3", AnOnlineSolver @(SMT2.Writer Z3) Proxy, z3Features, z3Options, Just z3Timeout)
-  , ("CVC4",  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options, Just cvc4Timeout)
-  , ("Yices", AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions, Just yicesGoalTimeout)
-  , ("Boolector", AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions, Just boolectorTimeout)
+  [ (SolverName "Z3"
+    , AnOnlineSolver @(SMT2.Writer Z3) Proxy, z3Features, z3Options, Just z3Timeout)
+  , (SolverName "CVC4"
+    ,  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options, Just cvc4Timeout)
+  , (SolverName "Yices"
+    , AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions, Just yicesGoalTimeout)
+  , (SolverName "Boolector"
+    , AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions, Just boolectorTimeout)
 #ifdef TEST_STP
-  , ("STP", AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions, Just stpTimeout)
+  , (SolverName "STP"
+    , AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions, Just stpTimeout)
 #endif
   ]
 
+testSolverName :: SolverTestData -> SolverName
 testSolverName (nm,_,_,_,_) = nm
 
 instance TCL.TestShow [PP.Doc ann] where
@@ -76,9 +82,9 @@ instance TCL.TestShow [PP.Doc ann] where
 -- queried for a computable result and that the result can be obtained
 -- in a reasonably quick amount of time with no cancel or timeouts
 -- considerations.
-mkSmokeTest :: SolverTestData -> TestTree
-mkSmokeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, timeoutOpt) = testCase nm $
-  withIONonceGenerator $ \gen ->
+mkSmokeTest :: (SolverTestData, SolverVersion) -> TestTree
+mkSmokeTest ((SolverName nm, AnOnlineSolver (_ :: Proxy s), features, opts, _), _) =
+  testCase nm $ withIONonceGenerator $ \gen ->
   do sym <- newExprBuilder FloatUninterpretedRepr State gen
      extendConfig opts (getConfiguration sym)
      proc <- startSolverProcess @s features Nothing sym
@@ -156,8 +162,8 @@ checkFormula1Model sym p q r eval =
 -- Solve (the relatively simple) Formula1 using either frames
 -- (push/pop) for each of the good and bad cases or else no frames and
 -- resetting the solver between cases
-quickstartTest :: Bool -> SolverTestData -> TestTree
-quickstartTest useFrames (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt) =
+quickstartTest :: Bool -> (SolverTestData,SolverVersion) -> TestTree
+quickstartTest useFrames ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt),_) =
   let wrap = if nm == "STP"
              then ignoreTestBecause "STP cannot generate the model"
              else id
@@ -220,7 +226,7 @@ mkFormula2 :: IsSymExprBuilder sym => sym -> IO (Pred sym)
 mkFormula2 sym = do
      p <- freshConstant sym (safeSymbol "p8") (BaseBVRepr (knownNat @8))
      q <- freshConstant sym (safeSymbol "q8") (BaseBVRepr (knownNat @8))
-     r <- freshConstant sym (safeSymbol "q8") (BaseBVRepr (knownNat @8))
+     r <- freshConstant sym (safeSymbol "r8") (BaseBVRepr (knownNat @8))
      zeroBV <- bvLit sym (knownNat @8) (BV.zero (knownNat))
 
      let bvGCD n a b = do
@@ -249,7 +255,7 @@ mkFormula2 sym = do
 -- that the goal-timeout is realized and that the solver is useable
 -- for a goal _after_ the goal-timeout was reached.
 longTimeTest :: SolverTestData -> Maybe Time -> IO Bool
-longTimeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutOpt) goal_tmo =
+longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutOpt) goal_tmo =
   TCL.withChecklist "timer tests" $
   withIONonceGenerator $ \gen ->
   do sym <- newExprBuilder FloatUninterpretedRepr State gen
@@ -283,8 +289,11 @@ longTimeTest (nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutO
 
 ----------------------------------------------------------------------
 
-getSolverVersion :: String -> IO (Either String String)
-getSolverVersion solver =
+newtype SolverName = SolverName String deriving (Eq, Show)
+newtype SolverVersion = SolverVersion String deriving Show
+
+getSolverVersion :: SolverName -> IO (Either String SolverVersion)
+getSolverVersion (SolverName solver) =
   let args = case toLower <$> solver of
                -- n.b. abc will return a non-zero exit code if asked
                -- for command usage.
@@ -294,33 +303,38 @@ getSolverVersion solver =
     Right (r,o,e) ->
       if r == ExitSuccess
       then let ol = lines o in
-             return $ Right $ if null ol then (solver <> " v??") else head ol
+             return $ Right $ SolverVersion
+             $ if null ol then (solver <> " v??") else head ol
       else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
     Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
 
 
-reportSolverVersions :: String -> IO [SolverTestData]
-reportSolverVersions testLevel =
+reportSolverVersions :: String -> [(SolverTestData, Either String SolverVersion)]
+                     -> IO [(SolverTestData, SolverVersion)]
+reportSolverVersions testLevel versionedSolvers =
   do putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-     catMaybes <$> mapM (rep testLevel) allOnlineSolvers
-  where rep lvl testsolver = let s = testSolverName testsolver
-                             in disp lvl testsolver s =<< getSolverVersion s
-        disp lvl solver s = \case
-          Right v -> do putStrLn $ "  Solver " <> s <> " -> " <> v
-                        return $ Just solver
+     catMaybes <$> mapM (rep testLevel) versionedSolvers
+  where rep lvl (testsolver, versionInfo) = let s = testSolverName testsolver
+                                            in disp lvl testsolver s versionInfo
+        disp lvl solver (SolverName sname) = \case
+          Right v@(SolverVersion ver) ->
+            do putStrLn $ "  Solver " <> sname <> " -> " <> ver
+               return $ Just (solver, v)
           Left e -> if and [ "does not exist" `L.isInfixOf` e
                            , lvl == "0"
                            ]
-                    then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
+                    then do putStrLn $ "  Solver " <> sname <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
                             return Nothing
-                    else do putStrLn $ "  Solver " <> s <> " error: " <> e
-                            return $ Just solver
+                    else do putStrLn $ "  Solver " <> sname <> " error: " <> e
+                            return $ Just (solver, SolverVersion "v?")
 
 
 main :: IO ()
 main = do
   testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-  solvers <- reportSolverVersions testLevel
+  versionedSolvers <- zip allOnlineSolvers
+                      <$> mapM (getSolverVersion . testSolverName) allOnlineSolvers
+  solvers <- reportSolverVersions testLevel versionedSolvers
   defaultMain $
     testGroup "OnlineSolverTests"
     [
@@ -336,7 +350,7 @@ main = do
 -- machine, etc.  As long as they run consistently longer than the
 -- useable threshold the tests should perform as expected.
 
-timeoutTests :: String -> [SolverTestData] -> TestTree
+timeoutTests :: String -> [(SolverTestData, SolverVersion)] -> TestTree
 timeoutTests testLevel solvers =
   let
       -- Amount of time to use for timeouts in testing: can be edited
@@ -397,12 +411,12 @@ timeoutTests testLevel solvers =
       -- run.  This table may need to be updated periodically by the
       -- developer as solvers, What4 formulation, and machine speeds
       -- evolve.
-      approxTestTimes :: [ (String, Time) ]
-      approxTestTimes = [ ("Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
-                        , ("CVC4",       7.5  % Second)    -- CVC4 1.8
-                        , ("Yices",      2.9  % Second)    -- Yices 2.6.1
-                        , ("Boolector",  7.2  % Second)    -- Boolector 3.2.1
-                        , ("STP",        1.35 % Second)    -- STP 2.3.3
+      approxTestTimes :: [ (SolverName, Time) ]
+      approxTestTimes = [ (SolverName "Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
+                        , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
+                        , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1
+                        , (SolverName "Boolector",  7.2  % Second)    -- Boolector 3.2.1
+                        , (SolverName "STP",        1.35 % Second)    -- STP 2.3.3
                         ]
 
       -- This is the acceptable delta variation in time between the
@@ -432,9 +446,11 @@ timeoutTests testLevel solvers =
       -- end of expected developer-adjustments above  --
       --------------------------------------------------
 
-      mkTimeoutTests s =
-        let historical = fromMaybe (0.0 % Second) $ lookup (testSolverName s) approxTestTimes
-        in testGroup (testSolverName s)
+      mkTimeoutTests (sti,sv) =
+        let historical = fromMaybe (0.0 % Second)
+                         $ lookup (testSolverName sti) approxTestTimes
+            snamestr (SolverName sname) = sname
+        in testGroup (snamestr $ testSolverName sti)
            [
              testCase ("Test itself is valid and completes (" <> show historical <> ")") $ do
                -- Verify that the solver will run to completion for
@@ -442,28 +458,30 @@ timeoutTests testLevel solvers =
                -- the approxTestTimes historical time is reasonably
                -- close to the actual time taken for this test.
                start <- getTime Monotonic
-               longTimeTest s Nothing @? "valid test"
+               longTimeTest sti Nothing @? "valid test"
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
                if testLevel == "0"
                  then assertBool
                       ("actual duration of " <> show deltaT
-                       <> " is significantly different than expected")
+                       <> " is significantly different than expected"
+                       <> " (will not cause CI failure)")
                       $ qApprox (historical |* (acceptableTimeDelta / 100.0)) deltaT historical
                  else return ()
 
-           , let maybeRunTest = if useableTimeThreshold |<| historical
-                                then id
-                                else ignoreTestBecause $ unwords
-                                     [ "solver runs test faster than"
-                                     , "reasonable timing threshold;"
-                                     , "skipping"
-                                     ]
+           , let maybeRunTest =
+                   let tooFast = unwords
+                                 [ "solver runs test faster than reasonable"
+                                 , "timing threshold; skipping"
+                                 ]
+                   in if useableTimeThreshold |<| historical
+                      then id
+                      else ignoreTestBecause tooFast
              in maybeRunTest $ testCase "Test runs past timeout" $ do
                start <- getTime Monotonic
                rslt <- race
                        (threadDelay (floor $ useableTimeThreshold # micro Second))
-                       (longTimeTest s Nothing)
+                       (longTimeTest sti Nothing)
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
                isLeft rslt @? "solver is to fast for valid timeout testing"
@@ -474,10 +492,25 @@ timeoutTests testLevel solvers =
 
            -- Verify that specifying a goal-timeout will stop once
            -- that timeout is reached (i.e. before the race timeout here).
-           , testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
+           , let maybeRunTest =
+                   case (testSolverName sti, sv) of
+#if !MIN_VERSION_base(4,15,0)
+                     -- Z3 4.8.12 goal-timeouts don't work properly in
+                     -- conjunction with the various packages from the
+                     -- latter GHC 8.x era.  It's likely not a GHC 8.x
+                     -- issue, but something based on one of the
+                     -- packages that is a dependency of either Z3 or
+                     -- GHC 8.x in that timeframe.  Regardless, it
+                     -- seems reasonable to simply use a later (or
+                     -- earlier) version of Z3.
+                     (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
+                       expectFailBecause "goal timeouts feature not effective"
+#endif
+                     _ -> id
+             in maybeRunTest $ testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
                rslt <- race
                        (threadDelay (floor $ useableTimeThreshold # micro Second))
-                       (longTimeTest s (Just testTimeout))
+                       (longTimeTest sti (Just testTimeout))
                isRight rslt @? "solver goal timeout didn't occur"
                assertEqual "solver didn't timeout on goal" (Right False) rslt
                -- TODO: ensure that the solver process is no longer using CPU time.
