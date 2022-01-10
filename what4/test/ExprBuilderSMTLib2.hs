@@ -887,7 +887,7 @@ stringTest5 ::
   SimpleExprBuilder t fs ->
   SolverProcess t solver ->
   IO ()
-stringTest5 sym solver =
+stringTest5 sym solver = withChecklist "string5" $
   do a <- freshConstant sym (userSymbol' "a") (BaseStringRepr UnicodeRepr)
      off <- freshConstant sym (userSymbol' "off") BaseIntegerRepr
      len <- freshConstant sym (userSymbol' "len") BaseIntegerRepr
@@ -912,7 +912,7 @@ stringTest5 sym solver =
 
             let q = Text.take (fromIntegral lenlit) (Text.drop (fromIntegral offlit) alit)
 
-            q == qlit @? "correct substring"
+            TC.check "correct substring" (qlit ==) q
 
        _ -> fail "expected satisfable model"
 
