@@ -37,13 +37,14 @@ import           What4.Utils.AbstractDomains
 -- Cache start size
 
 -- | Starting size for element cache when caching is enabled.
+--   The default value is 100000 elements.
 --
 --   This option is named \"backend.cache_start_size\"
 cacheStartSizeOption :: ConfigOption BaseIntegerType
 cacheStartSizeOption = configOption BaseIntegerRepr "backend.cache_start_size"
 
 -- | The configuration option for setting the size of the initial hash set
--- used by simple builder
+--   used by simple builder (measured in number of elements).
 cacheStartSizeDesc :: ConfigDesc
 cacheStartSizeDesc = mkOpt cacheStartSizeOption sty help (Just (ConcreteInteger 100000))
   where sty = integerWithMinOptSty (CFG.Inclusive 0)
@@ -54,6 +55,9 @@ cacheStartSizeDesc = mkOpt cacheStartSizeOption sty help (Just (ConcreteInteger 
 
 -- | Indicates if we should cache terms.  When enabled, hash-consing
 --   is used to find and deduplicate common subexpressions.
+--   Toggling this option from disabled to enabled will allocate a new
+--   hash table; toggling it from enabled to disabled will discard
+--   the current hash table.  The default value for this option is `False`.
 --
 --   This option is named \"use_cache\"
 cacheTerms :: ConfigOption BaseBoolType
@@ -163,7 +167,7 @@ cachedNonceExpr g h pc p v = do
                                             , nonceExprAbsValue = v
                                             }
       seq e $ stToIO $ PH.insert h p e
-      return $! e
+      return e
 
 
 cachedAppExpr :: forall t tp

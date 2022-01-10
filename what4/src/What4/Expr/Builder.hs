@@ -17,7 +17,8 @@ module are modified or written atomically, so modifications should
 propagate in the expected sequentially-consistent ways.  Of course,
 threads may still clobber state others have set (e.g., the current
 program location) so the potential for truly multithreaded use is
-somewhat limited.
+somewhat limited.  Consider the @exprBuilderFreshConfig@ or
+@exprBuilderSplitConfig@ operations if this is a concern.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
@@ -398,7 +399,7 @@ unaryThreshold = to sbUnaryThreshold
 cacheStartSize :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
 cacheStartSize = to sbCacheStartSize
 
--- | Return a new expr builder where the configuaration object has
+-- | Return a new expr builder where the configuration object has
 --   been "split" using the @splitConfig@ operation.
 --   The returned sym will share any preexisting options with the
 --   input sym, but any new options added with @extendConfig@

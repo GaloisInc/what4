@@ -1,11 +1,14 @@
 -----------------------------------------------------------------------
 -- |
 -- Module           : What4.FloatMode
--- Description      : 
+-- Description      : Mode values for controlling the "interpreted" floating point mode.
 -- Copyright        : (c) Galois, Inc 2014-2022
 -- License          : BSD3
 -- Maintainer       : rdockins@galois.com
 -- Stability        : provisional
+--
+-- Desired instances for the @IsInterpretedFloatExprBuilder@ class are selected
+-- via the different mode values from this module.
 ------------------------------------------------------------------------
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -34,8 +37,20 @@ data FloatMode where
   FloatIEEE :: FloatMode
   FloatUninterpreted :: FloatMode
   FloatReal :: FloatMode
+
+-- | In this mode "interpreted" floating-point values are treated
+--   as bit-precise IEEE-754 floats.
 type FloatIEEE = 'FloatIEEE
+
+-- | In this mode "interpreted" floating-point values are treated
+--   as bitvectors of the appropriate width, and all operations on
+--   them are translated as uninterpreted functions.
 type FloatUninterpreted = 'FloatUninterpreted
+
+-- | In this mode "interpreted" floating-point values are treated
+--   as real-number values, to the extent possible. Expressions that
+--   would result in infinities or NaN will yield unspecified values in
+--   this mode, or directly produce runtime errors.
 type FloatReal = 'FloatReal
 
 data FloatModeRepr :: FloatMode -> Type where

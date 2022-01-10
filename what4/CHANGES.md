@@ -1,8 +1,18 @@
 # next (TBA)
 
 * Add operations for increased control over the scope of
-  configuration options, both in the `What4.Confg` and
+  configuration options, both in the `What4.Config` and
   `What4.Expr.Builder` modules.
+
+* Previously, the `exprCounter`, `sbUserState`, `sbUnaryThreshold`, and
+  `sbCacheStartSize` fields of `ExprBuilder` were directly exposed; in
+  principle this allows users to modify them, which was not intended
+  in some cases.  These have been uniformly renamed to remove the `sb`
+  prefix, and exposed as `Getter` or `Lens` values instead, as
+  appropriate.
+
+* The `sbBVDomainRangeLimit` fields of `ExprBuilder` was obsolete and
+  has been removed.
 
 * Allow building with `hashable-1.4.*`:
   * Add `Eq` instances for all data types with `Hashable` instances that

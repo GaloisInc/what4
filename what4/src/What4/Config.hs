@@ -907,7 +907,7 @@ instance Show OptCreateFailure where
 ------------------------------------------------------------------------
 -- Config
 
--- | The main configuration datatype.  It consists of an Read/Write var
+-- | The main configuration datatype.  It consists of a Read/Write var
 --   containing the actual configuration data.
 newtype Config = Config (RWV.RWVar ConfigMap)
 
@@ -939,12 +939,12 @@ tryExtendConfig ts (Config cfg) =
 
 -- | Create a new configuration object that shares the option
 --   settings currently in the given input config. However,
---   an options added to either configuration using @extendConfig@
---   will not be propigated to the other .
+--   any options added to either configuration using @extendConfig@
+--   will not be propagated to the other.
 --
---   To restate, option settings that already exist in the
---   input configuration will be shared between both; changes
---   to those options will be visible in both configurations.
+--   Option settings that already exist in the input configuration
+--   will be shared between both; changes to those options will be
+--   visible in both configurations.
 splitConfig :: Config -> IO Config
 splitConfig (Config cfg) = Config <$> (RWV.with cfg RWV.new)
 
