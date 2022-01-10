@@ -220,7 +220,7 @@ mkFormula2 :: IsSymExprBuilder sym => sym -> IO (Pred sym)
 mkFormula2 sym = do
      p <- freshConstant sym (safeSymbol "p8") (BaseBVRepr (knownNat @8))
      q <- freshConstant sym (safeSymbol "q8") (BaseBVRepr (knownNat @8))
-     r <- freshConstant sym (safeSymbol "q8") (BaseBVRepr (knownNat @8))
+     r <- freshConstant sym (safeSymbol "r8") (BaseBVRepr (knownNat @8))
      zeroBV <- bvLit sym (knownNat @8) (BV.zero (knownNat))
 
      let bvGCD n a b = do
