@@ -15,15 +15,13 @@
 
 import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
-import           Control.Exception ( try, SomeException )
 import           Control.Lens (folded)
 import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
-import           Data.Char ( toLower )
 import           Data.Either ( isLeft, isRight )
 import qualified Data.List as L
-import           Data.Maybe ( catMaybes, fromMaybe )
+import           Data.Maybe ( fromMaybe )
 import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), (|+|), qApprox )
 import           Data.Metrology.SI ( Time, milli, micro, nano, Second(..) )
 import           Data.Metrology.Show ()
@@ -31,9 +29,8 @@ import           Data.Proxy
 import qualified Prettyprinter as PP
 import           System.Clock
 import           System.Environment ( lookupEnv )
-import           System.Exit ( ExitCode(..) )
-import           System.Process ( readProcessWithExitCode )
 
+import           ProbeSolvers
 import           Test.Tasty
 import qualified Test.Tasty.Checklist as TCL
 import           Test.Tasty.ExpectedFailure
@@ -289,52 +286,13 @@ longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, 
 
 ----------------------------------------------------------------------
 
-newtype SolverName = SolverName String deriving (Eq, Show)
-newtype SolverVersion = SolverVersion String deriving Show
-
-getSolverVersion :: SolverName -> IO (Either String SolverVersion)
-getSolverVersion (SolverName solver) =
-  let args = case toLower <$> solver of
-               -- n.b. abc will return a non-zero exit code if asked
-               -- for command usage.
-               "abc" -> ["s", "-q", "version;quit"]
-               _ -> ["--version"]
-  in try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
-    Right (r,o,e) ->
-      if r == ExitSuccess
-      then let ol = lines o in
-             return $ Right $ SolverVersion
-             $ if null ol then (solver <> " v??") else head ol
-      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
-
-
-reportSolverVersions :: String -> [(SolverTestData, Either String SolverVersion)]
-                     -> IO [(SolverTestData, SolverVersion)]
-reportSolverVersions testLevel versionedSolvers =
-  do putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-     catMaybes <$> mapM (rep testLevel) versionedSolvers
-  where rep lvl (testsolver, versionInfo) = let s = testSolverName testsolver
-                                            in disp lvl testsolver s versionInfo
-        disp lvl solver (SolverName sname) = \case
-          Right v@(SolverVersion ver) ->
-            do putStrLn $ "  Solver " <> sname <> " -> " <> ver
-               return $ Just (solver, v)
-          Left e -> if and [ "does not exist" `L.isInfixOf` e
-                           , lvl == "0"
-                           ]
-                    then do putStrLn $ "  Solver " <> sname <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
-                            return Nothing
-                    else do putStrLn $ "  Solver " <> sname <> " error: " <> e
-                            return $ Just (solver, SolverVersion "v?")
-
 
 main :: IO ()
 main = do
-  testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
   versionedSolvers <- zip allOnlineSolvers
                       <$> mapM (getSolverVersion . testSolverName) allOnlineSolvers
-  solvers <- reportSolverVersions testLevel versionedSolvers
+  solvers <- reportSolverVersions testLevel testSolverName versionedSolvers
   defaultMain $
     testGroup "OnlineSolverTests"
     [
@@ -350,7 +308,7 @@ main = do
 -- machine, etc.  As long as they run consistently longer than the
 -- useable threshold the tests should perform as expected.
 
-timeoutTests :: String -> [(SolverTestData, SolverVersion)] -> TestTree
+timeoutTests :: TestLevel -> [(SolverTestData, SolverVersion)] -> TestTree
 timeoutTests testLevel solvers =
   let
       -- Amount of time to use for timeouts in testing: can be edited
@@ -461,7 +419,7 @@ timeoutTests testLevel solvers =
                longTimeTest sti Nothing @? "valid test"
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
-               if testLevel == "0"
+               if testLevel == TestLevel "0"
                  then assertBool
                       ("actual duration of " <> show deltaT
                        <> " is significantly different than expected"

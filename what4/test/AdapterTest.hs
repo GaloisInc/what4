@@ -19,12 +19,11 @@ import           Control.Monad.Except ( runExceptT )
 import           Data.BitVector.Sized ( mkBV )
 import           Data.Char ( toLower )
 import qualified Data.List as L
-import           Data.Maybe ( catMaybes, fromMaybe )
+import           Data.Maybe ( fromMaybe )
 import           Data.Text ( pack )
 import           System.Environment ( lookupEnv )
-import           System.Exit ( ExitCode(..) )
-import           System.Process ( readProcessWithExitCode )
 
+import           ProbeSolvers
 import           Test.Tasty
 import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.HUnit
@@ -668,43 +667,13 @@ verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
                      , "endmodule"
                      ]
 
-getSolverVersion :: String -> IO (Either String String)
-getSolverVersion solver = do
-  let args = case toLower <$> solver of
-               -- n.b. abc will return a non-zero exit code if asked
-               -- for command usage.
-               "abc" -> ["s", "-q", "version;quit"]
-               _ -> ["--version"]
-  try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
-    Right (r,o,e) ->
-      if r == ExitSuccess
-      then let ol = lines o in
-             return $ Right $ if null ol then (solver <> " v??") else head ol
-      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
-
-
-reportSolverVersions :: IO [SolverAdapter State]
-reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-                          putStrLn "SOLVER VERSIONS::"
-                          catMaybes <$> mapM (rep testLevel) allAdapters
-  where rep lvl a = let s = solver_adapter_name a in disp lvl a s =<< getSolverVersion s
-        disp lvl adptr s = \case
-          Right v -> do putStrLn $ "  Solver " <> s <> " == " <> v
-                        return $ Just adptr
-          Left e ->
-            if and [ "does not exist" `L.isInfixOf` e
-                   , lvl == "0"
-                   ]
-            then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
-                    return Nothing
-            else do putStrLn $ "  Solver " <> s <> " error: " <> e
-                    return $ Just adptr
-
-
 main :: IO ()
 main = do
-  adapters <- reportSolverVersions
+  testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  let solverNames = SolverName . solver_adapter_name <$> allAdapters
+  solvers <- reportSolverVersions testLevel (SolverName . solver_adapter_name)
+             =<< (zip allAdapters <$> mapM getSolverVersion solverNames)
+  let adapters = fst <$> solvers
   defaultMain $
     localOption (mkTimeout (10 * 1000 * 1000)) $
     testGroup "AdapterTests"

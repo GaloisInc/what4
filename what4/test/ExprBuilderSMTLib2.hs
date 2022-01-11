@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- for TestShow instance
 
+import           ProbeSolvers
 import           Test.Tasty
 import           Test.Tasty.Checklist as TC
 import           Test.Tasty.ExpectedFailure
@@ -23,16 +24,12 @@ import           Test.Tasty.HUnit
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
 import qualified Data.BitVector.Sized as BV
-import           Data.Char ( toLower )
 import           Data.Foldable
-import qualified Data.List as L
 import qualified Data.Map as Map
-import           Data.Maybe ( catMaybes, fromMaybe )
+import           Data.Maybe ( fromMaybe )
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
 import qualified Data.Text as Text
 import           System.Environment ( lookupEnv )
-import           System.Exit ( ExitCode(..) )
-import           System.Process ( readProcessWithExitCode )
 
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
@@ -1029,42 +1026,13 @@ testBVBitreverse = testCase "test bvBitreverse" $
 
 ----------------------------------------------------------------------
 
-getSolverVersion :: String -> IO (Either String String)
-getSolverVersion solver =
-  let args = case toLower <$> solver of
-               -- n.b. abc will return a non-zero exit code if asked
-               -- for command usage.
-               "abc" -> ["s", "-q", "version;quit"]
-               _ -> ["--version"]
-  in try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
-    Right (r,o,e) ->
-      if r == ExitSuccess
-      then let ol = lines o in
-             return $ Right $ if null ol then (solver <> " v??") else head ol
-      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
-
-
-reportSolverVersions :: IO [String]
-reportSolverVersions = do testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-                          putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-                          catMaybes <$> mapM (rep testLevel) [ "cvc4", "z3", "yices" ]
-  where rep lvl s = disp lvl s =<< getSolverVersion s
-        disp lvl s = \case
-          Right v -> do putStrLn $ "  Solver " <> s <> " -> " <> v
-                        return $ Just s
-          Left e -> if and [ "does not exist" `L.isInfixOf` e
-                           , lvl == "0"
-                           ]
-                    then do putStrLn $ "  Solver " <> s <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
-                            return Nothing
-                    else do putStrLn $ "  Solver " <> s <> " error: " <> e
-                            return $ Just s
-
 
 main :: IO ()
 main = do
-  solvers <- reportSolverVersions
+  testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  let solverNames = SolverName <$> [ "cvc4", "yices", "z3" ]
+  solvers <- reportSolverVersions testLevel id
+             =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
         [
           testUninterpretedFunctionScope
@@ -1133,7 +1101,7 @@ main = do
         , testCase "Yices pair"    $ withYices pairTest
         , testCase "Yices rounding" $ withYices roundingTest
         ]
-  let skipIfNotPresent nm = if nm `elem` solvers then id
+  let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))
   defaultMain $ testGroup "Tests" $
     [ testInterpretedFloatReal

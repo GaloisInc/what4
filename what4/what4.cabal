@@ -236,6 +236,8 @@ test-suite adapter-test
 
   main-is: AdapterTest.hs
 
+  other-modules: ProbeSolvers
+
   if flag(solverTests)
     buildable: True
     if ! flag(dRealTestDisable)
@@ -273,6 +275,8 @@ test-suite online-solver-test
 
   main-is: OnlineSolverTest.hs
 
+  other-modules: ProbeSolvers
+
   if flag(solverTests)
     buildable: True
     if ! flag(STPTestDisable)
@@ -303,6 +307,8 @@ test-suite expr-builder-smtlib2
   type: exitcode-stdio-1.0
 
   main-is: ExprBuilderSMTLib2.hs
+
+  other-modules: ProbeSolvers
 
   build-depends:
     bv-sized,
