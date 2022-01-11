@@ -12,6 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- for TestShow instance
 
 import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
