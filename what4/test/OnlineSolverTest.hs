@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ExplicitForAll #-}
@@ -453,7 +452,6 @@ timeoutTests testLevel solvers =
            -- that timeout is reached (i.e. before the race timeout here).
            , let maybeRunTest =
                    case (testSolverName sti, sv) of
-#if !MIN_VERSION_base(4,15,0)
                      -- Z3 4.8.12 goal-timeouts don't work properly in
                      -- conjunction with the various packages from the
                      -- latter GHC 8.x era.  It's likely not a GHC 8.x
@@ -464,7 +462,6 @@ timeoutTests testLevel solvers =
                      -- earlier) version of Z3.
                      (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
                        expectFailBecause "goal timeouts feature not effective"
-#endif
                      _ -> id
              in maybeRunTest $ testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
                rslt <- race
