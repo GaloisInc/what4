@@ -541,7 +541,7 @@ nonlinearRealTest adpt =
   let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
              then expectFailBecause
                   (solver_adapter_name adpt
-                   <> "does not support this type of linear arithmetic term")
+                   <> " does not support this type of linear arithmetic term")
              else id
   in wrap $ testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
