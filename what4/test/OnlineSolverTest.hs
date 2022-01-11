@@ -453,14 +453,11 @@ timeoutTests testLevel solvers =
            -- that timeout is reached (i.e. before the race timeout here).
            , let maybeRunTest =
                    case (testSolverName sti, sv) of
-                     -- Z3 4.8.12 goal-timeouts don't work properly in
-                     -- conjunction with the various packages from the
-                     -- latter GHC 8.x era.  It's likely not a GHC 8.x
-                     -- issue, but something based on one of the
-                     -- packages that is a dependency of either Z3 or
-                     -- GHC 8.x in that timeframe.  Regardless, it
-                     -- seems reasonable to simply use a later (or
-                     -- earlier) version of Z3.
+                     -- Z3 4.8.12 goal-timeouts don't consistently
+                     -- work properly.  Occasionally it will abort but
+                     -- it generally seems to continue running and
+                     -- cannot be aborted by signals from the what4
+                     -- parent process.
                      (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
                        expectFailBecause "goal timeouts feature not effective"
                      _ -> id
