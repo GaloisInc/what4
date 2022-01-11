@@ -12,18 +12,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- for TestShow instance
 
 import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
-import           Control.Exception ( try, SomeException )
 import           Control.Lens (folded)
 import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
-import           Data.Char ( toLower )
 import           Data.Either ( isLeft, isRight )
 import qualified Data.List as L
-import           Data.Maybe ( catMaybes, fromMaybe )
+import           Data.Maybe ( fromMaybe )
 import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), (|+|), qApprox )
 import           Data.Metrology.SI ( Time, milli, micro, nano, Second(..) )
 import           Data.Metrology.Show ()
@@ -31,9 +30,8 @@ import           Data.Proxy
 import qualified Prettyprinter as PP
 import           System.Clock
 import           System.Environment ( lookupEnv )
-import           System.Exit ( ExitCode(..) )
-import           System.Process ( readProcessWithExitCode )
 
+import           ProbeSolvers
 import           Test.Tasty
 import qualified Test.Tasty.Checklist as TCL
 import           Test.Tasty.ExpectedFailure
@@ -289,52 +287,13 @@ longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, 
 
 ----------------------------------------------------------------------
 
-newtype SolverName = SolverName String deriving (Eq, Show)
-newtype SolverVersion = SolverVersion String deriving Show
-
-getSolverVersion :: SolverName -> IO (Either String SolverVersion)
-getSolverVersion (SolverName solver) =
-  let args = case toLower <$> solver of
-               -- n.b. abc will return a non-zero exit code if asked
-               -- for command usage.
-               "abc" -> ["s", "-q", "version;quit"]
-               _ -> ["--version"]
-  in try (readProcessWithExitCode (toLower <$> solver) args "") >>= \case
-    Right (r,o,e) ->
-      if r == ExitSuccess
-      then let ol = lines o in
-             return $ Right $ SolverVersion
-             $ if null ol then (solver <> " v??") else head ol
-      else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
-    Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
-
-
-reportSolverVersions :: String -> [(SolverTestData, Either String SolverVersion)]
-                     -> IO [(SolverTestData, SolverVersion)]
-reportSolverVersions testLevel versionedSolvers =
-  do putStrLn "SOLVER SELF-REPORTED VERSIONS::"
-     catMaybes <$> mapM (rep testLevel) versionedSolvers
-  where rep lvl (testsolver, versionInfo) = let s = testSolverName testsolver
-                                            in disp lvl testsolver s versionInfo
-        disp lvl solver (SolverName sname) = \case
-          Right v@(SolverVersion ver) ->
-            do putStrLn $ "  Solver " <> sname <> " -> " <> ver
-               return $ Just (solver, v)
-          Left e -> if and [ "does not exist" `L.isInfixOf` e
-                           , lvl == "0"
-                           ]
-                    then do putStrLn $ "  Solver " <> sname <> " not found; skipping (would fail with CI_TEST_LEVEL=1)"
-                            return Nothing
-                    else do putStrLn $ "  Solver " <> sname <> " error: " <> e
-                            return $ Just (solver, SolverVersion "v?")
-
 
 main :: IO ()
 main = do
-  testLevel <- fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
   versionedSolvers <- zip allOnlineSolvers
                       <$> mapM (getSolverVersion . testSolverName) allOnlineSolvers
-  solvers <- reportSolverVersions testLevel versionedSolvers
+  solvers <- reportSolverVersions testLevel testSolverName versionedSolvers
   defaultMain $
     testGroup "OnlineSolverTests"
     [
@@ -350,7 +309,7 @@ main = do
 -- machine, etc.  As long as they run consistently longer than the
 -- useable threshold the tests should perform as expected.
 
-timeoutTests :: String -> [(SolverTestData, SolverVersion)] -> TestTree
+timeoutTests :: TestLevel -> [(SolverTestData, SolverVersion)] -> TestTree
 timeoutTests testLevel solvers =
   let
       -- Amount of time to use for timeouts in testing: can be edited
@@ -461,7 +420,7 @@ timeoutTests testLevel solvers =
                longTimeTest sti Nothing @? "valid test"
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
-               if testLevel == "0"
+               if testLevel == TestLevel "0"
                  then assertBool
                       ("actual duration of " <> show deltaT
                        <> " is significantly different than expected"
@@ -494,18 +453,13 @@ timeoutTests testLevel solvers =
            -- that timeout is reached (i.e. before the race timeout here).
            , let maybeRunTest =
                    case (testSolverName sti, sv) of
-#if !MIN_VERSION_base(4,15,0)
-                     -- Z3 4.8.12 goal-timeouts don't work properly in
-                     -- conjunction with the various packages from the
-                     -- latter GHC 8.x era.  It's likely not a GHC 8.x
-                     -- issue, but something based on one of the
-                     -- packages that is a dependency of either Z3 or
-                     -- GHC 8.x in that timeframe.  Regardless, it
-                     -- seems reasonable to simply use a later (or
-                     -- earlier) version of Z3.
+                     -- Z3 4.8.12 goal-timeouts don't consistently
+                     -- work properly.  Occasionally it will abort but
+                     -- it generally seems to continue running and
+                     -- cannot be aborted by signals from the what4
+                     -- parent process.
                      (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
                        expectFailBecause "goal timeouts feature not effective"
-#endif
                      _ -> id
              in maybeRunTest $ testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
                rslt <- race

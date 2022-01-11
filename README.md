@@ -18,8 +18,8 @@ views or policies of the Department of Defense or the U.S. Government.
 
 # Solver Compatibility
 
-| Feature       | ABC  | Boolector | CVC4   | Dreal | STP      | Yices    | Z3                            |
-|---------------|------|-----------|--------|-------|----------|----------|-------------------------------|
-| Supported     | yes  | 3.2.2, ?  | 1.8, ? | yes   | 2.3.3, ? | 2.6.4, ? | 4.8.8 -- 4.8.14               |
-| goal timeouts |      |           |        |       |          |          | yes except 4.8.12 and GHC < 9 |
-|               |      |           |        |       |          |          |                               |
+| Feature                               | ABC | Boolector | CVC4   | Dreal | STP      | Yices    | Z3              |
+|---------------------------------------|-----|-----------|--------|-------|----------|----------|-----------------|
+| Supported                             | yes | 3.2.2, ?  | 1.8, ? | yes   | 2.3.3, ? | 2.6.4, ? | 4.8.8 -- 4.8.14 |
+| goal timeouts                         | ?   | yes       | yes    | ?     | yes      | yes      | ! 4.8.12        |
+| strings with unicode and escape codes | ?   | ?         | yes    | ?     | ?        | ?        | >= 4.8.12       |
