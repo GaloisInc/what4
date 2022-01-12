@@ -79,8 +79,8 @@ module What4.Protocol.SMTLib2.Syntax
   , eq
   , distinct
   , ite
-  , forall
-  , exists
+  , forall_
+  , exists_
   , letBinder
     -- * @Ints@, @Reals@, @Reals_Ints@ theories
   , negate
@@ -319,18 +319,18 @@ ite c x y = term_app "ite" [c, x, y]
 varBinding :: (Text,Sort) -> Builder
 varBinding (nm, tp) = "(" <> Builder.fromText nm <> " " <> unSort tp <> ")"
 
--- | @forall vars t@ denotes a predicate that holds if @t@ for every valuation of the
+-- | @forall_ vars t@ denotes a predicate that holds if @t@ for every valuation of the
 -- variables in @vars@.
-forall :: [(Text, Sort)] -> Term -> Term
-forall [] r = r
-forall vars r =
+forall_ :: [(Text, Sort)] -> Term -> Term
+forall_ [] r = r
+forall_ vars r =
   T $ app "forall" [builder_list (varBinding <$> vars), renderTerm r]
 
--- | @exists vars t@ denotes a predicate that holds if @t@ for some valuation of the
+-- | @exists_ vars t@ denotes a predicate that holds if @t@ for some valuation of the
 -- variables in @vars@.
-exists :: [(Text, Sort)] -> Term -> Term
-exists [] r = r
-exists vars r =
+exists_ :: [(Text, Sort)] -> Term -> Term
+exists_ [] r = r
+exists_ vars r =
   T $ app "exists" [builder_list (varBinding <$> vars), renderTerm r]
 
 letBinding :: (Text, Term) -> Builder

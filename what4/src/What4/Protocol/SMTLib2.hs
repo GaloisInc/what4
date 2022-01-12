@@ -638,8 +638,8 @@ newWriter _ h in_h ack isStrict solver_name permitDefineFun arithOption quantSup
 type instance Command (Writer a) = SMT2.Command
 
 instance SMTLib2Tweaks a => SMTWriter (Writer a) where
-  forallExpr vars t = SMT2.forall (varBinding @a <$> vars) t
-  existsExpr vars t = SMT2.exists (varBinding @a <$> vars) t
+  forallExpr vars t = SMT2.forall_ (varBinding @a <$> vars) t
+  existsExpr vars t = SMT2.exists_ (varBinding @a <$> vars) t
 
   arrayConstant =
     case smtlib2arrayConstant @a of

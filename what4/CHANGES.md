@@ -1,5 +1,12 @@
 # next (TBA)
 
+* According to
+  [this discussion](https://github.com/ghc-proposals/ghc-proposals/discussions/440),
+  the `forall` identifier will be claimed, and `forall` made into a
+  full keyword. Therefore, the `forall` and `exists` combinators of
+  `What4.Protocol.SMTLib2.Syntax` have been
+  renamed into `forall_` and `exists_`.
+
 * Add operations for increased control over the scope of
   configuration options, both in the `What4.Config` and
   `What4.Expr.Builder` modules.
