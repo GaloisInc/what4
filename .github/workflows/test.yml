@@ -28,7 +28,7 @@ env:
 
 jobs:
   linux:
-    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} ${{ matrix.os }}
+    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
     env:
