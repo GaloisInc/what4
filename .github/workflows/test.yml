@@ -28,7 +28,7 @@ env:
 
 jobs:
   linux:
-    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} ${{ matrix.os }}
+    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} CVC4-${{ matrix.cvc4 }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow-failure }}
     env:
@@ -39,6 +39,7 @@ jobs:
         ghc: [9.0.2, 8.10.7, 8.8.4, 8.6.5]
         z3: [ 4_8_14 ]
         yices: [ 2_6 ]
+        cvc4: [ 1_8 ]
         allow-failure: [ false ]
         # Specify multiple older solver versions for the latest builds
         # to check backward compatibility.  These older solvers are
@@ -49,88 +50,118 @@ jobs:
           ### Z3 variations ----------
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_8
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_9
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_10
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_11
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_12
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_13
             yices: 2_6
             allow-failure: false
           ### Yices variations ----------
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_14
             yices: 2_6_1
             allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
+            cvc4: 1_8
             z3: 4_8_14
             yices: 2_5
             allow-failure: true
+          ### CVC4 variations ----------
+          - os: ubuntu-latest
+            ghc: 9.0.2
+            cvc4: 1_7
+            z3: 4_8_14
+            yices: 2_6
+            allow-failure: false
           ## GHC 8.10.7 ------------------------------
           ### Z3 variations ----------
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_8
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_9
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_10
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_11
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_12
             yices: 2_6
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_13
             yices: 2_6
             allow-failure: false
           ### Yices variations ----------
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_14
             yices: 2_6_1
             allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
+            cvc4: 1_8
             z3: 4_8_14
             yices: 2_5
             allow-failure: true
+          ### CVC4 variations ----------
+          - os: ubuntu-latest
+            ghc: 8.10.7
+            cvc4: 1_7
+            z3: 4_8_14
+            yices: 2_6
+            allow-failure: false
       fail-fast: false
     steps:
       - uses: actions/checkout@v2
@@ -230,11 +261,11 @@ jobs:
         run: |
           cd what4
           echo Boolector version $(nix eval nixpkgs#boolector.version)
-          echo CVC4 version $(nix eval nixpkgs#cvc4.version)
+          echo CVC4 version $(nix run github:GaloisInc/flakes#cvc4.v${{ matrix.cvc4 }} -- --version | head -n1)
           echo STP version $(nix eval nixpkgs#stp.version)
-          echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version)
-          echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version)
-          $NS nixpkgs#abc-verifier nixpkgs#boolector nixpkgs#cvc4 nixpkgs#stp github:GaloisInc/flakes#yices.v${{ matrix.yices }} github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
+          echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version | head -n1)
+          echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version | head -n1)
+          $NS nixpkgs#abc-verifier nixpkgs#boolector github:GaloisInc/flakes#cvc4.v${{ matrix.cvc4 }} nixpkgs#stp github:GaloisInc/flakes#yices.v${{ matrix.yices }} github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
 
       - name: Documentation
         shell: bash
