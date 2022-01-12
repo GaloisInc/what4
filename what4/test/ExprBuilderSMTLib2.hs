@@ -1039,7 +1039,7 @@ main = do
                     Just (SolverVersion v) -> any (`elem` [ "4.8.8", "4.8.9", "4.8.10", "4.8.11" ]) $ words v
                     Nothing -> True
               in if shouldSkip then expectFailBecause why else id
-            incompatZ3Strings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.12"
+            unsuppStrings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.12"
         in
         [
           testUninterpretedFunctionScope
@@ -1063,11 +1063,11 @@ main = do
         , testCase "Z3 pair"    $ withOnlineZ3 pairTest
         , testCase "Z3 forall binder" $ withOnlineZ3 forallTest
 
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
+        , skipPre4_8_12 unsuppStrings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
         , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , skipPre4_8_12 unsuppStrings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
+        , skipPre4_8_12 unsuppStrings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
+        , skipPre4_8_12 unsuppStrings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
 
         , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
         , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
@@ -1081,6 +1081,13 @@ main = do
         , arrayCopySetTest
         ]
   let cvc4Tests =
+        let skipPre1_8 why =
+              let shouldSkip = case lookup (SolverName "cvc4") solvers of
+                    Just (SolverVersion v) -> any (`elem` [ "1.7" ]) $ words v
+                    Nothing -> True
+              in if shouldSkip then expectFailBecause why else id
+            unsuppStrings = "unicode and string escaping not supported for older CVC4 versions; upgrade to at least 1.8"
+        in
         [
           ignoreTestBecause "This test stalls the solver for some reason; line-buffering issue?" $
           testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
@@ -1090,7 +1097,7 @@ main = do
 
         , testCase "CVC4 string1" $ withCVC4 stringTest1
         , testCase "CVC4 string2" $ withCVC4 stringTest2
-        , testCase "CVC4 string3" $ withCVC4 stringTest3
+        , skipPre1_8 unsuppStrings $ testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
 
