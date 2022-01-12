@@ -39,7 +39,7 @@ jobs:
         ghc: [9.0.2, 8.10.7, 8.8.4, 8.6.5]
         z3: [ 4_8_14 ]
         yices: [ 2_6 ]
-        allow-failure: [false]
+        allow-failure: [ false ]
         # Specify multiple older solver versions for the latest builds
         # to check backward compatibility.  These older solvers are
         # not simply added to the general matrix above to avoid
@@ -49,50 +49,62 @@ jobs:
             ghc: 9.0.2
             z3: 4_8_8
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
             z3: 4_8_9
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
             z3: 4_8_10
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
             z3: 4_8_11
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
             z3: 4_8_12
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 9.0.2
             z3: 4_8_13
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_8
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_9
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_10
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_11
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_12
             yices: 2_5
+            allow-failure: false
           - os: ubuntu-latest
             ghc: 8.10.7
             z3: 4_8_13
             yices: 2_5
+            allow-failure: false
       fail-fast: false
     steps:
       - uses: actions/checkout@v2
