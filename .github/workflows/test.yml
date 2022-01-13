@@ -239,6 +239,14 @@ jobs:
             z3: 4_8_14
             yices: 2_6
             allow-failure: false
+          - os: ubuntu-latest
+            ghc: 8.10.7
+            boolector: 3_2_0
+            cvc4: 1_7
+            stp: 2_3_3
+            z3: 4_8_14
+            yices: 2_6
+            allow-failure: false
             # Boolector 3.1.0 builds fail: no reason to test it
       fail-fast: false
     steps:
