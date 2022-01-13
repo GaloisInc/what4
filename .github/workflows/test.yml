@@ -229,6 +229,14 @@ jobs:
             z3: 4_8_14
             yices: 2_6
             allow-failure: false
+          - os: ubuntu-latest
+            ghc: 8.10.7
+            boolector: 3_2_2
+            cvc4: 1_7
+            stp: 2_3_1
+            z3: 4_8_14
+            yices: 2_6
+            allow-failure: false
             # STP 2_2_0 fails: no reason to test it
           ### Boolector variations ----------
           - os: ubuntu-latest
