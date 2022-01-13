@@ -464,12 +464,13 @@ timeoutTests testLevel solvers =
            -- that timeout is reached (i.e. before the race timeout here).
            , let maybeRunTest =
                    case (testSolverName sti, sv) of
-                     -- Z3 4.8.12 goal-timeouts don't consistently
-                     -- work properly.  Occasionally it will abort but
-                     -- it generally seems to continue running and
-                     -- cannot be aborted by signals from the what4
-                     -- parent process.
-                     (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
+                     -- Z3 4.8.11 and 4.8.12 goal-timeouts don't
+                     -- consistently work properly.  Occasionally it
+                     -- will abort but it generally seems to continue
+                     -- running and cannot be aborted by signals from
+                     -- the what4 parent process.
+                     (SolverName "Z3", SolverVersion v)
+                       | any (`elem` ["4.8.11", "4.8.12"]) (words v) ->
                        expectFailBecause "goal timeouts feature not effective"
                      _ -> id
              in maybeRunTest $ testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
