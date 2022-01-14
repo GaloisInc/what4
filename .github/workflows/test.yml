@@ -115,15 +115,7 @@ jobs:
             z3: 4_8_14
             yices: 2_6_1
             allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_5
-            allow-failure: true
+            # Yices 2_5 fails: no reason to test it
           ### CVC4 variations ----------
           - os: ubuntu-latest
             ghc: 9.0.2
@@ -222,15 +214,7 @@ jobs:
             z3: 4_8_14
             yices: 2_6_1
             allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_5
-            allow-failure: true
+            # Yices 2_5 fails: no reason to test it
           ### CVC4 variations ----------
           - os: ubuntu-latest
             ghc: 8.10.7
