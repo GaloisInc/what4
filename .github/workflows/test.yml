@@ -137,12 +137,13 @@ jobs:
         shell: bash
         run: |
           cd what4
+          echo Bitwuzla version $(nix eval nixpkgs#bitwuzla.version)
           echo Boolector version $(nix eval nixpkgs#boolector.version)
           echo CVC4 version $(nix eval nixpkgs#cvc4.version)
           echo STP version $(nix eval nixpkgs#stp.version)
           echo Yices version $(nix eval nixpkgs#yices.version)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version)
-          $NS nixpkgs#abc-verifier nixpkgs#boolector nixpkgs#cvc4 nixpkgs#stp nixpkgs#yices github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
+          $NS nixpkgs#abc-verifier nixpkgs#bitwuzla nixpkgs#boolector nixpkgs#cvc4 nixpkgs#stp nixpkgs#yices github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -c cabal test
 
       - name: Documentation
         shell: bash

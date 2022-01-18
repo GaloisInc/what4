@@ -45,6 +45,7 @@ allAdapters =
   , yicesAdapter
   , z3Adapter
   , boolectorAdapter
+  , bitwuzlaAdapter
   , externalABCAdapter
 #ifdef TEST_STP
   , stpAdapter
@@ -539,7 +540,7 @@ mkConfigTests adapters =
 
 nonlinearRealTest :: SolverAdapter EmptyExprBuilderState -> TestTree
 nonlinearRealTest adpt =
-  let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
+  let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "bitwuzla", "stp" ]
              then expectFailBecause
                   (solver_adapter_name adpt
                    <> " does not support this type of linear arithmetic term")

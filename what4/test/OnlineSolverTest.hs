@@ -62,6 +62,8 @@ allOnlineSolvers =
     , AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions, Just yicesGoalTimeout)
   , (SolverName "Boolector"
     , AnOnlineSolver @(SMT2.Writer Boolector) Proxy, boolectorFeatures, boolectorOptions, Just boolectorTimeout)
+  , (SolverName "Bitwuzla"
+    , AnOnlineSolver @(SMT2.Writer Bitwuzla) Proxy, bitwuzlaFeatures, bitwuzlaOptions, Just bitwuzlaTimeout)
 #ifdef TEST_STP
   , (SolverName "STP"
     , AnOnlineSolver @(SMT2.Writer STP) Proxy, stpFeatures, stpOptions, Just stpTimeout)
@@ -373,6 +375,7 @@ timeoutTests testLevel solvers =
                         , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
                         , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1
                         , (SolverName "Boolector",  7.2  % Second)    -- Boolector 3.2.1
+                        , (SolverName "Bitwuzla",   7.2  % Second)    -- Bitwuzla 1.0-prerelease
                         , (SolverName "STP",        1.35 % Second)    -- STP 2.3.3
                         ]
 

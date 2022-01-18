@@ -32,10 +32,11 @@ module What4.Solver
   , runExternalABCInOverride
   , writeABCSMT2File
 
-    -- *
+    -- * Bitwuzla
   , Bitwuzla(..)
   , bitwuzlaAdapter
   , bitwuzlaPath
+  , bitwuzlaTimeout
   , runBitwuzlaInOverride
   , bitwuzlaOptions
   , bitwuzlaFeatures
