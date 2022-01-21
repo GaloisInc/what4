@@ -39,7 +39,7 @@ import           What4.Protocol.SMTWriter ( parserStrictness, ResponseStrictness
 import           What4.Protocol.VerilogWriter
 import           What4.Solver
 
-allAdapters :: [SolverAdapter State]
+allAdapters :: [SolverAdapter EmptyExprBuilderState]
 allAdapters =
   [ cvc4Adapter
   , yicesAdapter
@@ -51,7 +51,7 @@ allAdapters =
 #endif
   ] <> drealAdpt
 
-drealAdpt :: [SolverAdapter State]
+drealAdpt :: [SolverAdapter EmptyExprBuilderState]
 #ifdef TEST_DREAL
 drealAdpt = [drealAdapter]
 #else
@@ -60,15 +60,15 @@ drealAdpt = []
 
 
 withSym ::
-  SolverAdapter EmptyBuilderState ->
-  (forall t . ExprBuilder t EmptyBuilderState (Flags FloatUninterpreted) -> IO a) ->
+  SolverAdapter EmptyExprBuilderState ->
+  (forall t . ExprBuilder t EmptyExprBuilderState (Flags FloatUninterpreted) -> IO a) ->
   IO a
 withSym adpt pred_gen = withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
      extendConfig (solver_adapter_config_options adpt) (getConfiguration sym)
      pred_gen sym
 
-mkSmokeTest :: SolverAdapter EmptyBuilderState -> TestTree
+mkSmokeTest :: SolverAdapter EmptyExprBuilderState -> TestTree
 mkSmokeTest adpt = testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
    do res <- smokeTest sym adpt
@@ -79,7 +79,7 @@ mkSmokeTest adpt = testCase (solver_adapter_name adpt) $
 
 ----------------------------------------------------------------------
 
-mkConfigTests :: [SolverAdapter State] -> [TestTree]
+mkConfigTests :: [SolverAdapter EmptyExprBuilderState] -> [TestTree]
 mkConfigTests adapters =
   [
     testGroup "deprecated configs" (deprecatedConfigTests adapters)
@@ -110,13 +110,13 @@ mkConfigTests adapters =
              show e)
           _ -> assertFailure $
                "Expected OptGetFailure exception but got: " <> show err
-    withAdapters :: [SolverAdapter EmptyBuilderState]
-                 -> (forall t . ExprBuilder t EmptyBuilderState (Flags FloatUninterpreted) -> IO a)
+    withAdapters :: [SolverAdapter EmptyExprBuilderState]
+                 -> (forall t . ExprBuilder t EmptyExprBuilderState (Flags FloatUninterpreted) -> IO a)
                  -> IO a
     withAdapters adptrs op = do
         (cfgs, _getDefAdapter) <- solverAdapterOptions adptrs
         withIONonceGenerator $ \gen ->
-          do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
+          do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
              extendConfig cfgs (getConfiguration sym)
              op sym
 
@@ -537,7 +537,7 @@ mkConfigTests adapters =
 
 ----------------------------------------------------------------------
 
-nonlinearRealTest :: SolverAdapter EmptyBuilderState -> TestTree
+nonlinearRealTest :: SolverAdapter EmptyExprBuilderState -> TestTree
 nonlinearRealTest adpt =
   let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
              then expectFailBecause
@@ -580,7 +580,7 @@ nonlinearRealTest adpt =
                 ((-2) <= x2_y' && x2_y' <= (-1)) @? "correct bounds"
 
 
-mkQuickstartTest :: SolverAdapter EmptyBuilderState -> TestTree
+mkQuickstartTest :: SolverAdapter EmptyExprBuilderState -> TestTree
 mkQuickstartTest adpt =
   let wrap = if solver_adapter_name adpt == "stp"
              then ignoreTestBecause "STP cannot generate the model"
@@ -639,7 +639,7 @@ mkQuickstartTest adpt =
 
 verilogTest :: TestTree
 verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
      let w = knownNat @8
      x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w)
      one <- bvLit sym w (mkBV w 1)

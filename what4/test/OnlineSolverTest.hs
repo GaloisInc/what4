@@ -81,7 +81,7 @@ instance TCL.TestShow [PP.Doc ann] where
 mkSmokeTest :: (SolverTestData, SolverVersion) -> TestTree
 mkSmokeTest ((SolverName nm, AnOnlineSolver (_ :: Proxy s), features, opts, _), _) =
   testCase nm $ withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
      extendConfig opts (getConfiguration sym)
      proc <- startSolverProcess @s features Nothing sym
      let conn = solverConn proc
