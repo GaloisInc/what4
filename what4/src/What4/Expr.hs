@@ -110,6 +110,6 @@ import What4.Expr.UnaryBV
 
 
 -- | A \"dummy\" data type that can be used for the
---   user state field of an @ExprBuilder@ when there
+--   user state field of an 'ExprBuilder' when there
 --   is no other interesting state to track.
 data EmptyExprBuilderState t = EmptyExprBuilderState
