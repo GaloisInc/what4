@@ -36,12 +36,11 @@ import           What4.Expr
 import           What4.Interface
 
 
-data State t = State
-type IteExprBuilder t fs = ExprBuilder t State fs
+type IteExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
 withTestSolver :: (forall t. IteExprBuilder t (Flags FloatIEEE) -> IO a) -> IO a
 withTestSolver f = withIONonceGenerator $ \nonce_gen ->
-  f =<< newExprBuilder FloatIEEERepr State nonce_gen
+  f =<< newExprBuilder FloatIEEERepr EmptyExprBuilderState nonce_gen
 
 -- | What branch (arm) is expected from the ITE evaluation?
 data ExpITEArm = Then | Else

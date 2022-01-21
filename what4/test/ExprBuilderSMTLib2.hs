@@ -52,10 +52,9 @@ import qualified What4.Solver.Yices as Yices
 import           What4.Utils.StringLiteral
 import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
-data State t = State
 data SomePred = forall t . SomePred (BoolExpr t)
 deriving instance Show SomePred
-type SimpleExprBuilder t fs = ExprBuilder t State fs
+type SimpleExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
 instance TestShow Text.Text where testShow = show
 instance TestShow (StringLiteral Unicode) where testShow = show
@@ -76,7 +75,7 @@ userSymbol' s = case userSymbol s of
 
 withSym :: FloatModeRepr fm -> (forall t . SimpleExprBuilder t (Flags fm) -> IO a) -> IO a
 withSym floatMode pred_gen = withIONonceGenerator $ \gen ->
-  pred_gen =<< newExprBuilder floatMode State gen
+  pred_gen =<< newExprBuilder floatMode EmptyExprBuilderState gen
 
 withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO ()) -> IO ()
 withYices action = withSym FloatRealRepr $ \sym ->
@@ -90,7 +89,7 @@ withYices action = withSym FloatRealRepr $ \sym ->
 
 withZ3 :: (forall t . SimpleExprBuilder t (Flags FloatIEEE) -> Session t Z3.Z3 -> IO ()) -> IO ()
 withZ3 action = withIONonceGenerator $ \nonce_gen -> do
-  sym <- newExprBuilder FloatIEEERepr State nonce_gen
+  sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState nonce_gen
   extendConfig Z3.z3Options (getConfiguration sym)
   Z3.withZ3 sym "z3" defaultLogData { logCallbackVerbose = (\_ -> putStrLn) } (action sym)
 

@@ -38,6 +38,7 @@ import qualified What4.Protocol.Online as Online
 import           What4.Protocol.Online (SolverProcess(..), OnlineSolver(..))
 import qualified What4.Solver.CVC4 as CVC4
 
+import What4.Expr
 import What4.Expr.App (reduceApp)
 import What4.Expr.Builder
 import What4.Expr.GroundEval
@@ -53,8 +54,6 @@ import GHC.Stack
 
 --import Debug.Trace (trace)
 
-data State t = State
-
 
 
 main :: IO ()
@@ -66,7 +65,7 @@ main =
               (do r <- roundingModes
                   (Some <$> floatTemplates [r] 1 fpp))
 
-     sym <- newExprBuilder FloatIEEERepr State globalNonceGenerator
+     sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState globalNonceGenerator
 
      extendConfig CVC4.cvc4Options (getConfiguration sym)
      proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym

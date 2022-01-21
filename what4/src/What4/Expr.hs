@@ -13,6 +13,16 @@ module What4.Expr
   ( -- * Expression builder
     ExprBuilder
   , newExprBuilder
+  , startCaching
+  , stopCaching
+  , userState
+  , exprCounter
+  , curProgramLoc
+  , unaryThreshold
+  , cacheStartSize
+  , exprBuilderSplitConfig
+  , exprBuilderFreshConfig
+  , EmptyExprBuilderState(..)
 
     -- * Flags
   , FloatMode
@@ -97,3 +107,9 @@ import What4.Expr.Builder
 import What4.Expr.GroundEval
 import What4.Expr.WeightedSum
 import What4.Expr.UnaryBV
+
+
+-- | A \"dummy\" data type that can be used for the
+--   user state field of an 'ExprBuilder' when there
+--   is no other interesting state to track.
+data EmptyExprBuilderState t = EmptyExprBuilderState
