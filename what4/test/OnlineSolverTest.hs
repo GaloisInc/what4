@@ -50,8 +50,6 @@ import           What4.Protocol.SMTWriter
 import qualified What4.Protocol.SMTLib2 as SMT2
 import qualified What4.Solver.Yices as Yices
 
-data State t = State
-
 type SolverTestData = (SolverName, AnOnlineSolver, ProblemFeatures, [ConfigDesc], Maybe (ConfigOption BaseIntegerType))
 
 allOnlineSolvers :: [SolverTestData]
@@ -83,7 +81,7 @@ instance TCL.TestShow [PP.Doc ann] where
 mkSmokeTest :: (SolverTestData, SolverVersion) -> TestTree
 mkSmokeTest ((SolverName nm, AnOnlineSolver (_ :: Proxy s), features, opts, _), _) =
   testCase nm $ withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
      extendConfig opts (getConfiguration sym)
      proc <- startSolverProcess @s features Nothing sym
      let conn = solverConn proc
@@ -168,7 +166,7 @@ quickstartTest useFrames ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), fea
   in wrap $
   testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
      extendConfig opts (getConfiguration sym)
 
      (p,q,r,f) <- mkFormula1 sym
@@ -256,7 +254,7 @@ longTimeTest :: SolverTestData -> Maybe Time -> IO Bool
 longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, mb'timeoutOpt) goal_tmo =
   TCL.withChecklist "timer tests" $
   withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
      extendConfig opts (getConfiguration sym)
 
      -- Configure a solver timeout in What4 if specified for this test.

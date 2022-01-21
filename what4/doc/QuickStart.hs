@@ -10,7 +10,8 @@ import Data.Parameterized.Some (Some(..))
 import What4.Config (extendConfig)
 import What4.Expr
          ( ExprBuilder,  FloatModeRepr(..), newExprBuilder
-         , BoolExpr, GroundValue, groundEval )
+         , BoolExpr, GroundValue, groundEval
+         , EmptyExprBuilderState(..) )
 import What4.Interface
          ( BaseTypeRepr(..), getConfiguration
          , freshConstant, safeSymbol
@@ -21,15 +22,13 @@ import What4.Protocol.SMTLib2
          (assume, sessionWriter, runCheckSat)
 
 
-data BuilderState st = EmptyState
-
 z3executable :: FilePath
 z3executable = "z3"
 
 main :: IO ()
 main = do
   Some ng <- newIONonceGenerator
-  sym <- newExprBuilder FloatIEEERepr EmptyState ng
+  sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState ng
 
   -- This line is necessary for working with z3.
   extendConfig z3Options (getConfiguration sym)

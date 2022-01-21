@@ -39,8 +39,6 @@ import           What4.Protocol.SMTWriter ( parserStrictness, ResponseStrictness
 import           What4.Protocol.VerilogWriter
 import           What4.Solver
 
-data State t = State
-
 allAdapters :: [SolverAdapter State]
 allAdapters =
   [ cvc4Adapter
@@ -61,13 +59,16 @@ drealAdpt = []
 #endif
 
 
-withSym :: SolverAdapter State -> (forall t . ExprBuilder t State (Flags FloatUninterpreted) -> IO a) -> IO a
+withSym ::
+  SolverAdapter EmptyBuilderState ->
+  (forall t . ExprBuilder t EmptyBuilderState (Flags FloatUninterpreted) -> IO a) ->
+  IO a
 withSym adpt pred_gen = withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
      extendConfig (solver_adapter_config_options adpt) (getConfiguration sym)
      pred_gen sym
 
-mkSmokeTest :: SolverAdapter State -> TestTree
+mkSmokeTest :: SolverAdapter EmptyBuilderState -> TestTree
 mkSmokeTest adpt = testCase (solver_adapter_name adpt) $
   withSym adpt $ \sym ->
    do res <- smokeTest sym adpt
@@ -109,13 +110,13 @@ mkConfigTests adapters =
              show e)
           _ -> assertFailure $
                "Expected OptGetFailure exception but got: " <> show err
-    withAdapters :: [SolverAdapter State]
-                 -> (forall t . ExprBuilder t State (Flags FloatUninterpreted) -> IO a)
+    withAdapters :: [SolverAdapter EmptyBuilderState]
+                 -> (forall t . ExprBuilder t EmptyBuilderState (Flags FloatUninterpreted) -> IO a)
                  -> IO a
     withAdapters adptrs op = do
         (cfgs, _getDefAdapter) <- solverAdapterOptions adptrs
         withIONonceGenerator $ \gen ->
-          do sym <- newExprBuilder FloatUninterpretedRepr State gen
+          do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
              extendConfig cfgs (getConfiguration sym)
              op sym
 
@@ -536,7 +537,7 @@ mkConfigTests adapters =
 
 ----------------------------------------------------------------------
 
-nonlinearRealTest :: SolverAdapter State -> TestTree
+nonlinearRealTest :: SolverAdapter EmptyBuilderState -> TestTree
 nonlinearRealTest adpt =
   let wrap = if solver_adapter_name adpt `elem` [ "ABC", "boolector", "stp" ]
              then expectFailBecause
@@ -579,7 +580,7 @@ nonlinearRealTest adpt =
                 ((-2) <= x2_y' && x2_y' <= (-1)) @? "correct bounds"
 
 
-mkQuickstartTest :: SolverAdapter State -> TestTree
+mkQuickstartTest :: SolverAdapter EmptyBuilderState -> TestTree
 mkQuickstartTest adpt =
   let wrap = if solver_adapter_name adpt == "stp"
              then ignoreTestBecause "STP cannot generate the model"
@@ -638,7 +639,7 @@ mkQuickstartTest adpt =
 
 verilogTest :: TestTree
 verilogTest = testCase "verilogTest" $ withIONonceGenerator $ \gen ->
-  do sym <- newExprBuilder FloatUninterpretedRepr State gen
+  do sym <- newExprBuilder FloatUninterpretedRepr EmptyBuilderState gen
      let w = knownNat @8
      x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w)
      one <- bvLit sym w (mkBV w 1)
