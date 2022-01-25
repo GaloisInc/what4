@@ -978,6 +978,32 @@ binderTupleTest2 sym solver =
        Unsat _ -> return ()
        _ -> fail "expected UNSAT"
 
+-- | A regression test for #182.
+issue182Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue182Test sym solver = do
+    let w = knownNat @64
+    arr <- freshConstant sym (safeSymbol "arr")
+             (BaseArrayRepr (Ctx.Empty Ctx.:> BaseIntegerRepr)
+                            (BaseBVRepr w))
+    idxInt <- intLit sym 0
+    let idx = Ctx.Empty Ctx.:> idxInt
+    let arrLookup = arrayLookup sym arr idx
+    elt <- arrLookup
+    bvZero <- bvLit sym w (BV.zero w)
+    p <- bvEq sym elt bvZero
+
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do elt' <- arrLookup
+           eltEval <- groundEval fn elt'
+           (eltEval == BV.zero w) @? "non-zero result"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1075,6 +1101,8 @@ main = do
 
         , testCase "Z3 multidim array"$ withOnlineZ3 multidimArrayTest
 
+        , testCase "Z3 #182 test case" $ withOnlineZ3 issue182Test
+
         , arrayCopyTest
         , arraySetTest
         , arrayCopySetTest
@@ -1099,6 +1127,8 @@ main = do
         , testCase "CVC4 rounding" $ withCVC4 roundingTest
 
         , testCase "CVC4 multidim array"$ withCVC4 multidimArrayTest
+
+        , testCase "CVC4 #182 test case" $ withCVC4 issue182Test
         ]
   let yicesTests =
         [
@@ -1106,6 +1136,7 @@ main = do
         , testCase "Yices 1-tuple" $ withYices oneTupleTest
         , testCase "Yices pair"    $ withYices pairTest
         , testCase "Yices rounding" $ withYices roundingTest
+        , testCase "Yices #182 test case" $ withYices issue182Test
         ]
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))

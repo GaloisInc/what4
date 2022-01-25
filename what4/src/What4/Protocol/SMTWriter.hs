@@ -3000,7 +3000,7 @@ smtIndicesTerms tps vals = Ctx.forIndexRange 0 sz f []
         f i l = (r:l)
          where GVW v = vals Ctx.! i
                r = case tps Ctx.! i of
-                      IntegerTypeMap -> rationalTerm (fromInteger v)
+                      IntegerTypeMap -> integerTerm v
                       BVTypeMap w -> bvTerm w v
                       _ -> error "Do not yet support other index types."
 
