@@ -38,6 +38,7 @@ module GenWhat4Expr where
 
 import           Data.Bits
 import qualified Data.BitVector.Sized as BV
+import           Data.Maybe ( fromMaybe, isJust )
 import           Data.Word
 import           GHC.Natural
 import           GHC.TypeNats ( KnownNat )
@@ -92,33 +93,72 @@ data TestExpr = TE_Bool PredTestExpr
               | TE_BV32 BV32TestExpr
               | TE_BV64 BV64TestExpr
 
+-- Projection functions that return Nothing if there is a constructor mismatch.
+
+boolTestExprMaybe :: TestExpr -> Maybe PredTestExpr
+boolTestExprMaybe = \case
+  TE_Bool p -> Just p
+  _ -> Nothing
+
+intTestExprMaybe :: TestExpr -> Maybe IntTestExpr
+intTestExprMaybe = \case
+  TE_Int i -> Just i
+  _ -> Nothing
+
+bv8TestExprMaybe :: TestExpr -> Maybe BV8TestExpr
+bv8TestExprMaybe = \case
+  TE_BV8 bv8 -> Just bv8
+  _ -> Nothing
+
+bv16TestExprMaybe :: TestExpr -> Maybe BV16TestExpr
+bv16TestExprMaybe = \case
+  TE_BV16 bv16 -> Just bv16
+  _ -> Nothing
+
+bv32TestExprMaybe :: TestExpr -> Maybe BV32TestExpr
+bv32TestExprMaybe = \case
+  TE_BV32 bv32 -> Just bv32
+  _ -> Nothing
+
+bv64TestExprMaybe :: TestExpr -> Maybe BV64TestExpr
+bv64TestExprMaybe = \case
+  TE_BV64 bv64 -> Just bv64
+  _ -> Nothing
+
+-- Projection functions that `error` if there is a constructor mismatch.
+-- Use these with caution.
+
+fromBoolTestExpr :: HasCallStack => TestExpr -> PredTestExpr
+fromBoolTestExpr = fromMaybe (error "Expected TE_Bool") . boolTestExprMaybe
+
+fromIntTestExpr :: HasCallStack => TestExpr -> IntTestExpr
+fromIntTestExpr = fromMaybe (error "Expected TE_Int") . intTestExprMaybe
+
+fromBV8TestExpr :: HasCallStack => TestExpr -> BV8TestExpr
+fromBV8TestExpr = fromMaybe (error "Expected TE_BV8") . bv8TestExprMaybe
+
+fromBV16TestExpr :: HasCallStack => TestExpr -> BV16TestExpr
+fromBV16TestExpr = fromMaybe (error "Expected TE_BV16") . bv16TestExprMaybe
+
+fromBV32TestExpr :: HasCallStack => TestExpr -> BV32TestExpr
+fromBV32TestExpr = fromMaybe (error "Expected TE_BV32") . bv32TestExprMaybe
+
+fromBV64TestExpr :: HasCallStack => TestExpr -> BV64TestExpr
+fromBV64TestExpr = fromMaybe (error "Expected TE_BV64") . bv64TestExprMaybe
+
+-- Constructor predicates
+
 isBoolTestExpr, isIntTestExpr,
   isBV8TestExpr, isBV16TestExpr, isBV32TestExpr, isBV64TestExpr
   :: TestExpr -> Bool
 
-isBoolTestExpr = \case
-  TE_Bool _ -> True
-  _ -> False
+isBoolTestExpr = isJust . boolTestExprMaybe
+isIntTestExpr = isJust . intTestExprMaybe
+isBV8TestExpr = isJust . bv8TestExprMaybe
+isBV16TestExpr = isJust . bv16TestExprMaybe
+isBV32TestExpr = isJust . bv32TestExprMaybe
+isBV64TestExpr = isJust . bv64TestExprMaybe
 
-isIntTestExpr = \case
-  TE_Int _ -> True
-  _ -> False
-
-isBV8TestExpr = \case
-  TE_BV8 _ -> True
-  _ -> False
-
-isBV16TestExpr = \case
-  TE_BV16 _ -> True
-  _ -> False
-
-isBV32TestExpr = \case
-  TE_BV32 _ -> True
-  _ -> False
-
-isBV64TestExpr = \case
-  TE_BV64 _ -> True
-  _ -> False
 
 ----------------------------------------------------------------------
 
@@ -148,18 +188,30 @@ genBoolCond = Gen.recursive Gen.choice
       bv32Term = IGen.filterT isBV32TestExpr genBV32TestExpr
       bv64Term = IGen.filterT isBV64TestExpr genBV64TestExpr
       subBoolTerm2 gen = Gen.subterm2 boolTerm boolTerm
-                         (\(TE_Bool x) (TE_Bool y) -> TE_Bool $ gen x y)
+                         (\xt yt -> let x = fromBoolTestExpr xt
+                                        y = fromBoolTestExpr yt in
+                                    TE_Bool $ gen x y)
       subBoolTerm3 gen = Gen.subterm3 boolTerm boolTerm boolTerm
-                         (\(TE_Bool x) (TE_Bool y) (TE_Bool z) -> TE_Bool $ gen x y z)
-      subIntTerms2 gen = Gen.subterm2 intTerm intTerm (\(TE_Int x) (TE_Int y) -> TE_Bool $ gen x y)
-      -- subBV16Terms2 gen = Gen.subterm2 bv16Term bv16Term (\(TE_BV16 x) (TE_BV16 y) -> TE_Bool $ gen x y)
-      -- subBV8Terms2 gen = Gen.subterm2 bv8Term bv8Term (\(TE_BV8 x) (TE_BV8 y) -> TE_Bool $ gen x y)
+                         (\xt yt zt -> let x = fromBoolTestExpr xt
+                                           y = fromBoolTestExpr yt
+                                           z = fromBoolTestExpr zt in
+                                       TE_Bool $ gen x y z)
+      subIntTerms2 gen = Gen.subterm2 intTerm intTerm (\xt yt -> let x = fromIntTestExpr xt
+                                                                     y = fromIntTestExpr yt in
+                                                                 TE_Bool $ gen x y)
+      -- subBV16Terms2 gen = Gen.subterm2 bv16Term bv16Term (\xt yt -> let x = fromBV16TestExpr xt
+      --                                                                   y = fromBV16TestExpr yt in
+      --                                                               TE_Bool $ gen x y)
+      -- subBV8Terms2 gen = Gen.subterm2 bv8Term bv8Term (\xt yt -> let x = fromBV8TestExpr xt
+      --                                                                y = fromBV8TestExpr yt in
+      --                                                            TE_Bool $ gen x y)
   in
   [
     Gen.subterm genBoolCond
-    (\(TE_Bool itc) -> TE_Bool $ PredTest ("not " <> pdesc itc)
-                       (not $ testval itc)
-                       (\sym -> notPred sym =<< predexp itc sym))
+    (\itct -> let itc = fromBoolTestExpr itct in
+              TE_Bool $ PredTest ("not " <> pdesc itc)
+              (not $ testval itc)
+              (\sym -> notPred sym =<< predexp itc sym))
 
   , subBoolTerm2
     (\x y ->
@@ -242,18 +294,20 @@ genBoolCond = Gen.recursive Gen.choice
     -- result if necessary.  Also note that the testBitBV uses an
     -- actual Natural, not a What4 Nat, so the natval is used and the
     -- natexpr is ignored.
-    (\(TE_Int i) (TE_BV16 v) -> TE_Bool $  -- KWQ: bvsized
-      let ival = fromInteger (testval i `mod` 16) in
+    (\it vt -> TE_Bool $  -- KWQ: bvsized
+      let i = fromIntTestExpr it
+          v = fromBV16TestExpr vt
+          ival = fromInteger (testval i `mod` 16) in
       PredTest
       (pdesc v <> "[" <> show ival <> "]")
       (testBit (testval v) (fromEnum ival))
       (\sym -> testBitBV sym ival =<< bvexpr v sym))
 
   ]
-  ++ bvPredExprs bv8Term (\(TE_BV8 x) -> x) bv8expr 8
-  ++ bvPredExprs bv16Term (\(TE_BV16 x) -> x) bvexpr 16
-  ++ bvPredExprs bv32Term (\(TE_BV32 x) -> x) bv32expr 32
-  ++ bvPredExprs bv64Term (\(TE_BV64 x) -> x) bv64expr 64
+  ++ bvPredExprs bv8Term fromBV8TestExpr bv8expr 8
+  ++ bvPredExprs bv16Term fromBV16TestExpr bvexpr 16
+  ++ bvPredExprs bv32Term fromBV32TestExpr bv32expr 32
+  ++ bvPredExprs bv64Term fromBV64TestExpr bv64expr 64
 
 
 bvPredExprs :: ( Monad m
@@ -408,9 +462,14 @@ genIntTestExpr = Gen.recursive Gen.choice
       isIntNZTestExpr = \case
         TE_Int n -> testval n /= 0
         _ -> False
-      subIntTerms2 gen = Gen.subterm2 intTerm intTerm (\(TE_Int x) (TE_Int y) -> TE_Int $ gen x y)
+      subIntTerms2 gen = Gen.subterm2 intTerm intTerm
+                           (\xt yt -> let x = fromIntTestExpr xt
+                                          y = fromIntTestExpr yt in
+                                      TE_Int $ gen x y)
       subIntTerms2nz gen = Gen.subterm2 intTerm intTermNZ
-                           (\(TE_Int x) (TE_Int y) -> TE_Int $ gen x y)
+                           (\xt yt -> let x = fromIntTestExpr xt
+                                          y = fromIntTestExpr yt in
+                                      TE_Int $ gen x y)
   in
   [
     subIntTerms2 (\x y -> IntTestExpr (pdesc x <> " int.+ " <> pdesc y)
@@ -453,7 +512,11 @@ genIntTestExpr = Gen.recursive Gen.choice
   , Gen.subterm3
     (IGen.filterT isBoolTestExpr genBoolCond)
     intTerm intTerm
-    (\(TE_Bool c) (TE_Int x) (TE_Int y) -> TE_Int $ IntTestExpr
+    (\ct xt yt ->
+      let c = fromBoolTestExpr ct
+          x = fromIntTestExpr xt
+          y = fromIntTestExpr yt in
+      TE_Int $ IntTestExpr
       (pdesc c <> " int.? " <> pdesc x <> " : " <> pdesc y)
       (if testval c then testval x else testval y)
       (\sym -> do c' <- predexp c sym
@@ -677,7 +740,7 @@ bvTermGens =
   let g8 = BVTermGen
            (IGen.filterT isBV8TestExpr genBV8TestExpr)
            TE_BV8
-           (\(TE_BV8 x) -> x)
+           fromBV8TestExpr
            BV8TestExpr
            bv8expr
            8
@@ -685,7 +748,7 @@ bvTermGens =
       g16 = BVTermGen
             (IGen.filterT isBV16TestExpr genBV16TestExpr)
             TE_BV16
-            (\(TE_BV16 x) -> x)
+            fromBV16TestExpr
             BV16TestExpr
             bvexpr
             16
@@ -693,7 +756,7 @@ bvTermGens =
       g32 = BVTermGen
             (IGen.filterT isBV32TestExpr genBV32TestExpr)
             TE_BV32
-            (\(TE_BV32 x) -> x)
+            fromBV32TestExpr
             BV32TestExpr
             bv32expr
             32
@@ -701,7 +764,7 @@ bvTermGens =
       g64 = BVTermGen
             (IGen.filterT isBV64TestExpr genBV64TestExpr)
             TE_BV64
-            (\(TE_BV64 x) -> x)
+            fromBV64TestExpr
             BV64TestExpr
             bv64expr
             64
@@ -837,8 +900,9 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
   , Gen.subterm3
     (IGen.filterT isBoolTestExpr genBoolCond)
     bvTerm bvTerm
-    (\(TE_Bool c) lt rt -> conTE $
-    let l = projTE lt
+    (\ct lt rt -> conTE $
+    let c = fromBoolTestExpr ct
+        l = projTE lt
         r = projTE rt
     in teSubCon
        (unwords [pdesc c, pfx "?", pdesc l, ":", pdesc r])
@@ -892,8 +956,10 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
     in
       Gen.subterm3 bvTerm intTerm boolTerm $
       -- see Note [natTerm]
-      \bvt (TE_Int n) (TE_Bool b) ->
+      \bvt nt bt ->
         let bv = projTE bvt
+            n = fromIntTestExpr nt
+            b = fromBoolTestExpr bt
             nval = fromInteger (testval n `mod` toInteger width)
             ival = fromIntegral nval :: Int
         in conTE $ teSubCon
@@ -908,7 +974,8 @@ bvExprs bvTerm conTE projTE teSubCon expr width toWord =
   , let boolTerm = IGen.filterT isBoolTestExpr genBoolCond
     in
       Gen.subterm boolTerm $
-      \(TE_Bool b) ->
+      \bt ->
+        let b = fromBoolTestExpr bt in
         -- technically bvFill also takes a NatRepr for the output
         -- width, but due to the arrangement of these expression
         -- generators, it will just generate the size specified for

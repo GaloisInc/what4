@@ -71,13 +71,13 @@ module What4.SemiRing
   , occ_count
   ) where
 
-import GHC.TypeNats
+import GHC.TypeNats (Nat)
 import qualified Data.BitVector.Sized as BV
 import Data.Kind
 import Data.Hashable
 import Data.Parameterized.Classes
 import Data.Parameterized.TH.GADT
-import Numeric.Natural
+import Numeric.Natural (Natural)
 
 import What4.BaseTypes
 

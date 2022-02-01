@@ -178,12 +178,12 @@ chooseBool = Gen (asks genChooseBool >>= lift)
 -- | A test generator that returns an 'Int' value between the
 -- specified (inclusive) bounds.
 chooseInt :: (Int, Int) -> Gen Int
-chooseInt r = Gen (asks genChooseInt >>= lift . ($r))
+chooseInt r = Gen (asks genChooseInt >>= lift . ($ r))
 
 -- | A test generator that returns an 'Integer' value between the
 -- specified (inclusive) bounds.
 chooseInteger :: (Integer, Integer) -> Gen Integer
-chooseInteger r = Gen (asks genChooseInteger >>= lift . ($r))
+chooseInteger r = Gen (asks genChooseInteger >>= lift . ($ r))
 
 -- | A test generator that returns the current shrink size of the
 -- generator functionality.
