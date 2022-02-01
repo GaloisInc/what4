@@ -1,5 +1,7 @@
 # next (TBA)
 
+* Allow building with GHC 9.2.
+
 * According to
   [this discussion](https://github.com/ghc-proposals/ghc-proposals/discussions/440),
   the `forall` identifier will be claimed, and `forall` made into a
