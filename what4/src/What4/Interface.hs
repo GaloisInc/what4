@@ -378,6 +378,24 @@ class HasAbsValue e => IsExpr e where
   -- | Print a sym expression for debugging or display purposes.
   printSymExpr :: e tp -> Doc ann
 
+  -- | Set the abstract value of an expression. This is primarily useful for
+  -- symbolic expressions where the domain is known to be narrower than what
+  -- is contained in the expression. Setting the abstract value to use the
+  -- narrower domain can, in some cases, allow the expression to be further
+  -- simplified.
+  --
+  -- This is prefixed with @unsafe-@ because it has the potential to
+  -- introduce unsoundness if the new abstract value does not accurately
+  -- represent the domain of the expression. As such, the burden is on users
+  -- of this function to ensure that the new abstract value is used soundly.
+  --
+  -- Note that composing expressions together can sometimes widen the abstract
+  -- domains involved, so if you use this function to change an abstract value,
+  -- be careful than subsequent operations do not widen away the value. As a
+  -- potential safeguard, one can use 'annotateTerm' on the new expression to
+  -- inhibit transformations that could change the abstract value.
+  unsafeSetAbstractValue :: AbstractValue tp -> e tp -> e tp
+
 
 newtype ArrayResultWrapper f idx tp =
   ArrayResultWrapper { unwrapArrayResult :: f (BaseArrayType idx tp) }
