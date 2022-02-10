@@ -49,6 +49,8 @@ import           What4.Solver.Adapter
 import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
+import qualified What4.Utils.BVDomain as WUB
+import qualified What4.Utils.BVDomain.Arith as WUBA
 import           What4.Utils.StringLiteral
 import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
@@ -1049,6 +1051,41 @@ testBVBitreverse = testCase "test bvBitreverse" $
     e1 <- bvLit sym knownRepr (BV.mkBV knownNat 128)
     e0 @?= e1
 
+-- Test unsafeSetAbstractValue on a simple symbolic expression
+testUnsafeSetAbstractValue1 :: TestTree
+testUnsafeSetAbstractValue1 = testCase "test unsafeSetAbstractValue1" $
+  withSym FloatIEEERepr $ \sym -> do
+    let w = knownNat @8
+
+    e1A <- freshConstant sym (userSymbol' "x1") (BaseBVRepr w)
+    let e1A' = unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e1A
+    unsignedBVBounds e1A' @?= Just (2, 2)
+    e1B <- bvAdd sym e1A' =<< bvLit sym w (BV.one w)
+    case asBV e1B of
+      Just bv -> bv @?= BV.mkBV w 3
+      Nothing -> assertFailure $ unlines
+        [ "unsafeSetAbstractValue doesn't work as expected for a"
+        , "simple symbolic expression"
+        ]
+
+-- Test unsafeSetAbstractValue on a compound symbolic expression
+testUnsafeSetAbstractValue2 :: TestTree
+testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
+  withSym FloatIEEERepr $ \sym -> do
+    let w = knownNat @8
+    e2A <- freshConstant sym (userSymbol' "x2A") (BaseBVRepr w)
+    e2B <- freshConstant sym (userSymbol' "x2B") (BaseBVRepr w)
+    e2C <- bvAdd sym e2A e2B
+    (_, e2C') <- annotateTerm sym $ unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e2C
+    unsignedBVBounds e2C' @?= Just (2, 2)
+    e2D <- bvAdd sym e2C' =<< bvLit sym w (BV.one w)
+    case asBV e2D of
+      Just bv -> bv @?= BV.mkBV w 3
+      Nothing -> assertFailure $ unlines
+        [ "unsafeSetAbstractValue doesn't work as expected for a"
+        , "compound symbolic expression"
+        ]
+
 ----------------------------------------------------------------------
 
 
@@ -1154,6 +1191,8 @@ main = do
     , testBVDomainArithScale
     , testBVSwap
     , testBVBitreverse
+    , testUnsafeSetAbstractValue1
+    , testUnsafeSetAbstractValue2
     ]
     <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "yices" yicesTests)

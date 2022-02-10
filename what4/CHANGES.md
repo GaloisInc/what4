@@ -30,6 +30,11 @@
     the `Hashable` instance for `SymNat` now has an extra `TestEquality`
     constraint to match its `Eq` instance.
 
+* Add an `unsafeSetAbstractValue` function to the `IsExpr` class which allows
+  one to manually set the `AbstractValue` used in a symbolic expression.
+  As the name suggests, this function is unsound in the general case, so use
+  this with caution.
+
 # 1.2.1 (June 2021)
 
 * Include test suite data in the Hackage tarball.
