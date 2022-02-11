@@ -35,6 +35,11 @@
   As the name suggests, this function is unsound in the general case, so use
   this with caution.
 
+* Add a `What4.Utils.ResolveBounds.BV` module, which provides a `resolveSymBV`
+  function that checks if a `SymBV` is concrete. If it is not concrete, it
+  returns the lower and upper version bounds, as determined by querying an
+  online SMT solver.
+
 # 1.2.1 (June 2021)
 
 * Include test suite data in the Hackage tarball.
