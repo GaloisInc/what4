@@ -19,16 +19,21 @@ import           ProbeSolvers
 import           Test.Tasty
 import           Test.Tasty.Checklist as TC
 import           Test.Tasty.ExpectedFailure
+import           Test.Tasty.Hedgehog
 import           Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
+import           Control.Monad.IO.Class (MonadIO(..))
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
 import qualified Data.Text as Text
+import qualified Hedgehog as H
+import qualified Hedgehog.Gen as HGen
+import qualified Hedgehog.Range as HRange
 import           System.Environment ( lookupEnv )
 
 import qualified Data.Parameterized.Context as Ctx
@@ -51,6 +56,7 @@ import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
 import qualified What4.Utils.BVDomain as WUB
 import qualified What4.Utils.BVDomain.Arith as WUBA
+import qualified What4.Utils.ResolveBounds.BV as WURB
 import           What4.Utils.StringLiteral
 import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
@@ -79,7 +85,7 @@ withSym :: FloatModeRepr fm -> (forall t . SimpleExprBuilder t (Flags fm) -> IO 
 withSym floatMode pred_gen = withIONonceGenerator $ \gen ->
   pred_gen =<< newExprBuilder floatMode EmptyExprBuilderState gen
 
-withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO ()) -> IO ()
+withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO a) -> IO a
 withYices action = withSym FloatRealRepr $ \sym ->
   do extendConfig Yices.yicesOptions (getConfiguration sym)
      bracket
@@ -1086,6 +1092,32 @@ testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
         , "compound symbolic expression"
         ]
 
+testResolveSymBV :: TestTree
+testResolveSymBV =
+  testProperty "test resolveSymBV" $
+  H.property $ do
+    let w = knownNat @8
+    lb <- H.forAll $ HGen.word8 $ HRange.constant 0 maxBound
+    ub <- H.forAll $ HGen.word8 $ HRange.constant lb maxBound
+
+    rbv <- liftIO $ withYices $ \sym proc -> do
+      bv <- freshConstant sym (safeSymbol "bv") knownRepr
+      p1 <- bvUge sym bv =<< bvLit sym w (BV.mkBV w (toInteger lb))
+      p2 <- bvUle sym bv =<< bvLit sym w (BV.mkBV w (toInteger ub))
+      p3 <- andPred sym p1 p2
+      assume (solverConn proc) p3
+      WURB.resolveSymBV sym w proc bv
+
+    case rbv of
+      WURB.BVConcrete bv -> do
+        let bv' = fromInteger $ BV.asUnsigned bv
+        lb H.=== bv'
+        ub H.=== bv'
+      WURB.BVSymbolic bounds -> do
+        let (lb', ub') = WUBA.ubounds bounds
+        lb H.=== fromInteger lb'
+        ub H.=== fromInteger ub'
+
 ----------------------------------------------------------------------
 
 
@@ -1169,7 +1201,9 @@ main = do
         ]
   let yicesTests =
         [
-          testCase "Yices 0-tuple" $ withYices zeroTupleTest
+          testResolveSymBV
+
+        , testCase "Yices 0-tuple" $ withYices zeroTupleTest
         , testCase "Yices 1-tuple" $ withYices oneTupleTest
         , testCase "Yices pair"    $ withYices pairTest
         , testCase "Yices rounding" $ withYices roundingTest
