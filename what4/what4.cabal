@@ -320,6 +320,7 @@ test-suite expr-builder-smtlib2
     containers,
     data-binary-ieee754,
     libBF,
+    prettyprinter,
     process,
     tasty-expected-failure >= 0.12 && < 0.13,
     tasty-checklist >= 1.0.3 && < 1.1,

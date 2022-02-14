@@ -34,6 +34,7 @@ import qualified Data.Text as Text
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as HGen
 import qualified Hedgehog.Range as HRange
+import qualified Prettyprinter as PP
 import           System.Environment ( lookupEnv )
 
 import qualified Data.Parameterized.Context as Ctx
@@ -1092,9 +1093,9 @@ testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
         , "compound symbolic expression"
         ]
 
-testResolveSymBV :: TestTree
-testResolveSymBV =
-  testProperty "test resolveSymBV" $
+testResolveSymBV :: WURB.SearchStrategy -> TestTree
+testResolveSymBV searchStrat =
+  testProperty ("test resolveSymBV (" ++ show (PP.pretty searchStrat) ++ ")") $
   H.property $ do
     let w = knownNat @8
     lb <- H.forAll $ HGen.word8 $ HRange.constant 0 maxBound
@@ -1106,7 +1107,7 @@ testResolveSymBV =
       p2 <- bvUle sym bv =<< bvLit sym w (BV.mkBV w (toInteger ub))
       p3 <- andPred sym p1 p2
       assume (solverConn proc) p3
-      WURB.resolveSymBV sym w proc bv
+      WURB.resolveSymBV sym searchStrat w proc bv
 
     case rbv of
       WURB.BVConcrete bv -> do
@@ -1201,7 +1202,8 @@ main = do
         ]
   let yicesTests =
         [
-          testResolveSymBV
+          testResolveSymBV WURB.ExponentialSearch
+        , testResolveSymBV WURB.BinarySearch
 
         , testCase "Yices 0-tuple" $ withYices zeroTupleTest
         , testCase "Yices 1-tuple" $ withYices oneTupleTest
