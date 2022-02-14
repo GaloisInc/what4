@@ -16,12 +16,14 @@ or symbolic, and if it is symbolic, what the lower and upper bounds are.
 -}
 module What4.Utils.ResolveBounds.BV
   ( resolveSymBV
+  , SearchStrategy(..)
   , ResolvedSymBV(..)
   ) where
 
 import           Data.BitVector.Sized ( BV )
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Parameterized.NatRepr as PN
+import qualified Prettyprinter as PP
 
 import qualified What4.Expr.Builder as WEB
 import qualified What4.Expr.GroundEval as WEG
@@ -53,6 +55,26 @@ instance Show (ResolvedSymBV w) where
         . showsPrec 11 ub
         . showString "]"
 
+-- | The strategy to use to search for lower and upper bounds in
+-- 'resolveSymBV'.
+data SearchStrategy
+  = ExponentialSearch
+    -- ^ After making an initial guess for a bound, increase (for upper bounds)
+    --   or decrease (for lower bounds) the initial guess by an exponentially
+    --   increasing amount (1, 2, 4, 8, ...) until the bound has been exceeded.
+    --   At that point, back off from exponential search and use binary search
+    --   until the bound has been determined.
+    --
+    --   For many use cases, this is a reasonable default.
+  | BinarySearch
+    -- ^ Use binary search to found each bound, using @0@ as the leftmost
+    --   bounds of the search and 'BV.maxUnsigned' as the rightmost bounds of
+    --   the search.
+
+instance PP.Pretty SearchStrategy where
+  pretty ExponentialSearch = PP.pretty "exponential search"
+  pretty BinarySearch      = PP.pretty "binary search"
+
 -- | Use an 'WPO.OnlineSolver' to attempt to resolve a 'WI.SymBV' as concrete.
 -- If it cannot, return the lower and upper bounds. This is primarly intended
 -- for compound expressions whose bounds cannot trivially be determined by
@@ -64,11 +86,18 @@ resolveSymBV ::
      , WPO.OnlineSolver solver
      )
   => sym
+  -> SearchStrategy
+     -- ^ The strategy to use when searching for lower and upper bounds. For
+     --   many use cases, 'ExponentialSearch' is a reasonable default.
   -> PN.NatRepr w
+     -- ^ The bitvector width
   -> WPO.SolverProcess scope solver
+     -- ^ The online solver process to use to search for lower and upper
+     --   bounds.
   -> WI.SymBV sym w
+     -- ^ The bitvector to resolve.
   -> IO (ResolvedSymBV w)
-resolveSymBV sym w proc symBV =
+resolveSymBV sym searchStrat w proc symBV =
   -- First check, if the SymBV can be trivially resolved as concrete. If so,
   -- this can avoid the need to call out to the solver at all.
   case WI.asBV symBV of
@@ -98,13 +127,23 @@ resolveSymBV sym w proc symBV =
           WSat.Sat{}   -> pure True  -- Truly symbolic
           WSat.Unsat{} -> pure False -- Concrete
       if isSymbolic
-        then do
+        then
           -- If we have a truly symbolic SymBV, search for its lower and upper
           -- bounds, using the model from the previous step as a starting point
           -- for the search.
-          lowerBound <- computeLowerBoundExponential modelForBV
-          upperBound <- computeUpperBoundExponential modelForBV
-          pure $ BVSymbolic $ WUBA.range w (BV.asUnsigned lowerBound) (BV.asUnsigned upperBound)
+          case searchStrat of
+            ExponentialSearch -> do
+              -- Use the model from the previous step as the initial guess for
+              -- each bound
+              lowerBound <- computeLowerBoundExponential modelForBV
+              upperBound <- computeUpperBoundExponential modelForBV
+              pure $ BVSymbolic $ WUBA.range w
+                (BV.asUnsigned lowerBound) (BV.asUnsigned upperBound)
+            BinarySearch -> do
+              lowerBound <- computeLowerBoundBinary bvZero bvMaxUnsigned
+              upperBound <- computeUpperBoundBinary bvZero bvMaxUnsigned
+              pure $ BVSymbolic $ WUBA.range w
+                (BV.asUnsigned lowerBound) (BV.asUnsigned upperBound)
         else pure $ BVConcrete modelForBV
   where
     conn :: WPS.WriterConn scope solver
@@ -113,11 +152,17 @@ resolveSymBV sym w proc symBV =
     failUnknown :: forall a. IO a
     failUnknown = fail "resolveSymBV: Resolving value yielded UNKNOWN"
 
+    bvZero :: BV w
+    bvZero = BV.zero w
+
     bvOne :: BV w
     bvOne = BV.one w
 
     bvTwo :: BV w
     bvTwo = BV.mkBV w 2
+
+    bvMaxUnsigned :: BV w
+    bvMaxUnsigned = BV.maxUnsigned w
 
     -- The general strategy for finding a bound is that we start searching
     -- from a particular value known to be within bounds. At each step, we
@@ -161,7 +206,7 @@ resolveSymBV sym w proc symBV =
             -- just fall back to binary search, using 0 as the leftmost bounds
             -- of the search.
             start `BV.ult` diff
-          = computeLowerBoundBinary (BV.zero w) previouslyTried
+          = computeLowerBoundBinary bvZero previouslyTried
 
           | -- Otherwise, check if (start - diff) exceeds the lower bound for
             -- the symBV.
@@ -174,8 +219,8 @@ resolveSymBV sym w proc symBV =
                   -> computeLowerBoundBinary nextToTry previouslyTried
                   |  -- Make sure that (diff * 2) doesn't overflow. If it
                      -- would, fall back to binary search.
-                     BV.asUnsigned diff * 2 > BV.asUnsigned (BV.maxUnsigned w)
-                  -> computeLowerBoundBinary (BV.zero w) nextToTry
+                     BV.asUnsigned diff * 2 > BV.asUnsigned bvMaxUnsigned
+                  -> computeLowerBoundBinary bvZero nextToTry
                   |  -- Otherwise, keep exponentially searching.
                      otherwise
                   -> go nextToTry $ BV.mul w diff bvTwo
@@ -186,10 +231,6 @@ resolveSymBV sym w proc symBV =
     -- * l <= r
     --
     -- * The lower bound of the SymBV is somewhere within the range [l, r].
-    --
-    -- * The r value is always within the domain of possible values of the
-    --   SymBV. The l value, on the other hand, may be strictly less than the
-    --   lower bound of the SymBV.
     computeLowerBoundBinary :: BV w -> BV w -> IO (BV w)
     computeLowerBoundBinary l r
       | -- If the leftmost and rightmost bounds are the same, we are done.
@@ -232,8 +273,8 @@ resolveSymBV sym w proc symBV =
             -- result in overflow. If it would, just fall back to binary
             -- search, using BV.maxUnsigned as the rightmost bounds of the
             -- search.
-            BV.asUnsigned start + BV.asUnsigned diff > BV.asUnsigned (BV.maxUnsigned w)
-          = computeUpperBoundBinary previouslyTried (BV.maxUnsigned w)
+            BV.asUnsigned start + BV.asUnsigned diff > BV.asUnsigned bvMaxUnsigned
+          = computeUpperBoundBinary previouslyTried bvMaxUnsigned
 
           | otherwise
           = do let nextToTry = BV.add w start diff
@@ -244,8 +285,8 @@ resolveSymBV sym w proc symBV =
                   -> computeUpperBoundBinary previouslyTried nextToTry
                   |  -- Make sure that (diff * 2) doesn't overflow. If it
                      -- would, fall back to binary search.
-                     BV.asUnsigned diff * 2 > BV.asUnsigned (BV.maxUnsigned w)
-                  -> computeUpperBoundBinary nextToTry (BV.maxUnsigned w)
+                     BV.asUnsigned diff * 2 > BV.asUnsigned bvMaxUnsigned
+                  -> computeUpperBoundBinary nextToTry bvMaxUnsigned
                   |  -- Otherwise, keep exponentially searching.
                      otherwise
                   -> go nextToTry $ BV.mul w diff bvTwo
@@ -256,10 +297,6 @@ resolveSymBV sym w proc symBV =
     -- * l <= r
     --
     -- * The upper bound of the SymBV is somewhere within the range [l, r].
-    --
-    -- * The l value is always within the domain of possible values of the
-    --   SymBV. The r value, on the other hand, may be strictly greater than the
-    --   upper bound of the SymBV.
     computeUpperBoundBinary :: BV w -> BV w -> IO (BV w)
     computeUpperBoundBinary l r
       | -- If the leftmost and rightmost bounds are the same, we are done.
