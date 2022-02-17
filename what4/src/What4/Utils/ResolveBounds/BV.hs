@@ -71,6 +71,14 @@ data SearchStrategy
     --   bounds of the search and 'BV.maxUnsigned' as the rightmost bounds of
     --   the search.
 
+  -- Some possibilities for additional search strategies include:
+  --
+  -- - Using Z3's minimize/maximize commands. See
+  --   https://github.com/GaloisInc/what4/issues/188
+  --
+  -- - A custom, user-specified strategy that uses callback(s) to guide the
+  --   search at each iteration.
+
 instance PP.Pretty SearchStrategy where
   pretty ExponentialSearch = PP.pretty "exponential search"
   pretty BinarySearch      = PP.pretty "binary search"
