@@ -92,7 +92,7 @@ import           Control.Applicative
 import           Control.Exception
 import           Control.Monad.State.Strict
 import qualified Data.BitVector.Sized as BV
-import           Data.Char (digitToInt, isPrint, isAscii)
+import           Data.Char (digitToInt, isAscii)
 import           Data.IORef
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -212,6 +212,11 @@ arrayStore = SMT2.store
 -- regarding this format is pasted below from the
 -- specification document.
 --
+--      String literals
+--      All double-quote-delimited string literals consisting of printable US ASCII
+--      characters, i.e., those with Unicode code point from 0x00020 to 0x0007E.
+--      We refer to these literals as _string constants_.
+--
 --      The restriction to printable US ASCII characters in string constants is for
 --      simplicity since that set is universally supported. Arbitrary Unicode characters
 --      can be represented with _escape sequences_ which can have one of the following
@@ -240,10 +245,24 @@ arrayStore = SMT2.store
 textToTerm :: Text -> Term
 textToTerm bs = SMT2.T ("\"" <> Text.foldr f "\"" bs)
  where
+ inLiteralRange c = 0x20 <= fromEnum c && fromEnum c <= 0x7E
+
  f c x
+   -- special case: the `"` character has a special case escaping mode which
+   -- is encoded as `""`
    | '\"' == c = "\"\"" <> x
-   | isPrint c = Builder.singleton c <> x
+
+   -- special case: always escape the `\` character as an explicit code point,
+   -- so we don't have to do lookahead to discover if it is followed by a `u`
+   | '\\' == c = "\\u{5c}" <> x
+
+   -- others characters in the "normal" ASCII range require no escaping
+   | inLiteralRange c = Builder.singleton c <> x
+
+   -- characters outside that range require escaping
    | otherwise = "\\u{" <> Builder.fromString (showHex (fromEnum c) "}") <> x
+
+
 
 -- | Parse SMTLIb2.6 escaping rules for strings.
 --
@@ -266,7 +285,7 @@ unescapeText = go mempty
 
  readEscape str t =
    case Text.uncons t of
-     Nothing -> Nothing
+     Nothing -> Just (Text.snoc str '\\')
      Just (c, t')
        -- Note: the \u forms are the _only_ escape forms
        | c == 'u'  -> readHexEscape str t'
