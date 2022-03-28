@@ -922,6 +922,62 @@ stringTest5 sym solver = withChecklist "string5" $
        _ -> fail "expected satisfable model"
 
 
+stringTest6 ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+stringTest6 sym solver = withChecklist "string6" $
+  do let conn = solverConn solver
+     x <- freshConstant sym (safeSymbol "x") (BaseStringRepr UnicodeRepr)
+     l <- stringLength sym x
+     intLit sym 1 >>= isEq sym l >>= assume conn
+     stringLit sym (UnicodeLiteral (Text.pack "\\")) >>= isEq sym x >>= assume conn
+     checkAndGetModel solver "test" >>= \case
+       Sat ge -> do
+         v <- groundEval ge x
+         TC.check "correct string" (v ==) (UnicodeLiteral (Text.pack "\\"))
+       _ -> fail "unsatisfiable"
+
+stringTest7 ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+stringTest7 sym solver = withChecklist "string6" $
+  do chars <- getChars sym solver 200
+     TC.check "correct number of characters" (length chars ==) 200
+
+getChars ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  Integer ->
+  IO [Char]
+getChars sym solver bound = do
+    let conn = solverConn solver
+    -- Create string var and constrain its length to 1
+    x <- freshConstant sym (safeSymbol "x") (BaseStringRepr UnicodeRepr)
+    l <- stringLength sym x
+    intLit sym 1 >>= isEq sym l >>= assume conn
+    -- Recursively generate characters
+    let getModelsRecursive n
+          | n >= bound = return ""
+          | otherwise =
+          checkAndGetModel solver "test" >>= \case
+            Sat ge -> do
+              v <- groundEval ge x
+              -- Exclude value
+              stringLit sym v >>= isEq sym x >>= notPred sym >>= assume conn
+              let c = Text.head $ fromUnicodeLit v
+              cs <- getModelsRecursive (n+1)
+              return (c:cs)
+            _ -> return []
+
+    cs <- getModelsRecursive 0
+    return cs
+
+
 multidimArrayTest ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -1163,6 +1219,8 @@ main = do
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string6" $ withOnlineZ3 stringTest6
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string7" $ withOnlineZ3 stringTest7
 
         , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
         , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
@@ -1190,6 +1248,8 @@ main = do
         , testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
+        , testCase "CVC4 string6" $ withCVC4 stringTest6
+        , testCase "CVC4 string7" $ withCVC4 stringTest7
 
         , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
         , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
@@ -1233,4 +1293,3 @@ main = do
     <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "yices" yicesTests)
     <> (skipIfNotPresent "z3" z3Tests)
-
