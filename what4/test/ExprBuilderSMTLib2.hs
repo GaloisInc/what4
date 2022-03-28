@@ -922,6 +922,9 @@ stringTest5 sym solver = withChecklist "string5" $
        _ -> fail "expected satisfable model"
 
 
+-- This test verifies that we can correctly round-trip the
+-- '\' character. It is a bit of a corner case, since it
+-- is is involved in the codepoint escape sequences '\u{abcd}'.
 stringTest6 ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -939,6 +942,13 @@ stringTest6 sym solver = withChecklist "string6" $
          TC.check "correct string" (v ==) (UnicodeLiteral (Text.pack "\\"))
        _ -> fail "unsatisfiable"
 
+-- This test asks the solver to produce a sequence of 200 unique characters
+-- This helps to ensure that we can correclty recieve and send back to the
+-- solver enough characters to exhaust the standard printable ASCII sequence,
+-- which ensures that we are testing nontrivial escape sequences.
+--
+-- We don't verify that any particular string is returned because the solvers
+-- make different choices about what characters to return.
 stringTest7 ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -1220,7 +1230,8 @@ main = do
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string6" $ withOnlineZ3 stringTest6
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string7" $ withOnlineZ3 stringTest7
+          -- this test apparently passes on older Z3 despite the escaping changes...
+        , testCase "Z3 string7" $ withOnlineZ3 stringTest7
 
         , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
         , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
