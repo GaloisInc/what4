@@ -214,6 +214,7 @@ library
     What4.Utils.MonadST
     What4.Utils.OnlyIntRepr
     What4.Utils.Process
+    What4.Utils.ResolveBounds.BV
     What4.Utils.Streams
     What4.Utils.StringLiteral
     What4.Utils.Word16String
@@ -306,7 +307,7 @@ test-suite online-solver-test
     versions
 
 test-suite expr-builder-smtlib2
-  import: bldflags, testdefs-hunit
+  import: bldflags, testdefs-hedgehog, testdefs-hunit
   type: exitcode-stdio-1.0
 
   main-is: ExprBuilderSMTLib2.hs
@@ -319,6 +320,7 @@ test-suite expr-builder-smtlib2
     containers,
     data-binary-ieee754,
     libBF,
+    prettyprinter,
     process,
     tasty-expected-failure >= 0.12 && < 0.13,
     tasty-checklist >= 1.0.3 && < 1.1,

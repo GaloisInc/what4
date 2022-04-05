@@ -28,6 +28,7 @@ import What4.Expr
   ( ExprBuilder,
     FloatModeRepr (FloatIEEERepr),
     newExprBuilder,
+    EmptyExprBuilderState(..)
   )
 import What4.Expr.Builder (SymbolBinding (..))
 import qualified What4.Interface as What4
@@ -54,16 +55,13 @@ main :: IO ()
 main =
   do
     withIONonceGenerator $ \nonceGen -> do
-      sym <- newExprBuilder FloatIEEERepr State nonceGen
+      sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState nonceGen
       ts <- counterTransitionSystem sym
       displayTransitionSystem sym ts
     withIONonceGenerator $ \nonceGen -> do
-      sym <- newExprBuilder FloatIEEERepr State nonceGen
+      sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState nonceGen
       ts <- realsTransitionSystem sym
       displayTransitionSystem sym ts
-
--- We don't need any information in the state
-data State t = State
 
 makeFieldNames ::
   forall stateType.

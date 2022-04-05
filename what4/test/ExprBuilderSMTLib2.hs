@@ -19,16 +19,22 @@ import           ProbeSolvers
 import           Test.Tasty
 import           Test.Tasty.Checklist as TC
 import           Test.Tasty.ExpectedFailure
+import           Test.Tasty.Hedgehog
 import           Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)
 import           Control.Monad (void)
+import           Control.Monad.IO.Class (MonadIO(..))
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
 import qualified Data.Text as Text
+import qualified Hedgehog as H
+import qualified Hedgehog.Gen as HGen
+import qualified Hedgehog.Range as HRange
+import qualified Prettyprinter as PP
 import           System.Environment ( lookupEnv )
 
 import qualified Data.Parameterized.Context as Ctx
@@ -49,13 +55,15 @@ import           What4.Solver.Adapter
 import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
+import qualified What4.Utils.BVDomain as WUB
+import qualified What4.Utils.BVDomain.Arith as WUBA
+import qualified What4.Utils.ResolveBounds.BV as WURB
 import           What4.Utils.StringLiteral
 import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)
 
-data State t = State
 data SomePred = forall t . SomePred (BoolExpr t)
 deriving instance Show SomePred
-type SimpleExprBuilder t fs = ExprBuilder t State fs
+type SimpleExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
 instance TestShow Text.Text where testShow = show
 instance TestShow (StringLiteral Unicode) where testShow = show
@@ -76,9 +84,9 @@ userSymbol' s = case userSymbol s of
 
 withSym :: FloatModeRepr fm -> (forall t . SimpleExprBuilder t (Flags fm) -> IO a) -> IO a
 withSym floatMode pred_gen = withIONonceGenerator $ \gen ->
-  pred_gen =<< newExprBuilder floatMode State gen
+  pred_gen =<< newExprBuilder floatMode EmptyExprBuilderState gen
 
-withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO ()) -> IO ()
+withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO a) -> IO a
 withYices action = withSym FloatRealRepr $ \sym ->
   do extendConfig Yices.yicesOptions (getConfiguration sym)
      bracket
@@ -90,7 +98,7 @@ withYices action = withSym FloatRealRepr $ \sym ->
 
 withZ3 :: (forall t . SimpleExprBuilder t (Flags FloatIEEE) -> Session t Z3.Z3 -> IO ()) -> IO ()
 withZ3 action = withIONonceGenerator $ \nonce_gen -> do
-  sym <- newExprBuilder FloatIEEERepr State nonce_gen
+  sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState nonce_gen
   extendConfig Z3.z3Options (getConfiguration sym)
   Z3.withZ3 sym "z3" defaultLogData { logCallbackVerbose = (\_ -> putStrLn) } (action sym)
 
@@ -914,6 +922,72 @@ stringTest5 sym solver = withChecklist "string5" $
        _ -> fail "expected satisfable model"
 
 
+-- This test verifies that we can correctly round-trip the
+-- '\' character. It is a bit of a corner case, since it
+-- is is involved in the codepoint escape sequences '\u{abcd}'.
+stringTest6 ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+stringTest6 sym solver = withChecklist "string6" $
+  do let conn = solverConn solver
+     x <- freshConstant sym (safeSymbol "x") (BaseStringRepr UnicodeRepr)
+     l <- stringLength sym x
+     intLit sym 1 >>= isEq sym l >>= assume conn
+     stringLit sym (UnicodeLiteral (Text.pack "\\")) >>= isEq sym x >>= assume conn
+     checkAndGetModel solver "test" >>= \case
+       Sat ge -> do
+         v <- groundEval ge x
+         TC.check "correct string" (v ==) (UnicodeLiteral (Text.pack "\\"))
+       _ -> fail "unsatisfiable"
+
+-- This test asks the solver to produce a sequence of 200 unique characters
+-- This helps to ensure that we can correclty recieve and send back to the
+-- solver enough characters to exhaust the standard printable ASCII sequence,
+-- which ensures that we are testing nontrivial escape sequences.
+--
+-- We don't verify that any particular string is returned because the solvers
+-- make different choices about what characters to return.
+stringTest7 ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+stringTest7 sym solver = withChecklist "string6" $
+  do chars <- getChars sym solver 200
+     TC.check "correct number of characters" (length chars ==) 200
+
+getChars ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  Integer ->
+  IO [Char]
+getChars sym solver bound = do
+    let conn = solverConn solver
+    -- Create string var and constrain its length to 1
+    x <- freshConstant sym (safeSymbol "x") (BaseStringRepr UnicodeRepr)
+    l <- stringLength sym x
+    intLit sym 1 >>= isEq sym l >>= assume conn
+    -- Recursively generate characters
+    let getModelsRecursive n
+          | n >= bound = return ""
+          | otherwise =
+          checkAndGetModel solver "test" >>= \case
+            Sat ge -> do
+              v <- groundEval ge x
+              -- Exclude value
+              stringLit sym v >>= isEq sym x >>= notPred sym >>= assume conn
+              let c = Text.head $ fromUnicodeLit v
+              cs <- getModelsRecursive (n+1)
+              return (c:cs)
+            _ -> return []
+
+    cs <- getModelsRecursive 0
+    return cs
+
+
 multidimArrayTest ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -979,6 +1053,32 @@ binderTupleTest2 sym solver =
        Unsat _ -> return ()
        _ -> fail "expected UNSAT"
 
+-- | A regression test for #182.
+issue182Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue182Test sym solver = do
+    let w = knownNat @64
+    arr <- freshConstant sym (safeSymbol "arr")
+             (BaseArrayRepr (Ctx.Empty Ctx.:> BaseIntegerRepr)
+                            (BaseBVRepr w))
+    idxInt <- intLit sym 0
+    let idx = Ctx.Empty Ctx.:> idxInt
+    let arrLookup = arrayLookup sym arr idx
+    elt <- arrLookup
+    bvZero <- bvLit sym w (BV.zero w)
+    p <- bvEq sym elt bvZero
+
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do elt' <- arrLookup
+           eltEval <- groundEval fn elt'
+           (eltEval == BV.zero w) @? "non-zero result"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1024,6 +1124,67 @@ testBVBitreverse = testCase "test bvBitreverse" $
     e1 <- bvLit sym knownRepr (BV.mkBV knownNat 128)
     e0 @?= e1
 
+-- Test unsafeSetAbstractValue on a simple symbolic expression
+testUnsafeSetAbstractValue1 :: TestTree
+testUnsafeSetAbstractValue1 = testCase "test unsafeSetAbstractValue1" $
+  withSym FloatIEEERepr $ \sym -> do
+    let w = knownNat @8
+
+    e1A <- freshConstant sym (userSymbol' "x1") (BaseBVRepr w)
+    let e1A' = unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e1A
+    unsignedBVBounds e1A' @?= Just (2, 2)
+    e1B <- bvAdd sym e1A' =<< bvLit sym w (BV.one w)
+    case asBV e1B of
+      Just bv -> bv @?= BV.mkBV w 3
+      Nothing -> assertFailure $ unlines
+        [ "unsafeSetAbstractValue doesn't work as expected for a"
+        , "simple symbolic expression"
+        ]
+
+-- Test unsafeSetAbstractValue on a compound symbolic expression
+testUnsafeSetAbstractValue2 :: TestTree
+testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
+  withSym FloatIEEERepr $ \sym -> do
+    let w = knownNat @8
+    e2A <- freshConstant sym (userSymbol' "x2A") (BaseBVRepr w)
+    e2B <- freshConstant sym (userSymbol' "x2B") (BaseBVRepr w)
+    e2C <- bvAdd sym e2A e2B
+    (_, e2C') <- annotateTerm sym $ unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e2C
+    unsignedBVBounds e2C' @?= Just (2, 2)
+    e2D <- bvAdd sym e2C' =<< bvLit sym w (BV.one w)
+    case asBV e2D of
+      Just bv -> bv @?= BV.mkBV w 3
+      Nothing -> assertFailure $ unlines
+        [ "unsafeSetAbstractValue doesn't work as expected for a"
+        , "compound symbolic expression"
+        ]
+
+testResolveSymBV :: WURB.SearchStrategy -> TestTree
+testResolveSymBV searchStrat =
+  testProperty ("test resolveSymBV (" ++ show (PP.pretty searchStrat) ++ ")") $
+  H.property $ do
+    let w = knownNat @8
+    lb <- H.forAll $ HGen.word8 $ HRange.constant 0 maxBound
+    ub <- H.forAll $ HGen.word8 $ HRange.constant lb maxBound
+
+    rbv <- liftIO $ withYices $ \sym proc -> do
+      bv <- freshConstant sym (safeSymbol "bv") knownRepr
+      p1 <- bvUge sym bv =<< bvLit sym w (BV.mkBV w (toInteger lb))
+      p2 <- bvUle sym bv =<< bvLit sym w (BV.mkBV w (toInteger ub))
+      p3 <- andPred sym p1 p2
+      assume (solverConn proc) p3
+      WURB.resolveSymBV sym searchStrat w proc bv
+
+    case rbv of
+      WURB.BVConcrete bv -> do
+        let bv' = fromInteger $ BV.asUnsigned bv
+        lb H.=== bv'
+        ub H.=== bv'
+      WURB.BVSymbolic bounds -> do
+        let (lb', ub') = WUBA.ubounds bounds
+        lb H.=== fromInteger lb'
+        ub H.=== fromInteger ub'
+
 ----------------------------------------------------------------------
 
 
@@ -1065,9 +1226,12 @@ main = do
 
         , skipPre4_8_11 unsuppStrings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
         , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-        , skipPre4_8_11 unsuppStrings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
-        , skipPre4_8_11 unsuppStrings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
-        , skipPre4_8_11 unsuppStrings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string6" $ withOnlineZ3 stringTest6
+          -- this test apparently passes on older Z3 despite the escaping changes...
+        , testCase "Z3 string7" $ withOnlineZ3 stringTest7
 
         , testCase "Z3 binder tuple1" $ withOnlineZ3 binderTupleTest1
         , testCase "Z3 binder tuple2" $ withOnlineZ3 binderTupleTest2
@@ -1075,6 +1239,8 @@ main = do
         , testCase "Z3 rounding" $ withOnlineZ3 roundingTest
 
         , testCase "Z3 multidim array"$ withOnlineZ3 multidimArrayTest
+
+        , testCase "Z3 #182 test case" $ withOnlineZ3 issue182Test
 
         , arrayCopyTest
         , arraySetTest
@@ -1100,6 +1266,8 @@ main = do
         , skipPre1_8 unsuppStrings $ testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
+        , testCase "CVC4 string6" $ withCVC4 stringTest6
+        , testCase "CVC4 string7" $ withCVC4 stringTest7
 
         , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
         , testCase "CVC4 binder tuple2" $ withCVC4 binderTupleTest2
@@ -1107,13 +1275,19 @@ main = do
         , testCase "CVC4 rounding" $ withCVC4 roundingTest
 
         , testCase "CVC4 multidim array"$ withCVC4 multidimArrayTest
+
+        , testCase "CVC4 #182 test case" $ withCVC4 issue182Test
         ]
   let yicesTests =
         [
-          testCase "Yices 0-tuple" $ withYices zeroTupleTest
+          testResolveSymBV WURB.ExponentialSearch
+        , testResolveSymBV WURB.BinarySearch
+
+        , testCase "Yices 0-tuple" $ withYices zeroTupleTest
         , testCase "Yices 1-tuple" $ withYices oneTupleTest
         , testCase "Yices pair"    $ withYices pairTest
         , testCase "Yices rounding" $ withYices roundingTest
+        , testCase "Yices #182 test case" $ withYices issue182Test
         ]
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))
@@ -1131,8 +1305,9 @@ main = do
     , testBVDomainArithScale
     , testBVSwap
     , testBVBitreverse
+    , testUnsafeSetAbstractValue1
+    , testUnsafeSetAbstractValue2
     ]
     <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "yices" yicesTests)
     <> (skipIfNotPresent "z3" z3Tests)
-

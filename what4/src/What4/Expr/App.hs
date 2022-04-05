@@ -1100,6 +1100,16 @@ instance IsExpr (Expr t) where
 
   printSymExpr = pretty
 
+  unsafeSetAbstractValue av e =
+    case e of
+      SemiRingLiteral{} -> e
+      BoolExpr{}        -> e
+      FloatExpr{}       -> e
+      StringExpr{}      -> e
+      AppExpr ae        -> AppExpr (ae{appExprAbsValue = av})
+      NonceAppExpr nae  -> NonceAppExpr (nae{nonceExprAbsValue = av})
+      BoundVarExpr ebv  -> BoundVarExpr (ebv{bvarAbstractValue = Just av})
+
 
 asSemiRingLit :: SR.SemiRingRepr sr -> Expr t (SR.SemiRingBase sr) -> Maybe (SR.Coefficient sr)
 asSemiRingLit sr (SemiRingLiteral sr' x _loc)

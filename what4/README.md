@@ -57,7 +57,8 @@ import Data.Parameterized.Some (Some(..))
 import What4.Config (extendConfig)
 import What4.Expr
          ( ExprBuilder,  FloatModeRepr(..), newExprBuilder
-         , BoolExpr, GroundValue, groundEval )
+         , BoolExpr, GroundValue, groundEval
+		 , EmptyExprBuilderState(..) )
 import What4.Interface
          ( BaseTypeRepr(..), getConfiguration
          , freshConstant, safeSymbol
@@ -75,8 +76,6 @@ to our backend solver, which is Z3 in this example.
 point to your Z3.)
 
 ```
-data BuilderState st = EmptyState
-
 z3executable :: FilePath
 z3executable = "z3"
 ```
@@ -87,7 +86,7 @@ We're ready to start our `main` function:
 main :: IO ()
 main = do
   Some ng <- newIONonceGenerator
-  sym <- newExprBuilder FloatIEEERepr EmptyState ng
+  sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState ng
 ```
 
 Most of the functions in `What4.Interface`, the module for building up

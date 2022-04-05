@@ -1,5 +1,12 @@
 # next (TBA)
 
+* According to
+  [this discussion](https://github.com/ghc-proposals/ghc-proposals/discussions/440),
+  the `forall` identifier will be claimed, and `forall` made into a
+  full keyword. Therefore, the `forall` and `exists` combinators of
+  `What4.Protocol.SMTLib2.Syntax` have been
+  renamed into `forall_` and `exists_`.
+
 * Add operations for increased control over the scope of
   configuration options, both in the `What4.Config` and
   `What4.Expr.Builder` modules.
@@ -22,6 +29,16 @@
     constraints in their corresponding `Eq` instances. For example,
     the `Hashable` instance for `SymNat` now has an extra `TestEquality`
     constraint to match its `Eq` instance.
+
+* Add an `unsafeSetAbstractValue` function to the `IsExpr` class which allows
+  one to manually set the `AbstractValue` used in a symbolic expression.
+  As the name suggests, this function is unsound in the general case, so use
+  this with caution.
+
+* Add a `What4.Utils.ResolveBounds.BV` module, which provides a `resolveSymBV`
+  function that checks if a `SymBV` is concrete. If it is not concrete, it
+  returns the lower and upper version bounds, as determined by querying an
+  online SMT solver.
 
 # 1.2.1 (June 2021)
 
