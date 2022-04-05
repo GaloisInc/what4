@@ -1195,12 +1195,12 @@ main = do
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
-        let skipPre4_8_11 why =
+        let skipPre4_8_12 why =
               let shouldSkip = case lookup (SolverName "z3") solvers of
-                    Just (SolverVersion v) -> any (`elem` [ "4.8.8", "4.8.9", "4.8.10" ]) $ words v
+                    Just (SolverVersion v) -> any (`elem` [ "4.8.8", "4.8.9", "4.8.10", "4.8.11" ]) $ words v
                     Nothing -> True
               in if shouldSkip then expectFailBecause why else id
-            unsuppStrings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.11"
+            incompatZ3Strings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.11"
         in
         [
           testUninterpretedFunctionScope
@@ -1224,7 +1224,7 @@ main = do
         , testCase "Z3 pair"    $ withOnlineZ3 pairTest
         , testCase "Z3 forall binder" $ withOnlineZ3 forallTest
 
-        , skipPre4_8_11 unsuppStrings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
+        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
         , testCase "Z3 string2" $ withOnlineZ3 stringTest2
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
         , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
