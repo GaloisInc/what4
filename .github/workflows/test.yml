@@ -54,7 +54,7 @@ jobs:
     name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} CVC4-${{ matrix.cvc4 }} STP-${{ matrix.stp }} Boolector-${{ matrix.boolector }} ABC-${{ matrix.abc }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: genmatrix
-    continue-on-error: ${{ matrix.allow-failure }}
+    continue-on-error: false
     env:
       CI_TEST_LEVEL: "1"
     strategy:
