@@ -61,7 +61,7 @@ solver(boolector).
 solver(abc).
 
 %% Specify the main version of each variable (i.e. the most interesting value of that variable.
-main_version(ubuntu, ubuntu_latest).
+main_version(ubuntu, "ubuntu-latest").
 main_version(ghc, "8.10.7").
 main_version(z3, "4_8_14").
 main_version(yices, "2_6").
@@ -164,9 +164,10 @@ num_solver_versions(Solver, NumVer) :-
 nth_solver_version(Solver, N, Version) :-
     solver_alt_versions(Solver, Versions),
     (nth0(N, Versions, Version)
-     % Enable the following line to include other solvers at their
+     % Disable the following line to include only solvers with new
+     % versions.  When enabled, this specifies other solvers at their
      % main_version when there are no more alternate versions.
-     %% , !; main_version(Solver, Version)
+     , !; main_version(Solver, Version)
     ).
 
 solver_all_compiler_main(MatrixEntry) :-
@@ -180,7 +181,7 @@ solver_all_compiler_main(MatrixEntry) :-
             SolverSpec),
     compiler(Compiler), main_version(Compiler, CompilerVersion),
     os(OS), main_version(OS, OSVersion),
-    MatrixEntry = include{ os:[OSVersion] }
+    MatrixEntry = include{ os:OSVersion }
                   .put(Compiler, CompilerVersion)
                   .put(SolverSpec).
 
