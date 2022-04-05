@@ -73,7 +73,7 @@ solver(abc).
 main_version(ubuntu, "ubuntu-latest").
 main_version(ghc, "8.10.7").
 main_version(z3, "4_8_14").
-main_version(yices, "2_6").
+main_version(yices, "2_6_4").
 main_version(stp, "2_3_3").
 main_version(cvc4, "1_8").
 main_version(boolector, "3_2_2").
@@ -103,6 +103,7 @@ version(z3, "4_8_10").
 version(z3, "4_8_8").
 version(z3, "4_8_9").
 
+version(yices, "2_6_4").
 version(yices, "2_6_1").
 version(yices, "2_6").
 
