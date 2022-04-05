@@ -27,254 +27,38 @@ env:
   CACHE_VERSION: 2
 
 jobs:
+  genmatrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v16
+        with:
+          nix_path: nixpkgs=channel:nixos-21.11
+          install_url: https://releases.nixos.org/nix/nix-2.4/install
+
+      - uses: cachix/cachix-action@v10
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - id: gen-matrix
+        run: |
+          echo ::set-output name=matrix::$(nix run nixpkgs#swiProlog -- .github/workflows/gen_matrix.pl)
+
   linux:
     name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} CVC4-${{ matrix.cvc4 }} STP-${{ matrix.stp }} Boolector-${{ matrix.boolector }} ABC-${{ matrix.abc }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    needs: genmatrix
     continue-on-error: ${{ matrix.allow-failure }}
     env:
       CI_TEST_LEVEL: "1"
     strategy:
-      matrix:
-        os: [ubuntu-latest]
-        ghc: [9.0.2, 8.10.7, 8.8.4, 8.6.5]
-        z3: [ 4_8_14 ]
-        yices: [ 2_6 ]
-        stp: [ 2_3_3 ]
-        cvc4: [ 1_8 ]
-        boolector: [ 3_2_2 ]
-        abc: [ 2021_12_30 ]
-        allow-failure: [ false ]
-        # Specify multiple older solver versions for the latest builds
-        # to check backward compatibility.  These older solvers are
-        # not simply added to the general matrix above to avoid
-        # creating excessive numbers of repetitive jobs.
-        include:
-          ## GHC 9.0.2 ------------------------------
-          ### Z3 variations ----------
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            z3: 4_8_8
-            stp: 2_3_3
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_9
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_10
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_11
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_12
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_13
-            yices: 2_6
-            allow-failure: false
-          ### Yices variations ----------
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6_1
-            allow-failure: false
-            # Yices 2_5 fails: no reason to test it
-          ### CVC4 variations ----------
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-          ### STP variations ----------
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_2
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-            # STP 2_2_0 fails: no reason to test it
-          ### Boolector variations ----------
-          - os: ubuntu-latest
-            ghc: 9.0.2
-            abc: 2021_12_30
-            boolector: 3_2_1
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-            # Boolector 3.1.0 builds fail: no reason to test it
-          ## GHC 8.10.7 ------------------------------
-          ### Z3 variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_8
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_9
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_10
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_11
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_12
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_13
-            yices: 2_6
-            allow-failure: false
-          ### Yices variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_8
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6_1
-            allow-failure: false
-            # Yices 2_5 fails: no reason to test it
-          ### CVC4 variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-          ### STP variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_2
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_1
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-            # STP 2_2_0 fails: no reason to test it
-          ### Boolector variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_1
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2021_12_30
-            boolector: 3_2_0
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
-            # Boolector 3.1.0 builds fail: no reason to test it
-          ### ABC variations ----------
-          - os: ubuntu-latest
-            ghc: 8.10.7
-            abc: 2020_06_22
-            boolector: 3_2_2
-            cvc4: 1_7
-            stp: 2_3_3
-            z3: 4_8_14
-            yices: 2_6
-            allow-failure: false
+      matrix: ${{fromJSON(needs.genmatrix.outputs.matrix)}}
       fail-fast: false
     steps:
       - uses: actions/checkout@v2
