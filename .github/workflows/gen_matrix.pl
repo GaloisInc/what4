@@ -60,7 +60,16 @@ solver(cvc4).
 solver(boolector).
 solver(abc).
 
-%% Specify the main version of each variable (i.e. the most interesting value of that variable.
+%% Specify the main version of each variable (i.e. the most
+%% interesting value of that variable.  The main version is the one
+%% used for builds that are testing other variations; there is no
+%% other purpose behind the main_version designation, and there may be
+%% multiple main versions for a particular vector but they currently
+%% provide no advantage.
+%%
+%% The main version selected is usually the "most commonly used"
+%% version (which is not necessarily the "most recently released"
+%% version.
 main_version(ubuntu, "ubuntu-latest").
 main_version(ghc, "8.10.7").
 main_version(z3, "4_8_14").
@@ -70,27 +79,32 @@ main_version(cvc4, "1_8").
 main_version(boolector, "3_2_2").
 main_version(abc, "2021_12_30").
 
-%% Specify the versions of the operating system(s), along with the
-%% main version(s) that are of primary interest.
-version(ubuntu, ubuntu_latest).
+%% Specify the versions of the operating system(s) to use to build and
+%% test the code, the versions of the Haskell compiler to use for
+%% building, and the versions of the solvers to use in tests.
+%%
+%% New versions can be added by simply adding a statement here, and
+%% old versions can be removed by deleting the corresponding
+%% statement.  There is no significance to ordering and the following
+%% can be ordered or grouped in any sequence.
 
-%% Specify the versions of the compiler(s), along with the main
-%% version that is of primary interest.
+version(ubuntu, "ubuntu-latest").
+
 version(ghc, "9.0.2").
 version(ghc, "8.10.7").
 version(ghc, "8.8.4").
 version(ghc, "8.6.5").
 
+version(z3, "4_8_14").
+version(z3, "4_8_13").
+version(z3, "4_8_12").
+version(z3, "4_8_11").
+version(z3, "4_8_10").
 version(z3, "4_8_8").
 version(z3, "4_8_9").
-version(z3, "4_8_10").
-version(z3, "4_8_11").
-version(z3, "4_8_12").
-version(z3, "4_8_13").
-version(z3, "4_8_14").
 
-version(yices, "2_6").
 version(yices, "2_6_1").
+version(yices, "2_6").
 
 version(stp, "2_3_3").
 version(stp, "2_3_2").
@@ -110,12 +124,11 @@ version(abc, "2020_06_22").
 %% No changes normally needed below
 
 matrix(Matrix) :-
-    findall(M, solver_main_compiler_main(M), MainMatrix),
     findall(M,
-            ( solver_all_compiler_main(M)
+            ( solver_main_compiler_main(M)
+            ; solver_all_compiler_main(M)
             ; solver_main_compiler_all(M)
-            ), AuxMatrix),
-    append(MainMatrix, AuxMatrix, FullMatrix),
+            ), FullMatrix),
     Matrix = matrix{ include:FullMatrix }.
 
 main_solvers(Spec) :- findall(X, (solver(S), main_version(S, V) , X=S:V), Spec).
@@ -124,16 +137,16 @@ solver_main_compiler_main(MatrixEntry) :-
     main_solvers(Solvers),
     compiler(Compiler),
     main_version(Compiler, CompilerVersion),
-    os(OS), main_version(OS, OSVersion),
-    MatrixEntry = include{ os:OSVersion }
-                  .put(Compiler, CompilerVersion)
-                  .put(Solvers).
+    matrix_entry(Compiler, CompilerVersion, Solvers, MatrixEntry).
 
 solver_main_compiler_all(MatrixEntry) :-
     main_solvers(Solvers),
     compiler(Compiler),
     version(Compiler, CompilerVersion),
     \+ main_version(Compiler, CompilerVersion),
+    matrix_entry(Compiler, CompilerVersion, Solvers, MatrixEntry).
+
+matrix_entry(Compiler, CompilerVersion, Solvers, MatrixEntry) :-
     os(OS), main_version(OS, OSVersion),
     MatrixEntry = include{ os:OSVersion }
                   .put(Compiler, CompilerVersion)
@@ -180,10 +193,7 @@ solver_all_compiler_main(MatrixEntry) :-
              E = S:V),
             SolverSpec),
     compiler(Compiler), main_version(Compiler, CompilerVersion),
-    os(OS), main_version(OS, OSVersion),
-    MatrixEntry = include{ os:OSVersion }
-                  .put(Compiler, CompilerVersion)
-                  .put(SolverSpec).
+    matrix_entry(Compiler, CompilerVersion, SolverSpec, MatrixEntry).
 
 
 main :-
