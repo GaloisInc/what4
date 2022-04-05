@@ -1266,7 +1266,7 @@ main = do
         , skipPre1_8 unsuppStrings $ testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
-        , testCase "CVC4 string6" $ withCVC4 stringTest6
+        , skipPre1_8 unsuppStrings $ testCase "CVC4 string6" $ withCVC4 stringTest6
         , testCase "CVC4 string7" $ withCVC4 stringTest7
 
         , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1
