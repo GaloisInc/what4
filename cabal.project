@@ -9,9 +9,8 @@ packages:
   what4-abc/
   what4-blt/
   what4-transition-system/
-  
+
 optional-packages:
   dependencies/abcBridge/
   dependencies/aig/
   dependencies/blt/
-  dependencies/language-sally/
