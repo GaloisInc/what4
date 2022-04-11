@@ -35,16 +35,3 @@ library
     -Werror=overlapping-patterns
 
   default-language: Haskell2010
-
-test-suite what4-transition-system-tests
-  import:           dependencies
-  type:             exitcode-stdio-1.0
-  main-is:          Main.hs
-  other-modules:    Paths_what4_transition_system
-  hs-source-dirs:   test
-  ghc-options:
-    -Wall -Werror=incomplete-patterns -Werror=missing-methods
-    -Werror=overlapping-patterns
-
-  build-depends:    what4-transition-system
-  default-language: Haskell2010

@@ -81,9 +81,10 @@ createStateStruct sym namespace stateType =
 type CtxState state = Ctx.EmptyCtx Ctx.::> BaseTypes.BaseStructType state
 
 -- | Computes a set of side conditions we must add to state formulas to account
--- for the mismatch between What4 types and sally types.  For instance, a What4
--- @Nat@ must be translated as a Sally @Int@ (since Sally does not have natural
--- numbers), with a side condition of positivity.
+-- for the mismatch between What4 types and types found in transition systems
+-- such as MCMT and Sally.  For instance, a What4 @Nat@ must be translated as
+-- an MCMT @Int@ (since MCMT does not have natural numbers), with a side
+-- condition of positivity.
 sideConditions ::
   forall sym t st fs state.
   sym ~ ExprBuilder t st fs =>
