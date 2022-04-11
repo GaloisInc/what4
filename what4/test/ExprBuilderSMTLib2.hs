@@ -1195,12 +1195,12 @@ main = do
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
-        let skipPre4_8_12 why =
+        let skipPre4_8_11 why =
               let shouldSkip = case lookup (SolverName "z3") solvers of
-                    Just (SolverVersion v) -> any (`elem` [ "4.8.8", "4.8.9", "4.8.10", "4.8.11" ]) $ words v
+                    Just (SolverVersion v) -> any (`elem` [ "4.8.8", "4.8.9", "4.8.10" ]) $ words v
                     Nothing -> True
               in if shouldSkip then expectFailBecause why else id
-            incompatZ3Strings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.12"
+            incompatZ3Strings = "unicode and string escaping not supported for older Z3 versions; upgrade to at least 4.8.11"
         in
         [
           testUninterpretedFunctionScope
@@ -1224,12 +1224,12 @@ main = do
         , testCase "Z3 pair"    $ withOnlineZ3 pairTest
         , testCase "Z3 forall binder" $ withOnlineZ3 forallTest
 
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
+        , skipPre4_8_11 incompatZ3Strings $ testCase "Z3 string1" $ withOnlineZ3 stringTest1
         , testCase "Z3 string2" $ withOnlineZ3 stringTest2
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
-        , skipPre4_8_12 incompatZ3Strings $ testCase "Z3 string6" $ withOnlineZ3 stringTest6
+        , skipPre4_8_11 incompatZ3Strings $ testCase "Z3 string3" $ withOnlineZ3 stringTest3
+        , skipPre4_8_11 incompatZ3Strings $ testCase "Z3 string4" $ withOnlineZ3 stringTest4
+        , skipPre4_8_11 incompatZ3Strings $ testCase "Z3 string5" $ withOnlineZ3 stringTest5
+        , skipPre4_8_11 incompatZ3Strings $ testCase "Z3 string6" $ withOnlineZ3 stringTest6
           -- this test apparently passes on older Z3 despite the escaping changes...
         , testCase "Z3 string7" $ withOnlineZ3 stringTest7
 
@@ -1247,6 +1247,13 @@ main = do
         , arrayCopySetTest
         ]
   let cvc4Tests =
+        let skipPre1_8 why =
+              let shouldSkip = case lookup (SolverName "cvc4") solvers of
+                    Just (SolverVersion v) -> any (`elem` [ "1.7" ]) $ words v
+                    Nothing -> True
+              in if shouldSkip then expectFailBecause why else id
+            unsuppStrings = "unicode and string escaping not supported for older CVC4 versions; upgrade to at least 1.8"
+        in
         [
           ignoreTestBecause "This test stalls the solver for some reason; line-buffering issue?" $
           testCase "CVC4 0-tuple" $ withCVC4 zeroTupleTest
@@ -1256,10 +1263,10 @@ main = do
 
         , testCase "CVC4 string1" $ withCVC4 stringTest1
         , testCase "CVC4 string2" $ withCVC4 stringTest2
-        , testCase "CVC4 string3" $ withCVC4 stringTest3
+        , skipPre1_8 unsuppStrings $ testCase "CVC4 string3" $ withCVC4 stringTest3
         , testCase "CVC4 string4" $ withCVC4 stringTest4
         , testCase "CVC4 string5" $ withCVC4 stringTest5
-        , testCase "CVC4 string6" $ withCVC4 stringTest6
+        , skipPre1_8 unsuppStrings $ testCase "CVC4 string6" $ withCVC4 stringTest6
         , testCase "CVC4 string7" $ withCVC4 stringTest7
 
         , testCase "CVC4 binder tuple1" $ withCVC4 binderTupleTest1

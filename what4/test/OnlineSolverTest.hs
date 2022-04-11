@@ -159,10 +159,12 @@ checkFormula1Model sym p q r eval =
 -- (push/pop) for each of the good and bad cases or else no frames and
 -- resetting the solver between cases
 quickstartTest :: Bool -> (SolverTestData,SolverVersion) -> TestTree
-quickstartTest useFrames ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt),_) =
+quickstartTest useFrames ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt), SolverVersion sver) =
   let wrap = if nm == "STP"
              then ignoreTestBecause "STP cannot generate the model"
-             else id
+             else if nm == "CVC4" && any ("1.7" ==) (words sver)
+                  then ignoreTestBecause "CVC4 1.7 non-framed mode fails"
+                  else id
   in wrap $
   testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
@@ -407,7 +409,16 @@ timeoutTests testLevel solvers =
         let historical = fromMaybe (0.0 % Second)
                          $ lookup (testSolverName sti) approxTestTimes
             snamestr (SolverName sname) = sname
-        in testGroup (snamestr $ testSolverName sti)
+            maybeSkipTest =
+              case (testSolverName sti, sv) of
+                -- CVC4 v1.7 generates a response _much_ too
+                -- quickly (~0.25s).  This doesn't allow timeout
+                -- testing, and the speed suggests an improper
+                -- result as well.
+                (SolverName "CVC4", SolverVersion v) | "1.7" `elem` words v->
+                  ignoreTestBecause "solver completes too quickly"
+                _ -> id
+        in maybeSkipTest $ testGroup (snamestr $ testSolverName sti)
            [
              testCase ("Test itself is valid and completes (" <> show historical <> ")") $ do
                -- Verify that the solver will run to completion for
@@ -451,12 +462,13 @@ timeoutTests testLevel solvers =
            -- that timeout is reached (i.e. before the race timeout here).
            , let maybeRunTest =
                    case (testSolverName sti, sv) of
-                     -- Z3 4.8.12 goal-timeouts don't consistently
-                     -- work properly.  Occasionally it will abort but
-                     -- it generally seems to continue running and
-                     -- cannot be aborted by signals from the what4
-                     -- parent process.
-                     (SolverName "Z3", SolverVersion v)  | "4.8.12" `elem` words v->
+                     -- Z3 4.8.11 and 4.8.12 goal-timeouts don't
+                     -- consistently work properly.  Occasionally it
+                     -- will abort but it generally seems to continue
+                     -- running and cannot be aborted by signals from
+                     -- the what4 parent process.
+                     (SolverName "Z3", SolverVersion v)
+                       | any (`elem` ["4.8.11", "4.8.12"]) (words v) ->
                        expectFailBecause "goal timeouts feature not effective"
                      _ -> id
              in maybeRunTest $ testCase ("Test with goal timeout (" <> show testTimeout <> ")") $ do
