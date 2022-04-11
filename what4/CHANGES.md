@@ -42,6 +42,49 @@
   returns the lower and upper version bounds, as determined by querying an
   online SMT solver.
 
+* Add `arrayCopy`, `arraySet`, and `arrayRangeEq` methods to `IsExprBuilder`.
+
+* Add a `getUnannotatedTerm` method to `IsExprBuilder` for retrieving the
+  original, unannotated term out of an annotated term.
+
+* `IsExprBuilder` now has `floatSpecialFunction{,0,1,2}`
+  and `realSpecialFunction{,0,1,2}` methods which allow the use of special
+  values or functions such as `pi`, trigonometric functions, exponentials, or
+  logarithms. Similarly, `IsInterpretedFloatExprBuilder` now has
+  `iFloatSpecialFunction{,0,1,2}` methods. Although little solver support
+  exists for special functions, `what4` may be able to prove properties about
+  them in limited cases.
+  * The `realPi`, `realLog`, `realExp`, `realSin`, `realCos`, `realTan`,
+    `realSinh`, `realCosh`, `realTanh`, and `realAtan2` methods of
+    `IsExprBuilder` now have default implementations in terms of
+    `realSpecialFunction{,0,1,2}`.
+
+* Add an `exprUninterpConstants` method to `IsSymExprBuilder` which returns the
+  set of uninterpreted constants in a symbolic expression.
+
+* Add a `natToIntegerPure` function which behaves like `natToInteger` but
+  without using `IO`.
+
+* `asConcrete` now supports concretizing float expressions by way of the new
+  `ConcreteFloat` constructor in `ConcreteVal`.
+
+* Add a `z3Tactic` configuration option to `What4.Solver.Z3` that allows
+  specifying a custom tactic to pass to `z3`.
+
+* `safeSymbol` now replaces exclamation marks (`!`) with underscores (`_`) so
+  that the generated names are legal in Verilog.
+
+* Add `Foldable`, `Traversable`, and `Show` instances for `LabeledPred`.
+
+* Fix a bug in which `what4` would generate incorrect SMTLib code for array
+  lookups and updates when using the CVC4 backend.
+
+* Fix a bug in which `what4` would incorrectly attempt to configure Boolector
+  3.2.2 or later.
+
+* Fix a bug in which strings containing `\u` or ending with `\` would be
+  escaped incorrectly.
+
 # 1.2.1 (June 2021)
 
 * Include test suite data in the Hackage tarball.
