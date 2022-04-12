@@ -30,7 +30,7 @@ import           Hedgehog
 import qualified Hedgehog.Internal.Gen as IGen
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           Test.Tasty.Hedgehog
+import           Test.Tasty.Hedgehog.Alt
 import           What4.Concrete
 import           What4.Expr
 import           What4.Interface
