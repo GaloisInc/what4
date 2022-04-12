@@ -19,7 +19,7 @@ import           ProbeSolvers
 import           Test.Tasty
 import           Test.Tasty.Checklist as TC
 import           Test.Tasty.ExpectedFailure
-import           Test.Tasty.Hedgehog
+import           Test.Tasty.Hedgehog.Alt
 import           Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, SomeException)

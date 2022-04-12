@@ -79,8 +79,10 @@ common testdefs-quickcheck
 
 common testdefs-hedgehog
   import: testdefs
+  hs-source-dirs: test/hedgehog
   build-depends: hedgehog >= 1.0.2
-               , tasty-hedgehog
+               , tasty-hedgehog >= 1.2
+  other-modules: Test.Tasty.Hedgehog.Alt
 
 common testdefs-hunit
   import: testdefs
