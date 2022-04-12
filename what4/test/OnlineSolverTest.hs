@@ -58,6 +58,8 @@ allOnlineSolvers =
     , AnOnlineSolver @(SMT2.Writer Z3) Proxy, z3Features, z3Options, Just z3Timeout)
   , (SolverName "CVC4"
     ,  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options, Just cvc4Timeout)
+  , (SolverName "CVC5"
+    ,  AnOnlineSolver @(SMT2.Writer CVC5) Proxy, cvc5Features, cvc5Options, Just cvc5Timeout)
   , (SolverName "Yices"
     , AnOnlineSolver @Yices.Connection Proxy, yicesDefaultFeatures, yicesOptions, Just yicesGoalTimeout)
   , (SolverName "Boolector"
@@ -373,6 +375,7 @@ timeoutTests testLevel solvers =
       approxTestTimes :: [ (SolverName, Time) ]
       approxTestTimes = [ (SolverName "Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
                         , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
+                        , (SolverName "CVC5",       7.5  % Second)    -- CVC5 1.0.0
                         , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1
                         , (SolverName "Boolector",  7.2  % Second)    -- Boolector 3.2.1
                         , (SolverName "STP",        1.35 % Second)    -- STP 2.3.3

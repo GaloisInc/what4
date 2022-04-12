@@ -53,6 +53,17 @@ module What4.Solver
   , cvc4Options
   , cvc4Features
 
+    -- * CVC5
+  , CVC5(..)
+  , cvc5Adapter
+  , cvc5Path
+  , cvc5Timeout
+  , runCVC5InOverride
+  , writeCVC5SMT2File
+  , withCVC5
+  , cvc5Options
+  , cvc5Features
+
     -- * DReal
   , DReal(..)
   , DRealBindings
@@ -98,6 +109,7 @@ module What4.Solver
 import           What4.Solver.Adapter
 import           What4.Solver.Boolector
 import           What4.Solver.CVC4
+import           What4.Solver.CVC5
 import           What4.Solver.DReal
 import           What4.Solver.ExternalABC
 import           What4.Solver.STP
