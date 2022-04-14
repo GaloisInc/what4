@@ -1625,6 +1625,11 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       NonceAppExpr (nonceExprApp -> Annotation _ n _) -> Just n
       _ -> Nothing
 
+  getUnannotatedTerm _sym e =
+    case e of
+      NonceAppExpr (nonceExprApp -> Annotation _ _ x) -> Just x
+      _ -> Nothing
+
   ----------------------------------------------------------------------
   -- Program location operations
 
