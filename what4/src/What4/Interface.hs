@@ -120,6 +120,7 @@ module What4.Interface
   , natLe
   , natLt
   , natToInteger
+  , natToIntegerPure
   , bvToNat
   , natToReal
   , integerToNat
@@ -512,6 +513,11 @@ natLt sym x y = notPred sym =<< natLe sym y x
 natToInteger :: IsExprBuilder sym => sym -> SymNat sym -> IO (SymInteger sym)
 natToInteger _sym (SymNat x) = pure x
 
+-- | Convert a natural number to an integer.
+--   `natToInteger` is just this operation lifted into IO.
+natToIntegerPure :: SymNat sym -> SymInteger sym
+natToIntegerPure (SymNat x) = x
+
 -- | Convert the unsigned value of a bitvector to a natural.
 bvToNat :: (IsExprBuilder sym, 1 <= w) => sym -> SymBV sym w -> IO (SymNat sym)
 -- The unsigned value of a bitvector is always nonnegative
@@ -674,6 +680,10 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- It should be the case that using 'getAnnotation' on a term returned by
   -- 'annotateTerm' returns the same annotation that 'annotateTerm' did.
   getAnnotation :: sym -> SymExpr sym tp -> Maybe (SymAnnotation sym tp)
+
+  -- | Project the original, unannotated term from an annotated term.
+  --   This returns 'Nothing' for terms that do not have annotations.
+  getUnannotatedTerm :: sym -> SymExpr sym tp -> Maybe (SymExpr sym tp)
 
   ----------------------------------------------------------------------
   -- Boolean operations.
