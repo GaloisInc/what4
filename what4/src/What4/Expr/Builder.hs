@@ -187,7 +187,6 @@ import           Control.Monad.Trans.Writer.Strict (writer, runWriter)
 import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
-import qualified Data.Binary.IEEE754 as IEEE754
 
 import           Data.Hashable
 import           Data.IORef
@@ -208,6 +207,7 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio (numerator, denominator)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           GHC.Float (castFloatToWord32, castDoubleToWord64)
 import qualified LibBF as BF
 
 import           What4.BaseTypes
@@ -3668,10 +3668,10 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatUninterpret
   iFloatLitRational sym fi x = iRealToFloat sym fi RNE =<< realLit sym x
   iFloatLitSingle sym x =
     iFloatFromBinary sym SingleFloatRepr
-      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
+      =<< (bvLit sym knownNat $ BV.word32 $ castFloatToWord32 x)
   iFloatLitDouble sym x =
     iFloatFromBinary sym DoubleFloatRepr
-      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
+      =<< (bvLit sym knownNat $ BV.word64 $ castDoubleToWord64 x)
   iFloatLitLongDouble sym x =
     iFloatFromBinary sym X86_80FloatRepr
       =<< (bvLit sym knownNat $ BV.mkBV knownNat $ fp80ToBits x)
@@ -3853,10 +3853,10 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatIEEE)) wher
   iFloatLitRational sym = floatLitRational sym . floatInfoToPrecisionRepr
   iFloatLitSingle sym x =
     floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ BV.word32 $ IEEE754.floatToWord x)
+      =<< (bvLit sym knownNat $ BV.word32 $ castFloatToWord32 x)
   iFloatLitDouble sym x =
     floatFromBinary sym knownRepr
-      =<< (bvLit sym knownNat $ BV.word64 $ IEEE754.doubleToWord x)
+      =<< (bvLit sym knownNat $ BV.word64 $ castDoubleToWord64 x)
   iFloatLitLongDouble sym (X86_80Val e s) = do
     el <- bvLit sym (knownNat @16) $ BV.word16 e
     sl <- bvLit sym (knownNat @64) $ BV.word64 s
