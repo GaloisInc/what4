@@ -149,8 +149,8 @@ import           What4.Solver.Adapter
 
 -- | Set the logic to all supported logics.
 all_supported :: SMT2.Logic
-all_supported = SMT2.allSupported
-{-# DEPRECATED all_supported "Use allSupported" #-}
+all_supported = SMT2.allLogic
+{-# DEPRECATED all_supported "Use allLogic instead" #-}
 
 
 smtlib2Options :: [CFG.ConfigDesc]

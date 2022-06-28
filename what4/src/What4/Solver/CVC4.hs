@@ -164,7 +164,7 @@ writeMultiAsmpCVC4SMT2File sym h ps = do
                 (getOption =<< getOptionSetting RSP.strictSMTParsing cfg)
   c <- SMT2.newWriter CVC4 out_str in_str nullAcknowledgementAction strictness "CVC4"
          True cvc4Features True bindings
-  SMT2.setLogic c SMT2.allSupported
+  SMT2.setLogic c Syntax.allLogic
   SMT2.setProduceModels c True
   forM_ ps $ SMT2.assume c
   SMT2.writeCheckSat c
@@ -196,7 +196,7 @@ instance SMT2.SMTLib2GenericSolver CVC4 where
 
   setDefaultLogicAndOptions writer = do
     -- Tell CVC4 to use all supported logics.
-    SMT2.setLogic writer SMT2.allSupported
+    SMT2.setLogic writer Syntax.allLogic
     -- Tell CVC4 to produce models
     SMT2.setProduceModels writer True
 
@@ -237,7 +237,7 @@ setInteractiveLogicAndOptions writer = do
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
       SMT2.setOption writer "produce-unsat-cores" "true"
     -- Tell CVC4 to use all supported logics.
-    SMT2.setLogic writer SMT2.allSupported
+    SMT2.setLogic writer Syntax.allLogic
 
 instance OnlineSolver (SMT2.Writer CVC4) where
   startSolverProcess feat mbIOh sym = do

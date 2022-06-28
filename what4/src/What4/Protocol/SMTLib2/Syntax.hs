@@ -53,6 +53,7 @@ module What4.Protocol.SMTLib2.Syntax
   , Logic(..)
   , qf_bv
   , allSupported
+  , allLogic
     -- * Sort
   , Sort(..)
   , boolSort
@@ -183,8 +184,12 @@ qf_bv = Logic "QF_BV"
 
 -- | Set the logic to all supported logics.
 allSupported :: Logic
-allSupported = Logic "ALL" -- TODO RGS: Should ALL_SUPPORTED be a distinct logic?
+allSupported = Logic "ALL_SUPPORTED"
+{-# DEPRECATED allSupported "Use allLogic instead" #-}
 
+allLogic :: Logic
+allLogic = Logic "ALL" -- TODO RGS: Should ALL be a distinct logic?
+ 
 ------------------------------------------------------------------------
 -- Symbol
 
