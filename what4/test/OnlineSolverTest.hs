@@ -341,7 +341,7 @@ timeoutTests testLevel solvers =
       -- impactful due to killing the solver process itself).
       --
       -- This value should also be <= 60% of useableTimeThreshold to
-      -- ensure that the solver runs for a siginificantly longer
+      -- ensure that the solver runs for a significantly longer
       -- period than the test timeout will be set to.
       --
       -- This value can be adjusted by the developer as needed to
@@ -373,9 +373,9 @@ timeoutTests testLevel solvers =
       -- developer as solvers, What4 formulation, and machine speeds
       -- evolve.
       approxTestTimes :: [ (SolverName, Time) ]
-      approxTestTimes = [ (SolverName "Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
+      approxTestTimes = [ (SolverName "Z3",         3.0 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
                         , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
-                        , (SolverName "CVC5",       7.5  % Second)    -- CVC5 1.0.0
+                        , (SolverName "CVC5",       0.40  % Second)   -- CVC5 1.0.0
                         , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1
                         , (SolverName "Boolector",  7.2  % Second)    -- Boolector 3.2.1
                         , (SolverName "STP",        1.35 % Second)    -- STP 2.3.3
@@ -455,7 +455,7 @@ timeoutTests testLevel solvers =
                        (longTimeTest sti Nothing)
                finish <- getTime Monotonic
                let deltaT = (fromInteger $ toNanoSecs $ diffTimeSpec start finish) % nano Second :: Time
-               isLeft rslt @? "solver is to fast for valid timeout testing"
+               isLeft rslt @? "solver is too fast for valid timeout testing"
                assertBool
                  ("Solver check query not interruptible (" <>
                    show deltaT <> " > expected " <> show useableTimeThreshold <> ")")
