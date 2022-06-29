@@ -392,5 +392,5 @@ test-suite solver_parsing_tests
                , exceptions
                , io-streams
                , lumberjack
-               , tasty-sugar >= 1.1 && < 1.2
+               , tasty-sugar >= 1.3 && < 1.4
                , text
