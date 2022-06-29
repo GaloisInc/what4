@@ -187,8 +187,9 @@ allSupported :: Logic
 allSupported = Logic "ALL_SUPPORTED"
 {-# DEPRECATED allSupported "Use allLogic instead" #-}
 
+-- | Set the logic to all supported logics.
 allLogic :: Logic
-allLogic = Logic "ALL" -- TODO RGS: Should ALL be a distinct logic?
+allLogic = Logic "ALL"
  
 ------------------------------------------------------------------------
 -- Symbol

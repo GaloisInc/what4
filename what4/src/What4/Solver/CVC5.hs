@@ -1,8 +1,8 @@
 ------------------------------------------------------------------------
 -- |
 -- Module      : What4.Solver.CVC5
--- Description : Solver adapter code for CVC5
--- Copyright   : (c) Galois, Inc 2015-2020
+-- Description : Solver adapter code for cvc5
+-- Copyright   : (c) Galois, Inc 2022
 -- License     : BSD3
 -- Maintainer  : Rob Dockins <rdockins@galois.com>
 -- Stability   : provisional
@@ -69,7 +69,7 @@ cvc5RandomSeed = configOption knownRepr "solver.cvc5.random-seed"
 cvc5Timeout :: ConfigOption BaseIntegerType
 cvc5Timeout = configOption knownRepr "solver.cvc5.timeout"
 
--- | Control strict parsing for Boolector solver responses (defaults
+-- | Control strict parsing for cvc5 solver responses (defaults
 -- to solver.strict-parsing option setting).
 cvc5StrictParsing :: ConfigOption BaseBoolType
 cvc5StrictParsing = configOption knownRepr "solver.cvc5.strict_parsing"
@@ -128,11 +128,16 @@ instance SMT2.SMTLib2Tweaks CVC5 where
 
 cvc5Features :: ProblemFeatures
 cvc5Features = useComputableReals
+           .|. useLinearArithmetic
+           .|. useNonlinearArithmetic
            .|. useIntegerArithmetic
            .|. useSymbolicArrays
            .|. useStrings
            .|. useStructs
            .|. useFloatingPoint
+           .|. useUnsatCores
+           .|. useUninterpFunctions
+           .|. useDefinedFunctions
            .|. useBitvectors
            .|. useQuantifiers
 
@@ -182,9 +187,9 @@ instance SMT2.SMTLib2GenericSolver CVC5 where
   supportsResetAssertions _ = True
 
   setDefaultLogicAndOptions writer = do
-    -- Tell CVC5 to use all supported logics.
+    -- Tell cvc5 to use all supported logics.
     SMT2.setLogic writer Syntax.allLogic
-    -- Tell CVC5 to produce models
+    -- Tell cvc5 to produce models
     SMT2.setProduceModels writer True
 
 runCVC5InOverride
@@ -196,12 +201,12 @@ runCVC5InOverride
 runCVC5InOverride = SMT2.runSolverInOverride CVC5 nullAcknowledgementAction
                     (SMT2.defaultFeatures CVC5) (Just cvc5StrictParsing)
 
--- | Run CVC5 in a session. CVC5 will be configured to produce models, but
+-- | Run cvc5 in a session. cvc5 will be configured to produce models, but
 -- otherwise left with the default configuration.
 withCVC5
   :: ExprBuilder t st fs
   -> FilePath
-    -- ^ Path to CVC5 executable
+    -- ^ Path to cvc5 executable
   -> LogData
   -> (SMT2.Session t CVC5 -> IO a)
     -- ^ Action to run
@@ -214,16 +219,16 @@ setInteractiveLogicAndOptions ::
   WriterConn t (SMT2.Writer a) ->
   IO ()
 setInteractiveLogicAndOptions writer = do
-    -- Tell CVC5 to acknowledge successful commands
+    -- Tell cvc5 to acknowledge successful commands
     SMT2.setOption writer "print-success"  "true"
-    -- Tell CVC5 to produce models
+    -- Tell cvc5 to produce models
     SMT2.setOption writer "produce-models" "true"
-    -- Tell CVC5 to make declarations global, so they are not removed by 'pop' commands
+    -- Tell cvc5 to make declarations global, so they are not removed by 'pop' commands
     SMT2.setOption writer "global-declarations" "true"
-    -- Tell CVC5 to compute UNSAT cores, if that feature is enabled
+    -- Tell cvc5 to compute UNSAT cores, if that feature is enabled
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
       SMT2.setOption writer "produce-unsat-cores" "true"
-    -- Tell CVC5 to use all supported logics.
+    -- Tell cvc5 to use all supported logics.
     SMT2.setLogic writer Syntax.allLogic
 
 instance OnlineSolver (SMT2.Writer CVC5) where

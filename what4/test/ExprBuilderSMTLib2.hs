@@ -1191,7 +1191,7 @@ testResolveSymBV searchStrat =
 main :: IO ()
 main = do
   testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-  let solverNames = SolverName <$> [ "cvc4", "yices", "z3" ] -- TODO RGS: Add cvc5 here?
+  let solverNames = SolverName <$> [ "cvc4", "cvc5", "yices", "z3" ]
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =

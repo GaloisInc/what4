@@ -78,7 +78,7 @@ cvc4Timeout = configOption knownRepr "solver.cvc4.timeout"
 cvc4TimeoutOLD :: ConfigOption BaseIntegerType
 cvc4TimeoutOLD = configOption knownRepr "cvc4_timeout"
 
--- | Control strict parsing for Boolector solver responses (defaults
+-- | Control strict parsing for CVC4 solver responses (defaults
 -- to solver.strict-parsing option setting).
 cvc4StrictParsing :: ConfigOption BaseBoolType
 cvc4StrictParsing = configOption knownRepr "solver.cvc4.strict_parsing"
