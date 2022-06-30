@@ -96,7 +96,6 @@ version(ghc, "9.2.2").
 version(ghc, "9.0.2").
 version(ghc, "8.10.7").
 version(ghc, "8.8.4").
-version(ghc, "8.6.5").
 
 version(z3, "4_8_14").
 version(z3, "4_8_13").
