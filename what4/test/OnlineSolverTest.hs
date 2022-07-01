@@ -373,7 +373,7 @@ timeoutTests testLevel solvers =
       -- developer as solvers, What4 formulation, and machine speeds
       -- evolve.
       approxTestTimes :: [ (SolverName, Time) ]
-      approxTestTimes = [ (SolverName "Z3",         2.7 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
+      approxTestTimes = [ (SolverName "Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
                         , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
                         , (SolverName "CVC5",       0.40  % Second)   -- CVC5 1.0.0
                         , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1

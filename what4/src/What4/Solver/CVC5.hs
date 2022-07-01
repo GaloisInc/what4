@@ -128,14 +128,13 @@ instance SMT2.SMTLib2Tweaks CVC5 where
 
 cvc5Features :: ProblemFeatures
 cvc5Features = useComputableReals
-           .|. useLinearArithmetic
-           .|. useNonlinearArithmetic
            .|. useIntegerArithmetic
            .|. useSymbolicArrays
            .|. useStrings
            .|. useStructs
            .|. useFloatingPoint
            .|. useUnsatCores
+           .|. useUnsatAssumptions
            .|. useUninterpFunctions
            .|. useDefinedFunctions
            .|. useBitvectors
