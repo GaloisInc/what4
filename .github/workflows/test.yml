@@ -51,7 +51,7 @@ jobs:
           echo ::set-output name=matrix::$(nix run nixpkgs#swiProlog -- .github/workflows/gen_matrix.pl)
 
   linux:
-    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} CVC4-${{ matrix.cvc4 }} STP-${{ matrix.stp }} Boolector-${{ matrix.boolector }} ABC-${{ matrix.abc }} ${{ matrix.os }}
+    name: GHC-${{ matrix.ghc }} Z3-${{ matrix.z3 }} Yices-${{ matrix.yices }} CVC4-${{ matrix.cvc4 }} CVC5-${{ matrix.cvc5 }} STP-${{ matrix.stp }} Boolector-${{ matrix.boolector }} ABC-${{ matrix.abc }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: genmatrix
     continue-on-error: false
@@ -160,6 +160,7 @@ jobs:
           echo ABC version $(nix eval github:GaloisInc/flakes#abc.v${{ matrix.abc }}.version)
           echo Boolector version $(nix run github:GaloisInc/flakes#boolector.v${{ matrix.boolector }} -- --version | head -n1)
           echo CVC4 version $(nix run github:GaloisInc/flakes#cvc4.v${{ matrix.cvc4 }} -- --version | head -n1)
+          echo CVC5 version $(nix run github:GaloisInc/flakes#cvc5.v${{ matrix.cvc5 }} -- --version | head -n1)
           echo STP version $(nix run github:GaloisInc/flakes#stp.v${{ matrix.stp }} -- --version | head -n1)
           echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version | head -n1)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version | head -n1)
@@ -167,6 +168,7 @@ jobs:
             github:GaloisInc/flakes#abc.v${{ matrix.abc }} \
             github:GaloisInc/flakes#boolector.v${{ matrix.boolector }} \
             github:GaloisInc/flakes#cvc4.v${{ matrix.cvc4 }} \
+            github:GaloisInc/flakes#cvc5.v${{ matrix.cvc5 }} \
             github:GaloisInc/flakes#stp.v${{ matrix.stp }} \
             github:GaloisInc/flakes#yices.v${{ matrix.yices }} \
             github:GaloisInc/flakes#z3.v${{ matrix.z3 }} \

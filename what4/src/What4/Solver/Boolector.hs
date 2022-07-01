@@ -39,6 +39,7 @@ import           What4.Interface
 import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
+import qualified What4.Protocol.SMTLib2.Syntax as Syntax
 import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
 import           What4.SatResult
 import           What4.Solver.Adapter
@@ -128,7 +129,7 @@ instance SMT2.SMTLib2GenericSolver Boolector where
   defaultSolverArgs _ _ = return ["--smt2", "--incremental", "--output-format=smt2", "-e=0"]
   defaultFeatures _ = boolectorFeatures
   setDefaultLogicAndOptions writer = do
-    SMT2.setLogic writer SMT2.allSupported
+    SMT2.setLogic writer Syntax.allLogic
     SMT2.setProduceModels writer True
 
 setInteractiveLogicAndOptions ::
@@ -141,7 +142,7 @@ setInteractiveLogicAndOptions writer = do
     SMT2.setOption writer "global-declarations" "true"
     when (SMT2.supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
       SMT2.setOption writer "produce-unsat-cores" "true"
-    SMT2.setLogic writer SMT2.allSupported
+    SMT2.setLogic writer Syntax.allLogic
 
 instance OnlineSolver (SMT2.Writer Boolector) where
   startSolverProcess feat mbIOh sym = do

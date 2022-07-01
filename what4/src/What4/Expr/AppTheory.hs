@@ -33,7 +33,7 @@ data AppTheory
    | FloatingPointTheory
    | ArrayTheory
    | StructTheory
-     -- ^ Theory attributed to structs (equivalent to records in CVC4/Z3, tuples in Yices)
+     -- ^ Theory attributed to structs (equivalent to records in CVC4/CVC5/Z3, tuples in Yices)
    | FnTheory
      -- ^ Theory attributed application functions.
    deriving (Eq, Ord)

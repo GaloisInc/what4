@@ -2,7 +2,7 @@
 
 What4 provides a language to represent symbolic computations and the
 ability to perform those computations using one of several SMT
-solvers, including Yices, Z3, CVC4, and others.
+solvers, including Yices, Z3, CVC4, CVC5, and others.
 
 ## What4 Language
 

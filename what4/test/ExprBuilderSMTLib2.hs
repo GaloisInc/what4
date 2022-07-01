@@ -1191,7 +1191,7 @@ testResolveSymBV searchStrat =
 main :: IO ()
 main = do
   testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-  let solverNames = SolverName <$> [ "cvc4", "yices", "z3" ]
+  let solverNames = SolverName <$> [ "cvc4", "cvc5", "yices", "z3" ]
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
@@ -1289,6 +1289,7 @@ main = do
         , testCase "Yices rounding" $ withYices roundingTest
         , testCase "Yices #182 test case" $ withYices issue182Test
         ]
+  let cvc5Tests = cvc4Tests
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))
   defaultMain $ testGroup "Tests" $
@@ -1309,5 +1310,6 @@ main = do
     , testUnsafeSetAbstractValue2
     ]
     <> (skipIfNotPresent "cvc4" cvc4Tests)
+    <> (skipIfNotPresent "cvc5" cvc5Tests)
     <> (skipIfNotPresent "yices" yicesTests)
     <> (skipIfNotPresent "z3" z3Tests)

@@ -42,6 +42,7 @@ import           What4.Solver
 allAdapters :: [SolverAdapter EmptyExprBuilderState]
 allAdapters =
   [ cvc4Adapter
+  , cvc5Adapter
   , yicesAdapter
   , z3Adapter
   , boolectorAdapter

@@ -93,20 +93,20 @@ useSymbolicArrays = ProblemFeatures 0x80
 
 -- | Indicates whether the problem uses structs
 --
--- Structs are modeled using constructors in CVC4/Z3, and tuples
+-- Structs are modeled using constructors in CVC4/CVC5/Z3, and tuples
 -- in Yices.
 useStructs :: ProblemFeatures
 useStructs = ProblemFeatures 0x100
 
 -- | Indicates whether the problem uses strings
 --
---   Strings have some symbolic support in CVC4 and Z3.
+--   Strings have some symbolic support in CVC4, CVC5, and Z3.
 useStrings :: ProblemFeatures
 useStrings = ProblemFeatures 0x200
 
 -- | Indicates whether the problem uses floating-point
 --
---   Floating-point has some symbolic support in CVC4 and Z3.
+--   Floating-point has some symbolic support in CVC4, CVC5, and Z3.
 useFloatingPoint :: ProblemFeatures
 useFloatingPoint = ProblemFeatures 0x400
 

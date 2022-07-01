@@ -2,6 +2,11 @@
 
 * Remove a dependency on `data-binary-ieee754`, which has been deprecated.
 
+* Deprecated `allSupported` which represents the SMT logic `ALL_SUPPORTED`, 
+  and added `allLogic` instead which represents the SMTLib standard logic `ALL`.
+
+* Added support for the cvc5 SMT solver.
+
 # 1.3 (April 2022)
 
 * Allow building with GHC 9.2.

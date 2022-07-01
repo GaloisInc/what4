@@ -53,6 +53,7 @@ module What4.Protocol.SMTLib2.Syntax
   , Logic(..)
   , qf_bv
   , allSupported
+  , allLogic
     -- * Sort
   , Sort(..)
   , boolSort
@@ -184,7 +185,12 @@ qf_bv = Logic "QF_BV"
 -- | Set the logic to all supported logics.
 allSupported :: Logic
 allSupported = Logic "ALL_SUPPORTED"
+{-# DEPRECATED allSupported "Use allLogic instead" #-}
 
+-- | Set the logic to all supported logics.
+allLogic :: Logic
+allLogic = Logic "ALL"
+ 
 ------------------------------------------------------------------------
 -- Symbol
 
@@ -480,7 +486,7 @@ isInt = un_app "is_int"
 -- value type `t2` that always returns `c`.
 --
 -- This uses the non-standard SMTLIB2 syntax
--- @((as const (Array t1 t2)) c)@ which is supported by CVC4 and Z3
+-- @((as const (Array t1 t2)) c)@ which is supported by CVC4, CVC5, and Z3
 -- (and perhaps others).
 arrayConst :: Sort -> Sort -> Term -> Term
 arrayConst itp rtp c =
