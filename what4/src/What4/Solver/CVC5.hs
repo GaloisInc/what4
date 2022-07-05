@@ -139,6 +139,7 @@ cvc5Features = useComputableReals
            .|. useDefinedFunctions
            .|. useBitvectors
            .|. useQuantifiers
+           .|. useProduceAbducts
 
 writeMultiAsmpCVC5SMT2File
    :: ExprBuilder t st fs
@@ -190,6 +191,8 @@ instance SMT2.SMTLib2GenericSolver CVC5 where
     SMT2.setLogic writer Syntax.allLogic
     -- Tell cvc5 to produce models
     SMT2.setProduceModels writer True
+    -- Tell cvc5 to produce abducts
+    SMT2.setOption writer "produce-abducts" "true"
 
 runCVC5InOverride
   :: ExprBuilder t st fs
@@ -227,6 +230,9 @@ setInteractiveLogicAndOptions writer = do
     -- Tell cvc5 to compute UNSAT cores, if that feature is enabled
     when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
       SMT2.setOption writer "produce-unsat-cores" "true"
+    -- Tell cvc5 to produce abducts, if that feature is enabled
+    when (supportedFeatures writer `hasProblemFeature` useProduceAbducts) $ do
+      SMT2.setOption writer "produce-abducts" "true"
     -- Tell cvc5 to use all supported logics.
     SMT2.setLogic writer Syntax.allLogic
 

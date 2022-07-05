@@ -17,7 +17,7 @@ module What4.Protocol.SMTLib2.Parse
   ( -- * CheckSatResponse
     CheckSatResponse(..)
   , readCheckSatResponse
-    -- * GetModelResonse
+    -- * GetModelResponse
   , GetModelResponse
   , readGetModelResponse
   , ModelResponse(..)

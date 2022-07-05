@@ -38,7 +38,9 @@ module What4.Protocol.SMTLib2
   , writeCheckSat
   , writeExit
   , writeGetValue
+  , writeGetAbduct
   , runCheckSat
+  , runGetAbduct
   , asSMT2Type
   , setOption
   , getVersion
@@ -755,6 +757,12 @@ setProduceModels w b = addCommand w $ SMT2.setProduceModels b
 writeGetValue :: SMTLib2Tweaks a => WriterConn t (Writer a) -> [Term] -> IO ()
 writeGetValue w l = addCommandNoAck w $ SMT2.getValue l
 
+writeGetAbduct :: SMTLib2Tweaks a => WriterConn t (Writer a) -> Text -> Term -> IO ()
+writeGetAbduct w nm p = addCommandNoAck w $ SMT2.getAbduct nm p
+
+writeGetAbductNext :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeGetAbductNext w = addCommandNoAck w SMT2.getAbductNext
+
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
 parseBoolSolverValue (SAtom "false") = return False
@@ -890,6 +898,27 @@ runGetValue s e = do
         AckSuccessSExp (SApp [SApp [_, b]]) -> Just b
         _ -> Nothing
   getLimitedSolverResponse "get value" valRsp (sessionWriter s) (SMT2.getValue [e])
+
+-- | runGetAbduct s nm p n, gets n formulas that independently entail p (along with all
+--   the assertions in the context
+runGetAbduct :: SMTLib2Tweaks a
+             => Session t a
+             -> String
+             -> Term
+             -> Int
+             -> IO [String]
+runGetAbduct s nm p n = do
+  let nm_t = Text.pack nm
+  let rest = n - 1
+  writeGetAbduct (sessionWriter s) nm_t p
+  replicateM_ rest $ writeGetAbductNext (sessionWriter s)
+  let valRsp = \case
+        -- SMT solver returns `(define-fun nm () Bool X)` where X is the abduct, we discard everything but the abduct
+        AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (tail $ init $ sExpToString (SApp abduct))
+        _ -> Nothing
+  abd1 <- getLimitedSolverResponse "get abduct" valRsp (sessionWriter s) (SMT2.getAbduct nm_t p)
+  abdRest <- forM [1..rest] $ \_ -> getLimitedSolverResponse "get abduct next" valRsp (sessionWriter s) (SMT2.getAbduct nm_t p)
+  return (abd1:abdRest)
 
 -- | This function runs a check sat command
 runCheckSat :: forall b t a.
