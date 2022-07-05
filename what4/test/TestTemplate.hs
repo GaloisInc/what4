@@ -11,7 +11,7 @@
 module Main where
 
 import Control.Exception
-import Control.Monad ((<=<)) -- , when)
+import Control.Monad ((<=<), unless)
 import Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.Maybe
 import Data.Bits
@@ -22,6 +22,7 @@ import Data.Parameterized.Pair
 import Data.Parameterized.Some
 import Data.String
 import Numeric (showHex)
+import System.Exit (exitFailure)
 -- import System.IO
 
 import LibBF
@@ -78,8 +79,8 @@ main =
                             pure (fromString (show t), p)
                        | Some t <- xs
                        ]
-     _ <- checkSequential $ Group "Float tests" tests
-     return ()
+     testsPassed <- checkSequential $ Group "Float tests" tests
+     unless testsPassed exitFailure
 
 
 data FUnOp
