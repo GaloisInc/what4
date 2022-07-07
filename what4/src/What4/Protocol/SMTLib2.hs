@@ -686,6 +686,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
 
   getUnsatAssumptionsCommand _ = SMT2.getUnsatAssumptions
   getUnsatCoreCommand _ = SMT2.getUnsatCore
+  getAbductCommand _ e = SMT2.getAbduct "abd" e
   setOptCommand _ = SMT2.setOption
 
   declareCommand _proxy v argTypes retType =

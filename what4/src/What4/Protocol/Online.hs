@@ -38,6 +38,7 @@ module What4.Protocol.Online
   , checkWithAssumptionsAndModel
   , getModel
   , getUnsatCore
+  , getAbduct
   , getUnsatAssumptions
   , getSatResult
   , checkSatisfiable
@@ -235,6 +236,16 @@ checkSatisfiable proc rsn p =
       inNewFrame proc $
         do assume conn p
            check proc rsn
+
+-- | Get an abduct from the SMT solver
+getAbduct :: SMTReadWriter solver => SolverProcess scope solver -> BoolExpr scope -> IO ()
+getAbduct proc t =
+  do let conn = solverConn proc
+     unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
+       fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
+     inNewFrame proc $
+      getSingleAbduct conn t
+      smtAbductResult conn conn
 
 -- | Check if the formula is satisifiable in the current
 --   solver state.  This is done in a

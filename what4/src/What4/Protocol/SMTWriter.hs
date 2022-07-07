@@ -898,6 +898,9 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   --   `checkCommand`.
   getUnsatCoreCommand :: f h -> Command h
 
+  -- | Ask the solver to return an abduct
+  getAbductCommand :: f h -> Term t -> Command h
+
   -- | Set an option/parameter.
   setOptCommand :: f h -> Text -> Text -> Command h
 
@@ -2930,6 +2933,11 @@ assume c p = do
       BM.Positive -> assumeFormula c f
       BM.Negative -> assumeFormula c (notExpr f)
 
+getSingleAbduct :: SMTWriter h => WriterConn t h -> BoolExpr t -> IO ()
+getSingleAbduct c p = do
+  f <- mkFormula c p
+  addCommand c (getAbductCommand c f)
+  
 type SMTEvalBVArrayFn h w v =
     (1 <= w,
      1 <= v)
@@ -2981,6 +2989,9 @@ class SMTWriter h => SMTReadWriter h where
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   These correspond to previously-named assertions.
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
+
+  -- | Parse a list of abducts from the SMT solver
+  smtAbductResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary
