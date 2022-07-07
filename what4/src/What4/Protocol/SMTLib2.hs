@@ -968,6 +968,13 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
         cmd = getUnsatCoreCommand p
     in getLimitedSolverResponse "unsat core" unsatCoreRsp s cmd
 
+  smtAbductResult p s t =
+    let abductRsp = \case
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (tail $ init $ sExpToString (SApp abduct))
+          _ -> Nothing
+        cmd = getAbductCommand p t
+    in getLimitedSolverResponse "get abduct" abductRsp s cmd
+
 
 smtAckResult :: AcknowledgementAction t (Writer a)
 smtAckResult = AckAction $ getLimitedSolverResponse "get ack" $ \case

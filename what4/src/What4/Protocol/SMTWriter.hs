@@ -88,6 +88,7 @@ module What4.Protocol.SMTWriter
   , nullAcknowledgementAction
     -- * SMTWriter operations
   , assume
+  , getSingleAbduct
   , mkSMTTerm
   , mkFormula
   , mkAtomicFormula
@@ -899,7 +900,7 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   getUnsatCoreCommand :: f h -> Command h
 
   -- | Ask the solver to return an abduct
-  getAbductCommand :: f h -> Term t -> Command h
+  getAbductCommand :: f h -> Term h -> Command h
 
   -- | Set an option/parameter.
   setOptCommand :: f h -> Text -> Text -> Command h
@@ -2991,7 +2992,7 @@ class SMTWriter h => SMTReadWriter h where
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse a list of abducts from the SMT solver
-  smtAbductResult :: f h -> WriterConn t h -> IO [Text]
+  smtAbductResult :: f h -> WriterConn t h -> Term h -> IO String
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary

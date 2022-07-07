@@ -331,6 +331,9 @@ instance SupportTermOps YicesTerm where
 
   fromText t = T (Builder.fromText t)
 
+unsupportedFeature :: String -> a
+unsupportedFeature s = error ("Yices does not support " <> s)
+
 floatFail :: HasCallStack => a
 floatFail = error "Yices does not support IEEE-754 floating-point numbers"
 
@@ -502,6 +505,7 @@ instance SMTWriter Connection where
 
   getUnsatAssumptionsCommand _ = const $ safeCmd "(show-unsat-assumptions)"
   getUnsatCoreCommand _ = const $ safeCmd "(show-unsat-core)"
+  getAbductCommand _ _ = unsupportedFeature "abduction"
   setOptCommand _ x o = setParamCommand x (Builder.fromText o)
 
   assertCommand _ (T nm) = const $ unsafeCmd $ app "assert" [nm]
@@ -589,6 +593,7 @@ instance SMTReadWriter Connection where
                  unlines [ "Could not parse unsat core result."
                          , "*** Exception: " ++ displayException e
                          ]
+  smtAbductResult _ _ = unsupportedFeature "abduction"
 
 
 -- | Exceptions that can occur when reading responses from Yices

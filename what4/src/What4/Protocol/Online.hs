@@ -238,14 +238,18 @@ checkSatisfiable proc rsn p =
            check proc rsn
 
 -- | Get an abduct from the SMT solver
-getAbduct :: SMTReadWriter solver => SolverProcess scope solver -> BoolExpr scope -> IO ()
+getAbduct ::
+  SMTReadWriter solver =>
+  SolverProcess scope solver ->
+  BoolExpr scope ->
+  IO String
 getAbduct proc t =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
-     inNewFrame proc $
-      getSingleAbduct conn t
-      smtAbductResult conn conn
+     getSingleAbduct conn t
+     t_term <- mkFormula conn t
+     smtAbductResult conn conn t_term
 
 -- | Check if the formula is satisifiable in the current
 --   solver state.  This is done in a
