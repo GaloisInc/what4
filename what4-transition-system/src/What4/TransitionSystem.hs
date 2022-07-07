@@ -13,9 +13,9 @@
 -- Maintainer  : val@galois.com
 -- |
 module What4.TransitionSystem
-  ( CtxState,
+  ( CtxFields,
     TransitionSystem (..),
-    createStateStruct,
+    createStruct,
     makeInitialState,
     makeQueries,
     makeTransitions,
@@ -41,9 +41,13 @@ userSymbol' s = case What4.userSymbol s of
 
 -- | @TransitionSystem@ can be used to describe a transition system, which can
 -- then be elaborated into a set of SMT formulas.
-data TransitionSystem sym state = TransitionSystem
-  { -- | Representations for the fields of the state type, can be computed
-    -- automatically using @knownRepr@ for a concrete type parameter @state@.
+data TransitionSystem sym input state = TransitionSystem
+  { -- | Representations for the fields of the input type, can be computed
+    -- automatically using @knownRepr@ for a concrete type parameter @input@.
+    inputReprs :: Ctx.Assignment BaseTypes.BaseTypeRepr input,
+    -- | Names of the field accessor for each input field.
+    inputNames :: Ctx.Assignment (Const What4.SolverSymbol) input,
+    -- | Representations for the fields of the state type.
     stateReprs :: Ctx.Assignment BaseTypes.BaseTypeRepr state,
     -- | Names of the field accessor for each state field.
     stateNames :: Ctx.Assignment (Const What4.SolverSymbol) state,
@@ -55,6 +59,7 @@ data TransitionSystem sym state = TransitionSystem
     -- current state and the next state.  Should return a name for each
     -- transition, and their boolean formula.
     stateTransitions ::
+      What4.SymStruct sym input ->
       What4.SymStruct sym state ->
       What4.SymStruct sym state ->
       IO [(What4.SolverSymbol, What4.Pred sym)],
@@ -64,21 +69,21 @@ data TransitionSystem sym state = TransitionSystem
       IO [What4.Pred sym]
   }
 
-createStateStruct ::
+createStruct ::
   What4.IsSymExprBuilder sym =>
   sym ->
-  -- | Namespace of the state structure.
+  -- | Namespace of the structure.
   String ->
-  Ctx.Assignment BaseTypes.BaseTypeRepr state ->
-  IO (What4.SymStruct sym state)
-createStateStruct sym namespace stateType =
-  What4.freshConstant sym (userSymbol' namespace) (What4.BaseStructRepr stateType)
+  Ctx.Assignment BaseTypes.BaseTypeRepr fields ->
+  IO (What4.SymStruct sym fields)
+createStruct sym namespace ty =
+  What4.freshConstant sym (userSymbol' namespace) (What4.BaseStructRepr ty)
 
 -- Actually I think it'll be better to have a fresh struct rather than having fields
 -- What4.mkStruct sym =<< freshStateVars sym namespace stateType
 
--- | A context with just one field, a struct type for the state.
-type CtxState state = Ctx.EmptyCtx Ctx.::> BaseTypes.BaseStructType state
+-- | A context with just one field, a struct type for the given fields.
+type CtxFields fields = Ctx.EmptyCtx Ctx.::> BaseTypes.BaseStructType fields
 
 -- | Computes a set of side conditions we must add to state formulas to account
 -- for the mismatch between What4 types and types found in transition systems
@@ -86,21 +91,24 @@ type CtxState state = Ctx.EmptyCtx Ctx.::> BaseTypes.BaseStructType state
 -- an MCMT @Int@ (since MCMT does not have natural numbers), with a side
 -- condition of positivity.
 sideConditions ::
-  forall sym t st fs state.
+  forall sym t st fs state input.
   sym ~ ExprBuilder t st fs =>
   sym ->
-  -- | state type
-  Ctx.Assignment BaseTypes.BaseTypeRepr state ->
-  -- | state on which to operate
-  What4.SymStruct sym state ->
+  -- | input
+  Maybe (Ctx.Assignment BaseTypes.BaseTypeRepr input, What4.SymStruct sym input) ->
+  -- | state
+  (Ctx.Assignment BaseTypes.BaseTypeRepr state, What4.SymStruct sym state) ->
   IO (What4.Pred sym)
-sideConditions sym stateReprs _state =
+sideConditions sym mi (stateReprs, _state) =
   do
-    preds <- Ctx.traverseAndCollect sideConditionsForIndex stateReprs
-    What4.andAllOf sym L.folded preds
+    inputPreds <- case mi of
+      Just (inputReprs, _input) -> Ctx.traverseAndCollect sideConditionsForIndex inputReprs
+      _ -> pure []
+    statePreds <- Ctx.traverseAndCollect sideConditionsForIndex stateReprs
+    What4.andAllOf sym L.folded (inputPreds <> statePreds)
   where
     sideConditionsForIndex ::
-      Ctx.Index state tp ->
+      Ctx.Index fields tp ->
       BaseTypes.BaseTypeRepr tp ->
       IO [What4.Pred sym]
     sideConditionsForIndex _ BaseTypes.BaseBoolRepr = return []
@@ -113,13 +121,13 @@ sideConditions sym stateReprs _state =
 makeInitialState ::
   sym ~ ExprBuilder t st fs =>
   sym ->
-  TransitionSystem sym state ->
+  TransitionSystem sym input state ->
   IO (What4.Pred sym)
 makeInitialState sym (TransitionSystem {initialStatePredicate, stateReprs}) =
   do
-    init <- createStateStruct sym "init" stateReprs
+    init <- createStruct sym "init" stateReprs
     initP <- initialStatePredicate init
-    sideP <- sideConditions sym stateReprs init
+    sideP <- sideConditions sym Nothing (stateReprs, init)
     What4.andPred sym initP sideP
 
 makeTransitions ::
@@ -130,21 +138,22 @@ makeTransitions ::
   -- | Exporter-specific transition builder of transition, receiving as input
   -- the name of that transition and the transition predicate.
   (What4.SolverSymbol -> What4.Pred sym -> transition) ->
-  TransitionSystem sym state ->
+  TransitionSystem sym input state ->
   IO [transition]
 makeTransitions
   sym
   mainTransitionName
   makeTransition
-  (TransitionSystem {stateReprs, stateTransitions}) =
+  (TransitionSystem {inputReprs, stateReprs, stateTransitions}) =
     do
-      state <- createStateStruct sym "state" stateReprs
-      next <- createStateStruct sym "next" stateReprs
-      transitions <- stateTransitions state next
+      input <- createStruct sym "input" inputReprs
+      state <- createStruct sym "state" stateReprs
+      next <- createStruct sym "next" stateReprs
+      transitions <- stateTransitions input state next
       allTransitions <- forM transitions $ \(name, transitionP) ->
         do
-          stateSideP <- sideConditions sym stateReprs state
-          nextSideP <- sideConditions sym stateReprs next
+          stateSideP <- sideConditions sym (Just (inputReprs, input)) (stateReprs, state)
+          nextSideP <- sideConditions sym (Just (inputReprs, input)) (stateReprs, next)
           transitionRelation <- What4.andAllOf sym L.folded [transitionP, stateSideP, nextSideP]
           return $ makeTransition name transitionRelation
       -- the main transition is the conjunction of all transitions
@@ -161,7 +170,7 @@ makeQueries ::
   sym ~ ExprBuilder t st fs =>
   sym ->
   (What4.Pred sym -> query) ->
-  TransitionSystem sym state ->
+  TransitionSystem sym input state ->
   IO [query]
 makeQueries
   sym
@@ -171,5 +180,5 @@ makeQueries
       -- NOTE: Event though some backend queries do not use a namespace, we need
       -- to use a "query" namespace here, as it forces the What4 backend to
       -- treat those fields as different from the "state"/"next" ones.
-      queryState <- createStateStruct sym "query" stateReprs
+      queryState <- createStruct sym "query" stateReprs
       (makeQuery <$>) <$> queries queryState
