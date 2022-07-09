@@ -242,14 +242,20 @@ getAbduct ::
   SMTReadWriter solver =>
   SolverProcess scope solver ->
   BoolExpr scope ->
-  IO String
-getAbduct proc t =
+  Int ->
+  IO [String]
+getAbduct proc t n =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
-     getSingleAbduct conn t
-     t_term <- mkFormula conn t
-     smtAbductResult conn conn t_term
+     f <- mkFormula conn t
+     addCommandNoAck conn (getAbductCommand conn f)
+     abd1 <- smtAbductResult conn conn f
+     let rest = n - 1
+     abdRest <- forM [1..rest] $ \_ -> do
+        addCommandNoAck conn (getAbductNextCommand conn)
+        smtAbductNextResult conn conn
+     return (abd1:abdRest)
 
 -- | Check if the formula is satisifiable in the current
 --   solver state.  This is done in a

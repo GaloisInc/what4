@@ -902,6 +902,9 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   -- | Ask the solver to return an abduct
   getAbductCommand :: f h -> Term h -> Command h
 
+  -- | Ask the solver for the next abduct, used after a get-abduct command
+  getAbductNextCommand :: f h -> Command h
+
   -- | Set an option/parameter.
   setOptCommand :: f h -> Text -> Text -> Command h
 
@@ -2991,8 +2994,11 @@ class SMTWriter h => SMTReadWriter h where
   --   These correspond to previously-named assertions.
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
-  -- | Parse a list of abducts from the SMT solver
+  -- | Parse an abduct returned for the get-abduct command
   smtAbductResult :: f h -> WriterConn t h -> Term h -> IO String
+
+  -- | Parse an abduct returned for the get-abduct-next command
+  smtAbductNextResult :: f h -> WriterConn t h -> IO String
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary

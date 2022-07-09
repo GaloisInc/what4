@@ -687,6 +687,8 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
   getUnsatAssumptionsCommand _ = SMT2.getUnsatAssumptions
   getUnsatCoreCommand _ = SMT2.getUnsatCore
   getAbductCommand _ e = SMT2.getAbduct "abd" e
+  getAbductNextCommand _ = SMT2.getAbductNext
+  
   setOptCommand _ = SMT2.setOption
 
   declareCommand _proxy v argTypes retType =
@@ -974,6 +976,13 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
           _ -> Nothing
         cmd = getAbductCommand p t
     in getLimitedSolverResponse "get abduct" abductRsp s cmd
+
+  smtAbductNextResult p s =
+    let abductRsp = \case
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (tail $ init $ sExpToString (SApp abduct))
+          _ -> Nothing
+        cmd = getAbductNextCommand p
+    in getLimitedSolverResponse "get abduct next" abductRsp s cmd
 
 
 smtAckResult :: AcknowledgementAction t (Writer a)

@@ -506,6 +506,8 @@ instance SMTWriter Connection where
   getUnsatAssumptionsCommand _ = const $ safeCmd "(show-unsat-assumptions)"
   getUnsatCoreCommand _ = const $ safeCmd "(show-unsat-core)"
   getAbductCommand _ _ = unsupportedFeature "abduction"
+  getAbductNextCommand _ = unsupportedFeature "abduction"
+
   setOptCommand _ x o = setParamCommand x (Builder.fromText o)
 
   assertCommand _ (T nm) = const $ unsafeCmd $ app "assert" [nm]
@@ -594,6 +596,8 @@ instance SMTReadWriter Connection where
                          , "*** Exception: " ++ displayException e
                          ]
   smtAbductResult _ _ = unsupportedFeature "abduction"
+
+  smtAbductNextResult _ = unsupportedFeature "abduction"
 
 
 -- | Exceptions that can occur when reading responses from Yices

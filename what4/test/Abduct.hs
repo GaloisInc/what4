@@ -1,9 +1,11 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Main where
 
 import Data.Foldable (forM_)
-import System.IO (FilePath, IOMode(..), openFile)
+import System.IO (FilePath, IOMode(..), openFile, hClose)
 
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(..))
@@ -18,11 +20,11 @@ import What4.Interface
          , freshConstant, safeSymbol, notPred
          , impliesPred, intLit, intAdd, intLe )
 import What4.Solver
-         (LogData(..), defaultLogData, cvc5Options, withCVC5, cvc5Options, withCVC5, SatResult(..))
-import What4.Protocol.SMTLib2
-         (assume, sessionWriter, runCheckSat, runGetAbduct)
+import What4.Protocol.SMTLib2 as SMT2
+         (assume, sessionWriter, runCheckSat, runGetAbduct, Writer)
 import What4.Protocol.SMTWriter
          (mkSMTTerm)
+import What4.Protocol.Online
 
 cvc5executable :: FilePath
 cvc5executable = "cvc5"
@@ -53,12 +55,20 @@ main = do
   f <- impliesPred sym ygte0 xyzgte0      -- (0 <= y) -> (0 <= (x + y + z))
 
   -- Prove f (is ~f unsatisfiable?), and otherwise, print countermodel and a formula that will allow me to prove f
+  putStrLn "Offline SMT calls"
   prove sym f [ ("x", x)
               , ("y", y)
               , ("z", z)
               ]
 
-testGetAbduct :: 
+  putStrLn "\nOnline calls to get abduct"
+  --putStrLn "First, assert hypothesis, and get-abduct on goal"
+  --testGetAbductOnline sym [ygte0] xyzgte0
+
+  putStrLn "Next, get-abduct on implication between hypothesis and goal"
+  testGetAbductOnline sym [] f
+
+testGetAbduct ::
   ExprBuilder t st fs ->
   BoolExpr t ->
   [(String, IntegerExpr t)] ->
@@ -75,6 +85,7 @@ testGetAbduct sym f es n = do
     f_term <- mkSMTTerm (sessionWriter session) f
     abd <- runGetAbduct session "abd" f_term n
     forM_ abd putStrLn
+  hClose mirroredOutput
 
 -- | Determine whether a predicate is satisfiable, and print out the values of a
 -- set of expressions if a satisfying instance is found.
@@ -106,3 +117,21 @@ prove sym f es = do
         Unsat _ -> putStrLn "Unsatisfiable."
         Unknown -> putStrLn "Solver failed to find a solution."
     putStrLn ""
+  hClose mirroredOutput
+
+testGetAbductOnline ::
+  ExprBuilder t st fs ->
+  [BoolExpr t] ->
+  BoolExpr t ->
+  IO ()
+testGetAbductOnline sym hs g = do
+  mirroredOutput <- openFile "/tmp/what4abductproveonline.smt2" ReadWriteMode
+  proc <- startSolverProcess @(SMT2.Writer CVC5) cvc5Features (Just mirroredOutput) sym
+  let conn = solverConn proc
+  inNewFrame proc $ do
+    mapM_ (\x -> assume conn x) hs
+    res <- getAbduct proc g 5
+    putStrLn ("Abducts:")
+    forM_ res putStrLn
+    --getSingleAbduct conn g
+  hClose mirroredOutput
