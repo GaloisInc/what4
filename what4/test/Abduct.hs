@@ -81,7 +81,7 @@ testGetAbduct sym f es n = do
                          , logHandle = Just mirroredOutput }
   withCVC5 sym cvc5executable logData $ \session -> do
     f_term <- mkSMTTerm (sessionWriter session) f
-    abd <- runGetAbduct session "abd" f_term n
+    abd <- runGetAbduct session n "abd" f_term
     forM_ abd putStrLn
   hClose mirroredOutput
 
@@ -128,8 +128,7 @@ testGetAbductOnline sym hs g = do
   let conn = solverConn proc
   inNewFrame proc $ do
     mapM_ (\x -> assume conn x) hs
-    res <- getAbduct proc g 5
+    res <- getAbduct proc 5 "abd" g
     putStrLn ("Abducts:")
     forM_ res putStrLn
-    --getSingleAbduct conn g
   hClose mirroredOutput

@@ -237,20 +237,23 @@ checkSatisfiable proc rsn p =
         do assume conn p
            check proc rsn
 
--- | Get an abduct from the SMT solver
+-- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
 getAbduct ::
   SMTReadWriter solver =>
   SolverProcess scope solver ->
-  BoolExpr scope ->
   Int ->
+  String ->
+  BoolExpr scope ->
   IO [String]
-getAbduct proc t n =
+getAbduct proc n nm t =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
      f <- mkFormula conn t
-     addCommandNoAck conn (getAbductCommand conn f)
-     abd1 <- smtAbductResult conn conn f
+     -- get the first abduct using the get-abduct command
+     addCommandNoAck conn (getAbductCommand conn nm f)
+     abd1 <- smtAbductResult conn conn nm f
+     -- get the remaining abducts using get-abudct-next commands
      let rest = n - 1
      abdRest <- forM [1..rest] $ \_ -> do
         addCommandNoAck conn (getAbductNextCommand conn)

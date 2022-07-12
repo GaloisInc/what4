@@ -88,7 +88,6 @@ module What4.Protocol.SMTWriter
   , nullAcknowledgementAction
     -- * SMTWriter operations
   , assume
-  , getSingleAbduct
   , mkSMTTerm
   , mkFormula
   , mkAtomicFormula
@@ -900,7 +899,7 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   getUnsatCoreCommand :: f h -> Command h
 
   -- | Ask the solver to return an abduct
-  getAbductCommand :: f h -> Term h -> Command h
+  getAbductCommand :: f h -> String -> Term h -> Command h
 
   -- | Ask the solver for the next abduct, used after a get-abduct command
   getAbductNextCommand :: f h -> Command h
@@ -2936,11 +2935,6 @@ assume c p = do
     case pl of
       BM.Positive -> assumeFormula c f
       BM.Negative -> assumeFormula c (notExpr f)
-
-getSingleAbduct :: SMTWriter h => WriterConn t h -> BoolExpr t -> IO ()
-getSingleAbduct c p = do
-  f <- mkFormula c p
-  addCommand c (getAbductCommand c f)
   
 type SMTEvalBVArrayFn h w v =
     (1 <= w,
@@ -2995,7 +2989,7 @@ class SMTWriter h => SMTReadWriter h where
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse an abduct returned for the get-abduct command
-  smtAbductResult :: f h -> WriterConn t h -> Term h -> IO String
+  smtAbductResult :: f h -> WriterConn t h -> String -> Term h -> IO String
 
   -- | Parse an abduct returned for the get-abduct-next command
   smtAbductNextResult :: f h -> WriterConn t h -> IO String

@@ -505,7 +505,7 @@ instance SMTWriter Connection where
 
   getUnsatAssumptionsCommand _ = const $ safeCmd "(show-unsat-assumptions)"
   getUnsatCoreCommand _ = const $ safeCmd "(show-unsat-core)"
-  getAbductCommand _ _ = unsupportedFeature "abduction"
+  getAbductCommand _ _ _ = unsupportedFeature "abduction"
   getAbductNextCommand _ = unsupportedFeature "abduction"
 
   setOptCommand _ x o = setParamCommand x (Builder.fromText o)
@@ -595,7 +595,7 @@ instance SMTReadWriter Connection where
                  unlines [ "Could not parse unsat core result."
                          , "*** Exception: " ++ displayException e
                          ]
-  smtAbductResult _ _ = unsupportedFeature "abduction"
+  smtAbductResult _ _ _ = unsupportedFeature "abduction"
 
   smtAbductNextResult _ = unsupportedFeature "abduction"
 

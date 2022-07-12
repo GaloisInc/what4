@@ -39,6 +39,7 @@ module What4.Protocol.SMTLib2
   , writeExit
   , writeGetValue
   , writeGetAbduct
+  , writeGetAbductNext
   , runCheckSat
   , runGetAbduct
   , asSMT2Type
@@ -686,7 +687,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
 
   getUnsatAssumptionsCommand _ = SMT2.getUnsatAssumptions
   getUnsatCoreCommand _ = SMT2.getUnsatCore
-  getAbductCommand _ e = SMT2.getAbduct "abd" e
+  getAbductCommand _ nm e = SMT2.getAbduct (Text.pack nm) e
   getAbductNextCommand _ = SMT2.getAbductNext
   
   setOptCommand _ = SMT2.setOption
@@ -902,15 +903,15 @@ runGetValue s e = do
         _ -> Nothing
   getLimitedSolverResponse "get value" valRsp (sessionWriter s) (SMT2.getValue [e])
 
--- | runGetAbduct s nm p n, gets n formulas that independently entail p (along with all
---   the assertions in the context
+-- | runGetAbduct s nm p n, returns n formulas (as strings) the disjunction of which entails p (along with all
+--   the assertions in the context)
 runGetAbduct :: SMTLib2Tweaks a
              => Session t a
+             -> Int
              -> String
              -> Term
-             -> Int
              -> IO [String]
-runGetAbduct s nm p n = do
+runGetAbduct s n nm p = do
   let nm_t = Text.pack nm
   let rest = n - 1
   writeGetAbduct (sessionWriter s) nm_t p
@@ -970,11 +971,11 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
         cmd = getUnsatCoreCommand p
     in getLimitedSolverResponse "unsat core" unsatCoreRsp s cmd
 
-  smtAbductResult p s t =
+  smtAbductResult p s nm t =
     let abductRsp = \case
           AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (tail $ init $ sExpToString (SApp abduct))
           _ -> Nothing
-        cmd = getAbductCommand p t
+        cmd = getAbductCommand p nm t
     in getLimitedSolverResponse "get abduct" abductRsp s cmd
 
   smtAbductNextResult p s =
