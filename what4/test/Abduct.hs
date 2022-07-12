@@ -21,7 +21,7 @@ import What4.Interface
          , impliesPred, intLit, intAdd, intLe )
 import What4.Solver
 import What4.Protocol.SMTLib2 as SMT2
-         (assume, sessionWriter, runCheckSat, runGetAbduct, Writer)
+         (assume, sessionWriter, runCheckSat, runGetAbducts, Writer)
 import What4.Protocol.SMTWriter
          (mkSMTTerm)
 import What4.Protocol.Online
@@ -66,13 +66,13 @@ main = do
   testGetAbductOnline sym [ygte0] xyzgte0
 
 
-testGetAbduct ::
+testGetAbducts ::
   ExprBuilder t st fs ->
   BoolExpr t ->
   [(String, IntegerExpr t)] ->
   Int ->
   IO ()
-testGetAbduct sym f es n = do
+testGetAbducts sym f es n = do
   -- Print SMT file in /tmp/
   mirroredOutput <- openFile "/tmp/what4abduct.smt2" ReadWriteMode
   let logData = LogData { logCallbackVerbose = \_ _ -> return ()
@@ -81,7 +81,7 @@ testGetAbduct sym f es n = do
                          , logHandle = Just mirroredOutput }
   withCVC5 sym cvc5executable logData $ \session -> do
     f_term <- mkSMTTerm (sessionWriter session) f
-    abd <- runGetAbduct session n "abd" f_term
+    abd <- runGetAbducts session n "abd" f_term
     forM_ abd putStrLn
   hClose mirroredOutput
 
@@ -111,7 +111,7 @@ prove sym f es = do
             v <- groundEval ge e
             putStrLn $ "  " ++ nm ++ " := " ++ show v
           putStrLn "\nEach of the following formulas would make the goal unsatisfiable:"
-          testGetAbduct sym f es 5
+          testGetAbducts sym f es 5
         Unsat _ -> putStrLn "Unsatisfiable."
         Unknown -> putStrLn "Solver failed to find a solution."
     putStrLn ""
@@ -128,7 +128,7 @@ testGetAbductOnline sym hs g = do
   let conn = solverConn proc
   inNewFrame proc $ do
     mapM_ (\x -> assume conn x) hs
-    res <- getAbduct proc 5 "abd" g
+    res <- getAbducts proc 5 "abd" g
     putStrLn ("Abducts:")
     forM_ res putStrLn
   hClose mirroredOutput

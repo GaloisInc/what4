@@ -41,7 +41,7 @@ module What4.Protocol.SMTLib2
   , writeGetAbduct
   , writeGetAbductNext
   , runCheckSat
-  , runGetAbduct
+  , runGetAbducts
   , asSMT2Type
   , setOption
   , getVersion
@@ -903,15 +903,15 @@ runGetValue s e = do
         _ -> Nothing
   getLimitedSolverResponse "get value" valRsp (sessionWriter s) (SMT2.getValue [e])
 
--- | runGetAbduct s nm p n, returns n formulas (as strings) the disjunction of which entails p (along with all
+-- | runGetAbducts s nm p n, returns n formulas (as strings) the disjunction of which entails p (along with all
 --   the assertions in the context)
-runGetAbduct :: SMTLib2Tweaks a
+runGetAbducts :: SMTLib2Tweaks a
              => Session t a
              -> Int
              -> String
              -> Term
              -> IO [String]
-runGetAbduct s n nm p = do
+runGetAbducts s n nm p = do
   let nm_t = Text.pack nm
   let rest = n - 1
   writeGetAbduct (sessionWriter s) nm_t p

@@ -38,7 +38,7 @@ module What4.Protocol.Online
   , checkWithAssumptionsAndModel
   , getModel
   , getUnsatCore
-  , getAbduct
+  , getAbducts
   , getUnsatAssumptions
   , getSatResult
   , checkSatisfiable
@@ -238,14 +238,14 @@ checkSatisfiable proc rsn p =
            check proc rsn
 
 -- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
-getAbduct ::
+getAbducts ::
   SMTReadWriter solver =>
   SolverProcess scope solver ->
   Int ->
   String ->
   BoolExpr scope ->
   IO [String]
-getAbduct proc n nm t =
+getAbducts proc n nm t =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
