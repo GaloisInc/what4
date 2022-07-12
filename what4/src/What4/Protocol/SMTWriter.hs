@@ -2935,7 +2935,7 @@ assume c p = do
     case pl of
       BM.Positive -> assumeFormula c f
       BM.Negative -> assumeFormula c (notExpr f)
-  
+
 type SMTEvalBVArrayFn h w v =
     (1 <= w,
      1 <= v)

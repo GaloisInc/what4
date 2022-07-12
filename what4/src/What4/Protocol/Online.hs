@@ -253,7 +253,7 @@ getAbduct proc n nm t =
      -- get the first abduct using the get-abduct command
      addCommandNoAck conn (getAbductCommand conn nm f)
      abd1 <- smtAbductResult conn conn nm f
-     -- get the remaining abducts using get-abudct-next commands
+     -- get the remaining abducts using get-abduct-next commands
      let rest = n - 1
      abdRest <- forM [1..rest] $ \_ -> do
         addCommandNoAck conn (getAbductNextCommand conn)

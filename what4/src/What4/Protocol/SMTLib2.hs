@@ -920,7 +920,9 @@ runGetAbduct s n nm p = do
         -- SMT solver returns `(define-fun nm () Bool X)` where X is the abduct, we discard everything but the abduct
         AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (tail $ init $ sExpToString (SApp abduct))
         _ -> Nothing
+  -- get first abduct using the get-abduct command
   abd1 <- getLimitedSolverResponse "get abduct" valRsp (sessionWriter s) (SMT2.getAbduct nm_t p)
+  -- get the rest of the abducts using the get-abduct-next command
   abdRest <- forM [1..rest] $ \_ -> getLimitedSolverResponse "get abduct next" valRsp (sessionWriter s) (SMT2.getAbduct nm_t p)
   return (abd1:abdRest)
 
