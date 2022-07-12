@@ -61,12 +61,10 @@ main = do
               , ("z", z)
               ]
 
-  putStrLn "\nOnline calls to get abduct"
-  --putStrLn "First, assert hypothesis, and get-abduct on goal"
-  --testGetAbductOnline sym [ygte0] xyzgte0
+  putStrLn "\nOnline call to get abduct"
+  putStrLn "Assert hypothesis, and get-abduct on goal"
+  testGetAbductOnline sym [ygte0] xyzgte0
 
-  putStrLn "Next, get-abduct on implication between hypothesis and goal"
-  testGetAbductOnline sym [] f
 
 testGetAbduct ::
   ExprBuilder t st fs ->
