@@ -136,7 +136,7 @@ module What4.Expr.Builder
   , symFnReturnType
 
     -- * SymbolVarBimap
-  , SymbolVarBimap
+  -- , SymbolVarBimap(..) TODO: expose this if we want to search the SMT input for the abduct grammar
   , SymbolBinding(..)
   , emptySymbolVarBimap
   , lookupBindingOfSymbol

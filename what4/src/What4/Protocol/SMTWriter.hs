@@ -53,7 +53,8 @@ module What4.Protocol.SMTWriter
   , app_list
   , builder_list
     -- * SMTWriter
-  , WriterConn( supportFunctionDefs
+  , WriterConn( varBindings
+              , supportFunctionDefs
               , supportFunctionArguments
               , supportQuantifiers
               , supportedFeatures
@@ -899,7 +900,7 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   getUnsatCoreCommand :: f h -> Command h
 
   -- | Ask the solver to return an abduct
-  getAbductCommand :: f h -> String -> Term h -> Command h
+  getAbductCommand :: f h -> String -> Term h -> String -> Command h
 
   -- | Ask the solver for the next abduct, used after a get-abduct command
   getAbductNextCommand :: f h -> Command h
@@ -2989,7 +2990,7 @@ class SMTWriter h => SMTReadWriter h where
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
 
   -- | Parse an abduct returned for the get-abduct command
-  smtAbductResult :: f h -> WriterConn t h -> String -> Term h -> IO String
+  smtAbductResult :: f h -> WriterConn t h -> String -> Term h -> String -> IO String
 
   -- | Parse an abduct returned for the get-abduct-next command
   smtAbductNextResult :: f h -> WriterConn t h -> IO String

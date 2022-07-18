@@ -243,7 +243,9 @@ executable abduct
   build-depends:
     base,
     parameterized-utils,
-    what4
+    what4,
+    bimap >= 0.2,
+    text
 
 test-suite adapter-test
   import: bldflags, testdefs-hunit

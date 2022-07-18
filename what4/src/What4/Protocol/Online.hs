@@ -43,6 +43,8 @@ module What4.Protocol.Online
   , getSatResult
   , checkSatisfiable
   , checkSatisfiableWithModel
+  , SMTType(..)
+  , cfgToString
   ) where
 
 import           Control.Concurrent ( threadDelay )
@@ -58,6 +60,7 @@ import           Data.IORef
 #else
 import qualified Data.List as L
 #endif
+import           Data.List (intercalate)
 import           Data.Parameterized.Some
 import           Data.Proxy
 import           Data.Text (Text)
@@ -237,6 +240,47 @@ checkSatisfiable proc rsn p =
         do assume conn p
            check proc rsn
 
+-- | This is a type representing SMT sorts solely for the purpose of allowing
+--   the user to specify grammars while asking for abducts. 
+--   TODO: explore ways of using existing representations of SMT sorts in What4
+data SMTType = 
+    Bool
+  | Intgr
+  | BV Int
+  | Str
+  | Real
+  | Float
+instance Show SMTType where
+  show Bool = "Bool"
+  show Intgr = "Int"
+  show (BV i) = "(_ BitVec " <> (show i) <> ")"
+  show Str = "String"
+  show Real = "Real"
+  show Float = "Float"
+
+-- A grammar for getting abducts is specified in terms of SMT sorts, 
+-- and sorted functions/constants. Convert it to a string to call with
+-- get-abduct
+cfgToString :: [(SMTType, [(String, [SMTType])])] -> String
+cfgToString [] = ""
+cfgToString g =
+  let nonTerminals = paren . unwords $ map (\(t,_) -> paren $ typNT t) g in
+  let rules = paren . intercalate "\n" $ map (\(t, acts) -> paren $ (lhs t) <> " " <> (rhs acts)) g in
+  (nonTerminals <> "\n" <> rules)
+  where
+    typNT' (BV i) = "GBV" <> (show i)
+    typNT' t = "G" <> (show t)
+    typNT t = unwords [typNT' t, show t]
+    
+    paren s = "("<>s<>")"
+    
+    lhs b = typNT b
+    rhs' (s, bs) = 
+      case bs of 
+          [] -> s
+          _ -> paren . unwords $ s : map typNT' bs
+    rhs sbs = paren . unwords $ map rhs' sbs
+
 -- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
 getAbducts ::
   SMTReadWriter solver =>
@@ -244,15 +288,17 @@ getAbducts ::
   Int ->
   String ->
   BoolExpr scope ->
+  [(SMTType, [(String, [SMTType])])] ->
   IO [String]
-getAbducts proc n nm t =
+getAbducts proc n nm t g =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
+     let gs = cfgToString g
      f <- mkFormula conn t
      -- get the first abduct using the get-abduct command
-     addCommandNoAck conn (getAbductCommand conn nm f)
-     abd1 <- smtAbductResult conn conn nm f
+     addCommandNoAck conn (getAbductCommand conn nm f gs)
+     abd1 <- smtAbductResult conn conn nm f gs
      -- get the remaining abducts using get-abduct-next commands
      let rest = n - 1
      abdRest <- forM [1..rest] $ \_ -> do
