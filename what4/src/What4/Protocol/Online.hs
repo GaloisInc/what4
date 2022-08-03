@@ -32,6 +32,8 @@ module What4.Protocol.Online
   , reset
   , inNewFrame
   , inNewFrameWithVars
+  , inNewFrame2Open
+  , inNewFrame2Close
   , check
   , checkAndGetModel
   , checkWithAssumptions
@@ -396,6 +398,14 @@ tryPop p =
 -- | Perform an action in the scope of a solver assumption frame.
 inNewFrame :: (MonadIO m, MonadMask m, SMTReadWriter solver) => SolverProcess scope solver -> m a -> m a
 inNewFrame p action = inNewFrameWithVars p [] action
+
+-- | Open a second solver assumption frame.
+inNewFrame2Open :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+inNewFrame2Open sp = let c = solverConn sp in addCommand c (push2Command c)
+
+-- | Close a second solver assumption frame.
+inNewFrame2Close :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
+inNewFrame2Close sp = let c = solverConn sp in addCommand c (pop2Command c)
 
 -- | Perform an action in the scope of a solver assumption frame, where the given
 -- bound variables are considered free within that frame.
