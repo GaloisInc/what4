@@ -495,6 +495,8 @@ instance SMTWriter Connection where
 
   pushCommand _   = const $ safeCmd "(push)"
   popCommand _    = const $ safeCmd "(pop)"
+  push2Command _   = const $ safeCmd "(push)"
+  pop2Command _    = const $ safeCmd "(pop)"
   resetCommand _  = const $ safeCmd "(reset)"
   checkCommands _  =
     [ setTimeoutCommand, const $ safeCmd "(check)" ]

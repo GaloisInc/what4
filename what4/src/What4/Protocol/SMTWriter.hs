@@ -874,6 +874,12 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   -- | Pop 1 existing scope
   popCommand    :: f h -> Command h
 
+  -- | Push 2 new scope
+  push2Command   :: f h -> Command h
+
+  -- | Pop 2 existing scope
+  pop2Command    :: f h -> Command h
+
   -- | Pop several scopes.
   popManyCommands :: f h -> Int -> [Command h]
   popManyCommands w n = replicate n (popCommand w)

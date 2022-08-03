@@ -679,6 +679,8 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
 
   pushCommand _  = SMT2.push 1
   popCommand _   = SMT2.pop 1
+  push2Command _ = SMT2.push 2
+  pop2Command _ = SMT2.pop 2
   resetCommand _ = SMT2.resetAssertions
   popManyCommands _ n = [SMT2.pop (toInteger n)]
 
