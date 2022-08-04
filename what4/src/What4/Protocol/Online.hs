@@ -399,6 +399,9 @@ tryPop p =
 inNewFrame :: (MonadIO m, MonadMask m, SMTReadWriter solver) => SolverProcess scope solver -> m a -> m a
 inNewFrame p action = inNewFrameWithVars p [] action
 
+-- For abduction, we want the final assertion to be a in a second frame, so that it 
+-- can be closed before asking for an abduct. The following two commands allow frame 2 
+-- to be pushed and popped independently of other commands
 -- | Open a second solver assumption frame.
 inNewFrame2Open :: SMTReadWriter solver => SolverProcess scope solver -> IO ()
 inNewFrame2Open sp = let c = solverConn sp in addCommand c (push2Command c)
