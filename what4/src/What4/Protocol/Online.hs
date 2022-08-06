@@ -75,9 +75,9 @@ import qualified System.IO.Streams as Streams
 import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
 import           What4.Expr
-import           What4.Interface (SolverEvent(..)
+import           What4.Interface {-(SolverEvent(..)
                                  , SolverStartSATQuery(..)
-                                 , SolverEndSATQuery(..) )
+                                 , SolverEndSATQuery(..) )-}
 import           What4.ProblemFeatures
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
@@ -282,6 +282,19 @@ cfgToString g =
           [] -> s
           _ -> paren . unwords $ s : map typNT' bs
     rhs sbs = paren . unwords $ map rhs' sbs
+
+{- Can we pattern match on the BoolExpr, and automatically generate the grammar for abduction
+   using all the operators in it?
+defaultCfg ::
+  SMTReadWriter solver =>
+  SolverProcess scope solver ->
+  BoolExpr scope ->
+  [(SMTType, [(String, [SMTType])])]
+defaultCfg proc t =
+  case t of
+  intLe _ _ _ -> []
+   _ -> []
+-}
 
 -- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
 getAbducts ::
