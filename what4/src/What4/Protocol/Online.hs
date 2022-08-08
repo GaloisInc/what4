@@ -244,7 +244,7 @@ checkSatisfiable proc rsn p =
 
 -- | This is a type representing SMT sorts solely for the purpose of allowing
 --   the user to specify grammars while asking for abducts. 
---   TODO: explore ways of using existing representations of SMT sorts in What4
+--   FIXME: can we use an existing representations of SMT sorts in What4?
 data SMTType = 
     Bool
   | Intgr

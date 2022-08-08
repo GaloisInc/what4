@@ -14,7 +14,7 @@ import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(..))
 
 import What4.Config (extendConfig)
-import What4.Expr.Builder (SymbolVarBimap(SymbolVarBimap))
+--import What4.Expr.Builder (SymbolVarBimap(SymbolVarBimap))
 import What4.Expr
          ( ExprBuilder,  FloatModeRepr(..), newExprBuilder
          , BoolExpr, IntegerExpr, GroundValue, groundEval

@@ -136,7 +136,7 @@ module What4.Expr.Builder
   , symFnReturnType
 
     -- * SymbolVarBimap
-  , SymbolVarBimap(..)
+  , SymbolVarBimap
   , SymbolBinding(..)
   , emptySymbolVarBimap
   , lookupBindingOfSymbol
