@@ -53,8 +53,7 @@ module What4.Protocol.SMTWriter
   , app_list
   , builder_list
     -- * SMTWriter
-  , WriterConn( varBindings
-              , supportFunctionDefs
+  , WriterConn( supportFunctionDefs
               , supportFunctionArguments
               , supportQuantifiers
               , supportedFeatures

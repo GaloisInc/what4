@@ -72,9 +72,9 @@ import qualified System.IO.Streams as Streams
 import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
 import           What4.Expr
-import           What4.Interface {-(SolverEvent(..)
+import           What4.Interface (SolverEvent(..)
                                  , SolverStartSATQuery(..)
-                                 , SolverEndSATQuery(..) )-}
+                                 , SolverEndSATQuery(..) )
 import           What4.ProblemFeatures
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
@@ -353,7 +353,7 @@ tryPop p =
 inNewFrame :: (MonadIO m, MonadMask m, SMTReadWriter solver) => SolverProcess scope solver -> m a -> m a
 inNewFrame p action = inNewFrameWithVars p [] action
 
--- For abduction, we want the final assertion to be a in a second frame, so that it 
+-- For abduction, we want the final assertion to be a in a new frame, so that it 
 -- can be closed before asking for an abduct. The following two commands allow frame 2 
 -- to be pushed and popped independently of other commands
 -- | Open a second solver assumption frame.

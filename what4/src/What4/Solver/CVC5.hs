@@ -228,8 +228,8 @@ setInteractiveLogicAndOptions writer = do
     -- Tell cvc5 to make declarations global, so they are not removed by 'pop' commands
     SMT2.setOption writer "global-declarations" "true"
     -- Tell cvc5 to compute UNSAT cores, if that feature is enabled
-    -- when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
-    --  SMT2.setOption writer "produce-unsat-cores" "true"
+    when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
+      SMT2.setOption writer "produce-unsat-cores" "true"
     -- Tell cvc5 to produce abducts, if that feature is enabled
     when (supportedFeatures writer `hasProblemFeature` useProduceAbducts) $ do
       SMT2.setOption writer "produce-abducts" "true"
