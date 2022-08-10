@@ -597,7 +597,7 @@ instance SMTReadWriter Connection where
                  unlines [ "Could not parse unsat core result."
                          , "*** Exception: " ++ displayException e
                          ]
-  smtAbductResult _ _ _ _ = unsupportedFeature "abduction"
+  smtAbductResult _ _ _ = unsupportedFeature "abduction"
 
   smtAbductNextResult _ = unsupportedFeature "abduction"
 

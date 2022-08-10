@@ -828,9 +828,9 @@ getUnsatAssumptions = Cmd "(get-unsat-assumptions)"
 getUnsatCore :: Command
 getUnsatCore = Cmd "(get-unsat-core)"
 
--- | Get an abduct that entails the formula, and bind it to the name, optionally use the grammar to build it
-getAbduct :: Text -> Term -> String -> Command
-getAbduct nm p g = Cmd $ "(get-abduct " <> Builder.fromText nm <> " " <> renderTerm p <> " " <> Builder.fromString g <> ")"
+-- | Get an abduct that entails the formula, and bind it to the name
+getAbduct :: Text -> Term -> Command
+getAbduct nm p = Cmd $ "(get-abduct " <> Builder.fromText nm <> " " <> renderTerm p <> ")"
 
 -- | Get the next command, called after a get-abduct command
 getAbductNext :: Command

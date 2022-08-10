@@ -45,8 +45,6 @@ module What4.Protocol.Online
   , getSatResult
   , checkSatisfiable
   , checkSatisfiableWithModel
-  , SMTType(..)
-  , cfgToString
   ) where
 
 import           Control.Concurrent ( threadDelay )
@@ -62,15 +60,10 @@ import           Data.IORef
 #else
 import qualified Data.List as L
 #endif
-import           Data.List (intercalate)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
 import           Data.Parameterized.Some
 import           Data.Proxy
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
-import           Data.Parameterized.NatRepr as NatRepr
-import           GHC.TypeNats as TypeNats
 import           Prettyprinter
 import           System.Exit
 import           System.IO
@@ -78,7 +71,6 @@ import qualified System.IO.Error as IOE
 import qualified System.IO.Streams as Streams
 import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
-import           What4.BaseTypes
 import           What4.Expr
 import           What4.Interface {-(SolverEvent(..)
                                  , SolverStartSATQuery(..)
@@ -247,145 +239,6 @@ checkSatisfiable proc rsn p =
         do assume conn p
            check proc rsn
 
--- | This is a type representing SMT sorts solely for the purpose of allowing
---   the user to specify grammars while asking for abducts. 
---   FIXME: can we use an existing representations of SMT sorts in What4?
-data SMTType = 
-    Bool
-  | Intgr
-  | BV Integer
-  | Str
-  | Real
-  | Float
-  deriving (Eq, Ord)
-instance Show SMTType where
-  show Bool = "Bool"
-  show Intgr = "Int"
-  show (BV i) = "(_ BitVec " <> (show i) <> ")"
-  show Str = "String"
-  show Real = "Real"
-  show Float = "Float"
-
-{- Attempt at the FIXME above
-   BaseTypeRepr tp replaces SMTType
-   The only problem: I'm currently replacing
-   [(SMTType, [(String, [SMTType])])] by [(BaseTypeRepr x, [(String, [BaseTypeRepr y])])] in getAbduct
-   This is incorrect, since this assumes for each BaseTypeRepr x, all the 
-   operators have only BaseTypeRepr y in their signature. I want something like 
-   BaseTypeRepr 'y where 'y is variable, and I don't know how to do this
--- This replaces show
-btToStr :: BaseTypeRepr tp -> String
-btToStr BaseBoolRepr = "Bool"
-btToStr (BaseBVRepr n) = "(_ BitVec " <> (show n) <> ")"
-btToStr BaseIntegerRepr = "Int"
-btToStr BaseRealRepr = "Real"
-btToStr (BaseFloatRepr (FloatingPointPrecisionRepr eb sb)) = "(_ FloatingPoint " <> (show eb) <> " " <> (show sb) <> ")" 
-btToStr _ = "unsupported"
-
--- This replaces the cfgToString
-cfgToString :: [(BaseTypeRepr x, [(String, [BaseTypeRepr y])])] -> String
-cfgToString [] = ""
-cfgToString g =
-  let nonTerminals = paren . unwords $ map (\(t,_) -> paren $ typNT t) g in
-  let rules = paren . intercalate "\n" $ map (\(t, acts) -> paren $ (lhs t) <> " " <> (rhs acts)) g in
-  (nonTerminals <> "\n" <> rules)
-  where
-    typNT' (BaseBVRepr n) = "GBV" <> (show n)
-    typNT' (BaseFloatRepr (FloatingPointPrecisionRepr eb sb)) = "GFP" <> (show eb) <> (show sb)
-    typNT' t = "G" <> (btToStr t)
-    typNT t = unwords [typNT' t, btToStr t]
-    
-    paren s = "("<>s<>")"
-    
-    lhs b = typNT b
-    rhs' (s, bs) = 
-      case bs of 
-          [] -> s
-          _ -> paren . unwords $ s : map typNT' bs
-    rhs sbs = paren . unwords $ map rhs' sbs -}
-
--- A grammar for getting abducts is specified in terms of SMT sorts, 
--- and sorted functions/constants. Convert it to a string to call with
--- get-abduct
-cfgToString :: [(SMTType, [(String, [SMTType])])] -> String
-cfgToString [] = ""
-cfgToString g =
-  let nonTerminals = paren . unwords $ map (\(t,_) -> paren $ typNT t) g in
-  let rules = paren . intercalate "\n" $ map (\(t, acts) -> paren $ (lhs t) <> " " <> (rhs acts)) g in
-  (nonTerminals <> "\n" <> rules)
-  where
-    typNT' (BV i) = "GBV" <> (show i)
-    typNT' t = "G" <> (show t)
-    typNT t = unwords [typNT' t, show t]
-    
-    paren s = "("<>s<>")"
-    
-    lhs b = typNT b
-    rhs' (s, bs) = 
-      case bs of 
-          [] -> s
-          _ -> paren . unwords $ s : map typNT' bs
-    rhs sbs = paren . unwords $ map rhs' sbs
-
-{- Can we pattern match on the BoolExpr, and automatically generate the grammar for abduction
-   using all the operators in it? -}
-defaultCfg ::
-  SMTReadWriter solver =>
-  SolverProcess scope solver ->
-  Expr scope tp ->
-  Map.Map SMTType (Set.Set (String, [SMTType])) ->
-  Map.Map SMTType (Set.Set (String, [SMTType]))
-defaultCfg proc t m =
-  case t of
-    SemiRingLiteral repr coeff loc -> Map.empty
-    BoolExpr b loc -> Map.empty
-    AppExpr ae ->
-      case appExprApp ae of
-        BaseIte ty _ c e1 e2 -> Map.empty
-        BaseEq (BaseBVRepr n) e1 e2 ->
-          let n' = NatRepr.intValue n in
-          let m1 = defaultCfg proc e1 m in
-          let m2 = defaultCfg proc e2 m1 in
-          -- Do we have a rule for Bool already?
-          case (Map.lookup Bool m2) of
-            Just l ->
-              Map.adjust (Set.insert ("=", [BV n', BV n'])) Bool m2
-            Nothing ->
-              Map.insert Bool (Set.singleton ("=", [BV n', BV n'])) m2
-        NotPred e -> Map.empty
-        ConjPred cs -> Map.empty
-        BVSlt e1 e2 -> Map.empty
-        BVUlt e1 e2 -> Map.empty
-        _ -> Map.empty
-    _ -> Map.empty
-
-{-defaultCfg ::
-  SMTReadWriter solver =>
-  SolverProcess scope solver ->
-  BoolExpr scope ->
-  Map.Map SMTType (Set.Set (String, [SMTType])) ->
-  Map.Map SMTType (Set.Set (String, [SMTType]))
-defaultCfg proc t m =
-  case t of
-    AppExpr ae ->
-      case appExprApp ae of
-        BaseIte ty _ c e1 e2 -> Map.empty
-        BaseEq (BaseBVRepr n) e1 e2 ->
-          let m1 = defaultCfg proc e1 m in
-          let m2 = defaultCfg proc e2 m1 in
-          -- Do we have a rule for Bool already?
-          case Map.lookup Bool m2 of
-            Just l ->
-              Map.adjust (Set.insert l ("=", BV (toInteger n), BV (toInteger n))) Bool m2
-            Nothing ->
-              Map.insert Bool Set.singleton ("=", BV (toInteger n), BV (toInteger n))
-        NotPred e -> Map.empty
-        ConjPred cs -> Map.empty
-        BVSlt e1 e2 -> Map.empty
-        BVUlt e1 e2 -> Map.empty
-        _ -> Map.empty
-    _ -> Map.empty-}
-
 -- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
 getAbducts ::
   SMTReadWriter solver =>
@@ -393,17 +246,15 @@ getAbducts ::
   Int ->
   String ->
   BoolExpr scope ->
-  [(SMTType, [(String, [SMTType])])] ->
   IO [String]
-getAbducts proc n nm t g =
+getAbducts proc n nm t =
   do let conn = solverConn proc
      unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
        fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
-     let gs = cfgToString g
      f <- mkFormula conn t
      -- get the first abduct using the get-abduct command
-     addCommandNoAck conn (getAbductCommand conn nm f gs)
-     abd1 <- smtAbductResult conn conn nm f gs
+     addCommandNoAck conn (getAbductCommand conn nm f)
+     abd1 <- smtAbductResult conn conn nm f
      -- get the remaining abducts using get-abduct-next commands
      let rest = n - 1
      abdRest <- forM [1..rest] $ \_ -> do
