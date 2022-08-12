@@ -77,7 +77,7 @@ main_version(z3, "4_8_14").
 main_version(yices, "2_6_4").
 main_version(stp, "2_3_3").
 main_version(cvc4, "1_8").
-main_version(cvc5, "1_0_0").
+main_version(cvc5, "1_0_1").
 main_version(boolector, "3_2_2").
 main_version(abc, "2021_12_30").
 
@@ -117,6 +117,7 @@ version(cvc4, "1_8").
 version(cvc4, "1_7").
 
 version(cvc5, "1_0_0").
+version(cvc5, "1_0_1").
 
 version(boolector, "3_2_2").
 version(boolector, "3_2_1").
