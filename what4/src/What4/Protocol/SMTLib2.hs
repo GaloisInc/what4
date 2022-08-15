@@ -980,14 +980,14 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
 
   smtAbductResult p s nm t =
     let abductRsp = \case
-          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (Just $ Data.String.unwords (map sExpToString abduct))
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just $ Data.String.unwords (map sExpToString abduct)
           _ -> Nothing
         cmd = getAbductCommand p nm t
     in getLimitedSolverResponse "get abduct" abductRsp s cmd
 
   smtAbductNextResult p s =
     let abductRsp = \case
-          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just (Just $ Data.String.unwords (map sExpToString abduct))
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just $ Data.String.unwords (map sExpToString abduct)
           _ -> Nothing
         cmd = getAbductNextCommand p
     in getLimitedSolverResponse "get abduct next" abductRsp s cmd
