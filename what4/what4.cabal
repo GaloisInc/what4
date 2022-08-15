@@ -244,8 +244,8 @@ executable abduct
     base,
     parameterized-utils,
     what4,
-    bimap >= 0.2,
-    text
+    text,
+    temporary
 
 test-suite adapter-test
   import: bldflags, testdefs-hunit

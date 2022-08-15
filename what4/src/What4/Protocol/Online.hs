@@ -239,28 +239,38 @@ checkSatisfiable proc rsn p =
         do assume conn p
            check proc rsn
 
--- | Get `n` abducts from the SMT solver, the disjunction of which entail `t`, and bind them to `nm`
+-- | `get-abuct nm t` queries the solver for the first abduct, which is returned
+--   as an SMT function definition named `nm`. The remaining abducts are obtained
+--   from the solver by successive invocations of the `get-abduct-next` command,
+--   which return SMT functions bound to the same `nm` as the first. The name `nm`
+--   is bound within the current assertion frame.
+--   Note that this is an unstable API; we expect that the return type will change 
+--   to a parsed expression in the future
 getAbducts ::
   SMTReadWriter solver =>
   SolverProcess scope solver ->
   Int ->
-  String ->
+  Text ->
   BoolExpr scope ->
   IO [String]
 getAbducts proc n nm t =
-  do let conn = solverConn proc
-     unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
-       fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
-     f <- mkFormula conn t
-     -- get the first abduct using the get-abduct command
-     addCommandNoAck conn (getAbductCommand conn nm f)
-     abd1 <- smtAbductResult conn conn nm f
-     -- get the remaining abducts using get-abduct-next commands
-     let rest = n - 1
-     abdRest <- forM [1..rest] $ \_ -> do
+  if (n > 0) then do 
+    let conn = solverConn proc
+    unless (supportedFeatures conn `hasProblemFeature` useProduceAbducts) $
+      fail $ show $ pretty (smtWriterName conn) <+> pretty "is not configured to produce abducts"
+    f <- mkFormula conn t
+    -- get the first abduct using the get-abduct command
+    addCommandNoAck conn (getAbductCommand conn nm f)
+    abd1 <- smtAbductResult conn conn nm f
+    -- get the remaining abducts using get-abduct-next commands
+    if (n > 1) then do
+      let rest = n - 1
+      abdRest <- forM [1..rest] $ \_ -> do
         addCommandNoAck conn (getAbductNextCommand conn)
         smtAbductNextResult conn conn
-     return (abd1:abdRest)
+      return (abd1:abdRest)
+    else return [abd1]
+  else return []
 
 -- | Check if the formula is satisifiable in the current
 --   solver state.  This is done in a
@@ -354,7 +364,7 @@ inNewFrame :: (MonadIO m, MonadMask m, SMTReadWriter solver) => SolverProcess sc
 inNewFrame p action = inNewFrameWithVars p [] action
 
 -- For abduction, we want the final assertion to be a in a new frame, so that it 
--- can be closed before asking for an abduct. The following two commands allow frame 2 
+-- can be closed before asking for abducts. The following two commands allow frame 2 
 -- to be pushed and popped independently of other commands
 -- | Open a second solver assumption frame.
 inNewFrame2Open :: SMTReadWriter solver => SolverProcess scope solver -> IO ()

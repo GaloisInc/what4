@@ -228,7 +228,8 @@ setInteractiveLogicAndOptions writer = do
     -- Tell cvc5 to make declarations global, so they are not removed by 'pop' commands
     SMT2.setOption writer "global-declarations" "true"
     -- FIXME: in cvc5-1.0.1, unsat-cores and produce-abducts are incompatible, but
-    -- cvc5-1.0.2 will fix this, and we can uncomment this once we that is released
+    -- cvc5-1.0.2 will fix this, and we can uncomment this once we that is released.
+    -- Closing issue #214 will fix this.
     -- Tell cvc5 to compute UNSAT cores, if that feature is enabled
     -- when (supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
     --  SMT2.setOption writer "produce-unsat-cores" "true"

@@ -6,7 +6,8 @@ module Main where
 
 import Data.Foldable (forM_)
 import System.IO (FilePath, IOMode(..), openFile, hClose)
-
+import System.IO.Temp (withSystemTempFile)
+import Data.Text
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(..))
 
@@ -74,17 +75,17 @@ testGetAbducts ::
   IO ()
 testGetAbducts sym f n = do
   -- Print SMT file in /tmp/
-  mirroredOutput <- openFile "/tmp/what4abduct.smt2" ReadWriteMode
-  let logData = LogData { logCallbackVerbose = \_ _ -> return ()
-                         , logVerbosity = 2
-                         , logReason = "defaultReason"
-                         , logHandle = Just mirroredOutput }
-  withCVC5 sym cvc5executable logData $ \session -> do
-    f_term <- mkSMTTerm (sessionWriter session) f
-    putStrLn "Abducts:"
-    abd <- runGetAbducts session n "abd" f_term 
-    forM_ abd putStrLn
-  hClose mirroredOutput
+  withSystemTempFile "what4abdoffline" $ \fname mirroredOutput -> do
+    let logData = LogData { logCallbackVerbose = \_ _ -> return ()
+                           , logVerbosity = 2
+                           , logReason = "defaultReason"
+                           , logHandle = Just mirroredOutput }
+    withCVC5 sym cvc5executable logData $ \session -> do
+      f_term <- mkSMTTerm (sessionWriter session) f
+      putStrLn "Abducts:"
+      abd <- runGetAbducts session n (pack "abd") f_term 
+      forM_ abd putStrLn
+    hClose mirroredOutput
 
 -- | Determine whether a predicate is satisfiable, and print out the values of a
 -- set of expressions if a satisfying instance is found.
@@ -95,28 +96,28 @@ prove ::
   IO ()
 prove sym f es = do
   -- We will use cvc5 to determine if f is satisfiable.
-  mirroredOutput <- openFile "/tmp/what4abductprove.smt2" ReadWriteMode
-  let logData = LogData { logCallbackVerbose = \_ _ -> return ()
-                         , logVerbosity = 2
-                         , logReason = "defaultReason"
-                         , logHandle = Just mirroredOutput }
-  notf <- notPred sym f
-  withCVC5 sym cvc5executable logData $ \session -> do
-    -- Assume f is true.
-    assume (sessionWriter session) notf
-    runCheckSat session $
-      \case
-        Sat (ge, _) -> do
-          putStrLn "Satisfiable, with model:"
-          forM_ es $ \(nm, e) -> do
-            v <- groundEval ge e
-            putStrLn $ "  " ++ nm ++ " := " ++ show v
-          putStrLn "\nEach of the following formulas would make the goal unsatisfiable:"
-          testGetAbducts sym f 5
-        Unsat _ -> putStrLn "Unsatisfiable."
-        Unknown -> putStrLn "Solver failed to find a solution."
-    putStrLn ""
-  hClose mirroredOutput
+  withSystemTempFile "what4prove" $ \fname mirroredOutput -> do
+    let logData = LogData { logCallbackVerbose = \_ _ -> return ()
+                           , logVerbosity = 2
+                           , logReason = "defaultReason"
+                           , logHandle = Just mirroredOutput }
+    notf <- notPred sym f
+    withCVC5 sym cvc5executable logData $ \session -> do
+      -- Assume f is true.
+      assume (sessionWriter session) notf
+      runCheckSat session $
+        \case
+          Sat (ge, _) -> do
+            putStrLn "Satisfiable, with model:"
+            forM_ es $ \(nm, e) -> do
+              v <- groundEval ge e
+              putStrLn $ "  " ++ nm ++ " := " ++ show v
+            putStrLn "\nEach of the following formulas would make the goal unsatisfiable:"
+            testGetAbducts sym f 5
+          Unsat _ -> putStrLn "Unsatisfiable."
+          Unknown -> putStrLn "Solver failed to find a solution."
+      putStrLn ""
+    hClose mirroredOutput
 
 testGetAbductOnline ::
   ExprBuilder t st fs ->
@@ -124,12 +125,12 @@ testGetAbductOnline ::
   BoolExpr t ->
   IO ()
 testGetAbductOnline sym hs g = do
-  mirroredOutput <- openFile "/tmp/what4abductproveonline.smt2" ReadWriteMode
-  proc <- startSolverProcess @(SMT2.Writer CVC5) cvc5Features (Just mirroredOutput) sym
-  let conn = solverConn proc
-  inNewFrame proc $ do
-    mapM_ (\x -> assume conn x) hs
-    res <- getAbducts proc 5 "abd" g
-    putStrLn ("Abducts:")
-    forM_ res putStrLn
-  hClose mirroredOutput
+  withSystemTempFile "what4abdonline" $ \fname mirroredOutput -> do
+    proc <- startSolverProcess @(SMT2.Writer CVC5) cvc5Features (Just mirroredOutput) sym
+    let conn = solverConn proc
+    inNewFrame proc $ do
+      mapM_ (\x -> assume conn x) hs
+      res <- getAbducts proc 5 (pack "abd") g
+      putStrLn ("Abducts:")
+      forM_ res putStrLn
+    hClose mirroredOutput
