@@ -6,8 +6,8 @@
 
 packages:
   what4/
-  --what4-abc/
-  --what4-blt/
+  what4-abc/
+  what4-blt/
   what4-transition-system/
 
 optional-packages:
