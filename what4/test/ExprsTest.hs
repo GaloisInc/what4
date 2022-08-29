@@ -91,7 +91,65 @@ testInt = testGroup "int operators"
           diff nabs (>=) 0
         _ -> failure
   , testIntDivMod
+  , testIntMinMax
   ]
+
+testIntMinMax :: TestTree
+testIntMinMax = testGroup "int min/max"
+  [ testProperty "(j <= c && c <= i) -> intMax j i == intMax i j == i" $
+    property $ do
+      c <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      liftIO $ withTestSolver $ \sym -> do 
+        j <- freshBoundedInt sym (safeSymbol "j") Nothing (Just c)
+        i <- freshBoundedInt sym (safeSymbol "i") (Just c) Nothing
+        max_j_i <- intMax sym j i
+        res1 <- intEq sym max_j_i i
+        asConstantPred res1 @=? Just True
+        max_i_j <- intMax sym i j
+        res2 <- intEq sym max_i_j i
+        asConstantPred res2 @=? Just True
+  , testProperty "(lo_i <= i && lo_j <= j) -> (max lo_j lo_j) <= intMax i j" $
+    property $ do
+      lo_i <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      lo_j <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      liftIO $ withTestSolver $ \sym -> do
+        i <- freshBoundedInt sym (safeSymbol "i") (Just lo_i) Nothing
+        j <- freshBoundedInt sym (safeSymbol "j") (Just lo_j) Nothing
+        lo <- intLit sym (max lo_i lo_j)
+        max_i_j <- intMax sym i j
+        res1 <- intLe sym lo max_i_j
+        asConstantPred res1 @=? Just True
+        max_j_i <- intMax sym j i
+        res2 <- intLe sym lo max_j_i
+        asConstantPred res2 @=? Just True   
+  , testProperty "(i <= c && c <= j) -> intMin j i == intMin i j == i" $
+    property $ do
+      c <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      liftIO $ withTestSolver $ \sym -> do
+        j <- freshBoundedInt sym (safeSymbol "j") (Just c) Nothing
+        i <- freshBoundedInt sym (safeSymbol "i") Nothing (Just c)
+        min_j_i <- intMin sym j i
+        res1 <- intEq sym min_j_i i
+        asConstantPred res1 @=? Just True
+        min_i_j <- intMin sym i j
+        res2 <- intEq sym min_i_j i
+        asConstantPred res2 @=? Just True
+  , testProperty "(i <= hi_i && j <= hi_j) -> intMin i j <= (min hi_j hi_j)" $
+    property $ do
+      hi_i <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      hi_j <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+      liftIO $ withTestSolver $ \sym -> do
+        i <- freshBoundedInt sym (safeSymbol "i") Nothing (Just hi_i)
+        j <- freshBoundedInt sym (safeSymbol "j") Nothing (Just hi_j)
+        hi <- intLit sym (min hi_i hi_j)
+        min_i_j <- intMin sym i j
+        res1 <- intLe sym min_i_j hi
+        asConstantPred res1 @=? Just True
+        min_j_i <- intMin sym j i
+        res2 <- intLe sym min_j_i hi
+        asConstantPred res2 @=? Just True
+  ]
+
 
 testIntDivMod :: TestTree
 testIntDivMod = testGroup "integer division and mod"
