@@ -89,7 +89,7 @@ prove sym f es = do
     withCVC5 sym cvc5executable logData $ \session -> do
       checkSatisfiable proc "test" notf
 
-{-testSatAbd :: TestTree
+testSatAbd :: TestTree
 testSatAbd = testCase "testing SAT query for abduction" $ do
   Some ng <- newIONonceGenerator
   sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState ng
@@ -118,11 +118,11 @@ testSatAbd = testCase "testing SAT query for abduction" $ do
                      , ("y", y)
                      , ("z", z)
                      ]
-  isUnsat res @? "unsat"-}
+  isUnsat res @? "unsat"
 
 main :: IO ()
 main = do
-  Some ng <- newIONonceGenerator
+  {-Some ng <- newIONonceGenerator
   sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState ng
 
   -- This line is necessary for working with cvc5.
@@ -158,6 +158,6 @@ main = do
   else if (isUnsat res) then
     putStrLn "\ncvc5 proved goal"
   else
-    putStrLn "\ncvc5 returned Unknown!"
-  {-defaultMain $ testGroup "Tests" $
-    [ testSatAbd ]-}
+    putStrLn "\ncvc5 returned Unknown!"-}
+  defaultMain $ testGroup "Tests" $
+    [ testSatAbd ]
