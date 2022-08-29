@@ -236,7 +236,9 @@ executable quickstart
     parameterized-utils,
     what4
 
-executable abduct
+test-suite abduct
+  import: testdefs-hunit
+  type: exitcode-stdio-1.0
   main-is: test/Abduct.hs
   default-language: Haskell2010
 

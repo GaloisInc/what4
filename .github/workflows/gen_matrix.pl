@@ -114,9 +114,6 @@ version(stp, "2_3_2").
 % n.b. stp 2_2_0 fails, no reason to test it
 
 version(cvc4, "1_8").
-version(cvc4, "1_7").
-
-version(cvc5, "1_0_0").
 version(cvc5, "1_0_1").
 
 version(boolector, "3_2_2").
