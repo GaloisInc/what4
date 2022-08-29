@@ -873,7 +873,7 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   -- | Generates command `(pop 1)` that closes the corresponding assertion frame
   popCommand    :: f h -> Command h
 
-  -- | Generates command `(push 2)` that opens the corresponding assertion frame
+  -- | Generates command @(push 2)@ that opens the corresponding assertion frame
   push2Command   :: f h -> Command h
 
   -- | Generates command `(pop 2)` that closes the corresponding assertion frame
