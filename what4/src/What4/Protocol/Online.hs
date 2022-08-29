@@ -239,10 +239,10 @@ checkSatisfiable proc rsn p =
         do assume conn p
            check proc rsn
 
--- | `get-abuct nm t` queries the solver for the first abduct, which is returned
---   as an SMT function definition named `nm`. The remaining abducts are obtained
---   from the solver by successive invocations of the `get-abduct-next` command,
---   which return SMT functions bound to the same `nm` as the first. The name `nm`
+-- | @get-abuct nm t@ queries the solver for the first abduct, which is returned
+--   as an SMT function definition named @nm@. The remaining abducts are obtained
+--   from the solver by successive invocations of the @get-abduct-next@ command,
+--   which return SMT functions bound to the same @nm@ as the first. The name @nm@
 --   is bound within the current assertion frame.
 --   Note that this is an unstable API; we expect that the return type will change 
 --   to a parsed expression in the future
