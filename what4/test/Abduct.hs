@@ -145,14 +145,14 @@ main = do
   defaultMain $ testGroup "Tests" $
     [ -- test passes if f is disproved (~f is sat)
       testSatAbd sym f [ ("x", x)
-                     , ("y", y)
-                     , ("z", z)
-                           ],
+                       , ("y", y)
+                       , ("z", z)
+                       ],
       -- test passes if cvc5 returns 3 abducts (offline)
       testAbdOffline sym f [ ("x", x)
-                     , ("y", y)
-                     , ("z", z)
-                     ],
+                           , ("y", y)
+                           , ("z", z)
+                           ],
       -- test passes if cvc5 returns 3 abducts (online)
       testAbdOnline sym [ygte0] xyzgte0
     ]
