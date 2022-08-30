@@ -61,9 +61,9 @@ testGetAbductOffline sym f n = do
   -- Print SMT file in /tmp/
   withSystemTempFile "what4abdoffline" $ \fname mirroredOutput -> do
     let logData = LogData { logCallbackVerbose = \_ _ -> return ()
-                           , logVerbosity = 2
-                           , logReason = "defaultReason"
-                           , logHandle = Just mirroredOutput }
+                          , logVerbosity = 2
+                          , logReason = "defaultReason"
+                          , logHandle = Just mirroredOutput }
     withCVC5 sym cvc5executable logData $ \session -> do
       f_term <- mkSMTTerm (sessionWriter session) f
       runGetAbducts session n (pack "abd") f_term
@@ -134,7 +134,7 @@ main = do
   z <- freshConstant sym (safeSymbol "z") BaseIntegerRepr
 
   -- Next, build up the clause
-  zero <- intLit sym 0                        -- 0
+  zero <- intLit sym 0                    -- 0
   pxyz <- intAdd sym x =<< intAdd sym y z -- x + y + z
   ygte0 <- intLe sym zero y               -- 0 <= y
   xyzgte0 <- intLe sym zero pxyz          -- 0 <= (x + y + z) 
@@ -143,14 +143,14 @@ main = do
   defaultMain $ testGroup "Tests" $
     [ -- test passes if f is disproved (~f is sat)
       testSatAbd sym f [ ("x", x)
-                     , ("y", y)
-                     , ("z", z)
-                           ],
+                       , ("y", y)
+                       , ("z", z)
+                       ],
       -- test passes if cvc5 returns 3 abducts (offline)
       testAbdOffline sym f [ ("x", x)
-                     , ("y", y)
-                     , ("z", z)
-                     ],
+                           , ("y", y)
+                           , ("z", z)
+                           ],
       -- test passes if cvc5 returns 3 abducts (online)
       testAbdOnline sym [ygte0] xyzgte0
     ]
