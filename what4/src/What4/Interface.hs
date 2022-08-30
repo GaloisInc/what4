@@ -740,14 +740,42 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
   -- | Return the minimum value of two integers.
   intMin :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
   intMin sym x y =
-    do p <- intLe sym x y
-       intIte sym p x y
+    do x_le_y <- intLe sym x y
+       y_le_x <- intLe sym y x
+       case (asConstantPred x_le_y, asConstantPred y_le_x) of
+         -- x <= y
+         (Just True, _) -> return x
+         -- x < y
+         (_, Just False) -> return x
+         -- y < x
+         (Just False, _) -> return y
+         -- y <= x
+         (_, Just True) -> return y
+         _ ->
+           do let rng_x = integerBounds x
+              let rng_y = integerBounds y
+              unsafeSetAbstractValue (rangeMin rng_x rng_y) <$>
+                intIte sym x_le_y x y
 
   -- | Return the maximum value of two integers.
   intMax :: sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
   intMax sym x y =
-    do p <- intLe sym x y
-       intIte sym p y x
+    do x_le_y <- intLe sym x y
+       y_le_x <- intLe sym y x
+       case (asConstantPred x_le_y, asConstantPred y_le_x) of
+         -- x <= y
+         (Just True, _) -> return y
+         -- x < y
+         (_, Just False) -> return y
+         -- y < x
+         (Just False, _) -> return x
+         -- y <= x
+         (_, Just True) -> return x
+         _ ->
+           do let rng_x = integerBounds x
+              let rng_y = integerBounds y
+              unsafeSetAbstractValue (rangeMax rng_x rng_y) <$>
+                intIte sym x_le_y y x
 
   -- | If-then-else applied to integers.
   intIte :: sym -> Pred sym -> SymInteger sym -> SymInteger sym -> IO (SymInteger sym)
