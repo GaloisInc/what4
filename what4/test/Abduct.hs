@@ -62,9 +62,9 @@ testGetAbductOffline sym f n = do
   -- Print SMT file in /tmp/
   withSystemTempFile "what4abdoffline" $ \fname mirroredOutput -> do
     let logData = LogData { logCallbackVerbose = \_ _ -> return ()
-                           , logVerbosity = 2
-                           , logReason = "defaultReason"
-                           , logHandle = Just mirroredOutput }
+                          , logVerbosity = 2
+                          , logReason = "defaultReason"
+                          , logHandle = Just mirroredOutput }
     withCVC5 sym cvc5executable logData $ \session -> do
       f_term <- mkSMTTerm (sessionWriter session) f
       runGetAbducts session n (pack "abd") f_term
