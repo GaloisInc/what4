@@ -239,7 +239,7 @@ executable quickstart
 test-suite abduct
   import: testdefs-hunit
   type: exitcode-stdio-1.0
-  main-is: test/Abduct.hs
+  main-is: Abduct.hs
   default-language: Haskell2010
 
   build-depends:
