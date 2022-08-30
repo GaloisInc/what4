@@ -50,7 +50,6 @@ testGetAbductOnline sym hs g n = do
     inNewFrame proc $ do
       mapM_ (\x -> assume conn x) hs
       getAbducts proc n (pack "abd") g
-    -- hClose mirroredOutput
 
 -- Call the offline getAbduct tactic
 testGetAbductOffline ::
@@ -68,7 +67,6 @@ testGetAbductOffline sym f n = do
     withCVC5 sym cvc5executable logData $ \session -> do
       f_term <- mkSMTTerm (sessionWriter session) f
       runGetAbducts session n (pack "abd") f_term
-    --hClose mirroredOutput
 
 -- Prove f using an SMT solver, by checking if ~f is unsatisfiable
 prove ::
@@ -108,7 +106,7 @@ testAbdOffline :: ExprBuilder t st fs ->
 testAbdOffline sym f es = testCase "getting 3 abducts using cvc5 offline" $ do
   -- Ask for 3 abducts for f
   res <- testGetAbductOffline sym f 3
-  (Data.List.length res == 3) @? "3 offline abducts"
+  (length res == 3) @? "3 offline abducts"
 
 testSatAbd :: ExprBuilder t st fs -> 
   BoolExpr t -> 
