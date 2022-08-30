@@ -136,7 +136,7 @@ main = do
   z <- freshConstant sym (safeSymbol "z") BaseIntegerRepr
 
   -- Next, build up the clause
-  zero <- intLit sym 0                        -- 0
+  zero <- intLit sym 0                    -- 0
   pxyz <- intAdd sym x =<< intAdd sym y z -- x + y + z
   ygte0 <- intLe sym zero y               -- 0 <= y
   xyzgte0 <- intLe sym zero pxyz          -- 0 <= (x + y + z) 
