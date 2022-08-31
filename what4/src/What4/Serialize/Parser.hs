@@ -97,12 +97,12 @@ data ProcessorEnv sym =
   , procLetEnv :: HM.HashMap Text (Some (W4.SymExpr sym))
   -- ^ The current lexical environment w.r.t. let-bindings
   -- encountered while parsing. N.B., these bindings are
-  -- checked _before_ the "global" bindings implied by the
+  -- checked _before_ the \"global\" bindings implied by the
   -- user-specified lookup functions.
   , procLetFnEnv :: HM.HashMap Text (SomeSymFn sym)
   -- ^ The current lexical symfn environment
   -- w.r.t. letfn-bindings encountered while parsing. N.B.,
-  -- these bindings are checked _before_ the "global"
+  -- these bindings are checked /before/ the \"global\"
   -- bindings implied by the user-specified lookup
   -- functions.
   }

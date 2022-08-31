@@ -67,7 +67,7 @@ parseList = do
 parseId :: Parser T.Text
 parseId = T.pack <$> ((:) <$> first <*> TM.many rest)
   where
-    w4symbol c = c == '@'
+    w4symbol c =  c == '@'
                || c == '+'
                || c == '-'
                || c == '='

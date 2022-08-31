@@ -256,7 +256,7 @@ runMemo :: Config -> (Memo t a) -> (a, MemoEnv t)
 runMemo cfg m = MS.runState m $ initEnv cfg
 
 
--- | Serialize the given sexpression within a `letfn` which
+-- | Serialize the given sexpression within a @letfn@ which
 -- serializes and binds all of the encountered SymFns. Note:
 -- this recursively also discovers and then serializes
 -- SymFns referenced within the body of the SymFns
@@ -305,7 +305,7 @@ mkLet bindings body = S.L [ident "let", S.L bindings, body]
 
 
 -- | Converts a What4 ExprSymFn into an s-expression within
--- the Memo monad (i.e., no `let` or `letfn`s are emitted).
+-- the Memo monad (i.e., no @let@ or @letfn@s are emitted).
 convertSymFn :: forall t args ret
               . W4.ExprSymFn t args ret
              -> Memo t SExpr
@@ -398,7 +398,7 @@ addLetBinding key sexp tp = do
   return letVarName
 
 -- | Converts a What 4 expression into an s-expression
--- within the Memo monad (i.e., no `let` or `letfn`s are
+-- within the Memo monad (i.e., no @let@ or @letfn@s are
 -- emitted in the result).
 convertExpr :: forall t tp . W4.Expr t tp -> Memo t SExpr
 convertExpr initialExpr = do

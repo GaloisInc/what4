@@ -119,7 +119,7 @@ type LogC = (Ghc.HasCallStack, HasLogCfg)
 -- We use an implicit param to avoid having to change all code in 'IO'
 -- that wants to log to be in 'MonadHasLogCfg' and 'MonadIO' classes.
 --
--- An even more convenient but more "unsafe" implementation would
+-- An even more convenient but more \"unsafe\" implementation would
 -- store the 'LogCfg' in a global, 'unsafePerformIO'd 'IORef'
 -- (cf. @uniqueSource@ in 'Data.Unique').
 type HasLogCfg = (?logCfg :: LogCfg)
@@ -160,7 +160,7 @@ getLogCfg = ?logCfg
 --   >       log Debug "Inside 'inner' ..."
 --   >       return 42
 --
---   then the call to 'log' in @inner@ will have "outer" as the
+--   then the call to 'log' in @inner@ will have \"outer\" as the
 --   enclosing function name.
 logIO :: (HasLogCfg, Ghc.HasCallStack, MonadIO m)
       => LogLevel -> LogMsg -> m ()
@@ -214,7 +214,7 @@ logEndWith cfg = case lcChan cfg of
 --
 -- The first argument is the human friendly name to assign to the
 -- current thread. Since logging should be configured as soon as
--- possible on startup, "main" is probably the right name.
+-- possible on startup, \"main\" is probably the right name.
 --
 -- See 'asyncNamed' for naming other threads.
 --
