@@ -7,30 +7,29 @@ module Main where
 import           Test.Tasty
 import           Test.Tasty.HUnit
 
-import Data.Foldable (forM_)
-import Data.List (length)
-import System.IO (FilePath, IOMode(..), openFile, hClose)
-import System.IO.Temp (withSystemTempFile)
-import Data.Text
-import Data.Parameterized.Nonce (newIONonceGenerator)
-import Data.Parameterized.Some (Some(..))
+import           Data.Foldable (forM_)
+import qualified Data.Text as Text
+import           Data.Parameterized.Nonce (newIONonceGenerator)
+import           Data.Parameterized.Some (Some(..))
 
-import What4.Config (extendConfig)
-import What4.Expr
-         ( ExprBuilder,  FloatModeRepr(..), newExprBuilder
-         , BoolExpr, IntegerExpr, GroundValue, groundEval
-         , EmptyExprBuilderState(..))
-import What4.Interface
-         ( BaseTypeRepr(..), getConfiguration
-         , freshConstant, safeSymbol, notPred
-         , impliesPred, intLit, intAdd, intLe )
-import What4.Solver
-import What4.Symbol (SolverSymbol(..))
-import What4.Protocol.SMTLib2 as SMT2
-         (assume, sessionWriter, runCheckSat, runGetAbducts, Writer)
-import What4.Protocol.SMTWriter
-         (mkSMTTerm)
-import What4.Protocol.Online
+import           System.IO (FilePath, IOMode(..), openFile, hClose)
+import           System.IO.Temp (withSystemTempFile)
+import           What4.Config (extendConfig)
+import           What4.Expr
+                   ( ExprBuilder,  FloatModeRepr(..), newExprBuilder
+                   , BoolExpr, IntegerExpr, GroundValue, groundEval
+                   , EmptyExprBuilderState(..))
+import           What4.Interface
+                   ( BaseTypeRepr(..), getConfiguration
+                   , freshConstant, safeSymbol, notPred
+                   , impliesPred, intLit, intAdd, intLe )
+import           What4.Solver
+import           What4.Symbol (SolverSymbol(..))
+import           What4.Protocol.SMTLib2 as SMT2
+                   (assume, sessionWriter, runCheckSat, runGetAbducts, Writer)
+import           What4.Protocol.SMTWriter
+                   (mkSMTTerm)
+import           What4.Protocol.Online
 
 cvc5executable :: FilePath
 cvc5executable = "cvc5"
@@ -49,7 +48,7 @@ testGetAbductOnline sym hs g n = do
     let conn = solverConn proc
     inNewFrame proc $ do
       mapM_ (\x -> assume conn x) hs
-      getAbducts proc n (pack "abd") g
+      getAbducts proc n (Text.pack "abd") g
 
 -- Call the offline getAbduct tactic
 testGetAbductOffline ::
@@ -66,7 +65,7 @@ testGetAbductOffline sym f n = do
                           , logHandle = Just mirroredOutput }
     withCVC5 sym cvc5executable logData $ \session -> do
       f_term <- mkSMTTerm (sessionWriter session) f
-      runGetAbducts session n (pack "abd") f_term
+      runGetAbducts session n (Text.pack "abd") f_term
 
 -- Prove f using an SMT solver, by checking if ~f is unsatisfiable
 prove ::
@@ -97,7 +96,7 @@ testAbdOnline :: ExprBuilder t st fs ->
 testAbdOnline sym hs g = testCase "getting 3 abducts using cvc5 online" $ do
   -- Ask for 3 abducts for f
   res <- testGetAbductOnline sym hs g 3
-  (Data.List.length res == 3) @? "3 online abducts"
+  (length res == 3) @? "3 online abducts"
 
 testAbdOffline :: ExprBuilder t st fs -> 
   BoolExpr t -> 
