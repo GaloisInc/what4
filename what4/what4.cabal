@@ -130,7 +130,7 @@ library
     th-abstraction >=0.1 && <0.5,
     th-lift >= 0.8.2 && < 0.9,
     th-lift-instances >= 0.1 && < 0.2,
-    time >= 1.8 && < 1.10,
+    time >= 1.8 && < 1.12,
     transformers >= 0.4,
     unliftio >= 0.2 && < 0.3,
     unordered-containers >= 0.2.10,

@@ -21,20 +21,19 @@ import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
+import qualified Data.String as String
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Map.Ordered as OMap
 import           Hedgehog
 import qualified LibBF as BF
 
--- import qualified What4.Utils.Log as Log
 import           Test.Tasty
-import           Test.Tasty.Hedgehog
+import           Test.Tasty.Hedgehog hiding (testProperty)
 import           SerializeTestUtils
 import qualified What4.Expr.Builder as S
 import           What4.BaseTypes
-import qualified What4.Interface as WI -- ( getConfiguration )
--- import qualified What4.Serialize.Normalize as WN
+import qualified What4.Interface as WI
 
 import qualified What4.Serialize.Printer as WOUT
 import qualified What4.Serialize.Parser as WIN
@@ -225,3 +224,19 @@ mkEquivalenceTest parseSExpr argTs getExpr = do
           fn1out <- liftIO $ WI.definedFn sym (WI.safeSymbol "fn") bvs expr WI.NeverUnfold
           symFnEqualityTest sym fn1out fn2
 
+-- | Create a 'T.TestTree' from a Hedgehog 'Property'.
+--
+-- Note that @tasty-hedgehog@'s version of 'testProperty' has been deprecated
+-- in favor of 'testPropertyNamed', whose second argument is intended to
+-- represent the name of a top-level 'Property' value to run in the event that
+-- the test fails. See https://github.com/qfpl/tasty-hedgehog/pull/42.
+--
+-- That being said, @what4-serialize@ currently does not define any of the
+-- properties that it tests as top-level values. In the
+-- meantime, we avoid incurring deprecation warnings by defining our own
+-- version of 'testProperty'. The downside to this workaround is that if a
+-- property fails, the error message it will produce will likely suggest
+-- running ill-formed Haskell code, so users will have to use context clues to
+-- determine how to /actually/ reproduce the error.
+testProperty :: TestName -> Property -> TestTree
+testProperty name = testPropertyNamed name (String.fromString name)

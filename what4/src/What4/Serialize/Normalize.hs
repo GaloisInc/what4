@@ -34,7 +34,10 @@ import qualified What4.Expr.Builder as B
 import qualified What4.Expr.WeightedSum as WSum
 import           Data.Parameterized.Classes
 
-
+-- | Apply some normalizations to make function call arguments more readable.  Examples include:
+--
+--  * Avoid wrapping single literals in a 'B.SemiRingLiteral' and just represent them as a bare integer literals
+--  * Attempt to reduce function calls with constant arguments where possible
 normSymFn :: forall sym st fs t args ret. sym ~ B.ExprBuilder t st fs
           => sym
           -> B.ExprSymFn t args ret
@@ -63,7 +66,8 @@ normExpr sym e = go e
         go x = return x
 
 -- | Normalize an expression by passing it back through the builder
--- FIXME: incomplete
+--
+-- NOTE: We may want to audit the cases here for completeness
 normAppExpr :: forall sym st fs t tp
              . sym ~ S.ExprBuilder t st fs
             => sym

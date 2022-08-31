@@ -43,7 +43,6 @@ import qualified Data.HashMap.Lazy as HM
 import           Data.Kind
 import qualified Data.SCargot.Repr.WellFormed as S
 
-import qualified Data.List as List
 import           Data.Text ( Text )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -921,9 +920,11 @@ readExpr (S.WFSAtom (ABV len val)) = do
   -- The following two patterns should never fail, given that during parsing we
   -- can only construct BVs with positive length.
   case someNat (toInteger len) of
-    Just (Some lenRepr) ->
-        let Just pf = isPosNat lenRepr
-        in liftIO $ withLeqProof pf (Some <$> W4.bvLit sym lenRepr (BV.mkBV lenRepr val))
+    Just (Some lenRepr) -> do
+        pf <- case isPosNat lenRepr of
+                Just pf -> return pf
+                Nothing -> E.throwError "What4.Serialize.Parser.readExpr isPosNat failure"
+        liftIO $ withLeqProof pf (Some <$> W4.bvLit sym lenRepr (BV.mkBV lenRepr val))
     Nothing -> E.throwError "SemMC.Formula.Parser.readExpr someNat failure"
   -- Just (Some lenRepr) <- return $ someNat (toInteger len)
   -- let Just pf = isPosNat lenRepr
@@ -970,18 +971,27 @@ readFnType ::
   forall sym . (W4.IsSymExprBuilder sym, ShowF (W4.SymExpr sym))
   => SExpr
   -> Processor sym ([Some BaseTypeRepr], Some BaseTypeRepr)
-readFnType (S.WFSList ((S.WFSAtom (AId "->")):typeSExprs))
-  | length typeSExprs < 1 =
+readFnType (S.WFSList ((S.WFSAtom (AId "->")):typeSExprs)) =
+  case unsnoc typeSExprs of
+    Nothing ->
       E.throwError $ ("invalid type signature for function: "
                       ++ (T.unpack $ printSExpr mempty (S.L typeSExprs)))
-  | otherwise = do
-      let (domSExps, [retSExp]) = List.splitAt ((length typeSExprs) - 1) typeSExprs
+    Just (domSExps, retSExp) -> do
       dom <- mapM readBaseType domSExps
       ret <- readBaseType retSExp
       return (dom, ret)
 readFnType sexpr =
   E.throwError $ ("invalid type signature for function: "
                   ++ (T.unpack $ printSExpr mempty sexpr))
+
+-- | If the list is empty, return 'Nothing'. If the list is non-empty, return
+-- @'Just' (xs, x)@, where @xs@ is equivalent to calling 'init' on the list and
+-- @x@ is equivalent to calling 'last' on the list.
+unsnoc :: [a] -> Maybe ([a], a)
+unsnoc []     = Nothing
+unsnoc (x:xs) = case unsnoc xs of
+                  Nothing    -> Just ([], x)
+                  Just (a,b) -> Just (x:a, b)
 
 readFnArgs ::
   forall sym . (W4.IsSymExprBuilder sym, ShowF (W4.SymExpr sym))

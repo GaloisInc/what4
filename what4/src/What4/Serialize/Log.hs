@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
-
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -94,18 +92,6 @@ data LogLevel = Debug -- ^ Fine details
               deriving (Show, Eq, Ord, Read)
 
 type LogMsg = String
-
--- | Constraints for functions that call the logger.
---
--- WARNING: Due to GHC bug, this can't be used:
--- https://ghc.haskell.org/trac/ghc/ticket/14218
---
--- Prefer this to plain 'HasLogCfg', since this also adds a call stack
--- frame which allows the logger to print the name of the function
--- calling the logger.
-{-
-type LogC = (Ghc.HasCallStack, HasLogCfg)
--}
 
 ----------------------------------------------------------------
 -- ** Implicit param logger interface
@@ -223,13 +209,13 @@ logEndWith cfg = case lcChan cfg of
 -- the log events.
 mkLogCfg :: String -> IO LogCfg
 mkLogCfg threadName = do
-  lcChan <- BC.newBoundedChan 100
+  chan <- BC.newBoundedChan 100
   threadMap <- do
     tid <- show <$> Cc.myThreadId
     return $ Map.fromList [ (tid, threadName) ]
-  lcThreadMap <- Stm.newTVarIO threadMap
-  return $ LogCfg { lcChan = Just lcChan
-                  , lcThreadMap = lcThreadMap }
+  threadMapVar <- Stm.newTVarIO threadMap
+  return $ LogCfg { lcChan = Just chan
+                  , lcThreadMap = threadMapVar }
 
 
 -- | Initialize a 'LogCfg' that does no logging.
@@ -238,9 +224,9 @@ mkLogCfg threadName = do
 -- Runtime overhead is smaller when this configuration is specified at
 -- compile time.
 mkNonLogCfg :: IO LogCfg
-mkNonLogCfg = do lcThreadMap <- Stm.newTVarIO Map.empty
+mkNonLogCfg = do tmVar <- Stm.newTVarIO Map.empty
                  return LogCfg { lcChan = Nothing
-                               , lcThreadMap = lcThreadMap
+                               , lcThreadMap = tmVar
                                }
 
 
@@ -273,20 +259,20 @@ withLogging threadName logEventConsumer action = do
 -- 'Debug' level messages.
 consumeUntilEnd ::
   (LogEvent -> Bool) -> (LogEvent -> IO ()) -> LogCfg -> IO ()
-consumeUntilEnd pred k cfg =
+consumeUntilEnd keepEvent k cfg =
   case lcChan cfg of
     Nothing -> return ()
     Just c -> do
       mevent <- BC.readChan c
       case mevent of
-        Just event -> do when (pred event) $ k event
-                         consumeUntilEnd pred k cfg
+        Just event -> do when (keepEvent event) $ k event
+                         consumeUntilEnd keepEvent k cfg
         _ -> return ()
 
 -- | A log event consumer that prints formatted log events to stderr.
 stdErrLogEventConsumer :: (LogEvent -> Bool) -> LogCfg -> IO ()
-stdErrLogEventConsumer pred =
-  consumeUntilEnd pred $ \e -> do
+stdErrLogEventConsumer keepEvent =
+  consumeUntilEnd keepEvent $ \e -> do
     -- Use 'traceIO' because it seems to be atomic in practice,
     -- avoiding problems with interleaving output from other sources.
     traceIO (prettyLogEvent e)
@@ -297,20 +283,20 @@ stdErrLogEventConsumer pred =
 -- Note that logs are opened in the 'w' mode (i.e., overwrite).  Callers should
 -- preserve old log files if they really want.
 fileLogEventConsumer :: FilePath -> (LogEvent -> Bool) -> LogCfg -> IO ()
-fileLogEventConsumer fp pred cfg = IO.withFile fp IO.WriteMode $ \h -> do
+fileLogEventConsumer fp keepEvent cfg = IO.withFile fp IO.WriteMode $ \h -> do
   let k e = IO.hPutStrLn h (prettyLogEvent e) >> IO.hFlush h
-  consumeUntilEnd pred k cfg
+  consumeUntilEnd keepEvent k cfg
 
 -- | A log event consumer that writes formatted log events to a tmp
 -- file.
 tmpFileLogEventConsumer :: (LogEvent -> Bool) -> LogCfg -> IO ()
-tmpFileLogEventConsumer pred cfg = do
+tmpFileLogEventConsumer keepEvent cfg = do
   tmpdir <- (++ "/brittle") <$> getTemporaryDirectory
   createDirectoryIfMissing True tmpdir
   (tmpFilePath, tmpFile) <- IO.openTempFile tmpdir "log.txt"
   printf "\n\nWriting logs to %s\n\n" tmpFilePath
   let k e = IO.hPutStrLn tmpFile (prettyLogEvent e) >> IO.hFlush tmpFile
-  consumeUntilEnd pred k cfg
+  consumeUntilEnd keepEvent k cfg
 
 ----------------------------------------------------------------
 -- ** Named threads

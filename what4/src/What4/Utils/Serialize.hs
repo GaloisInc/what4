@@ -15,20 +15,15 @@
 module What4.Utils.Serialize
     (
       withRounding
-    , fromJust'
     , makeSymbol
-    , SomeSome(..)
     , asyncLinked
     , withAsyncLinked
     ) where
 
 import qualified Control.Exception as E
-import           Data.Kind
 import           Text.Printf ( printf )
-import           Data.Maybe ( fromMaybe )
 import qualified Data.BitVector.Sized as BV
 import           What4.BaseTypes
-import           What4.Serialize.Log
 import qualified What4.Interface as S
 import           What4.Symbol ( SolverSymbol, userSymbol )
 
@@ -57,17 +52,23 @@ asyncLinked action = do
   -- exception (e.g. via 'U.cancel') could arrive after
   -- @handleUnliftIO@ starts to run but before @action@ starts.
   U.mask $ \restore -> do
-  a <- U.async $ handleUnliftIO (\E.ThreadKilled -> return ()) (restore action)
+  a <- U.async $ handleUnliftIO threadKilledHandler (restore action)
   restore $ do
   U.link a
   return a
+
+-- | Handle asynchronous 'E.ThreadKilled' exceptions without killing the parent
+-- thread. All other forms of asynchronous exceptions are rethrown.
+threadKilledHandler :: Monad m => E.AsyncException -> m ()
+threadKilledHandler E.ThreadKilled = return ()
+threadKilledHandler e              = E.throw e
 
 -- | A version of 'U.withAsync' that safely links the child. See
 -- 'asyncLinked'.
 withAsyncLinked :: (U.MonadUnliftIO m) => m () -> (U.Async () -> m a) -> m a
 withAsyncLinked child parent = do
   U.mask $ \restore -> do
-  U.withAsync (handleUnliftIO (\E.ThreadKilled -> return ()) $ restore child) $ \a -> restore $ do
+  U.withAsync (handleUnliftIO threadKilledHandler $ restore child) $ \a -> restore $ do
   U.link a
   parent a
 
@@ -82,10 +83,6 @@ handleUnliftIO :: (U.MonadUnliftIO m, U.Exception e)
 handleUnliftIO h a = U.withUnliftIO $ \u ->
   E.handle (U.unliftIO u . h) (U.unliftIO u a)
 
--- | Like 'Data.Parameterized.Some.Some', but for doubly-parameterized types.
-data SomeSome (f :: k1 -> k2 -> Type) = forall x y. SomeSome (f x y)
-
-
 -- | Try converting any 'String' into a 'SolverSymbol'. If it is an invalid
 -- symbol, then error.
 makeSymbol :: String -> SolverSymbol
@@ -94,13 +91,11 @@ makeSymbol name = case userSymbol sanitizedName of
                     Left _ -> error $ printf "tried to create symbol with bad name: %s (%s)"
                                              name sanitizedName
   where
+    -- We use a custom name sanitizer here because downstream clients may depend
+    -- on the format of the name. It would be nice to use 'safeSymbol' here, but
+    -- it mangles names with z-encoding in a way that might be unusable
+    -- downstream.
     sanitizedName = map (\c -> case c of ' ' -> '_'; '.' -> '_'; _ -> c) name
-
--- | Traceback-friendly fromJust alternative.
-fromJust' :: (HasCallStack) => String -> Maybe a -> a
-fromJust' label x =
-    let msg = "fromJust': got Nothing (" ++ label ++ ")"
-    in fromMaybe (error msg) x
 
 withRounding
   :: forall sym tp

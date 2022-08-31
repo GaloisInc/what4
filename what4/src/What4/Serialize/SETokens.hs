@@ -76,11 +76,6 @@ ident = SC.A . AId
 ident' :: String -> SExpr
 ident' = SC.A . AId . T.pack
 
-
--- | Lift a quoted identifier.
--- quoted :: String -> SExpr
--- quoted = SC.A . AQuoted
-
 -- | Lift an integer.
 int :: Integer -> SExpr
 int = SC.A . AInt
@@ -129,7 +124,6 @@ printAtom :: Atom -> T.Text
 printAtom a =
   case a of
     AId s -> s
-    --AQuoted s -> T.pack ('\'' : s)
     AStr si s -> (stringInfoToPrefix si)<>"\""<>s<>"\""
     AInt i -> T.pack (show i)
     ANat n -> T.pack $ "#u"++(show n)
