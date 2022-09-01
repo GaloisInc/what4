@@ -38,7 +38,10 @@ module What4.Protocol.SMTLib2
   , writeCheckSat
   , writeExit
   , writeGetValue
+  , writeGetAbduct
+  , writeGetAbductNext
   , runCheckSat
+  , runGetAbducts
   , asSMT2Type
   , setOption
   , getVersion
@@ -676,6 +679,8 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
 
   pushCommand _  = SMT2.push 1
   popCommand _   = SMT2.pop 1
+  push2Command _ = SMT2.push 2
+  pop2Command _ = SMT2.pop 2
   resetCommand _ = SMT2.resetAssertions
   popManyCommands _ n = [SMT2.pop (toInteger n)]
 
@@ -684,6 +689,9 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
 
   getUnsatAssumptionsCommand _ = SMT2.getUnsatAssumptions
   getUnsatCoreCommand _ = SMT2.getUnsatCore
+  getAbductCommand _ nm e = SMT2.getAbduct nm e
+  getAbductNextCommand _ = SMT2.getAbductNext
+  
   setOptCommand _ = SMT2.setOption
 
   declareCommand _proxy v argTypes retType =
@@ -754,6 +762,12 @@ setProduceModels w b = addCommand w $ SMT2.setProduceModels b
 
 writeGetValue :: SMTLib2Tweaks a => WriterConn t (Writer a) -> [Term] -> IO ()
 writeGetValue w l = addCommandNoAck w $ SMT2.getValue l
+
+writeGetAbduct :: SMTLib2Tweaks a => WriterConn t (Writer a) -> Text -> Term -> IO ()
+writeGetAbduct w nm p = addCommandNoAck w $ SMT2.getAbduct nm p
+
+writeGetAbductNext :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeGetAbductNext w = addCommandNoAck w SMT2.getAbductNext
 
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
@@ -891,6 +905,32 @@ runGetValue s e = do
         _ -> Nothing
   getLimitedSolverResponse "get value" valRsp (sessionWriter s) (SMT2.getValue [e])
 
+-- | runGetAbducts s nm p n, returns n formulas (as strings) the disjunction of which entails p (along with all
+--   the assertions in the context)
+runGetAbducts :: SMTLib2Tweaks a
+             => Session t a
+             -> Int
+             -> Text
+             -> Term
+             -> IO [String]
+runGetAbducts s n nm p = 
+  if (n > 0) then do
+    writeGetAbduct (sessionWriter s) nm p
+    let valRsp = \x -> case x of
+          -- SMT solver returns `(define-fun nm () Bool X)` where X is the abduct, we discard everything but the abduct
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just $ Data.String.unwords (map sExpToString abduct)
+          _ -> Nothing
+    -- get first abduct using the get-abduct command
+    abd1 <- getLimitedSolverResponse "get abduct" valRsp (sessionWriter s) (SMT2.getAbduct nm p)
+    if (n > 1) then do
+      let rest = n - 1
+      replicateM_ rest $ writeGetAbductNext (sessionWriter s)
+      -- get the rest of the abducts using the get-abduct-next command
+      abdRest <- forM [1..rest] $ \_ -> getLimitedSolverResponse "get abduct next" valRsp (sessionWriter s) (SMT2.getAbduct nm p)
+      return (abd1:abdRest)
+    else return [abd1]
+  else return []
+
 -- | This function runs a check sat command
 runCheckSat :: forall b t a.
                SMTLib2Tweaks b
@@ -937,6 +977,20 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
           _ -> Nothing
         cmd = getUnsatCoreCommand p
     in getLimitedSolverResponse "unsat core" unsatCoreRsp s cmd
+
+  smtAbductResult p s nm t =
+    let abductRsp = \case
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just $ Data.String.unwords (map sExpToString abduct)
+          _ -> Nothing
+        cmd = getAbductCommand p nm t
+    in getLimitedSolverResponse "get abduct" abductRsp s cmd
+
+  smtAbductNextResult p s =
+    let abductRsp = \case
+          AckSuccessSExp (SApp (_ : _ : _ : _ : abduct)) -> Just $ Data.String.unwords (map sExpToString abduct)
+          _ -> Nothing
+        cmd = getAbductNextCommand p
+    in getLimitedSolverResponse "get abduct next" abductRsp s cmd
 
 
 smtAckResult :: AcknowledgementAction t (Writer a)

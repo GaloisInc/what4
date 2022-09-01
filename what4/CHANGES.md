@@ -7,6 +7,8 @@
 
 * Added support for the cvc5 SMT solver.
 
+* Added a `get-abduct` feature which is compatible with cvc5.
+
 # 1.3 (April 2022)
 
 * Allow building with GHC 9.2.

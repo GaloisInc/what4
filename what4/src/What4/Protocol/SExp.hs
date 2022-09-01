@@ -19,6 +19,7 @@ module What4.Protocol.SExp
   , asAtomList
   , asNegAtomList
   , skipSpaceOrNewline
+  , sExpToString
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -111,3 +112,8 @@ asAtomList (SApp xs) = go xs
   go (SAtom a:ys) = (a:) <$> go ys
   go _ = Nothing
 asAtomList _ = Nothing
+
+sExpToString :: SExp -> String
+sExpToString (SAtom t) = Text.unpack t
+sExpToString (SString t) = ('"' : Text.unpack t) ++ ['"']
+sExpToString (SApp ss) = ('(' : Data.String.unwords (map sExpToString ss)) ++ [')']

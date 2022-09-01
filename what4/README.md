@@ -273,7 +273,7 @@ on as wide a collection of solvers as is reasonable.
 - Z3 versions 4.8.7 through 4.8.12
 - Yices 2.6.1 and 2.6.2
 - CVC4 1.7 and 1.8
-- CVC5 1.0.0
+- CVC5 1.0.2
 - Boolector 3.2.1 and 3.2.2
 - STP 2.3.3
     (However, note https://github.com/stp/stp/issues/363, which prevents

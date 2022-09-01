@@ -867,11 +867,17 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   --   later reporting unsatisfiable cores).
   assertNamedCommand :: f h -> Term h -> Text -> Command h
 
-  -- | Push 1 new scope
+  -- | Generates command @(push 1)@ that opens the corresponding assertion frame
   pushCommand   :: f h -> Command h
 
-  -- | Pop 1 existing scope
+  -- | Generates command @(pop 1)@ that closes the corresponding assertion frame
   popCommand    :: f h -> Command h
+
+  -- | Generates command @(push 2)@ that opens the corresponding assertion frame
+  push2Command   :: f h -> Command h
+
+  -- | Generates command @(pop 2)@ that closes the corresponding assertion frame, used for abduction
+  pop2Command    :: f h -> Command h
 
   -- | Pop several scopes.
   popManyCommands :: f h -> Int -> [Command h]
@@ -897,6 +903,12 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   --   previously asserted using the `assertNamedCommand` after an unsatisfiable
   --   `checkCommand`.
   getUnsatCoreCommand :: f h -> Command h
+
+  -- | Ask the solver to return an abduct
+  getAbductCommand :: f h -> Text -> Term h -> Command h
+
+  -- | Ask the solver for the next abduct, used after a get-abduct command
+  getAbductNextCommand :: f h -> Command h
 
   -- | Set an option/parameter.
   setOptCommand :: f h -> Text -> Text -> Command h
@@ -2981,6 +2993,12 @@ class SMTWriter h => SMTReadWriter h where
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   These correspond to previously-named assertions.
   smtUnsatCoreResult :: f h -> WriterConn t h -> IO [Text]
+
+  -- | Parse an abduct returned by the get-abduct command
+  smtAbductResult :: f h -> WriterConn t h -> Text -> Term h -> IO String
+
+  -- | Parse an abduct returned by the get-abduct-next command
+  smtAbductNextResult :: f h -> WriterConn t h -> IO String
 
   -- | Parse a list of names of assumptions that form an unsatisfiable core.
   --   The boolean indicates the polarity of the atom: true for an ordinary
