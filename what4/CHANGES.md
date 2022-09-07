@@ -9,6 +9,8 @@
 
 * Added a `get-abduct` feature which is compatible with cvc5.
 
+* Added modules to support serialization and deserialization of what4 terms into an s-expression format that is a superset of SMTLib2. See the `What4.Serialize.Printer`, `What4.Serialize.Parser`, and `What4.Serialize.FastSExpr` modules. Note that these modules have names that conflict with the now deprecated what4-serialize package, from which they were copied. If you are updating to this version of what4, delete your dependency on what4-serialize.
+
 # 1.3 (April 2022)
 
 * Allow building with GHC 9.2.

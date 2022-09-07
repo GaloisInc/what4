@@ -224,6 +224,12 @@ The key modules to look at when interacting with a solver are:
 Additional implementation and operational documentation can be found
 in the [implementation documentation in doc/implementation.md](doc/implementation.md).
 
+To serialize and deserialize what4 terms, see the following modules:
+
+* `What4.Serialize.Printer` (to serialize what4 terms into an s-expression format)
+* `What4.Serialize.Parser` (to deserialize what4 terms)
+* `What4.Serialize.FastSExpr` (provides a faster s-expression parser than the default, intended to be used in conjunction with the higher-level parsing in `What4.Serialize.Parser`)
+
 ## Formula Construction vs Solving
 
 In what4, building expressions and solving expressions are orthogonal concerns.
