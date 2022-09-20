@@ -38,6 +38,12 @@ provide several type family definitions and class instances for @sym@:
 
   [@instance 'HashableF' ('SymExpr' sym)@]
 
+  [@instance 'OrdF' ('BoundVar' sym)@]
+
+  [@instance 'TestEquality' ('BoundVar' sym)@]
+
+  [@instance 'HashableF' ('BoundVar' sym)@]
+
 The canonical implementation of these interface classes is found in "What4.Expr.Builder".
 -}
 {-# LANGUAGE CPP #-}
@@ -71,6 +77,8 @@ module What4.Interface
 
     -- ** Expression recognizers
   , IsExpr(..)
+  , SomeSymFn(..)
+  , ArgsRetSymFn(..)
   , IsSymFn(..)
   , UnfoldPolicy(..)
   , shouldUnfold
@@ -205,6 +213,7 @@ import           Data.Parameterized.Utils.Endian (Endian(..))
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import qualified Data.Parameterized.Vector as Vector
+import qualified Data.Parameterized.Map as Parameterized.Map
 import           Data.Ratio
 import           Data.Scientific (Scientific)
 import           Data.Set (Set)
@@ -587,7 +596,7 @@ instance (HashableF (SymExpr sym), TestEquality (SymExpr sym)) => Hashable (SymN
 -- of an undefined function is _not_ guaranteed to be equivalant to a free
 -- constant, and no guarantees are made about what properties such values
 -- will satisfy.
-class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
+class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       , TestEquality (SymAnnotation sym), OrdF (SymAnnotation sym)
       , HashableF (SymAnnotation sym)
       ) => IsExprBuilder sym where
@@ -2718,8 +2727,12 @@ iteList ite sym ((mp,mx):xs) def =
 -- 'IsSymExprBuilder'.
 type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
+data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
+data ArgsRetSymFn sym ctx where
+  ArgsRetSymFn :: forall sym args ret . SymFn sym args ret -> ArgsRetSymFn sym (args ::> ret)
+
 -- | A class for extracting type representatives from symbolic functions
-class IsSymFn fn where
+class IsSymFn (fn :: Ctx BaseType-> BaseType -> Type) where
   -- | Get the argument types of a function.
   fnArgTypes :: fn args ret -> Ctx.Assignment BaseTypeRepr args
 
@@ -2769,6 +2782,7 @@ instance Show InvalidRange where
 class ( IsExprBuilder sym
       , IsSymFn (SymFn sym)
       , OrdF (SymExpr sym)
+      , OrdF (BoundVar sym)
       ) => IsSymExprBuilder sym where
 
   ----------------------------------------------------------------------
@@ -2913,6 +2927,16 @@ class ( IsExprBuilder sym
              -> Ctx.Assignment (SymExpr sym) args
                 -- ^ Arguments to function
              -> IO (SymExpr sym ret)
+
+  symExprBuilderFns :: sym -> IO [SomeSymFn sym]
+  substituteSymFns ::
+    sym ->
+    [Parameterized.Map.Pair (ArgsRetSymFn sym) (ArgsRetSymFn sym)] ->
+    SymExpr sym tp ->
+    IO (SymExpr sym tp)
+
+  exprFoo :: sym -> [Pred sym] -> IO [Pred sym]
+  exprBar :: sym -> SomeSymFn sym -> IO (SomeSymFn sym)
 
 -- | This returns true if the value corresponds to a concrete value.
 baseIsConcrete :: forall e bt

@@ -29,6 +29,7 @@ somewhat limited.  Consider the @exprBuilderFreshConfig@ or
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
@@ -181,7 +182,8 @@ module What4.Expr.Builder
 import qualified Control.Exception as Ex
 import           Control.Lens hiding (asIndex, (:>), Empty)
 import           Control.Monad
-import           Control.Monad.IO.Class
+import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.Trans.Writer.Strict (writer, runWriter)
 import qualified Data.BitVector.Sized as BV
@@ -189,6 +191,8 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 
 import           Data.Hashable
+import qualified Data.HashTable.Class as HC
+import qualified Data.HashTable.IO as H
 import           Data.IORef
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -207,6 +211,7 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio (numerator, denominator)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Word as Word
 import           GHC.Float (castFloatToWord32, castDoubleToWord64)
 import qualified LibBF as BF
 
@@ -247,19 +252,19 @@ import           What4.Utils.StringLiteral
 toDouble :: Rational -> Double
 toDouble = fromRational
 
-cachedEval :: (HashableF k, TestEquality k)
+cachedEval :: (HashableF k, TestEquality k, MonadIO m)
            => PH.HashTable RealWorld k a
            -> k tp
-           -> IO (a tp)
-           -> IO (a tp)
+           -> m (a tp)
+           -> m (a tp)
 cachedEval tbl k action = do
-  mr <- stToIO $ PH.lookup tbl k
+  mr <- liftIO $ stToIO $ PH.lookup tbl k
   case mr of
     Just r -> return r
     Nothing -> do
       r <- action
       seq r $ do
-      stToIO $ PH.insert tbl k r
+      liftIO $ stToIO $ PH.insert tbl k r
       return r
 
 ------------------------------------------------------------------------
@@ -318,8 +323,6 @@ instance HashableF (MatlabFnWrapper t) where
 
 data ExprSymFnWrapper t c
    = forall a r . (c ~ (a ::> r)) => ExprSymFnWrapper (ExprSymFn t a r)
-
-data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 
 ------------------------------------------------------------------------
 -- ExprBuilder
@@ -751,12 +754,12 @@ betaReduce sym f args =
 --
 -- It is used when an action may modify a value, and we only want to run a
 -- second action if the value changed.
-runIfChanged :: Eq e
+runIfChanged :: (Eq e, Monad m)
              => e
-             -> (e -> IO e) -- ^ First action to run
+             -> (e -> m e) -- ^ First action to run
              -> r           -- ^ Result if no change.
-             -> (e -> IO r) -- ^ Second action to run
-             -> IO r
+             -> (e -> m r) -- ^ Second action to run
+             -> m r
 runIfChanged x f unChanged onChange = do
   y <- f x
   if x == y then
@@ -807,11 +810,14 @@ evalSimpleFn :: EvalHashTables t
              -> ExprBuilder t st fs
              -> ExprSymFn t idx ret
              -> IO (Bool,ExprSymFn t idx ret)
-evalSimpleFn tbl sym f =
+evalSimpleFn tbl sym f = do
+  let n = symFnId f
   case symFnInfo f of
-    UninterpFnInfo{} -> return (False, f)
+    UninterpFnInfo{} -> do
+      CachedSymFn changed f' <- cachedEval (fnTable tbl) n $
+        return $! CachedSymFn False f
+      return (changed, f')
     DefinedFnInfo vars e evalFn -> do
-      let n = symFnId f
       let nm = symFnName f
       CachedSymFn changed f' <-
         cachedEval (fnTable tbl) n $ do
@@ -928,6 +934,339 @@ evalBoundVars sym e vars exprs = do
                             , fnTable  = fn_tbl
                             }
   evalBoundVars' tbls sym e
+
+
+evalFns ::
+  ExprBuilder t st fs ->
+  [PM.Pair (ArgsRetSymFn (ExprBuilder t st fs)) (ArgsRetSymFn (ExprBuilder t st fs))] ->
+  Expr t ret ->
+  IO (Expr t ret)
+evalFns sym fn_pairs e = do
+  expr_tbl <- stToIO $ PH.new
+  fn_tbl <- stToIO $ PH.newSized $ length fn_pairs
+  forM_ fn_pairs $ lalala fn_tbl
+  -- mapM_ (\(PM.Pair (ArgsRetSymFn f) (ArgsRetSymFn g)) ->
+  --   stToIO $ PH.insert fn_tbl (symFnId f) (CachedSymFn True g))
+  --   fn_pairs
+  let tbls = EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable  = fn_tbl
+        }
+  evalBoundVars' tbls sym e
+
+lalala ::
+  PH.HashTable RealWorld (Nonce t) (CachedSymFn t) ->
+  PM.Pair (ArgsRetSymFn (ExprBuilder t st fs)) (ArgsRetSymFn (ExprBuilder t st fs)) ->
+  IO ()
+lalala fn_tbl = \(PM.Pair (ArgsRetSymFn f) (ArgsRetSymFn g)) ->
+  stToIO $ PH.insert fn_tbl (symFnId f) (CachedSymFn True g)
+
+foo :: 
+  ExprBuilder t st fs ->
+  [Expr t BaseBoolType] ->
+  IO [Expr t BaseBoolType]
+foo sym exprs = do
+  expr_tbl <- stToIO PH.new
+  fn_tbl  <- stToIO PH.new
+  let tbls = EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable  = fn_tbl
+        }
+  subst <- H.new
+  inv_subst <- H.new
+  let foo_bar_state = FooBarState
+        { evalTables = tbls
+        , fooSubst = subst
+        , fooInvSubst = inv_subst
+        }
+  either fail return =<<
+    runFooBar (mapM (transformToLIA foobarBV fooBV sym) exprs) foo_bar_state
+
+bar ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  SomeSymFn sym ->
+  IO (SomeSymFn sym)
+bar sym (SomeSymFn fn) = do
+  expr_tbl <- stToIO PH.new
+  fn_tbl  <- stToIO PH.new
+  let tbls = EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable  = fn_tbl
+        }
+  subst <- H.new
+  inv_subst <- H.new
+  let foo_bar_state = FooBarState
+        { evalTables = tbls
+        , fooSubst = subst
+        , fooInvSubst = inv_subst
+        }
+  either fail (\(SomeExprSymFn fn') -> return $ SomeSymFn fn') =<<
+    runFooBar (foobarFn foobarInteger fooInteger sym $ SomeExprSymFn fn) foo_bar_state
+
+newtype FooBar t (tp1 :: BaseType) (tp2 :: BaseType) a = FooBar (ExceptT String (ReaderT (FooBarState t tp1 tp2) IO) a)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader (FooBarState t tp1 tp2), MonadError String)
+
+data FooBarState t (tp1 :: BaseType) (tp2 :: BaseType) = FooBarState
+  { evalTables :: !(EvalHashTables t)
+  , fooSubst :: !(H.BasicHashTable (ExprBoundVar t tp1) (ExprBoundVar t tp2))
+  , fooInvSubst :: !(H.BasicHashTable Word.Word64 (SomeExprSymFn t))
+  }
+
+runFooBar :: FooBar t tp1 tp2 a -> FooBarState t tp1 tp2 -> IO (Either String a)
+runFooBar (FooBar action) = runReaderT (runExceptT action)
+
+type Foo t = FooBar t (BaseBVType 64) BaseIntegerType
+type Bar t = FooBar t BaseIntegerType (BaseBVType 64)
+
+data SomeExprSymFn t = forall args ret . SomeExprSymFn (ExprSymFn t args ret)
+
+transformToLIA ::
+  forall t st fs tp1 tp2 .
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  (ExprBuilder t st fs -> Expr t BaseBoolType -> Maybe (FooBar t tp1 tp2 (Expr t BaseBoolType))) ->
+  (ExprBuilder t st fs -> Expr t tp1 -> FooBar t tp1 tp2 (Expr t tp2)) ->
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  FooBar t tp1 tp2 (Expr t BaseBoolType)
+transformToLIA fff ggg sym e0 = fooBarCachedEval e0 $ case e0 of
+  _ | Just action <- fff sym e0 -> action
+
+  BoolExpr{} -> return e0
+
+  AppExpr ae -> do
+    let a = appExprApp ae
+    a' <- traverseApp
+      (\a'' -> case testEquality BaseBoolRepr (exprType a'') of
+        Just Refl -> transformToLIA fff ggg sym a''
+        Nothing -> throwError $ "unsupported " ++ show a'')
+      a
+    if a == a' then
+      return e0
+    else
+      liftIO $ reduceApp sym bvUnary a'
+
+  NonceAppExpr ae -> do
+    case nonceExprApp ae of
+      Annotation tpr n a -> do
+        a' <- transformToLIA fff ggg sym a
+        if a == a' then
+          return e0
+        else
+          liftIO $ sbNonceExpr sym $ Annotation tpr n a'
+      Forall v e ->
+        -- Regenerate forallPred if e is changed by evaluation.
+        runIfChanged e (transformToLIA fff ggg sym) e0 =<<
+          fooBarFreshBoundVar sym v forallPred
+      Exists v e ->
+        -- Regenerate existsPred if e is changed by evaluation.
+        runIfChanged e (transformToLIA fff ggg sym) e0 =<<
+          fooBarFreshBoundVar sym v existsPred
+      FnApp f a -> do
+        (SomeExprSymFn f') <- foobarFn fff ggg sym $ SomeExprSymFn f
+        Some a' <- applyFoo (ggg sym) a
+        case testEquality ((fmapFC exprType a') :> (fnReturnType f)) ((fnArgTypes f') :> (fnReturnType f')) of
+          Just Refl -> liftIO $ applySymFn sym f' a'
+          Nothing -> throwError $ "unsupported " ++ show e0
+      _ -> throwError $ "unsupported " ++ show e0
+
+  BoundVarExpr{} -> return e0
+
+foobarFn ::
+  forall t st fs tp1 tp2 . 
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  (ExprBuilder t st fs -> Expr t BaseBoolType -> Maybe (FooBar t tp1 tp2 (Expr t BaseBoolType))) ->
+  (ExprBuilder t st fs -> Expr t tp1 -> FooBar t tp1 tp2 (Expr t tp2)) ->
+  ExprBuilder t st fs ->
+  SomeExprSymFn t ->
+  FooBar t tp1 tp2 (SomeExprSymFn t)
+foobarFn fff ggg sym (SomeExprSymFn f) = do
+  subst <- asks fooSubst
+  inv_subst <- asks fooInvSubst
+  case symFnInfo f of
+    UninterpFnInfo{}
+      | Just Refl <- testEquality BaseBoolRepr (fnReturnType f) ->
+        liftIO $ mutateInsertIO inv_subst (indexValue $ symFnId f) $ 
+          case Ctx.fromList $ Prelude.replicate (Ctx.sizeInt $ Ctx.size $ fnArgTypes f) (Some (knownRepr :: BaseTypeRepr tp2)) of
+            Some tp2s -> SomeExprSymFn <$> freshTotalUninterpFn sym (symFnName f) tp2s BaseBoolRepr
+      | otherwise -> throwError $ "unsupported " ++ show f
+    DefinedFnInfo vars e eval_fn
+      | Just Refl <- testEquality BaseBoolRepr (fnReturnType f) -> do
+        Some vars' <- liftIO $ Ctx.fromList <$> mapM (\(Some v) -> foobarFreshBoundVar sym subst v Some) (toListFC Some vars) 
+        e' <- transformToLIA fff ggg sym e
+        liftIO $ mutateInsertIO inv_subst (indexValue $ symFnId f) $ 
+          SomeExprSymFn <$> definedFn sym (symFnName f) vars' e' eval_fn
+      | otherwise -> throwError $ "unsupported " ++ show f
+    MatlabSolverFnInfo{} -> throwError $ "unsupported " ++ show f
+
+fooBarCachedEval :: Expr t tp -> FooBar t tp1 tp2 (Expr t tp) -> FooBar t tp1 tp2 (Expr t tp)
+fooBarCachedEval k action = do
+  tbls <- asks evalTables
+  cachedEval (exprTable tbls) k action
+
+foobarBV ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  Maybe (Foo t (Expr t BaseBoolType))
+foobarBV sym e
+  | Just (BaseEq _ x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- fooBV sym x
+    y' <- fooBV sym y
+    liftIO $ intEq sym x' y'
+
+  | Just (BVUlt x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- fooBV sym x
+    y' <- fooBV sym y
+    liftIO $ intLt sym x' y'
+
+  | Just (BVSlt x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- fooBV sym x
+    y' <- fooBV sym y
+    liftIO $ intLt sym x' y'
+
+  | otherwise = Nothing
+
+fooBV ::
+  ExprBuilder t st fs ->
+  Expr t (BaseBVType 64) ->
+  Foo t (Expr t BaseIntegerType)
+fooBV sym e
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e = do
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        SR.SemiRingIntegerRepr
+        (return . BV.asSigned (bvWidth e))
+        (fooBV sym)
+        semi_ring_sum
+  | BoundVarExpr v <- e = do
+    tbl <- asks fooSubst
+    mr <- liftIO $ H.lookup tbl v
+    case mr of
+      Just r -> return $ BoundVarExpr r
+      Nothing -> throwError $ "Simulator internal error; do not support rebinding variables."
+  | Just (BaseIte _ _ c x y) <- asApp e = do
+    c' <- transformToLIA foobarBV fooBV sym c
+    x' <- fooBV sym x
+    y' <- fooBV sym y
+    liftIO $ intIte sym c' x' y'
+  | otherwise = throwError $ "unsupported " ++ show e
+
+foobarInteger ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  Maybe (Bar t (Expr t BaseBoolType))
+foobarInteger sym e
+  | Just (BaseEq BaseIntegerRepr x y) <- asApp e = Just $ do
+    x' <- fooInteger sym x
+    y' <- fooInteger sym y
+    liftIO $ bvEq sym x' y'
+
+  | Just (SemiRingLe SR.OrderedSemiRingIntegerRepr x y) <- asApp e = Just $ do
+    let (x_pos, x_neg) = asPositiveNegativeWeightedSum x
+    let (y_pos, y_neg) = asPositiveNegativeWeightedSum y
+    x'' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr x_pos y_neg
+    y'' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr y_pos x_neg 
+    x' <- fooInteger sym x''
+    y' <- fooInteger sym y''
+    liftIO $ bvUle sym x' y'
+
+  | otherwise = Nothing
+
+asPositiveNegativeWeightedSum ::
+  Expr t BaseIntegerType ->
+  (WSum.WeightedSum (Expr t) SR.SemiRingInteger, WSum.WeightedSum (Expr t) SR.SemiRingInteger)
+asPositiveNegativeWeightedSum e = do
+  let semi_ring_sum = asWeightedSum SR.SemiRingIntegerRepr e
+  let positive_semi_ring_sum = runIdentity $ WSum.traverseCoeffs
+        (return . max 0)
+        semi_ring_sum
+  let negative_semi_ring_sum = runIdentity $ WSum.traverseCoeffs
+        (return . negate . min 0)
+        semi_ring_sum
+  (positive_semi_ring_sum, negative_semi_ring_sum)
+
+fooInteger ::
+  ExprBuilder t st fs ->
+  Expr t BaseIntegerType ->
+  Bar t (Expr t (BaseBVType 64))
+fooInteger sym e
+  | Just semi_ring_sum <- asSemiRingSum SR.SemiRingIntegerRepr e = do
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        (SR.SemiRingBVRepr SR.BVArithRepr knownNat)
+        (return . BV.mkBV knownNat)
+        (fooInteger sym)
+        semi_ring_sum
+  | BoundVarExpr v <- e = do
+    tbl <- asks fooSubst
+    mr <- liftIO $ H.lookup tbl v
+    case mr of
+      Just r -> return $ BoundVarExpr r
+      Nothing -> throwError $ "Simulator internal error; do not support rebinding variables."
+  | otherwise = throwError $ "unsupported " ++ show e
+
+fooBarFreshBoundVar ::
+  forall t st fs tp' tp1 tp2 .
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  ExprBuilder t st fs ->
+  ExprBoundVar t tp' ->
+  (forall tp . ExprBuilder t st fs -> ExprBoundVar t tp -> Expr t BaseBoolType -> IO (Expr t BaseBoolType)) ->
+  FooBar t tp1 tp2 (Expr t BaseBoolType -> FooBar t tp1 tp2 (Expr t BaseBoolType))
+fooBarFreshBoundVar sym v quantifier = do
+  subst <- asks fooSubst
+  liftIO $ foobarFreshBoundVar sym subst v (\v' -> liftIO . quantifier sym v')
+
+foobarFreshBoundVar ::
+  forall t st fs tp' tp1 tp2 a .
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  ExprBuilder t st fs ->
+  H.BasicHashTable (ExprBoundVar t tp1) (ExprBoundVar t tp2) ->
+  ExprBoundVar t tp' ->
+  (forall tp . ExprBoundVar t tp -> a) ->
+  IO a
+foobarFreshBoundVar sym tbl v f = case testEquality (knownRepr :: BaseTypeRepr tp1) (bvarType v) of
+  Just Refl -> do
+    v' <- mutateInsertIO tbl v $ freshBoundVar sym (bvarName v) knownRepr 
+    return $ f v'
+  Nothing -> return $ f v
+
+mutateInsertIO ::
+  (HC.HashTable h, Eq k, Hashable k) =>
+  H.IOHashTable h k v ->
+  k ->
+  IO v ->
+  IO v
+mutateInsertIO tbl k f = H.mutateIO tbl k $ \case
+  Just v -> return (Just v, v)
+  Nothing -> do
+    v <- f
+    return (Just v, v)
+
+applyFoo ::
+  (IsExpr e, KnownRepr BaseTypeRepr tp1, ShowF e, MonadError String m) =>
+  (e tp1 -> m (e tp2)) ->
+  Assignment e ctx ->
+  m (Some (Assignment e))
+applyFoo f = \case
+  ctx :> a -> do
+    Some ctx' <- applyFoo f ctx
+    a' <- foofoo f a
+    return $ Some $ ctx' :> a'
+  Empty -> return $ Some Empty
+
+foofoo ::
+  forall e tp1 tp2 tp3 m .
+  (IsExpr e, KnownRepr BaseTypeRepr tp1, ShowF e, MonadError String m) =>
+  (e tp1 -> m (e tp2)) ->
+  e tp3 ->
+  m (e tp2)
+foofoo f e = case testEquality (knownRepr :: BaseTypeRepr tp1) (exprType e) of
+  Just Refl -> f e
+  Nothing -> throwError $ "unsupported " ++ showF e
+
 
 -- | This attempts to lookup an entry in a symbolic array.
 --
@@ -4027,6 +4366,19 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
      MatlabSolverFnInfo f _ _ -> do
        evalMatlabSolverFn f sym args
      _ -> sbNonceExpr sym $! FnApp fn args
+
+  symExprBuilderFns sym = do
+    (SymbolVarBimap bimap) <- getSymbolVarBimap sym
+    return $ mapMaybe
+      (\case
+        FnSymbolBinding f -> Just $ SomeSymFn f
+        VarSymbolBinding{} -> Nothing)
+      (Bimap.elems bimap)
+
+  substituteSymFns = evalFns
+
+  exprFoo = foo
+  exprBar = bar
 
 
 instance IsInterpretedFloatExprBuilder (ExprBuilder t st fs) => IsInterpretedFloatSymExprBuilder (ExprBuilder t st fs)

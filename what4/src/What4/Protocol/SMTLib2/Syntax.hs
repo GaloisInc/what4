@@ -56,6 +56,7 @@ module What4.Protocol.SMTLib2.Syntax
   , qf_bv
   , allSupported
   , allLogic
+  , horn_logic
     -- * Sort
   , Sort(..)
   , boolSort
@@ -193,6 +194,10 @@ allSupported = Logic "ALL_SUPPORTED"
 allLogic :: Logic
 allLogic = Logic "ALL"
  
+-- | Use the Horn logic
+horn_logic :: Logic
+horn_logic = Logic "HORN"
+
 ------------------------------------------------------------------------
 -- Symbol
 
