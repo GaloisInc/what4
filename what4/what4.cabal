@@ -447,3 +447,12 @@ test-suite what4-serialize-tests
                  , async
                  , directory
                  , ordered-containers
+
+test-suite invariant-synthesis
+  import: bldflags, testdefs-hunit
+  type: exitcode-stdio-1.0
+
+  main-is: InvariantSynthesis.hs
+
+  build-depends:
+    bv-sized
