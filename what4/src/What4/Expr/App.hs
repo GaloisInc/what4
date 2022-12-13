@@ -1722,6 +1722,8 @@ testExprSymFnEq f g = testEquality (symFnId f) (symFnId g)
 instance IsSymFn (ExprSymFn t) where
   fnArgTypes = symFnArgTypes
   fnReturnType = symFnReturnType
+  fnTestEquality = testExprSymFnEq
+  fnCompare f g = compareF (symFnId f) (symFnId g)
 
 
 -------------------------------------------------------------------------------

@@ -134,6 +134,8 @@ module What4.Expr.Builder
   , SymFnInfo(..)
   , symFnArgTypes
   , symFnReturnType
+  , SomeExprSymFn(..)
+  , ExprSymFnWrapper(..)
 
     -- * SymbolVarBimap
   , SymbolVarBimap
@@ -247,19 +249,19 @@ import           What4.Utils.StringLiteral
 toDouble :: Rational -> Double
 toDouble = fromRational
 
-cachedEval :: (HashableF k, TestEquality k)
+cachedEval :: (HashableF k, TestEquality k, MonadIO m)
            => PH.HashTable RealWorld k a
            -> k tp
-           -> IO (a tp)
-           -> IO (a tp)
+           -> m (a tp)
+           -> m (a tp)
 cachedEval tbl k action = do
-  mr <- stToIO $ PH.lookup tbl k
+  mr <- liftIO $ stToIO $ PH.lookup tbl k
   case mr of
     Just r -> return r
     Nothing -> do
       r <- action
       seq r $ do
-      stToIO $ PH.insert tbl k r
+      liftIO $ stToIO $ PH.insert tbl k r
       return r
 
 ------------------------------------------------------------------------
@@ -319,7 +321,19 @@ instance HashableF (MatlabFnWrapper t) where
 data ExprSymFnWrapper t c
    = forall a r . (c ~ (a ::> r)) => ExprSymFnWrapper (ExprSymFn t a r)
 
-data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
+data SomeExprSymFn t = forall args ret . SomeExprSymFn (ExprSymFn t args ret)
+
+instance Eq (SomeExprSymFn t) where
+  (SomeExprSymFn fn1) == (SomeExprSymFn fn2) =
+    isJust $ fnTestEquality fn1 fn2
+
+instance Ord (SomeExprSymFn t) where
+  compare (SomeExprSymFn fn1) (SomeExprSymFn fn2) =
+    toOrdering $ fnCompare fn1 fn2
+
+instance Show (SomeExprSymFn t) where
+  show (SomeExprSymFn f) = show f
+
 
 ------------------------------------------------------------------------
 -- ExprBuilder
@@ -751,12 +765,12 @@ betaReduce sym f args =
 --
 -- It is used when an action may modify a value, and we only want to run a
 -- second action if the value changed.
-runIfChanged :: Eq e
+runIfChanged :: (Eq e, Monad m)
              => e
-             -> (e -> IO e) -- ^ First action to run
+             -> (e -> m e) -- ^ First action to run
              -> r           -- ^ Result if no change.
-             -> (e -> IO r) -- ^ Second action to run
-             -> IO r
+             -> (e -> m r) -- ^ Second action to run
+             -> m r
 runIfChanged x f unChanged onChange = do
   y <- f x
   if x == y then
@@ -807,11 +821,14 @@ evalSimpleFn :: EvalHashTables t
              -> ExprBuilder t st fs
              -> ExprSymFn t idx ret
              -> IO (Bool,ExprSymFn t idx ret)
-evalSimpleFn tbl sym f =
+evalSimpleFn tbl sym f = do
+  let n = symFnId f
   case symFnInfo f of
-    UninterpFnInfo{} -> return (False, f)
+    UninterpFnInfo{} -> do
+      CachedSymFn changed f' <- cachedEval (fnTable tbl) n $
+        return $! CachedSymFn False f
+      return (changed, f')
     DefinedFnInfo vars e evalFn -> do
-      let n = symFnId f
       let nm = symFnName f
       CachedSymFn changed f' <-
         cachedEval (fnTable tbl) n $ do
@@ -4027,6 +4044,30 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
      MatlabSolverFnInfo f _ _ -> do
        evalMatlabSolverFn f sym args
      _ -> sbNonceExpr sym $! FnApp fn args
+
+  substituteBoundVars sym subst e = do
+    tbls <- stToIO $ do
+      expr_tbl <- PH.newSized $ PM.size subst
+      fn_tbl <- PH.new
+      PM.traverseWithKey_ (PH.insert expr_tbl . BoundVarExpr) subst
+      return $ EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable  = fn_tbl
+        }
+    evalBoundVars' tbls sym e
+
+  substituteSymFns sym subst e = do
+    tbls <- stToIO $ do
+      expr_tbl <- PH.new
+      fn_tbl <- PH.newSized $ PM.size subst
+      PM.traverseWithKey_
+        (\(SymFnWrapper f) (SymFnWrapper g) -> PH.insert fn_tbl (symFnId f) (CachedSymFn True g))
+        subst
+      return $ EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable  = fn_tbl
+        }
+    evalBoundVars' tbls sym e
 
 
 instance IsInterpretedFloatExprBuilder (ExprBuilder t st fs) => IsInterpretedFloatSymExprBuilder (ExprBuilder t st fs)

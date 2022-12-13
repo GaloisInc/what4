@@ -38,6 +38,12 @@ provide several type family definitions and class instances for @sym@:
 
   [@instance 'HashableF' ('SymExpr' sym)@]
 
+  [@instance 'OrdF' ('BoundVar' sym)@]
+
+  [@instance 'TestEquality' ('BoundVar' sym)@]
+
+  [@instance 'HashableF' ('BoundVar' sym)@]
+
 The canonical implementation of these interface classes is found in "What4.Expr.Builder".
 -}
 {-# LANGUAGE CPP #-}
@@ -72,6 +78,8 @@ module What4.Interface
     -- ** Expression recognizers
   , IsExpr(..)
   , IsSymFn(..)
+  , SomeSymFn(..)
+  , SymFnWrapper(..)
   , UnfoldPolicy(..)
   , shouldUnfold
 
@@ -202,6 +210,7 @@ import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Ctx
 import           Data.Parameterized.Utils.Endian (Endian(..))
+import           Data.Parameterized.Map (MapF)
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import qualified Data.Parameterized.Vector as Vector
@@ -587,7 +596,7 @@ instance (HashableF (SymExpr sym), TestEquality (SymExpr sym)) => Hashable (SymN
 -- of an undefined function is _not_ guaranteed to be equivalant to a free
 -- constant, and no guarantees are made about what properties such values
 -- will satisfy.
-class ( IsExpr (SymExpr sym), HashableF (SymExpr sym)
+class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       , TestEquality (SymAnnotation sym), OrdF (SymAnnotation sym)
       , HashableF (SymAnnotation sym)
       ) => IsExprBuilder sym where
@@ -2718,13 +2727,28 @@ iteList ite sym ((mp,mx):xs) def =
 -- 'IsSymExprBuilder'.
 type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
+data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
+
+data SymFnWrapper sym ctx where
+  SymFnWrapper :: forall sym args ret . SymFn sym args ret -> SymFnWrapper sym (args ::> ret)
+
+instance IsSymFn (SymFn sym) => TestEquality (SymFnWrapper sym) where
+  testEquality (SymFnWrapper fn1) (SymFnWrapper fn2) = fnTestEquality fn1 fn2
+
+instance IsSymFn (SymFn sym) => OrdF (SymFnWrapper sym) where
+  compareF (SymFnWrapper fn1) (SymFnWrapper fn2) = fnCompare fn1 fn2
+
 -- | A class for extracting type representatives from symbolic functions
-class IsSymFn fn where
+class IsSymFn (fn :: Ctx BaseType -> BaseType -> Type) where
   -- | Get the argument types of a function.
   fnArgTypes :: fn args ret -> Ctx.Assignment BaseTypeRepr args
 
   -- | Get the return type of a function.
   fnReturnType :: fn args ret -> BaseTypeRepr ret
+
+  fnTestEquality :: fn args1 ret1 -> fn args2 ret2 -> Maybe ((args1 ::> ret1) :~: (args2 ::> ret2))
+
+  fnCompare :: fn args1 ret1 -> fn args2 ret2 -> OrderingF (args1 ::> ret1) (args2 ::> ret2)
 
 
 -- | Describes when we unfold the body of defined functions.
@@ -2769,6 +2793,8 @@ instance Show InvalidRange where
 class ( IsExprBuilder sym
       , IsSymFn (SymFn sym)
       , OrdF (SymExpr sym)
+      , OrdF (BoundVar sym)
+      , OrdF (SymFnWrapper sym)
       ) => IsSymExprBuilder sym where
 
   ----------------------------------------------------------------------
@@ -2913,6 +2939,22 @@ class ( IsExprBuilder sym
              -> Ctx.Assignment (SymExpr sym) args
                 -- ^ Arguments to function
              -> IO (SymExpr sym ret)
+
+  -- | Apply a variable substitution (variable to symbolic expression mapping)
+  -- to a symbolic expression.
+  substituteBoundVars ::
+    sym ->
+    MapF (BoundVar sym) (SymExpr sym) ->
+    SymExpr sym tp ->
+    IO (SymExpr sym tp)
+
+  -- | Apply a function substitution (function to function mapping) to a
+  -- symbolic expression.
+  substituteSymFns ::
+    sym ->
+    MapF (SymFnWrapper sym) (SymFnWrapper sym) ->
+    SymExpr sym tp ->
+    IO (SymExpr sym tp)
 
 -- | This returns true if the value corresponds to a concrete value.
 baseIsConcrete :: forall e bt
