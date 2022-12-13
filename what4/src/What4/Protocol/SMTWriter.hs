@@ -69,6 +69,7 @@ module What4.Protocol.SMTWriter
   , entryStackHeight
   , pushEntryStack
   , popEntryStack
+  , cacheLookupFnNameBimap
   , Command
   , addCommand
   , addCommandNoAck
@@ -115,6 +116,8 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Bits as Bits
 import           Data.IORef
@@ -823,6 +826,15 @@ cacheValueFn
   :: WriterConn t h -> Nonce t ctx -> TermLifetime -> SMTSymFn ctx -> IO ()
 cacheValueFn conn n lifetime value = cacheValue conn lifetime $ \entry ->
   stToIO $ PH.insert (symFnCache entry) n value
+
+cacheLookupFnNameBimap :: WriterConn t h -> [SomeExprSymFn t] -> IO (Bimap (SomeExprSymFn t) Text)
+cacheLookupFnNameBimap conn fns = Bimap.fromList <$> mapM
+  (\some_fn@(SomeExprSymFn fn) -> do
+    maybe_smt_sym_fn <- cacheLookupFn conn $ symFnId fn
+    case maybe_smt_sym_fn of
+      Just (SMTSymFn nm _ _) -> return (some_fn, nm)
+      Nothing -> fail $ "Could not find function in cache: " ++ show fn)
+  fns
 
 -- | Run state with handle.
 withWriterState :: WriterConn t h -> State WriterState a -> IO a
