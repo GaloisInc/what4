@@ -71,6 +71,8 @@ data SMTResponse = AckSuccess
                  | AckSat
                  | AckUnsat
                  | AckUnknown
+                 | AckInfeasible
+                 | AckFail
                  | RspName Text
                  | RspVersion Text
                  | RspErrBehavior Text
@@ -144,10 +146,12 @@ rspParser strictness =
       parens p = AT.char '(' *> p <* AT.char ')'
       errParser = parens $ lexeme (AT.string "error")
                   *> (AckError <$> lexeme parseSMTLib2String)
-      specific_success_response = check_sat_response <|> get_info_response
+      specific_success_response = check_sat_response <|> check_synth_response <|> get_info_response
       check_sat_response = (AckSat <$ AT.string "sat")
                            <|> (AckUnsat <$ AT.string "unsat")
                            <|> (AckUnknown <$ AT.string "unknown")
+      check_synth_response = (AckInfeasible <$ AT.string "infeasible")
+                             <|> (AckFail <$ AT.string "fail")
       get_info_response = parens info_response
       info_response = errBhvParser
                       <|> nameParser

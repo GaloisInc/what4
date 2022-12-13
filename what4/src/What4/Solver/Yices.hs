@@ -528,6 +528,10 @@ instance SMTWriter Connection where
                  , renderTerm (yicesLambda args t)
                  ]
 
+  synthFunCommand _ _ _ _ = unsupportedFeature "SyGuS"
+  declareVarCommand _ _ _ = unsupportedFeature "SyGuS"
+  constraintCommand _ _ = unsupportedFeature "SyGuS"
+
   resetDeclaredStructs conn = resetUnitType conn
 
   structProj _n i s = term_app "select" [s, fromIntegral (Ctx.indexVal i + 1)]

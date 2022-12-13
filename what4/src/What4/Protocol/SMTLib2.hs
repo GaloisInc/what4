@@ -40,6 +40,7 @@ module What4.Protocol.SMTLib2
   , writeGetValue
   , writeGetAbduct
   , writeGetAbductNext
+  , writeCheckSynth
   , runCheckSat
   , runGetAbducts
   , asSMT2Type
@@ -55,6 +56,7 @@ module What4.Protocol.SMTLib2
   , SMT2.Logic(..)
   , SMT2.qf_bv
   , SMT2.allSupported
+  , SMT2.hornLogic
   , all_supported
   , setLogic
     -- * Type
@@ -69,6 +71,7 @@ module What4.Protocol.SMTLib2
   , Session(..)
   , SMTLib2GenericSolver(..)
   , writeDefaultSMT2
+  , defaultFileWriter
   , startSolver
   , shutdownSolver
   , smtAckResult
@@ -701,6 +704,11 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
     let resolveArg (var, Some tp) = (var, asSMT2Type @a tp)
      in SMT2.defineFun f (resolveArg <$> args) (asSMT2Type @a return_type) e
 
+  synthFunCommand _proxy f args ret_tp =
+    SMT2.synthFun f (map (\(var, Some tp) -> (var, asSMT2Type @a tp)) args) (asSMT2Type @a ret_tp)
+  declareVarCommand _proxy v tp = SMT2.declareVar v (asSMT2Type @a tp)
+  constraintCommand _proxy e = SMT2.constraint e
+
   stringTerm str = smtlib2StringTerm @a str
   stringLength x = smtlib2StringLength @a x
   stringAppend xs = smtlib2StringAppend @a xs
@@ -768,6 +776,10 @@ writeGetAbduct w nm p = addCommandNoAck w $ SMT2.getAbduct nm p
 
 writeGetAbductNext :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
 writeGetAbductNext w = addCommandNoAck w SMT2.getAbductNext
+
+-- | Write check-synth command
+writeCheckSynth :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeCheckSynth w = addCommandNoAck w SMT2.checkSynth
 
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
@@ -1145,16 +1157,28 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
                  -> [B.BoolExpr t]
                  -> IO ()
 writeDefaultSMT2 a nm feat strictOpt sym h ps = do
+  c <- defaultFileWriter a nm feat strictOpt sym h
+  setProduceModels c True
+  forM_ ps (SMTWriter.assume c)
+  writeCheckSat c
+  writeExit c
+
+defaultFileWriter ::
+  SMTLib2Tweaks a =>
+  a ->
+  String ->
+  ProblemFeatures ->
+  Maybe (CFG.ConfigOption I.BaseBoolType) ->
+  B.ExprBuilder t st fs ->
+  IO.Handle ->
+  IO (WriterConn t (Writer a))
+defaultFileWriter a nm feat strictOpt sym h = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   null_in <- Streams.nullInput
   let cfg = I.getConfiguration sym
   strictness <- parserStrictness strictOpt strictSMTParsing cfg
-  c <- newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
-  setProduceModels c True
-  forM_ ps (SMTWriter.assume c)
-  writeCheckSat c
-  writeExit c
+  newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
 
 -- n.b. commonly used for the startSolverProcess method of the
 -- OnlineSolver class, so it's helpful for the type suffixes to align
