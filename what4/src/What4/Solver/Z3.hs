@@ -10,6 +10,7 @@
 -- Z3-specific tweaks to the basic SMTLib2 solver interface.
 ------------------------------------------------------------------------
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
@@ -27,15 +28,21 @@ module What4.Solver.Z3
   , runZ3InOverride
   , withZ3
   , writeZ3SMT2File
+  , runZ3Horn
+  , writeZ3HornSMT2File
   ) where
 
 import           Control.Monad ( when )
+import qualified Data.Bimap as Bimap
 import           Data.Bits
+import           Data.Foldable
 import           Data.String
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           System.IO
 
+import           Data.Parameterized.Map (MapF)
+import           Data.Parameterized.Some
 import           What4.BaseTypes
 import           What4.Concrete
 import           What4.Config
@@ -46,7 +53,8 @@ import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.SMTLib2 as SMT2
 import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
-import qualified What4.Protocol.SMTLib2.Syntax as SMT2Syntax
+import qualified What4.Protocol.SMTLib2.Response as RSP
+import qualified What4.Protocol.SMTLib2.Syntax as Syntax
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
 import           What4.Solver.Adapter
@@ -139,7 +147,7 @@ instance SMT2.SMTLib2Tweaks Z3 where
           fields = field_def <$> [1..n]
           decl = app tp [app ctor fields]
           decls = "(" <> decl <> ")"
-       in SMT2Syntax.Cmd $ app "declare-datatypes" [ params, decls ]
+       in Syntax.Cmd $ app "declare-datatypes" [ params, decls ]
 
 z3Features :: ProblemFeatures
 z3Features = useNonlinearArithmetic
@@ -235,3 +243,83 @@ instance OnlineSolver (SMT2.Writer Z3) where
       timeout feat (Just z3StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver Z3
+
+runZ3Horn ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  LogData ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO (SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) ())
+runZ3Horn sym log_data inv_fns horn_clauses = do
+  logSolverEvent sym
+    (SolverStartSATQuery $ SolverStartSATQueryRec
+      { satQuerySolverName = show Z3
+      , satQueryReason = logReason log_data
+      })
+
+  path <- SMT2.defaultSolverPath Z3 sym
+  withZ3 sym path (log_data { logVerbosity = 2 }) $ \session -> do
+    writeHornProblem sym (SMT2.sessionWriter session) inv_fns horn_clauses
+    result <- RSP.getLimitedSolverResponse "check-sat"
+      (\case
+        RSP.AckSat -> Just $ Sat ()
+        RSP.AckUnsat -> Just $ Unsat ()
+        RSP.AckUnknown -> Just Unknown
+        _ -> Nothing)
+      (SMT2.sessionWriter session)
+      Syntax.checkSat
+
+    logSolverEvent sym
+      (SolverEndSATQuery $ SolverEndSATQueryRec
+        { satQueryResult = result
+        , satQueryError = Nothing
+        })
+
+    traverseSatResult
+      (\() -> do
+        sexp <- RSP.getLimitedSolverResponse "get-value"
+          (\case
+            RSP.AckSuccessSExp sexp -> Just sexp
+            _ -> Nothing)
+          (SMT2.sessionWriter session)
+          (Syntax.getValue [])
+        SMT2.parseFnValues sym (SMT2.sessionWriter session) inv_fns sexp)
+      return
+      result
+
+writeZ3HornSMT2File ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  Handle ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO ()
+writeZ3HornSMT2File sym h inv_fns horn_clauses = do
+  writer <- SMT2.defaultFileWriter
+    Z3
+    (show Z3)
+    (SMT2.defaultFeatures Z3)
+    (Just z3StrictParsing)
+    sym
+    h
+  SMT2.setDefaultLogicAndOptions writer
+  writeHornProblem sym writer inv_fns horn_clauses
+  SMT2.writeExit writer
+
+writeHornProblem ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  WriterConn t (SMT2.Writer Z3) ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO ()
+writeHornProblem sym writer inv_fns horn_clauses = do
+  SMT2.setLogic writer Syntax.hornLogic
+  implications <- mapM
+    (\clause -> foldrM (viewSome $ forallPred sym) clause $ exprUninterpConstants sym clause)
+    horn_clauses
+  mapM_ (SMT2.assume writer) implications
+  SMT2.writeCheckSat writer
+  fn_name_bimap <- cacheLookupFnNameBimap writer $ map (\(SomeSymFn fn) -> SomeExprSymFn fn) inv_fns
+  SMT2.writeGetValue writer $ map fromText $ Bimap.elems fn_name_bimap
