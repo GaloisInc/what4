@@ -1,13 +1,20 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 
+import           ProbeSolvers
 import           Test.Tasty
+import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.HUnit
+
+import           Data.Maybe
+import           System.Environment
 
 import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Context
+import           Data.Parameterized.Map (MapF)
 import           Data.Parameterized.Nonce
 
 import           What4.Config
@@ -30,8 +37,8 @@ withSym float_mode action = withIONonceGenerator $ \gen -> do
   extendConfig Z3.z3Options (getConfiguration sym)
   action sym
 
-intTest :: TestTree
-intTest = testCase "int test" $ withSym FloatIEEERepr $ \sym -> do
+intProblem :: IsSymExprBuilder sym => sym -> IO ([SomeSymFn sym], [Pred sym], Pred sym)
+intProblem sym = do
   inv <- freshTotalUninterpFn sym (safeSymbol "inv") knownRepr knownRepr
   i <- freshConstant sym (safeSymbol "i") knownRepr
   n <- freshConstant sym (safeSymbol "n") knownRepr
@@ -58,31 +65,12 @@ intTest = testCase "int test" $ withSym FloatIEEERepr $ \sym -> do
   not_lt_add_i_1_n <- notPred sym lt_add_i_1_n
   conj2 <- andPred sym inv_i_n not_lt_add_i_1_n
   eq_add_i_1_n <- intEq sym add_i_1 n
-  impl3 <- impliesPred sym conj2 eq_add_i_1_n
-  impl4 <- notPred sym impl3
+  impl3 <- notPred sym =<< impliesPred sym conj2 eq_add_i_1_n
 
-  CVC5.runCVC5InOverride sym logData [impl4] $ \res -> isSat res @? "sat"
+  return ([SomeSymFn inv], [impl0, impl1, impl2], impl3)
 
-  subst <- CVC5.runCVC5SyGuS sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
-    Sat res -> return res
-    Unsat{} -> fail "Infeasible"
-    Unknown -> fail "Fail"
-
-  impl5 <- substituteSymFns sym subst impl4
-  CVC5.runCVC5InOverride sym logData [impl5] $ \res -> isUnsat res @? "unsat"
-
-  Z3.runZ3InOverride sym logData [impl4] $ \res -> isSat res @? "sat"
-
-  subst' <- Z3.runZ3Horn sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
-    Sat res -> return res
-    Unsat{} -> fail "Infeasible"
-    Unknown -> fail "Fail"
-
-  impl5' <- substituteSymFns sym subst' impl4
-  Z3.runZ3InOverride sym logData [impl5'] $ \res -> isUnsat res @? "unsat"
-
-bvTest :: TestTree
-bvTest = testCase "bv test" $ withSym FloatIEEERepr $ \sym -> do
+bvProblem :: IsSymExprBuilder sym => sym -> IO ([SomeSymFn sym], [Pred sym], Pred sym)
+bvProblem sym = do
   inv <- freshTotalUninterpFn sym (safeSymbol "inv") knownRepr knownRepr
   i <- freshConstant sym (safeSymbol "i") $ BaseBVRepr $ knownNat @64
   n <- freshConstant sym (safeSymbol "n") knownRepr
@@ -109,21 +97,56 @@ bvTest = testCase "bv test" $ withSym FloatIEEERepr $ \sym -> do
   not_ult_add_i_1_n <- notPred sym ult_add_i_1_n
   conj2 <- andPred sym inv_i_n not_ult_add_i_1_n
   eq_add_i_1_n <- bvEq sym add_i_1 n
-  impl3 <- impliesPred sym conj2 eq_add_i_1_n
-  impl4 <- notPred sym impl3
+  impl3 <- notPred sym =<< impliesPred sym conj2 eq_add_i_1_n
 
-  CVC5.runCVC5InOverride sym logData [impl4] $ \res -> isSat res @? "sat"
+  return ([SomeSymFn inv], [impl0, impl1, impl2], impl3)
 
-  subst <- CVC5.runCVC5SyGuS sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
-    Sat res -> return res
-    Unsat{} -> fail "Infeasible"
-    Unknown -> fail "Fail"
+synthesis_test ::
+  String ->
+  (forall sym . IsSymExprBuilder sym => sym -> IO ([SomeSymFn sym], [Pred sym], Pred sym)) ->
+  String ->
+  (forall sym t fs .
+    sym ~ SimpleExprBuilder t fs =>
+    sym ->
+    LogData ->
+    [SomeSymFn sym] ->
+    [BoolExpr t] ->
+    IO (SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) ())) ->
+  (forall t fs a .
+    SimpleExprBuilder t fs ->
+    LogData ->
+    [BoolExpr t] ->
+    (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a) ->
+    IO a) ->
+  TestTree
+synthesis_test test_name synthesis_problem solver_name run_solver_synthesis run_solver_in_override =
+  testCase (test_name ++ " " ++ solver_name ++ " test") $ withSym FloatIEEERepr $ \sym -> do
+    (synth_fns, constraints, goal) <- synthesis_problem sym
 
-  impl5 <- substituteSymFns sym subst impl4
-  CVC5.runCVC5InOverride sym logData [impl5] $ \res -> isUnsat res @? "unsat"
+    run_solver_in_override sym logData [goal] $ \res -> isSat res @? "sat"
+
+    subst <- run_solver_synthesis sym logData synth_fns constraints >>= \case
+      Sat res -> return res
+      Unsat{} -> fail "Infeasible"
+      Unknown -> fail "Fail"
+
+    goal' <- substituteSymFns sym subst goal
+    run_solver_in_override sym logData [goal'] $ \res -> isUnsat res @? "unsat"
 
 main :: IO ()
-main = defaultMain $ testGroup "Tests" $
-  [ intTest
-  , bvTest
-  ]
+main = do
+  testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
+  let solverNames = map SolverName [ "cvc5", "z3" ]
+  solvers <- reportSolverVersions testLevel id
+    =<< (zip solverNames <$> mapM getSolverVersion solverNames)
+  let skipPre4_8_9 why =
+        let shouldSkip = case lookup (SolverName "z3") solvers of
+              Just (SolverVersion v) -> any (`elem` [ "4.8.8" ]) $ words v
+              Nothing -> True
+        in if shouldSkip then expectFailBecause why else id
+      failureZ3 = "failure with older Z3 versions; upgrade to at least 4.8.9"
+  defaultMain $ testGroup "Tests" $
+    [ synthesis_test "int" intProblem "cvc5" CVC5.runCVC5SyGuS CVC5.runCVC5InOverride
+    , skipPre4_8_9 failureZ3 $ synthesis_test "int" intProblem "z3" Z3.runZ3Horn Z3.runZ3InOverride
+    , synthesis_test "bv" bvProblem "cvc5" CVC5.runCVC5SyGuS CVC5.runCVC5InOverride
+    ]

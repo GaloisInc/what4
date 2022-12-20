@@ -454,5 +454,10 @@ test-suite invariant-synthesis
 
   main-is: InvariantSynthesis.hs
 
+  other-modules: ProbeSolvers
+
   build-depends:
-    bv-sized
+    bv-sized,
+    process,
+    tasty-expected-failure >= 0.12 && < 0.13
+
