@@ -51,7 +51,7 @@ module What4.Protocol.SMTLib2.Syntax
   , getUnsatCore
   , getAbduct
   , getAbductNext
-    -- * SyGus
+    -- * SyGuS
   , synthFun
   , declareVar
   , constraint
@@ -846,7 +846,7 @@ getAbduct nm p = Cmd $ "(get-abduct " <> Builder.fromText nm <> " " <> renderTer
 getAbductNext :: Command
 getAbductNext = Cmd "(get-abduct-next)"
 
--- | Declare a SyGus function to synthesize with the given name, arguments, and
+-- | Declare a SyGuS function to synthesize with the given name, arguments, and
 -- return type.
 synthFun :: Text -> [(Text, Sort)] -> Sort -> Command
 synthFun f args ret_tp = Cmd $ app "synth-fun"
@@ -855,15 +855,15 @@ synthFun f args ret_tp = Cmd $ app "synth-fun"
   , unSort ret_tp
   ]
 
--- | Declare a SyGus variale with the given name and type.
+-- | Declare a SyGuS variable with the given name and type.
 declareVar :: Text -> Sort -> Command
 declareVar v tp = Cmd $ app "declare-var" [Builder.fromText v, unSort tp]
 
--- | Add the SyGus constraint to the current synthesis problem.
+-- | Add the SyGuS constraint to the current synthesis problem.
 constraint :: Term -> Command
 constraint p = Cmd $ app "constraint" [renderTerm p]
 
--- | Ask the SyGus solver to find a solution for the synthesis problem
+-- | Ask the SyGuS solver to find a solution for the synthesis problem
 -- corresponding to the current functions-to-synthesize, variables and
 -- constraints.
 checkSynth :: Command

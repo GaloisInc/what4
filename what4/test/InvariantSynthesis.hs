@@ -65,8 +65,8 @@ intTest = testCase "int test" $ withSym FloatIEEERepr $ \sym -> do
 
   subst <- CVC5.runCVC5SyGuS sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
     Sat res -> return res
-    Unsat{} -> fail $ "Infeasible"
-    Unknown -> fail $ "Fail"
+    Unsat{} -> fail "Infeasible"
+    Unknown -> fail "Fail"
 
   impl5 <- substituteSymFns sym subst impl4
   CVC5.runCVC5InOverride sym logData [impl5] $ \res -> isUnsat res @? "unsat"
@@ -75,8 +75,8 @@ intTest = testCase "int test" $ withSym FloatIEEERepr $ \sym -> do
 
   subst' <- Z3.runZ3Horn sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
     Sat res -> return res
-    Unsat{} -> fail $ "Infeasible"
-    Unknown -> fail $ "Fail"
+    Unsat{} -> fail "Infeasible"
+    Unknown -> fail "Fail"
 
   impl5' <- substituteSymFns sym subst' impl4
   Z3.runZ3InOverride sym logData [impl5'] $ \res -> isUnsat res @? "unsat"
@@ -116,8 +116,8 @@ bvTest = testCase "bv test" $ withSym FloatIEEERepr $ \sym -> do
 
   subst <- CVC5.runCVC5SyGuS sym logData [SomeSymFn inv] [impl0, impl1, impl2] >>= \case
     Sat res -> return res
-    Unsat{} -> fail $ "Infeasible"
-    Unknown -> fail $ "Fail"
+    Unsat{} -> fail "Infeasible"
+    Unknown -> fail "Fail"
 
   impl5 <- substituteSymFns sym subst impl4
   CVC5.runCVC5InOverride sym logData [impl5] $ \res -> isUnsat res @? "unsat"

@@ -2729,6 +2729,10 @@ type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
 data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 
+-- | Wrapper for `SymFn` that concatenates the arguments and the return types.
+--
+-- This is useful for implementing `TestEquality` and `OrdF` instances for
+-- `SymFn`, and for using `SymFn` as a key or a value in a `MapF`.
 data SymFnWrapper sym ctx where
   SymFnWrapper :: forall sym args ret . SymFn sym args ret -> SymFnWrapper sym (args ::> ret)
 
@@ -2746,8 +2750,17 @@ class IsSymFn (fn :: Ctx BaseType -> BaseType -> Type) where
   -- | Get the return type of a function.
   fnReturnType :: fn args ret -> BaseTypeRepr ret
 
+  -- | Test whether two functions are equal.
+  --
+  -- The implementation may be incomplete, that is, if it returns `Just` then
+  -- the functions are equal, while if it returns `Nothing` then the functions
+  -- may or may not be equal. The result of `freshTotalUninterpFn` or
+  -- `definedFn` tests equal with itself.
   fnTestEquality :: fn args1 ret1 -> fn args2 ret2 -> Maybe ((args1 ::> ret1) :~: (args2 ::> ret2))
 
+  -- | Compare two functions for ordering.
+  --
+  -- The underlying equality test is provided by `fnTestEquality`.
   fnCompare :: fn args1 ret1 -> fn args2 ret2 -> OrderingF (args1 ::> ret1) (args2 ::> ret2)
 
 
@@ -2794,7 +2807,6 @@ class ( IsExprBuilder sym
       , IsSymFn (SymFn sym)
       , OrdF (SymExpr sym)
       , OrdF (BoundVar sym)
-      , OrdF (SymFnWrapper sym)
       ) => IsSymExprBuilder sym where
 
   ----------------------------------------------------------------------

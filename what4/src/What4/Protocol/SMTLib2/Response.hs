@@ -71,8 +71,8 @@ data SMTResponse = AckSuccess
                  | AckSat
                  | AckUnsat
                  | AckUnknown
-                 | AckInfeasible
-                 | AckFail
+                 | AckInfeasible -- SyGuS response
+                 | AckFail -- SyGuS response
                  | RspName Text
                  | RspVersion Text
                  | RspErrBehavior Text

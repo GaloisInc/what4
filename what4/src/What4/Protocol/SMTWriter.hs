@@ -947,17 +947,21 @@ class (SupportTermOps (Term h)) => SMTWriter h where
                 -> Term h
                 -> Command h
 
+  -- | Declare a new SyGuS function to synthesize with the given name,
+  -- arguments, and result type.
   synthFunCommand :: f h
                   -> Text
                   -> [(Text, Some TypeMap)]
                   -> TypeMap tp
                   -> Command h
 
+  -- | Declare a new SyGuS universal variables with the given name and type.
   declareVarCommand :: f h
                     -> Text
                     -> TypeMap tp
                     -> Command h
 
+  -- | Add a SyGuS formula to the set of synthesis constraints.
   constraintCommand :: f h -> Term h -> Command h
 
   -- | Declare a struct datatype if is has not been already given the number of

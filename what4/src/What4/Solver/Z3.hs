@@ -244,6 +244,10 @@ instance OnlineSolver (SMT2.Writer Z3) where
 
   shutdownSolverProcess = SMT2.shutdownSolver Z3
 
+-- | Check the satisfiability of a set of constrained Horn clauses (CHCs).
+--
+-- CHCs are represented as pure SMT-LIB2 implications. For more information, see
+-- the [Z3 guide](https://microsoft.github.io/z3guide/docs/fixedpoints/intro/).
 runZ3Horn ::
   sym ~ ExprBuilder t st fs =>
   sym ->

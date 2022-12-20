@@ -1134,9 +1134,11 @@ parseExpr sym sexp = case sexp of
       Nothing -> throwError ""
   SApp ["let", SApp bindings_sexp, body_sexp] -> do
     let_env <- HashMap.fromList <$> mapM
-      (\(SApp [SAtom nm, expr_sexp]) -> do
-        Some expr <- parseExpr sym expr_sexp
-        return (nm, Some expr))
+      (\case
+        SApp [SAtom nm, expr_sexp] -> do
+          Some expr <- parseExpr sym expr_sexp
+          return (nm, Some expr)
+        _ -> throwError "")
       bindings_sexp
     local (\prov_env -> prov_env { procLetEnv = HashMap.union let_env (procLetEnv prov_env) }) $
       parseExpr sym body_sexp

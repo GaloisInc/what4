@@ -252,6 +252,9 @@ instance OnlineSolver (SMT2.Writer CVC5) where
   shutdownSolverProcess = SMT2.shutdownSolver CVC5
 
 
+-- | `CVC5_SyGuS` implements a `SMT2.SMTLib2GenericSolver` instance that is
+-- different from `CVC5` in that it provides SyGuS specific implementations for
+-- `defaultSolverArgs` and `setDefaultLogicAndOptions`.
 data CVC5_SyGuS = CVC5_SyGuS deriving Show
 
 instance SMT2.SMTLib2Tweaks CVC5_SyGuS where
@@ -289,6 +292,9 @@ instance SMT2.SMTLib2GenericSolver CVC5_SyGuS where
     -- Tell cvc5 to use all supported logics.
     SMT2.setLogic writer Syntax.allLogic
 
+-- | Find a solution to a Syntax-Guided Synthesis (SyGuS) problem.
+--
+-- For more information, see the [SyGuS standard](https://sygus.org/).
 runCVC5SyGuS ::
   sym ~ ExprBuilder t st fs =>
   sym ->
