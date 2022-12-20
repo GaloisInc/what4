@@ -1032,6 +1032,9 @@ getBVProof expr = case I.exprType expr of
 
 -- | Operator type descriptions for parsing s-expression of
 -- the form @(operator operands ...)@.
+--
+-- Code is copy-pasted and adapted from `What4.Serialize.Parser`, see
+-- <https://github.com/GaloisInc/what4/issues/228>
 data Op sym where
     -- | Generic unary operator description.
     Op1 ::
