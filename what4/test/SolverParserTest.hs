@@ -20,7 +20,7 @@ import           What4.Protocol.SMTWriter
 
 
 sugarCube :: CUBE
-sugarCube = mkCUBE { inputDir = "test/responses"
+sugarCube = mkCUBE { inputDirs = [ "test/responses" ]
                    , rootName = "*.rsp"
                    , expectedSuffix = ".exp"
                    , validParams = [ ("parsing", Just ["strict", "lenient"])
