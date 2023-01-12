@@ -1166,8 +1166,6 @@ parseExpr sym sexp = case sexp of
     BVProof{} <- getBVProof arg1_expr
     BVProof{} <- getBVProof arg2_expr
     liftIO $ Some <$> I.bvConcat sym arg1_expr arg2_expr
---  SApp ["_", "extract", arg1, arg2, arg3] -> do
-
   SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
@@ -1207,7 +1205,6 @@ parseExpr sym sexp = case sexp of
                                        operator
                                        (show m)
                                        (show n)
-    -- Nothing -> throwError ""
     _ -> throwError ""
   _ -> throwError ""
 -- | Verify a list of arguments has a single argument and
