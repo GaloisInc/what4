@@ -1,8 +1,15 @@
 # next (TBA)
 
+* Allow building with GHC 9.4.
+
+* Remove the `MonadFail` instance for `VarRecorder`, as this instance is no
+  longer straightforward to define due to upstream changes in `base-4.17.0.0`.
+  This instance ultimately called `error` anyways, so any uses of `fail` at type
+  `VarRecorder` can be replaced with `error` without any change in behavior.
+
 * Remove a dependency on `data-binary-ieee754`, which has been deprecated.
 
-* Deprecated `allSupported` which represents the SMT logic `ALL_SUPPORTED`, 
+* Deprecated `allSupported` which represents the SMT logic `ALL_SUPPORTED`,
   and added `allLogic` instead which represents the SMTLib standard logic `ALL`.
 
 * Added support for the cvc5 SMT solver.
