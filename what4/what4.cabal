@@ -447,3 +447,17 @@ test-suite what4-serialize-tests
                  , async
                  , directory
                  , ordered-containers
+
+test-suite invariant-synthesis
+  import: bldflags, testdefs-hunit
+  type: exitcode-stdio-1.0
+
+  main-is: InvariantSynthesis.hs
+
+  other-modules: ProbeSolvers
+
+  build-depends:
+    bv-sized,
+    process,
+    tasty-expected-failure >= 0.12 && < 0.13
+

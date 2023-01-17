@@ -11,6 +11,7 @@
 ------------------------------------------------------------------------
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
@@ -26,6 +27,9 @@ module What4.Solver.CVC5
   , withCVC5
   , writeCVC5SMT2File
   , writeMultiAsmpCVC5SMT2File
+  , runCVC5SyGuS
+  , withCVC5_SyGuS
+  , writeCVC5SyFile
   ) where
 
 import           Control.Monad (forM_, when)
@@ -34,6 +38,8 @@ import           Data.String
 import           System.IO
 import qualified System.IO.Streams as Streams
 
+import           Data.Parameterized.Map (MapF)
+import           Data.Parameterized.Some
 import           What4.BaseTypes
 import           What4.Concrete
 import           What4.Config
@@ -244,3 +250,130 @@ instance OnlineSolver (SMT2.Writer CVC5) where
           timeout feat (Just cvc5StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver CVC5
+
+
+-- | `CVC5_SyGuS` implements a `SMT2.SMTLib2GenericSolver` instance that is
+-- different from `CVC5` in that it provides SyGuS specific implementations for
+-- `defaultSolverArgs` and `setDefaultLogicAndOptions`.
+data CVC5_SyGuS = CVC5_SyGuS deriving Show
+
+instance SMT2.SMTLib2Tweaks CVC5_SyGuS where
+  smtlib2tweaks = CVC5_SyGuS
+
+  smtlib2arrayType = SMT2.smtlib2arrayType @CVC5
+
+  smtlib2arrayConstant = SMT2.smtlib2arrayConstant @CVC5
+  smtlib2arraySelect = SMT2.smtlib2arraySelect @CVC5
+  smtlib2arrayUpdate = SMT2.smtlib2arrayUpdate @CVC5
+
+  smtlib2declareStructCmd = SMT2.smtlib2declareStructCmd @CVC5
+  smtlib2StructSort = SMT2.smtlib2StructSort @CVC5
+  smtlib2StructCtor = SMT2.smtlib2StructCtor @CVC5
+  smtlib2StructProj = SMT2.smtlib2StructProj @CVC5
+
+instance SMT2.SMTLib2GenericSolver CVC5_SyGuS where
+  defaultSolverPath _ = SMT2.defaultSolverPath CVC5
+
+  defaultSolverArgs _ sym = do
+    let cfg = getConfiguration sym
+    timeout <- getOption =<< getOptionSetting cvc5Timeout cfg
+    let extraOpts = case timeout of
+                      Just (ConcreteInteger n) | n > 0 -> ["--tlimit-per=" ++ show n]
+                      _ -> []
+    return $ ["--sygus", "--lang", "sygus2", "--strings-exp", "--fp-exp"] ++ extraOpts
+
+  getErrorBehavior _ = SMT2.queryErrorBehavior
+
+  defaultFeatures _ = SMT2.defaultFeatures CVC5
+
+  supportsResetAssertions _ = SMT2.supportsResetAssertions CVC5
+
+  setDefaultLogicAndOptions writer = do
+    -- Tell cvc5 to use all supported logics.
+    SMT2.setLogic writer Syntax.allLogic
+
+-- | Find a solution to a Syntax-Guided Synthesis (SyGuS) problem.
+--
+-- For more information, see the [SyGuS standard](https://sygus.org/).
+runCVC5SyGuS ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  LogData ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO (SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) ())
+runCVC5SyGuS sym log_data synth_fns constraints = do
+  logSolverEvent sym
+    (SolverStartSATQuery $ SolverStartSATQueryRec
+      { satQuerySolverName = show CVC5_SyGuS
+      , satQueryReason = logReason log_data
+      })
+
+  path <- SMT2.defaultSolverPath CVC5_SyGuS sym
+  withCVC5_SyGuS sym path (log_data { logVerbosity = 2 }) $ \session -> do
+    writeSyGuSProblem sym (SMT2.sessionWriter session) synth_fns constraints
+    result <- RSP.getLimitedSolverResponse "check-synth"
+      (\case
+        RSP.AckSuccessSExp sexp -> Just $ Sat sexp
+        RSP.AckInfeasible -> Just $ Unsat ()
+        RSP.AckFail -> Just Unknown
+        _ -> Nothing)
+      (SMT2.sessionWriter session)
+      Syntax.checkSynth
+
+    logSolverEvent sym
+      (SolverEndSATQuery $ SolverEndSATQueryRec
+        { satQueryResult = forgetModelAndCore result
+        , satQueryError = Nothing
+        })
+
+    traverseSatResult
+      (\sexp -> SMT2.parseFnModel sym (SMT2.sessionWriter session) synth_fns sexp)
+      return
+      result
+
+-- | Run CVC5 SyGuS in a session, with the default configuration.
+withCVC5_SyGuS ::
+  ExprBuilder t st fs ->
+  FilePath ->
+  LogData ->
+  (SMT2.Session t CVC5_SyGuS -> IO a) ->
+  IO a
+withCVC5_SyGuS =
+  SMT2.withSolver
+    CVC5_SyGuS
+    nullAcknowledgementAction
+    (SMT2.defaultFeatures CVC5_SyGuS)
+    (Just cvc5StrictParsing)
+
+writeCVC5SyFile ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  Handle ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO ()
+writeCVC5SyFile sym h synth_fns constraints = do
+  writer <- SMT2.defaultFileWriter
+    CVC5_SyGuS
+    (show CVC5_SyGuS)
+    (SMT2.defaultFeatures CVC5_SyGuS)
+    (Just cvc5StrictParsing)
+    sym
+    h
+  SMT2.setDefaultLogicAndOptions writer
+  writeSyGuSProblem sym writer synth_fns constraints
+  SMT2.writeExit writer
+
+writeSyGuSProblem ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  WriterConn t (SMT2.Writer CVC5_SyGuS) ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO ()
+writeSyGuSProblem sym writer synth_fns constraints = do
+  mapM_ (\(SomeSymFn fn) -> addSynthFun writer fn) synth_fns
+  mapM_ (viewSome $ addDeclareVar writer) $ foldMap (exprUninterpConstants sym) constraints
+  mapM_ (addConstraint writer) constraints
+  SMT2.writeCheckSynth writer

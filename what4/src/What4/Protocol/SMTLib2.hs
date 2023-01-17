@@ -15,9 +15,12 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
@@ -40,6 +43,7 @@ module What4.Protocol.SMTLib2
   , writeGetValue
   , writeGetAbduct
   , writeGetAbductNext
+  , writeCheckSynth
   , runCheckSat
   , runGetAbducts
   , asSMT2Type
@@ -51,10 +55,13 @@ module What4.Protocol.SMTLib2
   , setProduceModels
   , smtLibEvalFuns
   , smtlib2Options
+  , parseFnModel
+  , parseFnValues
     -- * Logic
   , SMT2.Logic(..)
   , SMT2.qf_bv
   , SMT2.allSupported
+  , SMT2.hornLogic
   , all_supported
   , setLogic
     -- * Type
@@ -69,6 +76,7 @@ module What4.Protocol.SMTLib2
   , Session(..)
   , SMTLib2GenericSolver(..)
   , writeDefaultSMT2
+  , defaultFileWriter
   , startSolver
   , shutdownSolver
   , smtAckResult
@@ -93,14 +101,21 @@ import Control.Monad.Fail( MonadFail )
 
 import           Control.Applicative
 import           Control.Exception
-import           Control.Monad.State.Strict
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (digitToInt, isAscii)
+import           Data.HashMap.Lazy (HashMap)
+import qualified Data.HashMap.Lazy as HashMap
 import           Data.IORef
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid
+import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Map (MapF)
+import qualified Data.Parameterized.Map as MapF
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Pair
 import           Data.Parameterized.Some
@@ -124,6 +139,7 @@ import qualified System.IO.Streams as Streams
 import           Data.Versions (Version(..))
 import qualified Data.Versions as Versions
 import qualified Prettyprinter as PP
+import           Text.Printf (printf)
 import           LibBF( bfToBits )
 
 import           Prelude hiding (writeFile)
@@ -701,6 +717,11 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
     let resolveArg (var, Some tp) = (var, asSMT2Type @a tp)
      in SMT2.defineFun f (resolveArg <$> args) (asSMT2Type @a return_type) e
 
+  synthFunCommand _proxy f args ret_tp =
+    SMT2.synthFun f (map (\(var, Some tp) -> (var, asSMT2Type @a tp)) args) (asSMT2Type @a ret_tp)
+  declareVarCommand _proxy v tp = SMT2.declareVar v (asSMT2Type @a tp)
+  constraintCommand _proxy e = SMT2.constraint e
+
   stringTerm str = smtlib2StringTerm @a str
   stringLength x = smtlib2StringLength @a x
   stringAppend xs = smtlib2StringAppend @a xs
@@ -769,12 +790,26 @@ writeGetAbduct w nm p = addCommandNoAck w $ SMT2.getAbduct nm p
 writeGetAbductNext :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
 writeGetAbductNext w = addCommandNoAck w SMT2.getAbductNext
 
+-- | Write check-synth command
+writeCheckSynth :: SMTLib2Tweaks a => WriterConn t (Writer a) -> IO ()
+writeCheckSynth w = addCommandNoAck w SMT2.checkSynth
+
 parseBoolSolverValue :: MonadFail m => SExp -> m Bool
 parseBoolSolverValue (SAtom "true")  = return True
 parseBoolSolverValue (SAtom "false") = return False
 parseBoolSolverValue s =
   do v <- parseBvSolverValue (knownNat @1) s
      return (if v == BV.zero knownNat then False else True)
+
+parseIntSolverValue :: MonadFail m => SExp -> m Integer
+parseIntSolverValue = \case
+  SAtom v
+    | [(i, "")] <- readDec (Text.unpack v) ->
+      return i
+  SApp ["-", x] ->
+    negate <$> parseIntSolverValue x
+  s ->
+    fail $ "Could not parse solver value: " ++ show s
 
 parseRealSolverValue :: MonadFail m => SExp -> m Rational
 parseRealSolverValue (SAtom v) | Just (r,"") <- readDecimal (Text.unpack v) =
@@ -792,10 +827,11 @@ parseRealSolverValue s = fail $ "Could not parse solver value: " ++ show s
 -- of the variable.
 parseBvSolverValue :: MonadFail m => NatRepr w -> SExp -> m (BV.BV w)
 parseBvSolverValue w s
-  | Pair w' bv <- parseBVLitHelper s = case w' `compareNat` w of
+  | Just (Pair w' bv) <- parseBVLitHelper s = case w' `compareNat` w of
       NatLT zw -> return (BV.zext (addNat w' (addNat zw knownNat)) bv)
       NatEQ -> return bv
       NatGT _ -> return (BV.trunc w bv)
+  | otherwise = fail $ "Could not parse bitvector solver value: " ++ show s
 
 natBV :: Natural
       -- ^ width
@@ -806,15 +842,14 @@ natBV wNatural x = case mkNatRepr wNatural of
   Some w -> Pair w (BV.mkBV w x)
 
 -- | Parse an s-expression and return a bitvector and its width
-parseBVLitHelper :: SExp -> Pair NatRepr BV.BV
+parseBVLitHelper :: SExp -> Maybe (Pair NatRepr BV.BV)
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'b' : n_str))) | [(n, "")] <- readBin n_str =
-  natBV (fromIntegral (length n_str)) n
+  Just $ natBV (fromIntegral (length n_str)) n
 parseBVLitHelper (SAtom (Text.unpack -> ('#' : 'x' : n_str))) | [(n, "")] <- readHex n_str =
-  natBV (fromIntegral (length n_str * 4)) n
+  Just $ natBV (fromIntegral (length n_str * 4)) n
 parseBVLitHelper (SApp ["_", SAtom (Text.unpack -> ('b' : 'v' : n_str)), SAtom (Text.unpack -> w_str)])
-  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = natBV w n
--- BGS: Is this correct?
-parseBVLitHelper _ = natBV 0 0
+  | [(n, "")] <- readDec n_str, [(w, "")] <- readDec w_str = Just $ natBV w n
+parseBVLitHelper _ = Nothing
 
 parseStringSolverValue :: MonadFail m => SExp -> m Text
 parseStringSolverValue (SString t) | Just t' <- unescapeText t = return t'
@@ -845,10 +880,10 @@ data ParsedFloatResult = forall eb sb . ParsedFloatResult
 
 parseFloatLitHelper :: MonadFail m => SExp -> m ParsedFloatResult
 parseFloatLitHelper (SApp ["fp", sign_s, expt_s, scand_s])
-  | Pair sign_w sign <- parseBVLitHelper sign_s
+  | Just (Pair sign_w sign) <- parseBVLitHelper sign_s
   , Just Refl <- sign_w `testEquality` (knownNat @1)
-  , Pair eb expt <- parseBVLitHelper expt_s
-  , Pair sb scand <- parseBVLitHelper scand_s
+  , Just (Pair eb expt) <- parseBVLitHelper expt_s
+  , Just (Pair sb scand) <- parseBVLitHelper scand_s
   = return $ ParsedFloatResult sign eb expt sb scand
 parseFloatLitHelper
   s@(SApp ["_", SAtom (Text.unpack -> nm), SAtom (Text.unpack -> eb_s), SAtom (Text.unpack -> sb_s)])
@@ -883,6 +918,341 @@ parseBvArraySolverValue w v (SApp ["store", arr, idx, val]) = do
       return . Just $ ArrayConcrete base (Map.insert (Ctx.empty Ctx.:> idx') val' m)
     _ -> return Nothing
 parseBvArraySolverValue _ _ _ = return Nothing
+
+parseFnModel ::
+  sym ~ B.ExprBuilder t st fs  =>
+  sym ->
+  WriterConn t h ->
+  [I.SomeSymFn sym] ->
+  SExp ->
+  IO (MapF (I.SymFnWrapper sym) (I.SymFnWrapper sym))
+parseFnModel = parseFns parseDefineFun
+
+parseFnValues ::
+  sym ~ B.ExprBuilder t st fs  =>
+  sym ->
+  WriterConn t h ->
+  [I.SomeSymFn sym] ->
+  SExp ->
+  IO (MapF (I.SymFnWrapper sym) (I.SymFnWrapper sym))
+parseFnValues = parseFns parseLambda
+
+parseFns ::
+  sym ~ B.ExprBuilder t st fs =>
+  (sym -> SExp -> IO (Text, I.SomeSymFn sym)) ->
+  sym ->
+  WriterConn t h ->
+  [I.SomeSymFn sym] ->
+  SExp ->
+  IO (MapF (I.SymFnWrapper sym) (I.SymFnWrapper sym))
+parseFns parse_model_fn sym conn uninterp_fns sexp = do
+  fn_name_bimap <- cacheLookupFnNameBimap conn $ map (\(I.SomeSymFn fn) -> B.SomeExprSymFn fn) uninterp_fns
+  defined_fns <- case sexp of
+    SApp sexps -> Map.fromList <$> mapM (parse_model_fn sym) sexps
+    _ -> fail $ "Could not parse model response: " ++ show sexp
+  MapF.fromList <$> mapM
+    (\(I.SomeSymFn uninterp_fn) -> if
+      | Just nm <- Bimap.lookup (B.SomeExprSymFn uninterp_fn) fn_name_bimap
+      , Just (I.SomeSymFn defined_fn) <- Map.lookup nm defined_fns
+      , Just Refl <- testEquality (I.fnArgTypes uninterp_fn) (I.fnArgTypes defined_fn)
+      , Just Refl <- testEquality (I.fnReturnType uninterp_fn) (I.fnReturnType defined_fn) ->
+        return $ MapF.Pair (I.SymFnWrapper uninterp_fn) (I.SymFnWrapper defined_fn)
+      | otherwise -> fail $ "Could not find model for function: " ++ show uninterp_fn)
+    uninterp_fns
+
+parseDefineFun :: I.IsSymExprBuilder sym => sym -> SExp -> IO (Text, I.SomeSymFn sym)
+parseDefineFun sym sexp = case sexp of
+  SApp ["define-fun", SAtom nm, SApp params_sexp, _ret_type_sexp , body_sexp] -> do
+    fn <- parseFn sym nm params_sexp body_sexp
+    return (nm, fn)
+  _ -> fail $ "unexpected sexp, expected define-fun, found " ++ show sexp
+
+parseLambda :: I.IsSymExprBuilder sym => sym -> SExp -> IO (Text, I.SomeSymFn sym)
+parseLambda sym sexp = case sexp of
+  SApp [SAtom nm, SApp ["lambda", SApp params_sexp, body_sexp]] -> do
+    fn <- parseFn sym nm params_sexp body_sexp
+    return (nm, fn)
+  _ -> fail $ "unexpected sexp, expected lambda, found " ++ show sexp
+
+parseFn :: I.IsSymExprBuilder sym => sym -> Text -> [SExp] -> SExp -> IO (I.SomeSymFn sym)
+parseFn sym nm params_sexp body_sexp = do
+  (nms, vars) <- unzip <$> mapM (parseVar sym) params_sexp
+  case Ctx.fromList vars of
+    Some vars_assign -> do
+      let let_env = HashMap.fromList $ zip nms $ map (mapSome $ I.varExpr sym) vars
+      proc_res <- runProcessor (ProcessorEnv { procSym = sym, procLetEnv = let_env }) $ parseExpr sym body_sexp
+      Some body_expr <- either fail return proc_res
+      I.SomeSymFn <$> I.definedFn sym (I.safeSymbol $ Text.unpack nm) vars_assign body_expr I.NeverUnfold
+
+parseVar :: I.IsSymExprBuilder sym => sym -> SExp -> IO (Text, Some (I.BoundVar sym))
+parseVar sym sexp = case sexp of
+  SApp [SAtom nm, tp_sexp] -> do
+    Some tp <- parseType tp_sexp
+    var <- liftIO $ I.freshBoundVar sym (I.safeSymbol $ Text.unpack nm) tp
+    return (nm, Some var)
+  _ -> fail $ "unexpected variable " ++ show sexp
+
+parseType :: SExp -> IO (Some BaseTypeRepr)
+parseType sexp = case sexp of
+  "Bool" -> return $ Some BaseBoolRepr
+  "Int" -> return $ Some BaseIntegerRepr
+  "Real" -> return $ Some BaseRealRepr
+  SApp ["_", "BitVec", SAtom (Text.unpack -> m_str)]
+    | [(m_n, "")] <- readDec m_str
+    , Some m <- mkNatRepr m_n
+    , Just LeqProof <- testLeq (knownNat @1) m ->
+      return $ Some $ BaseBVRepr m
+  SApp ["_", "FloatingPoint", SAtom (Text.unpack -> eb_str), SAtom (Text.unpack -> sb_str)]
+    | [(eb_n, "")] <- readDec eb_str
+    , Some eb <- mkNatRepr eb_n
+    , Just LeqProof <- testLeq (knownNat @2) eb
+    , [(sb_n, "")] <- readDec sb_str
+    , Some sb <- mkNatRepr sb_n
+    , Just LeqProof <- testLeq (knownNat @2) sb ->
+      return $ Some $ BaseFloatRepr $ FloatingPointPrecisionRepr eb sb
+  SApp ["Array", idx_tp_sexp, val_tp_sexp] -> do
+    Some idx_tp <- parseType idx_tp_sexp
+    Some val_tp <- parseType val_tp_sexp
+    return $ Some $ BaseArrayRepr (Ctx.singleton idx_tp) val_tp
+  _ -> fail $ "unexpected type " ++ show sexp
+
+
+-- | Stores a NatRepr along with proof that its type parameter is a bitvector of
+-- that length. Used for easy pattern matching on the LHS of a binding in a
+-- do-expression to extract the proof.
+data BVProof tp where
+  BVProof :: forall n . (1 <= n) => NatRepr n -> BVProof (BaseBVType n)
+
+-- | Given an expression, monadically either returns proof that it is a
+-- bitvector or throws an error.
+getBVProof :: (I.IsExpr ex, MonadError String m) => ex tp -> m (BVProof tp)
+getBVProof expr = case I.exprType expr of
+  BaseBVRepr n -> return $ BVProof n
+  t -> throwError $ "expected BV, found " ++ show t
+
+-- | Operator type descriptions for parsing s-expression of
+-- the form @(operator operands ...)@.
+--
+-- Code is copy-pasted and adapted from `What4.Serialize.Parser`, see
+-- <https://github.com/GaloisInc/what4/issues/228>
+data Op sym where
+    -- | Generic unary operator description.
+    Op1 ::
+      Ctx.Assignment BaseTypeRepr (Ctx.EmptyCtx Ctx.::> arg1) ->
+      (sym -> I.SymExpr sym arg1 -> IO (I.SymExpr sym ret)) ->
+      Op sym
+    -- | Generic binary operator description.
+    Op2 ::
+      Ctx.Assignment BaseTypeRepr (Ctx.EmptyCtx Ctx.::> arg1 Ctx.::> arg2) ->
+      Maybe Assoc ->
+      (sym -> I.SymExpr sym arg1 -> I.SymExpr sym arg2 -> IO (I.SymExpr sym ret)) ->
+      Op sym
+    -- | Encapsulating type for a unary operation that takes one bitvector and
+    -- returns another (in IO).
+    BVOp1 ::
+      (forall w . (1 <= w) => sym -> I.SymBV sym w -> IO (I.SymBV sym w)) ->
+      Op sym
+    -- | Binop with a bitvector return type, e.g., addition or bitwise operations.
+    BVOp2 ::
+      Maybe Assoc ->
+      (forall w . (1 <= w) => sym -> I.SymBV sym w -> I.SymBV sym w -> IO (I.SymBV sym w)) ->
+      Op sym
+    -- | Bitvector binop with a boolean return type, i.e., comparison operators.
+    BVComp2 ::
+      (forall w . (1 <= w) => sym -> I.SymBV sym w -> I.SymBV sym w -> IO (I.Pred sym)) ->
+      Op sym
+
+data Assoc = RightAssoc | LeftAssoc
+
+newtype Processor sym a = Processor (ExceptT String (ReaderT (ProcessorEnv sym) IO) a)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadError String, MonadReader (ProcessorEnv sym))
+
+data ProcessorEnv sym = ProcessorEnv
+  { procSym :: sym
+  , procLetEnv :: HashMap Text (Some (I.SymExpr sym))
+  }
+
+runProcessor :: ProcessorEnv sym -> Processor sym a -> IO (Either String a)
+runProcessor env (Processor action) = runReaderT (runExceptT action) env
+
+opTable :: I.IsSymExprBuilder sym => HashMap Text (Op sym)
+opTable = HashMap.fromList
+  -- Boolean ops
+  [ ("not", Op1 knownRepr I.notPred)
+  , ("=>", Op2 knownRepr (Just RightAssoc) I.impliesPred)
+  , ("and", Op2 knownRepr (Just LeftAssoc) I.andPred)
+  , ("or", Op2 knownRepr (Just LeftAssoc) I.orPred)
+  , ("xor", Op2 knownRepr (Just LeftAssoc) I.xorPred)
+  -- Integer ops
+  , ("-", Op2 knownRepr (Just LeftAssoc) I.intSub)
+  , ("+", Op2 knownRepr (Just LeftAssoc) I.intAdd)
+  , ("*", Op2 knownRepr (Just LeftAssoc) I.intMul)
+  , ("div", Op2 knownRepr (Just LeftAssoc) I.intDiv)
+  , ("mod", Op2 knownRepr Nothing I.intMod)
+  , ("abs", Op1 knownRepr I.intAbs)
+  , ("<=", Op2 knownRepr Nothing I.intLe)
+  , ("<", Op2 knownRepr Nothing I.intLt)
+  , (">=", Op2 knownRepr Nothing $ \sym arg1 arg2 -> I.intLe sym arg2 arg1)
+  , (">", Op2 knownRepr Nothing $ \sym arg1 arg2 -> I.intLt sym arg2 arg1)
+  -- Bitvector ops
+  , ("bvnot", BVOp1 I.bvNotBits)
+  , ("bvneg", BVOp1 I.bvNeg)
+  , ("bvand", BVOp2 (Just LeftAssoc) I.bvAndBits)
+  , ("bvor", BVOp2 (Just LeftAssoc) I.bvOrBits)
+  , ("bvxor", BVOp2 (Just LeftAssoc) I.bvXorBits)
+  , ("bvadd", BVOp2 (Just LeftAssoc) I.bvAdd)
+  , ("bvsub", BVOp2 (Just LeftAssoc) I.bvSub)
+  , ("bvmul", BVOp2 (Just LeftAssoc) I.bvMul)
+  , ("bvudiv", BVOp2 Nothing I.bvUdiv)
+  , ("bvurem", BVOp2 Nothing I.bvUrem)
+  , ("bvshl", BVOp2 Nothing I.bvShl)
+  , ("bvlshr", BVOp2 Nothing I.bvLshr)
+  , ("bvsdiv", BVOp2 Nothing I.bvSdiv)
+  , ("bvsrem", BVOp2 Nothing I.bvSrem)
+  , ("bvashr", BVOp2 Nothing I.bvAshr)
+  , ("bvult", BVComp2 I.bvUlt)
+  , ("bvule", BVComp2 I.bvUle)
+  , ("bvugt", BVComp2 I.bvUgt)
+  , ("bvuge", BVComp2 I.bvUge)
+  , ("bvslt", BVComp2 I.bvSlt)
+  , ("bvsle", BVComp2 I.bvSle)
+  , ("bvsgt", BVComp2 I.bvSgt)
+  , ("bvsge", BVComp2 I.bvSge)
+  ]
+
+parseExpr ::
+  forall sym . I.IsSymExprBuilder sym => sym -> SExp -> Processor sym (Some (I.SymExpr sym))
+parseExpr sym sexp = case sexp of
+  "true" -> return $ Some $ I.truePred sym
+  "false" -> return $ Some $ I.falsePred sym
+  _ | Just i <- parseIntSolverValue sexp ->
+      liftIO $ Some <$> I.intLit sym i
+    | Just (Pair w bv) <- parseBVLitHelper sexp
+    , Just LeqProof <- testLeq (knownNat @1) w ->
+      liftIO $ Some <$> I.bvLit sym w bv
+  SAtom nm -> do
+    env <- asks procLetEnv
+    case HashMap.lookup nm env of
+      Just expr -> return $ expr
+      Nothing -> throwError ""
+  SApp ["let", SApp bindings_sexp, body_sexp] -> do
+    let_env <- HashMap.fromList <$> mapM
+      (\case
+        SApp [SAtom nm, expr_sexp] -> do
+          Some expr <- parseExpr sym expr_sexp
+          return (nm, Some expr)
+        _ -> throwError "")
+      bindings_sexp
+    local (\prov_env -> prov_env { procLetEnv = HashMap.union let_env (procLetEnv prov_env) }) $
+      parseExpr sym body_sexp
+  SApp ["=", arg1, arg2] -> do
+    Some arg1_expr <- parseExpr sym arg1
+    Some arg2_expr <- parseExpr sym arg2
+    case testEquality (I.exprType arg1_expr) (I.exprType arg2_expr) of
+      Just Refl -> liftIO (Some <$> I.isEq sym arg1_expr arg2_expr)
+      Nothing -> throwError ""
+  SApp ["ite", arg1, arg2, arg3] -> do
+    Some arg1_expr <- parseExpr sym arg1
+    Some arg2_expr <- parseExpr sym arg2
+    Some arg3_expr <- parseExpr sym arg3
+    case I.exprType arg1_expr of
+      I.BaseBoolRepr -> case testEquality (I.exprType arg2_expr) (I.exprType arg3_expr) of
+        Just Refl -> liftIO (Some <$> I.baseTypeIte sym arg1_expr arg2_expr arg3_expr)
+        Nothing -> throwError ""
+      _ -> throwError ""
+  SApp ["concat", arg1, arg2] -> do
+    Some arg1_expr <- parseExpr sym arg1
+    Some arg2_expr <- parseExpr sym arg2
+    BVProof{} <- getBVProof arg1_expr
+    BVProof{} <- getBVProof arg2_expr
+    liftIO $ Some <$> I.bvConcat sym arg1_expr arg2_expr
+  SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
+    Just (Op1 arg_types fn) -> do
+      args <- mapM (parseExpr sym) operands
+      exprAssignment arg_types args >>= \case
+        Ctx.Empty Ctx.:> arg1 ->
+          liftIO (Some <$> fn sym arg1)
+    Just (Op2 arg_types _ fn) -> do
+      args <- mapM (parseExpr sym) operands
+      exprAssignment arg_types args >>= \case
+        Ctx.Empty Ctx.:> arg1 Ctx.:> arg2 ->
+            liftIO (Some <$> fn sym arg1 arg2)
+    Just (BVOp1 op) -> do
+      Some arg_expr <- readOneArg sym operands
+      BVProof{} <- getBVProof arg_expr
+      liftIO $ Some <$> op sym arg_expr
+    Just (BVOp2 _ op) -> do
+      (Some arg1, Some arg2) <- readTwoArgs sym operands
+      BVProof m <- prefixError "in arg 1: " $ getBVProof arg1
+      BVProof n <- prefixError "in arg 2: " $ getBVProof arg2
+      case testEquality m n of
+        Just Refl -> liftIO (Some <$> op sym arg1 arg2)
+        Nothing -> throwError $ printf "arguments to %s must be the same length, \
+                                       \but arg 1 has length %s \
+                                       \and arg 2 has length %s"
+                                       operator
+                                       (show m)
+                                       (show n)
+    Just (BVComp2 op) -> do
+      (Some arg1, Some arg2) <- readTwoArgs sym operands
+      BVProof m <- prefixError "in arg 1: " $ getBVProof arg1
+      BVProof n <- prefixError "in arg 2: " $ getBVProof arg2
+      case testEquality m n of
+        Just Refl -> liftIO (Some <$> op sym arg1 arg2)
+        Nothing -> throwError $ printf "arguments to %s must be the same length, \
+                                       \but arg 1 has length %s \
+                                       \and arg 2 has length %s"
+                                       operator
+                                       (show m)
+                                       (show n)
+    _ -> throwError ""
+  _ -> throwError ""
+-- | Verify a list of arguments has a single argument and
+-- return it, else raise an error.
+readOneArg ::
+  I.IsSymExprBuilder sym
+  => sym
+  -> [SExp]
+  -> Processor sym (Some (I.SymExpr sym))
+readOneArg sym operands = do
+  args <- mapM (parseExpr sym) operands
+  case args of
+    [arg] -> return arg
+    _ -> throwError $ printf "expecting 1 argument, got %d" (length args)
+
+-- | Verify a list of arguments has two arguments and return
+-- it, else raise an error.
+readTwoArgs ::
+  I.IsSymExprBuilder sym
+  => sym
+  ->[SExp]
+  -> Processor sym (Some (I.SymExpr sym), Some (I.SymExpr sym))
+readTwoArgs sym operands = do
+  args <- mapM (parseExpr sym) operands
+  case args of
+    [arg1, arg2] -> return (arg1, arg2)
+    _ -> throwError $ printf "expecting 2 arguments, got %d" (length args)
+
+exprAssignment ::
+  forall sym ctx ex . (I.IsSymExprBuilder sym, I.IsExpr ex)
+  => Ctx.Assignment BaseTypeRepr ctx
+  -> [Some ex]
+  -> Processor sym (Ctx.Assignment ex ctx)
+exprAssignment tpAssns exs = do
+  Some exsAsn <- return $ Ctx.fromList exs
+  exsRepr <- return $ fmapFC I.exprType exsAsn
+  case testEquality exsRepr tpAssns of
+    Just Refl -> return exsAsn
+    Nothing -> throwError $
+      "Unexpected expression types for " -- ++ show exsAsn
+      ++ "\nExpected: " ++ show tpAssns
+      ++ "\nGot: " ++ show exsRepr
+
+-- | Utility function for contextualizing errors. Prepends the given prefix
+-- whenever an error is thrown.
+prefixError :: (Monoid e, MonadError e m) => e -> m a -> m a
+prefixError prefix act = catchError act (throwError . mappend prefix)
+
 
 ------------------------------------------------------------------------
 -- Session
@@ -1145,16 +1515,28 @@ writeDefaultSMT2 :: SMTLib2Tweaks a
                  -> [B.BoolExpr t]
                  -> IO ()
 writeDefaultSMT2 a nm feat strictOpt sym h ps = do
+  c <- defaultFileWriter a nm feat strictOpt sym h
+  setProduceModels c True
+  forM_ ps (SMTWriter.assume c)
+  writeCheckSat c
+  writeExit c
+
+defaultFileWriter ::
+  SMTLib2Tweaks a =>
+  a ->
+  String ->
+  ProblemFeatures ->
+  Maybe (CFG.ConfigOption I.BaseBoolType) ->
+  B.ExprBuilder t st fs ->
+  IO.Handle ->
+  IO (WriterConn t (Writer a))
+defaultFileWriter a nm feat strictOpt sym h = do
   bindings <- B.getSymbolVarBimap sym
   str <- Streams.encodeUtf8 =<< Streams.handleToOutputStream h
   null_in <- Streams.nullInput
   let cfg = I.getConfiguration sym
   strictness <- parserStrictness strictOpt strictSMTParsing cfg
-  c <- newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
-  setProduceModels c True
-  forM_ ps (SMTWriter.assume c)
-  writeCheckSat c
-  writeExit c
+  newWriter a str null_in nullAcknowledgementAction strictness nm True feat True bindings
 
 -- n.b. commonly used for the startSolverProcess method of the
 -- OnlineSolver class, so it's helpful for the type suffixes to align

@@ -51,11 +51,17 @@ module What4.Protocol.SMTLib2.Syntax
   , getUnsatCore
   , getAbduct
   , getAbductNext
+    -- * SyGuS
+  , synthFun
+  , declareVar
+  , constraint
+  , checkSynth
     -- * Logic
   , Logic(..)
   , qf_bv
   , allSupported
   , allLogic
+  , hornLogic
     -- * Sort
   , Sort(..)
   , boolSort
@@ -192,7 +198,11 @@ allSupported = Logic "ALL_SUPPORTED"
 -- | Set the logic to all supported logics.
 allLogic :: Logic
 allLogic = Logic "ALL"
- 
+
+-- | Use the Horn logic
+hornLogic :: Logic
+hornLogic = Logic "HORN"
+
 ------------------------------------------------------------------------
 -- Symbol
 
@@ -835,6 +845,29 @@ getAbduct nm p = Cmd $ "(get-abduct " <> Builder.fromText nm <> " " <> renderTer
 -- | Get the next command, called after a get-abduct command
 getAbductNext :: Command
 getAbductNext = Cmd "(get-abduct-next)"
+
+-- | Declare a SyGuS function to synthesize with the given name, arguments, and
+-- return type.
+synthFun :: Text -> [(Text, Sort)] -> Sort -> Command
+synthFun f args ret_tp = Cmd $ app "synth-fun"
+  [ Builder.fromText f
+  , builder_list $ map (\(var, tp) -> app (Builder.fromText var) [unSort tp]) args
+  , unSort ret_tp
+  ]
+
+-- | Declare a SyGuS variable with the given name and type.
+declareVar :: Text -> Sort -> Command
+declareVar v tp = Cmd $ app "declare-var" [Builder.fromText v, unSort tp]
+
+-- | Add the SyGuS constraint to the current synthesis problem.
+constraint :: Term -> Command
+constraint p = Cmd $ app "constraint" [renderTerm p]
+
+-- | Ask the SyGuS solver to find a solution for the synthesis problem
+-- corresponding to the current functions-to-synthesize, variables and
+-- constraints.
+checkSynth :: Command
+checkSynth = Cmd "(check-synth)\n"
 
 -- | Get the values associated with the terms from the last call to @check-sat@.
 getValue :: [Term] -> Command

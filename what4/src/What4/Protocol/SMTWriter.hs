@@ -69,6 +69,7 @@ module What4.Protocol.SMTWriter
   , entryStackHeight
   , pushEntryStack
   , popEntryStack
+  , cacheLookupFnNameBimap
   , Command
   , addCommand
   , addCommandNoAck
@@ -86,6 +87,10 @@ module What4.Protocol.SMTWriter
   , ResponseStrictness(..)
   , parserStrictness
   , nullAcknowledgementAction
+    -- * SyGuS
+  , addSynthFun
+  , addDeclareVar
+  , addConstraint
     -- * SMTWriter operations
   , assume
   , mkSMTTerm
@@ -111,6 +116,8 @@ import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Maybe
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import qualified Data.Bits as Bits
 import           Data.IORef
@@ -820,6 +827,15 @@ cacheValueFn
 cacheValueFn conn n lifetime value = cacheValue conn lifetime $ \entry ->
   stToIO $ PH.insert (symFnCache entry) n value
 
+cacheLookupFnNameBimap :: WriterConn t h -> [SomeExprSymFn t] -> IO (Bimap (SomeExprSymFn t) Text)
+cacheLookupFnNameBimap conn fns = Bimap.fromList <$> mapM
+  (\some_fn@(SomeExprSymFn fn) -> do
+    maybe_smt_sym_fn <- cacheLookupFn conn $ symFnId fn
+    case maybe_smt_sym_fn of
+      Just (SMTSymFn nm _ _) -> return (some_fn, nm)
+      Nothing -> fail $ "Could not find function in cache: " ++ show fn)
+  fns
+
 -- | Run state with handle.
 withWriterState :: WriterConn t h -> State WriterState a -> IO a
 withWriterState c m = do
@@ -930,6 +946,23 @@ class (SupportTermOps (Term h)) => SMTWriter h where
                 -> TypeMap rtp
                 -> Term h
                 -> Command h
+
+  -- | Declare a new SyGuS function to synthesize with the given name,
+  -- arguments, and result type.
+  synthFunCommand :: f h
+                  -> Text
+                  -> [(Text, Some TypeMap)]
+                  -> TypeMap tp
+                  -> Command h
+
+  -- | Declare a new SyGuS universal variables with the given name and type.
+  declareVarCommand :: f h
+                    -> Text
+                    -> TypeMap tp
+                    -> Command h
+
+  -- | Add a SyGuS formula to the set of synthesis constraints.
+  constraintCommand :: f h -> Term h -> Command h
 
   -- | Declare a struct datatype if is has not been already given the number of
   -- arguments in the struct.
@@ -1053,6 +1086,63 @@ assumeFormulaWithFreshName conn p =
   do var <- withWriterState conn $ freshVarName
      assumeFormulaWithName conn p var
      return var
+
+addSynthFun ::
+  SMTWriter h =>
+  WriterConn t h ->
+  ExprSymFn t args ret ->
+  IO ()
+addSynthFun conn fn =
+  cacheLookupFn conn (symFnId fn) >>= \case
+    Just{} ->
+      fail $ "Internal error in SMTLIB exporter: function already declared."
+        ++ show (symFnId fn) ++ " declared at "
+        ++ show (plSourceLoc (symFnLoc fn)) ++ "."
+    Nothing -> case symFnInfo fn of
+      UninterpFnInfo arg_types ret_type -> do
+        nm <- getSymbolName conn (FnSymbolBinding fn)
+        let fn_source = fnSource (symFnName fn) (symFnLoc fn)
+        smt_arg_types <- traverseFC (evalFirstClassTypeRepr conn fn_source) arg_types
+        checkArgumentTypes conn smt_arg_types
+        smt_ret_type <- evalFirstClassTypeRepr conn fn_source ret_type
+        traverseFC_ (declareTypes conn) smt_arg_types
+        declareTypes conn smt_ret_type
+        smt_args <- mapM
+          (\(Some tp) -> do
+            var <- withWriterState conn $ freshVarName
+            return (var, Some tp))
+          (toListFC Some smt_arg_types)
+        addCommand conn $ synthFunCommand conn nm smt_args smt_ret_type
+        cacheValueFn conn (symFnId fn) DeleteNever $! SMTSymFn nm smt_arg_types smt_ret_type
+      DefinedFnInfo{} ->
+        fail $ "Internal error in SMTLIB exporter: defined functions cannot be synthesized."
+      MatlabSolverFnInfo{} ->
+        fail $ "Internal error in SMTLIB exporter: MatlabSolver functions cannot be synthesized."
+
+addDeclareVar ::
+  SMTWriter h =>
+  WriterConn t h ->
+  ExprBoundVar t tp ->
+  IO ()
+addDeclareVar conn var =
+  cacheLookupExpr conn (bvarId var) >>= \case
+    Just{} ->
+      fail $ "Internal error in SMTLIB exporter: variable already declared."
+        ++ show (bvarId var) ++ " declared at "
+        ++ show (plSourceLoc (bvarLoc var)) ++ "."
+    Nothing -> do
+      nm <- getSymbolName conn (VarSymbolBinding var)
+      let fn_source = fnSource (bvarName var) (bvarLoc var)
+      smt_type <- evalFirstClassTypeRepr conn fn_source $ bvarType var
+      declareTypes conn smt_type
+      addCommand conn $ declareVarCommand conn nm smt_type
+      cacheValueExpr conn (bvarId var) DeleteNever $! SMTName smt_type nm
+
+addConstraint :: SMTWriter h => WriterConn t h -> BoolExpr t -> IO ()
+addConstraint conn p = do
+  f <- mkFormula conn p
+  updateProgramLoc conn (exprLoc p)
+  addCommand conn $ constraintCommand conn f
 
 -- | Perform any necessary declarations to ensure that the mentioned type map
 --   sorts exist in the solver environment.
