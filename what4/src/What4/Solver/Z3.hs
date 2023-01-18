@@ -14,7 +14,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
-
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
 module What4.Solver.Z3
   ( Z3(..)
