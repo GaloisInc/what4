@@ -92,6 +92,7 @@ main_version(abc, "2021_12_30").
 
 version(ubuntu, "ubuntu-latest").
 
+version(ghc, "9.4.4").
 version(ghc, "9.2.2").
 version(ghc, "9.0.2").
 version(ghc, "8.10.7").
