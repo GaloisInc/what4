@@ -8,6 +8,7 @@ Defines a GADT for indicating a base type must be an integer.  Used for
 restricting index types in MATLAB arrays.
 -}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
 module What4.Utils.OnlyIntRepr
   ( OnlyIntRepr(..)
   , toBaseTypeRepr

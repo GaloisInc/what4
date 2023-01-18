@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-
 Module           : What4.Protocol.VerilogWriter.AST
 Copyright        : (c) Galois, Inc 2020
