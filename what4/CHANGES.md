@@ -9,14 +9,27 @@
 
 * Remove a dependency on `data-binary-ieee754`, which has been deprecated.
 
-* Deprecated `allSupported` which represents the SMT logic `ALL_SUPPORTED`,
-  and added `allLogic` instead which represents the SMTLib standard logic `ALL`.
+* Deprecate `allSupported` which represents the SMT logic `ALL_SUPPORTED`,
+  and add `allLogic` instead which represents the SMTLib standard logic `ALL`.
 
-* Added support for the cvc5 SMT solver.
+* Add support for the cvc5 SMT solver.
 
-* Added a `get-abduct` feature which is compatible with cvc5.
+* Add a `get-abduct` feature which is compatible with cvc5.
 
-* Added modules to support serialization and deserialization of what4 terms into an s-expression format that is a superset of SMTLib2. See the `What4.Serialize.Printer`, `What4.Serialize.Parser`, and `What4.Serialize.FastSExpr` modules. Note that these modules have names that conflict with the now deprecated what4-serialize package, from which they were copied. If you are updating to this version of what4, delete your dependency on what4-serialize.
+* Add modules to support serialization and deserialization of what4 terms into
+  an s-expression format that is a superset of SMTLib2. See the
+  `What4.Serialize.Printer`, `What4.Serialize.Parser`, and
+  `What4.Serialize.FastSExpr` modules. Note that these modules have names that
+  conflict with the now deprecated what4-serialize package, from which they were
+  copied. If you are updating to this version of what4, delete your dependency
+  on what4-serialize.
+
+* Add support Syntax-Guided Synthesis (SyGuS) in CVC5 (through the
+  `runCVC5SyGuS` function) and Constrained Horn Clauses (CHC) in Z3 (through the
+  `runZ3Horn` function).
+
+* Make `what4` smarter about simplifying `intMin x y` and `intMax x y`
+  expressions when either `x <= y` or `y <= x` can be statically determined.
 
 # 1.3 (April 2022)
 
