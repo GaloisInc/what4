@@ -96,6 +96,7 @@ module What4.Utils.BVDomain.Arith
   , correct_eq
   , correct_ult
   , correct_slt
+  , correct_isUltSumCommonEquiv
   , correct_unknowns
   , correct_bitbounds
   ) where
@@ -865,6 +866,18 @@ correct_slt n (a,x) (b,y) =
       Just True  -> toSigned n x < toSigned n y
       Just False -> toSigned n x >= toSigned n y
       Nothing    -> True
+
+correct_isUltSumCommonEquiv ::
+  (1 <= n) =>
+  NatRepr n ->
+  (Domain n, Integer) ->
+  (Domain n, Integer) ->
+  (Domain n, Integer) ->
+  Property
+correct_isUltSumCommonEquiv n (a, x) (b, y) (c, z) =
+  member a x ==> member b y ==> member c z ==>
+    isUltSumCommonEquiv a b c ==>
+      ((toUnsigned n (x + z) < toUnsigned n (y + z)) == (toUnsigned n x < toUnsigned n y))
 
 correct_unknowns :: (1 <= n) => Domain n -> Integer -> Integer -> Property
 correct_unknowns a x y = member a x ==> member a y ==> ((x .|. u) == (y .|. u)) && (u .|. mask == mask)
