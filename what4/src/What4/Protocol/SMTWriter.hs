@@ -831,9 +831,9 @@ cacheLookupFnNameBimap :: WriterConn t h -> [SomeExprSymFn t] -> IO (Bimap (Some
 cacheLookupFnNameBimap conn fns = Bimap.fromList <$> mapM
   (\some_fn@(SomeExprSymFn fn) -> do
     maybe_smt_sym_fn <- cacheLookupFn conn $ symFnId fn
-    case maybe_smt_sym_fn of
-      Just (SMTSymFn nm _ _) -> return (some_fn, nm)
-      Nothing -> fail $ "Could not find function in cache: " ++ show fn)
+    return $ case maybe_smt_sym_fn of
+      Just (SMTSymFn nm _ _) -> (some_fn, nm)
+      Nothing -> (some_fn, solverSymbolAsText $ symFnName fn))
   fns
 
 -- | Run state with handle.
