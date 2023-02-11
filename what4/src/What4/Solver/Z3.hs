@@ -12,7 +12,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
@@ -36,12 +38,15 @@ import           Control.Monad ( when )
 import qualified Data.Bimap as Bimap
 import           Data.Bits
 import           Data.Foldable
+import           Data.Map.Strict (Map)
+import qualified Data.Map as Map
 import           Data.String
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           System.IO
 
 import           Data.Parameterized.Map (MapF)
+import qualified Data.Parameterized.Map as MapF
 import           Data.Parameterized.Some
 import           What4.BaseTypes
 import           What4.Concrete
@@ -249,13 +254,21 @@ instance OnlineSolver (SMT2.Writer Z3) where
 -- CHCs are represented as pure SMT-LIB2 implications. For more information, see
 -- the [Z3 guide](https://microsoft.github.io/z3guide/docs/fixedpoints/intro/).
 runZ3Horn ::
+  forall sym t st fs .
   sym ~ ExprBuilder t st fs =>
   sym ->
+  Bool ->
   LogData ->
   [SomeSymFn sym] ->
   [BoolExpr t] ->
   IO (SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) ())
-runZ3Horn sym log_data inv_fns horn_clauses = do
+runZ3Horn sym do_bv_to_lia_transform log_data inv_fns horn_clauses = do
+  (lia_inv_fns, lia_horn_clauses, bv_to_lia_fn_subst) <- transformHornClausesForZ3
+    sym
+    do_bv_to_lia_transform
+    inv_fns
+    horn_clauses
+
   logSolverEvent sym
     (SolverStartSATQuery $ SolverStartSATQueryRec
       { satQuerySolverName = show Z3
@@ -263,9 +276,10 @@ runZ3Horn sym log_data inv_fns horn_clauses = do
       })
 
   path <- SMT2.defaultSolverPath Z3 sym
-  withZ3 sym path (log_data { logVerbosity = 2 }) $ \session -> do
-    writeHornProblem sym (SMT2.sessionWriter session) inv_fns horn_clauses
-    result <- RSP.getLimitedSolverResponse "check-sat"
+  get_value_result <- withZ3 sym path (log_data { logVerbosity = 2 }) $ \session -> do
+    writeHornProblem sym (SMT2.sessionWriter session) lia_inv_fns lia_horn_clauses
+
+    check_sat_result <- RSP.getLimitedSolverResponse "check-sat"
       (\case
         RSP.AckSat -> Just $ Sat ()
         RSP.AckUnsat -> Just $ Unsat ()
@@ -276,7 +290,7 @@ runZ3Horn sym log_data inv_fns horn_clauses = do
 
     logSolverEvent sym
       (SolverEndSATQuery $ SolverEndSATQueryRec
-        { satQueryResult = result
+        { satQueryResult = check_sat_result
         , satQueryError = Nothing
         })
 
@@ -288,18 +302,54 @@ runZ3Horn sym log_data inv_fns horn_clauses = do
             _ -> Nothing)
           (SMT2.sessionWriter session)
           (Syntax.getValue [])
-        SMT2.parseFnValues sym (SMT2.sessionWriter session) inv_fns sexp)
+        SMT2.parseFnValues sym (SMT2.sessionWriter session) lia_inv_fns sexp)
       return
-      result
+      check_sat_result
+
+  if do_bv_to_lia_transform then
+    case get_value_result of
+      Sat lia_defined_fns -> do
+        defined_inv_fns <- MapF.fromList <$> mapM
+          (\(SomeSymFn fn) ->
+            if| Just (SomeSymFn lia_fn) <- Map.lookup (SomeSymFn fn) bv_to_lia_fn_subst
+              , Just (SymFnWrapper lia_defined_fn) <- MapF.lookup (SymFnWrapper lia_fn) lia_defined_fns -> do
+                some_defined_fn <- transformSymFnLIA2BV sym $ SomeSymFn lia_defined_fn
+                case some_defined_fn of
+                  SomeSymFn defined_fn
+                    | Just Refl <- testEquality (fnArgTypes fn) (fnArgTypes defined_fn)
+                    , Just Refl <- testEquality (fnReturnType fn) (fnReturnType defined_fn) ->
+                      return $ MapF.Pair (SymFnWrapper fn) (SymFnWrapper defined_fn)
+                  _ -> fail $ "runZ3Horn: unexpected function " ++ show fn
+              | otherwise -> fail $ "runZ3Horn: unexpected function " ++ show fn)
+          inv_fns
+
+        all_unsat <- and <$> mapM
+          (\clause -> do
+            defined_clause <- notPred sym =<< substituteSymFns sym defined_inv_fns clause
+            runZ3InOverride sym (log_data { logVerbosity = 2 }) [defined_clause] $ return . isUnsat)
+          horn_clauses
+
+        return $ if all_unsat then Sat defined_inv_fns else Unknown
+
+      _ -> return Unknown
+
+  else return get_value_result
 
 writeZ3HornSMT2File ::
   sym ~ ExprBuilder t st fs =>
   sym ->
+  Bool ->
   Handle ->
   [SomeSymFn sym] ->
   [BoolExpr t] ->
   IO ()
-writeZ3HornSMT2File sym h inv_fns horn_clauses = do
+writeZ3HornSMT2File sym do_bv_to_lia_transform h inv_fns horn_clauses = do
+  (lia_inv_fns, lia_horn_clauses, _bv_to_lia_fn_subst) <- transformHornClausesForZ3
+    sym
+    do_bv_to_lia_transform
+    inv_fns
+    horn_clauses
+
   writer <- SMT2.defaultFileWriter
     Z3
     (show Z3)
@@ -308,8 +358,22 @@ writeZ3HornSMT2File sym h inv_fns horn_clauses = do
     sym
     h
   SMT2.setDefaultLogicAndOptions writer
-  writeHornProblem sym writer inv_fns horn_clauses
+  writeHornProblem sym writer lia_inv_fns lia_horn_clauses
   SMT2.writeExit writer
+
+transformHornClausesForZ3 ::
+  sym ~ ExprBuilder t st fs =>
+  sym ->
+  Bool ->
+  [SomeSymFn sym] ->
+  [BoolExpr t] ->
+  IO ([SomeSymFn sym], [BoolExpr t], Map (SomeSymFn sym) (SomeSymFn sym))
+transformHornClausesForZ3 sym do_bv_to_lia_transform inv_fns horn_clauses =
+  if do_bv_to_lia_transform then do
+    (lia_horn_clauses, bv_to_lia_fn_subst) <- transformPredBV2LIA sym horn_clauses
+    let lia_inv_fns = Map.elems bv_to_lia_fn_subst
+    return (lia_inv_fns, lia_horn_clauses, bv_to_lia_fn_subst)
+  else return (inv_fns, horn_clauses, Map.empty)
 
 writeHornProblem ::
   sym ~ ExprBuilder t st fs =>

@@ -148,6 +148,7 @@ main = do
       failureZ3 = "failure with older Z3 versions; upgrade to at least 4.8.9"
   defaultMain $ testGroup "Tests" $
     [ synthesis_test "int" intProblem "cvc5" CVC5.runCVC5SyGuS CVC5.runCVC5InOverride
-    , skipPre4_8_9 failureZ3 $ synthesis_test "int" intProblem "z3" Z3.runZ3Horn Z3.runZ3InOverride
+    , skipPre4_8_9 failureZ3 $ synthesis_test "int" intProblem "z3" (\sym -> Z3.runZ3Horn sym False) Z3.runZ3InOverride
     , synthesis_test "bv" bvProblem "cvc5" CVC5.runCVC5SyGuS CVC5.runCVC5InOverride
+    , skipPre4_8_9 failureZ3 $ synthesis_test "bv" bvProblem  "z3" (\sym -> Z3.runZ3Horn sym True) Z3.runZ3InOverride
     ]
