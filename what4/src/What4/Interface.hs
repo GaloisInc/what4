@@ -205,6 +205,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Coerce (coerce)
 import           Data.Foldable
 import           Data.Kind ( Type )
+import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
@@ -2729,6 +2730,12 @@ type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
 data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 
+instance IsSymFn (SymFn sym) => Eq (SomeSymFn sym) where
+  (SomeSymFn fn1) == (SomeSymFn fn2) = isJust $ fnTestEquality fn1 fn2
+
+instance IsSymFn (SymFn sym) => Ord (SomeSymFn sym) where
+  compare (SomeSymFn fn1) (SomeSymFn fn2) = toOrdering $ fnCompare fn1 fn2
+
 -- | Wrapper for `SymFn` that concatenates the arguments and the return types.
 --
 -- This is useful for implementing `TestEquality` and `OrdF` instances for
@@ -2967,6 +2974,10 @@ class ( IsExprBuilder sym
     MapF (SymFnWrapper sym) (SymFnWrapper sym) ->
     SymExpr sym tp ->
     IO (SymExpr sym tp)
+
+  transformPredBV2LIA :: sym -> [Pred sym] -> IO ([Pred sym], Map (SomeSymFn sym) (SomeSymFn sym))
+  transformSymFnLIA2BV :: sym -> SomeSymFn sym -> IO (SomeSymFn sym)
+
 
 -- | This returns true if the value corresponds to a concrete value.
 baseIsConcrete :: forall e bt
