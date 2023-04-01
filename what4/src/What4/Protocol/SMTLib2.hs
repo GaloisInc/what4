@@ -982,7 +982,7 @@ parseFn sym nm params_sexp body_sexp = do
       let let_env = HashMap.fromList $ zip nms $ map (mapSome $ I.varExpr sym) vars
       proc_res <- runProcessor (ProcessorEnv { procSym = sym, procLetEnv = let_env }) $ parseExpr sym body_sexp
       Some body_expr <- either fail return proc_res
-      I.SomeSymFn <$> I.definedFn sym (I.safeSymbol $ Text.unpack nm) vars_assign body_expr I.NeverUnfold
+      I.SomeSymFn <$> I.definedFn sym (I.safeSymbol $ Text.unpack nm) vars_assign body_expr I.AlwaysUnfold
 
 parseVar :: I.IsSymExprBuilder sym => sym -> SExp -> IO (Text, Some (I.BoundVar sym))
 parseVar sym sexp = case sexp of
