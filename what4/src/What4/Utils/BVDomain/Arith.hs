@@ -11,6 +11,7 @@ domains.
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -30,6 +31,7 @@ module What4.Utils.BVDomain.Arith
   , eq
   , slt
   , ult
+  , isUltSumCommonEquiv
   , domainsOverlap
   , arithDomainData
   , bitbounds
@@ -94,6 +96,7 @@ module What4.Utils.BVDomain.Arith
   , correct_eq
   , correct_ult
   , correct_slt
+  , correct_isUltSumCommonEquiv
   , correct_unknowns
   , correct_bitbounds
   ) where
@@ -275,6 +278,46 @@ ult a b
   where
     (a_min, a_max) = ubounds a
     (b_min, b_max) = ubounds b
+
+-- | Check if @(bvult (bvadd a c) (bvadd b c))@ is equivalent to @(bvult a b)@.
+-- 
+-- This is true if and only if for all natural values @i_a@, @i_b@, @i_c@ in
+-- @a@, @b@, @c@, either both @i_a + i_c@ and @i_b + i_c@ are less than @2^w@,
+-- or both are not. We prove this by contradiction. If @i_a = i_b@, then the
+-- property is trivial. Assume that @i_a < i_b@. Then @i_a + i_c < i_b + i_c@.
+-- If exactly one of the additions is less than @2^w@, it must be the case that
+-- @i_a + i_c < 2^w@ and @0 <= i_b + i_c - 2^w < 2^w@. Since @i_b < 2^w@, it
+-- follows that @i_b + i_c < 2^w + i_c@, that @i_b + i_c - 2^w < i_c@, and that
+-- @i_b + i_c - 2^w < i_a + i_c@. Thus, for these values of @i_a@, @i_b@, @i_c@,
+-- @(bvult a b)@ is true, but @(bvult (bvadd a c) (bvadd b c))@ is false, which
+-- is a contradiction.
+--
+-- We check this property by case analysis on whether @c@ is a single
+-- non-wrapping interval, or it wraps around and is a union of two non-wrapping
+-- intervals. For a non-wrapping (sub)interval @c'@ of @c@, there are four
+-- possible cases:
+-- 1. @a@ and @b@ contain a single value.
+-- 2. @(bvadd a c')@ and @(bvadd b c')@ do not wrap around for any values in
+--    @a@, @b@, @c'@.
+-- 3. @(bvadd a c')@ and @(bvadd b c')@ wrap around for all values in @a@, @b@,
+--    @c'@.
+--
+-- This is used to simplify @bvult@.
+isUltSumCommonEquiv :: Domain w -> Domain w -> Domain w -> Bool
+isUltSumCommonEquiv a b c = if al == ah && bl == bh && al == bl
+  then True
+  else if cl + cw == ch
+    then checkSameWrapInterval cl ch
+    else checkSameWrapInterval cl mask && checkSameWrapInterval 0 ch
+  where
+    (mask, cl, cw) = case c of
+      BVDInterval mask' cl' cw' -> (mask', cl', cw')
+      BVDAny mask' -> (mask', 0, mask')
+    ch = (cl + cw) .&. mask
+    (al, ah) = ubounds a
+    (bl, bh) = ubounds b
+    checkSameWrapInterval lo hi =
+      ah + hi <= mask && bh + hi <= mask || mask < al + lo && mask < bl + lo
 
 --------------------------------------------------------------------------------
 -- Operations
@@ -814,6 +857,18 @@ correct_slt n (a,x) (b,y) =
       Just True  -> toSigned n x < toSigned n y
       Just False -> toSigned n x >= toSigned n y
       Nothing    -> True
+
+correct_isUltSumCommonEquiv ::
+  (1 <= n) =>
+  NatRepr n ->
+  (Domain n, Integer) ->
+  (Domain n, Integer) ->
+  (Domain n, Integer) ->
+  Property
+correct_isUltSumCommonEquiv n (a, x) (b, y) (c, z) =
+  member a x ==> member b y ==> member c z ==>
+    isUltSumCommonEquiv a b c ==>
+      ((toUnsigned n (x + z) < toUnsigned n (y + z)) == (toUnsigned n x < toUnsigned n y))
 
 correct_unknowns :: (1 <= n) => Domain n -> Integer -> Integer -> Property
 correct_unknowns a x y = member a x ==> member a y ==> ((x .|. u) == (y .|. u)) && (u .|. mask == mask)

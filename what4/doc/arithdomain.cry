@@ -306,6 +306,20 @@ slt a b = (sbounds a).1 <$ (sbounds b).0
 sle : {n} (fin n, n >= 1) => Dom n -> Dom n -> Bit
 sle a b = (sbounds a).1 <=$ (sbounds b).0
 
+ult_sum_common_equiv : {n} (fin n) => Dom n -> Dom n -> Dom n -> Bit
+ult_sum_common_equiv a b c =
+  if al == ah /\ bl == bh /\ al == bl
+    then True
+    else if ~(carry cl c.sz)
+      then check_same_wrap_interval cl ch
+      else check_same_wrap_interval cl mask`{n} /\ check_same_wrap_interval 0 ch
+  where
+    (cl, ch) = (c.lo, c.lo + c.sz)
+    (al, ah) = ubounds a
+    (bl, bh) = ubounds b
+    check_same_wrap_interval lo hi =
+      ~(carry ah hi) /\ ~(carry bh hi) \/ carry al lo /\ carry bl lo
+
 // A bitmask indicating which bits cannot be determined
 // given the interval information in the given domain
 unknowns : {n} (fin n, n >= 1) => Dom n -> [n]
@@ -460,6 +474,13 @@ correct_ule : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_ule a b x y =
   ule a b ==> mem a x ==> mem b y ==> x <= y
 
+correct_ult_sum_common_equiv :
+  {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n -> [n] -> [n] -> [n] -> Bit
+correct_ult_sum_common_equiv a b c x y z =
+  ult_sum_common_equiv a b c ==>
+  mem a x ==> mem b y ==> mem c z ==>
+  (x + z < y + z <==> x < y)
+
 correct_bnot : {n} (fin n) => Dom n -> [n] -> Bit
 correct_bnot a x =
   mem a x <==> mem (bnot a) (~ x)
@@ -505,6 +526,7 @@ property o1 = correct_slt`{16}
 property o2 = correct_sle`{16}
 property o3 = correct_ult`{16}
 property o4 = correct_ule`{16}
+property o5 = correct_ult_sum_common_equiv`{4}
 
 ////////////////////////////////////////////////////////////
 // Operations preserve singletons

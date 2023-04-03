@@ -182,6 +182,9 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_slt" $
       do SW n <- genWidth
          A.correct_slt n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_isUltSumCommonEquiv" $
+      do SW n <- genWidth
+         A.correct_isUltSumCommonEquiv n <$> A.genPair n <*> A.genPair n <*> A.genPair n
   , genTest "correct_unknowns" $
       do SW n <- genWidth
          a <- A.genDomain n
