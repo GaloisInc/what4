@@ -281,37 +281,28 @@ ult a b
 
 -- | Check if @(bvult (bvadd a c) (bvadd b c))@ is equivalent to @(bvult a b)@.
 -- 
--- This is true if and only if for all integer values @i_a@, @i_b@, @i_c@ in
--- @a@, @b@, @c@, either both @(bvadd i_a i_c)@ and @(bvadd i_b i_c)@ wrap
--- around, or both do not. We prove this by contradiction. Assume that @(bvult
--- i_a i_b)@. Then @i_a < i_b@ and @i_a + i_c < i_b + i_c@. If only one of the
--- additions wraps around, it must be the case that @(bvadd i_a i_c) = i_a +
--- i_c@ and @(bvadd i_b i_c) = i_b + i_c - 2^w@. Since @i_b < 2^w@, it follows
--- that @i_b + i_c < i_a + 2^w@, @i_b + i_c < i_a + i_c + 2^w@ and @i_b + i_c -
--- 2^w < i_a + i_c@. Thus @(bvadd i_b i_c) < (bvadd i_a i_c)@, or @(bvult (bvadd
--- i_b i_c) (bvadd i_a i_c))@, which is a contradiction.
+-- This is true if and only if for all natural values @i_a@, @i_b@, @i_c@ in
+-- @a@, @b@, @c@, either both @i_a + i_c@ and @i_b + i_c@ are less than @2^w@,
+-- or both are not. We prove this by contradiction. If @i_a = i_b@, then the
+-- property is trivial. Assume that @i_a < i_b@. Then @i_a + i_c < i_b + i_c@.
+-- If exactly one of the additions is less than @2^w@, it must be the case that
+-- @i_a + i_c < 2^w@ and @0 <= i_b + i_c - 2^w < 2^w@. Since @i_b < 2^w@, it
+-- follows that @i_b + i_c < 2^w + i_c@, that @i_b + i_c - 2^w < i_c@, and that
+-- @i_b + i_c - 2^w < i_a + i_c@. Thus, for these values of @i_a@, @i_b@, @i_c@,
+-- @(bvult a b)@ is true, but @(bvult (bvadd a c) (bvadd b c))@ is false, which
+-- is a contradiction.
 --
 -- We check this property by case analysis on whether @c@ is a single
 -- non-wrapping interval, or it wraps around and is a union of two non-wrapping
 -- intervals. For a non-wrapping (sub)interval @c'@ of @c@, there are four
 -- possible cases:
--- 1. @(bvadd a c')@ does not wrap around for any values in @a@, @c'@.
--- 2. @(bvadd a c')@ wraps around for all values in @a@, @c'@.
--- 3. @a@ contains a single value.
--- 4. @a@ contains two distinct values @i_a_1@, @i_a_2@ and @c@ contains a value
---    @i_c@ such that one of @(bvadd i_a_1 i_c)@, @(bvadd i_a_2 i_c)@ wraps
---    around, and the other does not.
--- We prove this by contradiction. Assume that is not the case. Then @c'@ would
--- contain two consecutive values @i_c@ and @i_c + 1@ and @a@ would contain two
--- distinct values @i_a_1@, @i_a_2@  such that @(bvadd i_a_1 i_c)@, @(bvadd
--- i_a_2 i_c)@ do not wrap around, and @(bvadd i_a_1 (i_c + 1))@, @(bvadd i_a_2
--- (i_c + 1))@ do. But then it follows that @i_a_1 = i_a_2 = 2^w - i_c - 1@,
--- which is a contradiction.
+-- 1. @a@ and @b@ contain a single value.
+-- 2. @(bvadd a c')@ and @(bvadd b c')@ do not wrap around for any values in
+--    @a@, @b@, @c'@.
+-- 3. @(bvadd a c')@ and @(bvadd b c')@ wrap around for all values in @a@, @b@,
+--    @c'@.
 --
--- Since case 4. is contradicting the top property, we only check for cases 1.,
--- 2., 3. in the implementation.
---
--- This is used do simplify @bvult@.
+-- This is used to simplify @bvult@.
 isUltSumCommonEquiv :: Domain w -> Domain w -> Domain w -> Bool
 isUltSumCommonEquiv a b c = if al == ah && bl == bh && al == bl
   then True
