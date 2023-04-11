@@ -448,7 +448,7 @@ convertBoundVarExpr x = do
   bvs <- MS.gets envBoundVars
   -- If this variable is not bound (in the standard syntactic sense)
   -- and free variables are not explicitly permitted, raise an error.
-  MS.when ((not $ Set.member (Some x) bvs) && (not fvsAllowed)) $
+  M.when ((not $ Set.member (Some x) bvs) && (not fvsAllowed)) $
     error $
     "encountered the free What4 ExprBoundVar `"
     ++ (T.unpack (W4.solverSymbolAsText (W4.bvarName x)))

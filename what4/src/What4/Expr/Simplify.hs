@@ -20,8 +20,9 @@ module What4.Expr.Simplify
   ) where
 
 import           Control.Lens ((^.))
+import           Control.Monad (void, when)
 import           Control.Monad.ST
-import           Control.Monad.State
+import           Control.Monad.State (MonadState(..), State, execState)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe

@@ -175,10 +175,10 @@ import           Control.Concurrent.MVar
 import qualified Control.Concurrent.ReadWriteVar as RWV
 import           Control.Lens ((&))
 import qualified Control.Lens.Combinators as LC
+import           Control.Monad (foldM, when)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
-import           Control.Monad.Identity
-import           Control.Monad.Writer.Strict hiding ((<>))
+import           Control.Monad.Writer.Strict (MonadWriter(..), WriterT, execWriterT)
 import           Data.Foldable (toList)
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))

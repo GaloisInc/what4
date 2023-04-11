@@ -16,8 +16,9 @@ module What4.Protocol.VerilogWriter.Backend
   where
 
 
+import           Control.Monad (foldM)
 import           Control.Monad.State (get)
-import           Control.Monad.Except
+import           Control.Monad.Except (MonadError(..))
 import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty ( NonEmpty(..) )
 
