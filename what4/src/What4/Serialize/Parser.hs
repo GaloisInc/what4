@@ -34,6 +34,7 @@ module What4.Serialize.Parser
   , printSExpr
   ) where
 
+import           Control.Monad ( when )
 import qualified Control.Monad.Except as E
 import           Control.Monad.IO.Class ( liftIO )
 import qualified Control.Monad.Reader as R
@@ -1030,7 +1031,7 @@ readSymFn (S.WFSList [ S.WFSAtom (AId "definedfn")
                  Right solverSym -> return solverSym
   argNames <- readFnArgs argVarsRaw
   (argTys, _retTy) <- readFnType rawFnType
-  E.when (not (length argTys == length argNames)) $
+  when (not (length argTys == length argNames)) $
     E.throwError $ "Function type expected "
     ++ (show $ length argTys)
     ++ " args but found "

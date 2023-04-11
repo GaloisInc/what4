@@ -266,7 +266,7 @@ instance (IsExpr (SymExpr sym), Monad m) => Monad (PartialT sym m) where
 instance (IsExpr (SymExpr sym), MonadFail m) => MonadFail (PartialT sym m) where
   fail msg = PartialT $ \_ _ -> fail msg
 
-instance MonadTrans (PartialT sym) where
+instance IsExpr (SymExpr sym) => MonadTrans (PartialT sym) where
   lift m = PartialT $ \_ p -> PE p <$> m
 
 instance (IsExpr (SymExpr sym), MonadIO m) => MonadIO (PartialT sym m) where

@@ -19,7 +19,9 @@ import qualified Data.Text as T
 import qualified Data.Set as Set
 import           Data.String
 import           Data.Word
-import           Control.Monad.Except
+import           Control.Monad (forM_)
+import           Control.Monad.Except (ExceptT, MonadError(..))
+import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.State (MonadState(), StateT(..), get, put, modify, gets)
 
 import qualified What4.BaseTypes as WT

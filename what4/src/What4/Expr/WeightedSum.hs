@@ -70,7 +70,7 @@ module What4.Expr.WeightedSum
   ) where
 
 import           Control.Lens
-import           Control.Monad.State
+import           Control.Monad (unless)
 import qualified Data.BitVector.Sized as BV
 import           Data.Hashable
 import           Data.Kind

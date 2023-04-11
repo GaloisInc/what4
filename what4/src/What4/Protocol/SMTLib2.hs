@@ -101,8 +101,10 @@ import Control.Monad.Fail( MonadFail )
 
 import           Control.Applicative
 import           Control.Exception
-import           Control.Monad.Except
-import           Control.Monad.Reader
+import           Control.Monad (forM, forM_, replicateM_, unless, when)
+import           Control.Monad.IO.Class (MonadIO(..))
+import           Control.Monad.Except (MonadError(..), ExceptT, runExceptT)
+import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
 import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (digitToInt, isAscii)

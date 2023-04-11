@@ -24,7 +24,7 @@ module What4.TransitionSystem
 where
 
 import qualified Control.Lens as L
-import Control.Monad.Identity (forM)
+import Control.Monad (forM)
 import Data.Functor.Const (Const (..))
 import qualified Data.Parameterized.Context as Ctx
 import qualified What4.BaseTypes as BaseTypes

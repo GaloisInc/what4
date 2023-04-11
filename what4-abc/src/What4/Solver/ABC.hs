@@ -45,7 +45,7 @@ import Control.Monad.Fail( MonadFail )
 import           Control.Concurrent
 import           Control.Exception hiding (evaluate)
 import           Control.Lens
-import           Control.Monad.Identity
+import           Control.Monad (foldM, join, unless, when)
 import           Control.Monad.ST
 import           Data.Bits
 import qualified Data.BitVector.Sized as BV
@@ -56,6 +56,7 @@ import qualified Data.AIG.Interface as AIG
 
 import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Foldable as Fold
+import           Data.Functor (void)
 import qualified Data.HashSet as HSet
 import           Data.IORef
 import           Data.List (zipWith4)

@@ -42,9 +42,10 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Lens
-import           Control.Monad.Reader
+import           Control.Monad (when)
+import           Control.Monad.Reader (MonadReader(..), ReaderT(..))
 import           Control.Monad.ST
-import           Control.Monad.State
+import           Control.Monad.State (StateT, execStateT)
 import           Data.Bits
 import qualified Data.HashTable.ST.Basic as H
 import           Data.List.NonEmpty (NonEmpty(..))

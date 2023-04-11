@@ -1,3 +1,11 @@
+# next (TBA)
+
+* Allow building with GHC 9.6.
+
+* The `MonadTrans (PartialT sym)` instance now has a `IsExpr (SymExpr sym)`
+  constraint in its instance context. (This is a requirement imposed by
+  `MonadTrans` gaining a quantified `Monad` superclass in `mtl-2.3`.)
+
 # 1.4 (January 2023)
 
 * Allow building with GHC 9.4.

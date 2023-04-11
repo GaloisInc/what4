@@ -111,11 +111,13 @@ import           Control.Monad.Fail ( MonadFail )
 
 import           Control.Exception
 import           Control.Lens hiding ((.>), Strict)
+import           Control.Monad (forM_, unless, when)
 import           Control.Monad.IO.Class
-import           Control.Monad.Reader
+import           Control.Monad.Reader (ReaderT(..), asks)
 import           Control.Monad.ST
-import           Control.Monad.State.Strict
-import           Control.Monad.Trans.Maybe
+import           Control.Monad.State.Strict (State, runState)
+import           Control.Monad.Trans (MonadTrans(..))
+import           Control.Monad.Trans.Maybe (MaybeT(..))
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
