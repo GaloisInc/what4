@@ -2400,14 +2400,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | x == y =
       return $! falsePred sym
 
-    | sr <- SR.SemiRingBVRepr SR.BVArithRepr (bvWidth x)
-    , (z, x', y') <- WSum.extractCommon (asWeightedSum sr x) (asWeightedSum sr y)
-    , not (WSum.isZero sr z)
-    , BVD.isUltSumCommonEquiv (WSum.sumAbsValue x') (WSum.sumAbsValue y') (WSum.sumAbsValue z) = do
-      xr <- semiRingSum sym x'
-      yr <- semiRingSum sym y'
-      bvUlt sym xr yr
-
     | otherwise = do
         ut <- CFG.getOpt (sbUnaryThreshold sym)
         let ?unaryThreshold = fromInteger ut

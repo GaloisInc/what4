@@ -51,7 +51,6 @@ module What4.Utils.BVDomain
   , domainsOverlap
   , ubounds
   , sbounds
-  , isUltSumCommonEquiv
   , A.arithDomainData
   , B.bitbounds
     -- * Operations
@@ -425,11 +424,6 @@ ubounds a = A.ubounds (asArithDomain a)
 
 sbounds :: (1 <= w) => NatRepr w -> BVDomain w -> (Integer, Integer)
 sbounds w a = A.sbounds w (asArithDomain a)
-
--- | Check if (bvult (bvadd a c) (bvadd b c)) is equivalent to (bvult a b)
-isUltSumCommonEquiv :: BVDomain w -> BVDomain w -> BVDomain w -> Bool
-isUltSumCommonEquiv a b c =
-  A.isUltSumCommonEquiv (asArithDomain a) (asArithDomain b) (asArithDomain c)
 
 --------------------------------------------------------------------------------
 -- Operations
