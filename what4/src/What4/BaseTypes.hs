@@ -18,6 +18,7 @@
 ------------------------------------------------------------------------
 {-# LANGUAGE ConstraintKinds#-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -73,6 +74,16 @@ module What4.BaseTypes
     -- * KnownRepr
   , KnownRepr(..)  -- Re-export from 'Data.Parameterized.Classes'
   , KnownCtx
+
+  , IsTyped(..)
+  , TypedEq(..)
+  , TypedOrd(..)
+  , TypedHashable(..)
+  , TypedSemigroup(..)
+  , TypedMonoid(..)
+  , TypedShow(..)
+  , TypedWrapper(..)
+  , unwrapTyped
   ) where
 
 
@@ -82,6 +93,7 @@ import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TH.GADT
+import           Data.Parameterized.TraversableFC
 import           GHC.TypeNats as TypeNats
 import           Prettyprinter
 
@@ -343,3 +355,101 @@ instance Eq (StringInfoRepr si) where
   x == y = isJust (testEquality x y)
 instance OrdF StringInfoRepr where
   compareF = $(structuralTypeOrd [t|StringInfoRepr|] [])
+
+
+class IsTyped (a :: BaseType -> Type) where
+  baseTypeRepr :: a tp -> BaseTypeRepr tp
+
+class TypedEq (a :: BaseType -> Type) where
+  typedEq :: BaseTypeRepr tp -> a tp -> a tp -> Bool
+  default typedEq :: Eq (a tp) => BaseTypeRepr tp -> a tp -> a tp -> Bool
+  typedEq _ = (==)
+
+class TypedEq a => TypedOrd (a :: BaseType -> Type) where
+  typedCompare :: BaseTypeRepr tp -> a tp -> a tp -> Ordering
+  default typedCompare :: Ord (a tp) => BaseTypeRepr tp -> a tp -> a tp -> Ordering
+  typedCompare _ = compare
+
+class TypedEq a => TypedHashable (a :: BaseType -> Type) where
+  typedHashWithSalt :: BaseTypeRepr tp -> Int -> a tp -> Int
+  default typedHashWithSalt :: Hashable (a tp) => BaseTypeRepr tp -> Int -> a tp -> Int
+  typedHashWithSalt _ = hashWithSalt
+  typedHash :: BaseTypeRepr tp -> a tp -> Int
+  default typedHash :: Hashable (a tp) => BaseTypeRepr tp -> a tp -> Int
+  typedHash _ = hash
+
+class TypedSemigroup (a :: BaseType -> Type) where
+  typedAppend :: BaseTypeRepr tp -> a tp -> a tp -> a tp
+  default typedAppend :: Semigroup (a tp) => BaseTypeRepr tp -> a tp -> a tp -> a tp
+  typedAppend _ = (<>)
+
+class TypedSemigroup a => TypedMonoid (a :: BaseType -> Type) where
+  typedEmpty :: BaseTypeRepr tp -> a tp
+  default typedEmpty :: Monoid (a tp) => BaseTypeRepr tp -> a tp
+  typedEmpty _ = mempty
+
+class TypedShow a where
+  typedShowsPrec :: BaseTypeRepr tp -> Int -> a tp -> ShowS
+  default typedShowsPrec :: Show (a tp) => BaseTypeRepr tp -> Int -> a tp -> ShowS
+  typedShowsPrec _ = showsPrec
+  typedShow :: BaseTypeRepr tp -> a tp -> String
+  default typedShow :: Show (a tp) => BaseTypeRepr tp -> a tp -> String
+  typedShow _ = show
+
+
+data TypedWrapper (a :: BaseType -> Type) (tp :: BaseType) =
+  TypedWrapper !(BaseTypeRepr tp) !(a tp)
+
+unwrapTyped :: TypedWrapper a tp -> a tp
+unwrapTyped (TypedWrapper _ a) = a
+
+instance IsTyped (TypedWrapper v) where
+  baseTypeRepr (TypedWrapper tp _) = tp
+
+instance TypedEq a => TestEquality (TypedWrapper a) where
+  testEquality (TypedWrapper tp1 a1) (TypedWrapper tp2 a2) =
+    case testEquality tp1 tp2 of
+      Just Refl -> if typedEq tp1 a1 a2 then Just Refl else Nothing
+      Nothing -> Nothing
+
+instance TypedEq a => Eq (TypedWrapper a tp) where
+  x == y = isJust $ testEquality x y
+
+instance TypedOrd a => OrdF (TypedWrapper a) where
+  compareF (TypedWrapper tp1 a1) (TypedWrapper tp2 a2) =
+    case compareF tp1 tp2 of
+      LTF -> LTF
+      EQF -> fromOrdering $ typedCompare tp1 a1 a2
+      GTF -> GTF
+
+instance TypedOrd a => Ord (TypedWrapper a tp) where
+  compare x y = toOrdering $ compareF x y
+
+instance TypedHashable a => Hashable (TypedWrapper a tp) where
+  hashWithSalt s (TypedWrapper tp a) = typedHashWithSalt tp s a
+  hash (TypedWrapper tp v) = typedHash tp v
+
+instance TypedHashable a => HashableF (TypedWrapper a) where
+  hashWithSaltF = hashWithSalt
+  hashF = hash
+
+instance TypedSemigroup a => Semigroup (TypedWrapper a tp) where
+  (TypedWrapper tp a1) <> (TypedWrapper _tp a2) = TypedWrapper tp $ typedAppend tp a1 a2
+
+instance (TypedMonoid a, KnownRepr BaseTypeRepr tp) => Monoid (TypedWrapper a tp) where
+  mempty = TypedWrapper knownRepr $ typedEmpty knownRepr
+
+instance TypedShow a => Show (TypedWrapper a tp) where
+  showsPrec n (TypedWrapper tp a) = typedShowsPrec tp n a
+  show (TypedWrapper tp a) = typedShow tp a
+
+instance TypedShow a => ShowF (TypedWrapper a)
+
+instance FunctorFC TypedWrapper where
+  fmapFC f (TypedWrapper tp a) = TypedWrapper tp $ f a
+
+instance FoldableFC TypedWrapper where
+  foldMapFC f (TypedWrapper _ a) = f a
+
+instance TraversableFC TypedWrapper where
+  traverseFC f (TypedWrapper tp a) = TypedWrapper tp <$> f a
