@@ -18,6 +18,7 @@
 ------------------------------------------------------------------------
 {-# LANGUAGE ConstraintKinds#-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -73,6 +74,13 @@ module What4.BaseTypes
     -- * KnownRepr
   , KnownRepr(..)  -- Re-export from 'Data.Parameterized.Classes'
   , KnownCtx
+
+  , TypedWrapper(..)
+  , IsTyped(..)
+  , TypedEq(..)
+  , TypedOrd(..)
+  , TypedHashable(..)
+  , TypedShow(..)
   ) where
 
 
@@ -82,6 +90,7 @@ import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TH.GADT
+import           Data.Parameterized.TraversableFC
 import           GHC.TypeNats as TypeNats
 import           Prettyprinter
 
@@ -343,3 +352,83 @@ instance Eq (StringInfoRepr si) where
   x == y = isJust (testEquality x y)
 instance OrdF StringInfoRepr where
   compareF = $(structuralTypeOrd [t|StringInfoRepr|] [])
+
+
+-- class forall tp . KnownRepr BaseTypeRepr tp => HasBaseTypeRepr (v :: BaseType -> Type) where
+class IsTyped (v :: BaseType -> Type) where
+  baseTypeRepr :: v tp -> BaseTypeRepr tp
+
+class TypedEq (v :: BaseType -> Type) where
+  typedEq :: BaseTypeRepr tp -> v tp -> v tp -> Bool
+  default typedEq :: Eq (v tp) => BaseTypeRepr tp -> v tp -> v tp -> Bool
+  typedEq _ = (==)
+
+class TypedEq v => TypedOrd (v :: BaseType -> Type) where
+  typedCompare :: BaseTypeRepr tp -> v tp -> v tp -> Ordering
+  default typedCompare :: Ord (v tp) => BaseTypeRepr tp -> v tp -> v tp -> Ordering
+  typedCompare _ = compare
+
+class TypedEq v => TypedHashable (v :: BaseType -> Type) where
+  typedHashWithSalt :: BaseTypeRepr tp -> Int -> v tp -> Int
+  default typedHashWithSalt :: Hashable (v tp) => BaseTypeRepr tp -> Int -> v tp -> Int
+  typedHashWithSalt _ = hashWithSalt
+  typedHash :: BaseTypeRepr tp -> v tp -> Int
+  default typedHash :: Hashable (v tp) => BaseTypeRepr tp -> v tp -> Int
+  typedHash _ = hash
+
+class TypedShow v where
+  typedShowsPrec :: BaseTypeRepr tp -> Int -> v tp -> ShowS
+  default typedShowsPrec :: Show (v tp) => BaseTypeRepr tp -> Int -> v tp -> ShowS
+  typedShowsPrec _ = showsPrec
+  typedShow :: BaseTypeRepr tp -> v tp -> String
+  default typedShow :: Show (v tp) => BaseTypeRepr tp -> v tp -> String
+  typedShow _ = show
+
+
+data TypedWrapper (v :: BaseType -> Type) (tp :: BaseType) =
+  TypedWrapper !(BaseTypeRepr tp) !(v tp)
+
+instance IsTyped (TypedWrapper v) where
+  baseTypeRepr (TypedWrapper tp _) = tp
+
+instance TypedEq v => TestEquality (TypedWrapper v) where
+  testEquality (TypedWrapper tp1 v1) (TypedWrapper tp2 v2) =
+    case testEquality tp1 tp2 of
+      Just Refl -> if typedEq tp1 v1 v2 then Just Refl else Nothing
+      Nothing -> Nothing
+
+instance TypedEq v => Eq (TypedWrapper v tp) where
+  x == y = isJust $ testEquality x y
+
+instance TypedOrd v => OrdF (TypedWrapper v) where
+  compareF (TypedWrapper tp1 v1) (TypedWrapper tp2 v2) =
+    case compareF tp1 tp2 of
+      LTF -> LTF
+      EQF -> fromOrdering $ typedCompare tp1 v1 v2
+      GTF -> GTF
+
+instance TypedOrd v => Ord (TypedWrapper v tp) where
+  compare x y = toOrdering $ compareF x y
+
+instance TypedHashable v => Hashable (TypedWrapper v tp) where
+  hashWithSalt s (TypedWrapper tp v) = typedHashWithSalt tp s v
+  hash (TypedWrapper tp v) = typedHash tp v
+
+instance TypedHashable v => HashableF (TypedWrapper v) where
+  hashWithSaltF = hashWithSalt
+  hashF = hash
+
+instance TypedShow v => Show (TypedWrapper v tp) where
+  showsPrec n (TypedWrapper tp v) = typedShowsPrec tp n v
+  show (TypedWrapper tp v) = typedShow tp v
+
+instance TypedShow v => ShowF (TypedWrapper v)
+
+instance FunctorFC TypedWrapper where
+  fmapFC f (TypedWrapper tp v) = TypedWrapper tp $ f v
+
+instance FoldableFC TypedWrapper where
+  foldMapFC f (TypedWrapper _ v) = f v
+
+instance TraversableFC TypedWrapper where
+  traverseFC f (TypedWrapper tp v) = TypedWrapper tp <$> f v
