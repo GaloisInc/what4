@@ -40,7 +40,7 @@ module What4.Expr.GroundEval
   ) where
 
 import           Control.Monad
-import           Control.Monad.Trans.Class
+import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -86,7 +86,7 @@ type family GroundValue (tp :: BaseType) where
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
 --   values in models.
-newtype GroundEvalFn t = GroundEvalFn { groundEval :: forall tp . Expr t tp -> IO (GroundValue tp) }
+newtype GroundEvalFn t = GroundEvalFn { groundEval :: forall tp m . (MonadIO m, MonadFail m) => Expr t tp -> m (GroundValue tp) }
 
 -- | Function that calculates upper and lower bounds for real-valued elements.
 --   This type is used for solvers (e.g., dReal) that give only approximate solutions.
@@ -103,21 +103,23 @@ data GroundArray idx b
     -- ^ Default value and finite map of particular indices
 
 -- | Look up an index in an ground array.
-lookupArray :: Ctx.Assignment BaseTypeRepr idx
+lookupArray :: MonadIO m
+            => Ctx.Assignment BaseTypeRepr idx
             -> GroundArray idx b
             -> Ctx.Assignment GroundValueWrapper idx
-            -> IO (GroundValue b)
-lookupArray _ (ArrayMapping f) i = f i
+            -> m (GroundValue b)
+lookupArray _ (ArrayMapping f) i = liftIO $ f i
 lookupArray tps (ArrayConcrete base m) i = return $ fromMaybe base (Map.lookup i' m)
   where i' = fromMaybe (error "lookupArray: not valid indexLits") $ Ctx.zipWithM asIndexLit tps i
 
 -- | Update a ground array.
 updateArray ::
+  MonadIO m =>
   Ctx.Assignment BaseTypeRepr idx ->
   GroundArray idx b ->
   Ctx.Assignment GroundValueWrapper idx ->
   GroundValue b ->
-  IO (GroundArray idx b)
+  m (GroundArray idx b)
 updateArray idx_tps arr idx val =
   case arr of
     ArrayMapping arr' -> return . ArrayMapping $ \x ->
@@ -170,9 +172,11 @@ defaultValueForType tp =
 -- | Helper function for evaluating @Expr@ expressions in a model.
 --
 --   This function is intended for implementers of symbolic backends.
-evalGroundExpr :: (forall u . Expr t u -> IO (GroundValue u))
-              -> Expr t tp
-              -> IO (GroundValue tp)
+evalGroundExpr ::
+  (MonadIO m, MonadFail m) =>
+  (forall u . Expr t u -> m (GroundValue u)) ->
+  Expr t tp ->
+  m (GroundValue tp)
 evalGroundExpr f e =
  runMaybeT (tryEvalGroundExpr (lift . f) e) >>= \case
     Just x -> return x
@@ -196,9 +200,11 @@ evalGroundExpr f e =
 --   the solver.  In these cases, this function will return `Nothing`
 --   in the `MaybeT IO` monad.  In these cases, the caller should instead
 --   query the solver directly to evaluate the expression, if possible.
-tryEvalGroundExpr :: (forall u . Expr t u -> MaybeT IO (GroundValue u))
-                 -> Expr t tp
-                 -> MaybeT IO (GroundValue tp)
+tryEvalGroundExpr ::
+  (MonadIO m, MonadFail m) =>
+  (forall u . Expr t u -> MaybeT m (GroundValue u)) ->
+  Expr t tp ->
+  MaybeT m (GroundValue tp)
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingIntegerRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
@@ -268,10 +274,12 @@ groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
 -- | Helper function for evaluating @App@ expressions.
 --
 --   This function is intended for implementers of symbolic backends.
-evalGroundApp :: forall t tp
-               . (forall u . Expr t u -> MaybeT IO (GroundValue u))
-              -> App (Expr t) tp
-              -> MaybeT IO (GroundValue tp)
+evalGroundApp ::
+  forall t tp m .
+  (MonadIO m, MonadFail m) =>
+  (forall u . Expr t u -> MaybeT m (GroundValue u)) ->
+  App (Expr t) tp ->
+  MaybeT m (GroundValue tp)
 evalGroundApp f a0 = do
   case a0 of
     BaseEq bt x y ->
@@ -362,12 +370,12 @@ evalGroundApp f a0 = do
     RealSpecialFunction fn (SFn.SpecialFnArgs args) ->
       let sf1 :: (Double -> Double) ->
                  Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (EmptyCtx ::> SFn.R) ->
-                 MaybeT IO (GroundValue BaseRealType)
+                 MaybeT m (GroundValue BaseRealType)
           sf1 dfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x) = fromDouble . dfn . toDouble <$> f x
 
           sf2 :: (Double -> Double -> Double) ->
                  Ctx.Assignment (SFn.SpecialFnArg (Expr t) BaseRealType) (EmptyCtx ::> SFn.R ::> SFn.R) ->
-                 MaybeT IO (GroundValue BaseRealType)
+                 MaybeT m (GroundValue BaseRealType)
           sf2 dfn (Ctx.Empty Ctx.:> SFn.SpecialFnArg x Ctx.:> SFn.SpecialFnArg y) =
             do xv <- f x
                yv <- f y
