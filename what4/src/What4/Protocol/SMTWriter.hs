@@ -3169,27 +3169,27 @@ smtExprGroundEvalFn conn smtFns = do
   -- Get solver features
   groundCache <- newIdxCache
 
-  let cachedEval :: Expr t tp -> IO (GroundValue tp)
+  let cachedEval :: (MonadIO m, MonadFail m) => Expr t tp -> m (GroundValue tp)
       cachedEval e =
         case exprMaybeId e of
           Nothing -> evalGroundExpr cachedEval e
           Just e_id -> fmap unGVW $ idxCacheEval' groundCache e_id $ fmap GVW $ do
             -- See if we have bound the Expr e to a SMT expression.
-            me <- cacheLookupExpr conn e_id
+            me <- liftIO $ cacheLookupExpr conn e_id
             case me of
               -- Otherwise, try the evalGroundExpr function to evaluate a ground element.
               Nothing -> evalGroundExpr cachedEval e
 
               -- If so, try asking the solver for the value of SMT expression.
               Just (SMTName tp nm) ->
-                getSolverVal conn smtFns tp (fromText nm)
+                liftIO $ getSolverVal conn smtFns tp (fromText nm)
 
               Just (SMTExpr tp expr) ->
                 runMaybeT (tryEvalGroundExpr (lift . cachedEval) e) >>= \case
                   Just x  -> return x
                   -- If we cannot compute the value ourself, query the
                   -- value from the solver directly instead.
-                  Nothing -> getSolverVal conn smtFns tp expr
+                  Nothing -> liftIO $ getSolverVal conn smtFns tp expr
 
 
   return $ GroundEvalFn cachedEval
