@@ -422,7 +422,7 @@ test-suite solver_parsing_tests
                , exceptions
                , io-streams
                , lumberjack
-               , tasty-sugar >= 2.0 && < 2.2
+               , tasty-sugar >= 2.0 && < 2.3
                , text
 
 test-suite what4-serialize-tests
