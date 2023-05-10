@@ -76,6 +76,7 @@ module What4.BaseTypes
   , KnownCtx
 
   , TypedWrapper(..)
+  , unwrapTyped
   , IsTyped(..)
   , TypedEq(..)
   , TypedOrd(..)
@@ -387,6 +388,9 @@ class TypedShow v where
 
 data TypedWrapper (v :: BaseType -> Type) (tp :: BaseType) =
   TypedWrapper !(BaseTypeRepr tp) !(v tp)
+
+unwrapTyped :: TypedWrapper v tp -> v tp
+unwrapTyped (TypedWrapper _ v) = v
 
 instance IsTyped (TypedWrapper v) where
   baseTypeRepr (TypedWrapper tp _) = tp

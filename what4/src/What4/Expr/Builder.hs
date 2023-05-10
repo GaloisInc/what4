@@ -128,6 +128,8 @@ module What4.Expr.Builder
   , boundVars
   , ppBoundVar
   , evalBoundVars
+  , applySubstitution
+  , applySubstitutionPairs
 
     -- * Symbolic Function
   , ExprSymFn(..)
@@ -152,6 +154,7 @@ module What4.Expr.Builder
   , insertIdxValue
   , deleteIdxValue
   , clearIdxCache
+  , getIdxCache
   , idxCacheEval
   , idxCacheEval'
 
@@ -248,21 +251,6 @@ import           What4.Utils.StringLiteral
 
 toDouble :: Rational -> Double
 toDouble = fromRational
-
-cachedEval :: (HashableF k, TestEquality k, MonadIO m)
-           => PH.HashTable RealWorld k a
-           -> k tp
-           -> m (a tp)
-           -> m (a tp)
-cachedEval tbl k action = do
-  mr <- liftIO $ stToIO $ PH.lookup tbl k
-  case mr of
-    Just r -> return r
-    Nothing -> do
-      r <- action
-      seq r $ do
-      liftIO $ stToIO $ PH.insert tbl k r
-      return r
 
 ------------------------------------------------------------------------
 -- SymbolVarBimap
@@ -507,6 +495,9 @@ deleteIdxValue c e = liftIO $ atomicModifyIORef' (cMap c) $ (\m -> (PM.delete e 
 -- | Remove all values from the IdxCache
 clearIdxCache :: MonadIO m => IdxCache t f -> m ()
 clearIdxCache c = liftIO $ atomicWriteIORef (cMap c) PM.empty
+
+getIdxCache :: MonadIO m => IdxCache t f -> m (PM.MapF (Nonce t) f)
+getIdxCache = liftIO . readIORef . cMap
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
@@ -945,6 +936,38 @@ evalBoundVars sym e vars exprs = do
                             , fnTable  = fn_tbl
                             }
   evalBoundVars' tbls sym e
+
+applySubstitution ::
+  MonadIO m =>
+  ExprBuilder t st fs ->
+  PM.MapF (Expr t) (Expr t) ->
+  Expr t tp ->
+  m (Expr t tp)
+applySubstitution sym expr_subst expr = liftIO $ do
+  expr_tbl <- stToIO $ PH.newSized $ PM.size expr_subst
+  stToIO $ PM.traverseWithKey_ (PH.insert expr_tbl) expr_subst
+  fn_tbl <- stToIO PH.new
+  let tbls = EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable = fn_tbl
+        }
+  evalBoundVars' tbls sym expr
+
+applySubstitutionPairs ::
+  MonadIO m =>
+  ExprBuilder t st fs ->
+  [PM.Pair (Expr t) (Expr t)] ->
+  Expr t tp ->
+  m (Expr t tp)
+applySubstitutionPairs sym expr_pairs expr = liftIO $ do
+  expr_tbl <- stToIO $ PH.newSized $ length expr_pairs
+  stToIO $ mapM_ (\(PM.Pair k v) -> PH.insert expr_tbl k v) expr_pairs
+  fn_tbl <- stToIO PH.new
+  let tbls = EvalHashTables
+        { exprTable = expr_tbl
+        , fnTable = fn_tbl
+        }
+  liftIO $ evalBoundVars' tbls sym expr
 
 -- | This attempts to lookup an entry in a symbolic array.
 --

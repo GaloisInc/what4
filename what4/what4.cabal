@@ -121,6 +121,7 @@ library
     parsec >= 3 && < 4,
     prettyprinter >= 1.7.0,
     process >= 1.2,
+    random >= 1.2,
     s-cargot >= 0.1 && < 0.2,
     scientific >= 0.3.6,
     stm,
@@ -174,6 +175,7 @@ library
     What4.Expr.AppTheory
     What4.Expr.BoolMap
     What4.Expr.Builder
+    What4.Expr.Fuzz
     What4.Expr.GroundEval
     What4.Expr.MATLAB
     What4.Expr.Simplify
@@ -461,3 +463,15 @@ test-suite invariant-synthesis
     process,
     tasty-expected-failure >= 0.12 && < 0.13
 
+test-suite fuzz
+  import: bldflags, testdefs-hunit
+  type: exitcode-stdio-1.0
+
+  main-is: Fuzz.hs
+
+  other-modules: ProbeSolvers
+
+  build-depends:
+    bv-sized,
+    process,
+    tasty-expected-failure >= 0.12 && < 0.13

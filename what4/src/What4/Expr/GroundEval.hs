@@ -13,6 +13,7 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -35,12 +36,18 @@ module What4.Expr.GroundEval
   , evalGroundExpr
   , evalGroundApp
   , evalGroundNonceApp
+  , cachedEvalGroundExpr
+  , typedCachedEvalGroundExpr
+  , mkGroundExpr
+  , randomGroundValue
   , defaultValueForType
   , groundEq
+  , groundCompare
   ) where
 
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Control.Monad.State
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -54,6 +61,7 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           LibBF (BigFloat)
 import qualified LibBF as BF
+import qualified System.Random as Random
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -86,7 +94,8 @@ type family GroundValue (tp :: BaseType) where
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
 --   values in models.
-newtype GroundEvalFn t = GroundEvalFn { groundEval :: forall tp m . (MonadIO m, MonadFail m) => Expr t tp -> m (GroundValue tp) }
+newtype GroundEvalFn t =
+  GroundEvalFn { groundEval :: forall tp m . (MonadIO m, MonadFail m) => Expr t tp -> m (GroundValue tp) }
 
 -- | Function that calculates upper and lower bounds for real-valued elements.
 --   This type is used for solvers (e.g., dReal) that give only approximate solutions.
@@ -94,6 +103,39 @@ type ExprRangeBindings t = RealExpr t -> IO (Maybe Rational, Maybe Rational)
 
 -- | A newtype wrapper around ground value for use in a cache.
 newtype GroundValueWrapper tp = GVW { unGVW :: GroundValue tp }
+
+instance TypedEq GroundValueWrapper where
+  typedEq tp (GVW v1) (GVW v2) =
+    fromMaybe (error "groundEq: ArrayMapping not supported") $ groundEq tp v1 v2
+instance TypedOrd GroundValueWrapper where
+  typedCompare tp (GVW v1) (GVW v2) =
+    fromMaybe (error "groundCompare : ArrayMapping not supported") $ groundCompare tp v1 v2
+
+instance TypedShow GroundValueWrapper where
+  typedShowsPrec tp p (GVW v) = case tp of
+    BaseBoolRepr -> showsPrec p v
+    BaseIntegerRepr -> showsPrec p v
+    BaseRealRepr -> showsPrec p v
+    BaseBVRepr{} -> showsPrec p v
+    BaseFloatRepr{} -> showsPrec p v
+    BaseComplexRepr -> showsPrec p v
+    BaseStringRepr{} -> showsPrec p v
+    BaseArrayRepr{} -> (++) $ typedShow tp (GVW v)
+    BaseStructRepr fld_tps -> showsPrec p $ Ctx.zipWith TypedWrapper fld_tps v
+
+  typedShow tp (GVW v) = case tp of
+    BaseBoolRepr -> show v
+    BaseIntegerRepr -> show v
+    BaseRealRepr -> show v
+    BaseBVRepr{} -> show v
+    BaseFloatRepr{} -> show v
+    BaseComplexRepr -> show v
+    BaseStringRepr{} -> show v
+    BaseArrayRepr _idx_tps elt_tp -> case v of
+      ArrayMapping{} -> "<ArrayMapping>"
+      ArrayConcrete c m ->
+        "(ArrayConcrete " ++ show ((TypedWrapper elt_tp . GVW) c, Map.map (TypedWrapper elt_tp . GVW) m) ++ ")"
+    BaseStructRepr fld_tps -> show $ Ctx.zipWith TypedWrapper fld_tps v
 
 -- | A representation of a ground-value array.
 data GroundArray idx b
@@ -270,6 +312,30 @@ groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
         coerceMAnd (Ctx.traverseWithIndex
           (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
       BaseArrayRepr{} -> MAnd Nothing
+
+groundCompare :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> Maybe Ordering
+groundCompare tp x y = case tp of
+  BaseBoolRepr -> Just $ compare x y
+  BaseIntegerRepr -> Just $ compare x y
+  BaseRealRepr -> Just $ compare x y
+  BaseBVRepr{} -> Just $ compare x y
+  BaseFloatRepr{} -> Just $ compare x y
+  BaseComplexRepr -> Just $ compare x y
+  BaseStringRepr{} -> Just $ compare x y
+  BaseArrayRepr _idx_tps elt_tp -> case (x, y) of
+    (ArrayConcrete c1 m1, ArrayConcrete c2 m2) -> do
+      c_ordering <- groundCompare elt_tp c1 c2
+      m_elems_ordering <- zipWithM
+        (groundCompare elt_tp)
+        ((Map.elems m1) ++ replicate (Map.size m2 - Map.size m1) (defaultValueForType elt_tp))
+        ((Map.elems m2) ++ replicate (Map.size m1 - Map.size m2) (defaultValueForType elt_tp))
+      let m_keys_ordering = compare (Map.keys m1) (Map.keys m2)
+      Just $ m_keys_ordering <> fold m_elems_ordering <> c_ordering
+    _ -> Nothing
+  BaseStructRepr fld_tps ->
+    Ctx.traverseAndCollect
+      (\i fld_tp -> groundCompare fld_tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i)))
+      fld_tps
 
 -- | Helper function for evaluating @App@ expressions.
 --
@@ -623,3 +689,74 @@ evalGroundApp f a0 = do
     StructField s i _ -> do
       sv <- f s
       return $! unGVW (sv Ctx.! i)
+
+randomGroundValue ::
+  (Random.RandomGen g, Monad m, ?bound :: Integer) =>
+  BaseTypeRepr tp ->
+  StateT g m (GroundValue tp)
+randomGroundValue = \case
+  BaseBoolRepr -> state Random.uniform
+  BaseIntegerRepr -> state $ Random.uniformR (negate ?bound, ?bound)
+  BaseRealRepr -> do
+    x <- state $ Random.uniformR (negate ?bound, ?bound)
+    y <- state $ Random.uniformR (1, ?bound)
+    return $ x % y
+  BaseBVRepr w ->
+    BV.mkBV w <$> state (Random.uniformR (BV.asUnsigned (BV.minUnsigned w), BV.asUnsigned (BV.maxUnsigned w)))
+  BaseFloatRepr{} ->
+    BF.bfFromDouble <$> state (Random.uniformR (negate (fromIntegral ?bound), fromIntegral ?bound))
+  BaseComplexRepr -> do
+    x <- randomGroundValue BaseRealRepr
+    y <- randomGroundValue BaseRealRepr
+    return $ x :+ y
+  BaseStringRepr _si -> undefined
+  BaseArrayRepr _idx_tps _elt_tp -> undefined
+  BaseStructRepr flds -> traverseFC (\fld -> GVW <$> randomGroundValue fld) flds
+
+-- | Construct an expression from a ground value.
+mkGroundExpr ::
+  (IsExprBuilder sym, MonadIO m, MonadFail m) =>
+  sym ->
+  BaseTypeRepr tp ->
+  GroundValue tp ->
+  m (SymExpr sym tp)
+mkGroundExpr sym tp val = case tp of
+  BaseBoolRepr -> return $ backendPred sym val
+  BaseIntegerRepr -> liftIO $ intLit sym val
+  BaseRealRepr -> liftIO $ realLit sym val
+  BaseBVRepr w -> liftIO $ bvLit sym w val
+  BaseFloatRepr fpp -> liftIO $ floatLit sym fpp val
+  BaseComplexRepr -> liftIO $ mkComplexLit sym val
+  BaseStringRepr _si -> liftIO $ stringLit sym val
+  BaseArrayRepr idx_tps elt_tp -> case val of
+    ArrayConcrete dflt_val m -> do
+      dflt_val' <- mkGroundExpr sym elt_tp dflt_val
+      m' <- mapM (mkGroundExpr sym elt_tp) m
+      liftIO $ arrayFromMap sym idx_tps (AUM.fromAscList elt_tp $ Map.toAscList m') dflt_val'
+    ArrayMapping _f -> fail "mkGroundExpr: ArrayMapping not supported"
+  BaseStructRepr fld_tps -> do
+    flds' <- Ctx.zipWithM (\fld_tp -> mkGroundExpr sym fld_tp . unGVW) fld_tps val
+    liftIO $ mkStruct sym flds'
+
+-- | Evaluate a an expression to a ground value.
+--
+cachedEvalGroundExpr ::
+  (MonadIO m, MonadFail m, ?cache :: IdxCache t GroundValueWrapper) =>
+  (forall tp . Expr t tp -> m (GroundValue tp)) ->
+  (forall tp . Expr t tp -> m (GroundValue tp))
+cachedEvalGroundExpr f e = fmap unGVW $ idxCacheEval ?cache e $ fmap GVW $ do
+  runMaybeT (tryEvalGroundExpr (lift . cachedEvalGroundExpr f) e) >>= \case
+    Just x -> return x
+    Nothing -> f e
+
+-- | Evaluate a an expression to a typed ground value.
+--
+typedCachedEvalGroundExpr ::
+  (MonadIO m, MonadFail m, ?cache :: IdxCache t (TypedWrapper GroundValueWrapper)) =>
+  (forall tp . Expr t tp -> m (GroundValue tp)) ->
+  (forall tp . Expr t tp -> m (GroundValue tp))
+typedCachedEvalGroundExpr f e =
+  fmap (unGVW . unwrapTyped) $ idxCacheEval ?cache e $ fmap (TypedWrapper (exprType e) . GVW) $ do
+    runMaybeT (tryEvalGroundExpr (lift . typedCachedEvalGroundExpr f) e) >>= \case
+      Just x -> return x
+      Nothing -> f e

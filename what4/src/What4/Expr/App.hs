@@ -40,6 +40,7 @@ module What4.Expr.App where
 import qualified Control.Exception as Ex
 import           Control.Lens hiding (asIndex, (:>), Empty)
 import           Control.Monad
+import           Control.Monad.IO.Class
 import           Control.Monad.ST
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
@@ -2556,3 +2557,48 @@ ppApp' a0 = do
     StructCtor _ flds -> prettyApp "struct" (toListFC exprPrettyArg flds)
     StructField s idx _ ->
       prettyApp "field" [exprPrettyArg s, showPrettyArg idx]
+
+
+getNonceExprTable :: MonadIO m => Expr t tp -> m (PH.HashTable RealWorld (Nonce t) (Expr t))
+getNonceExprTable e = do
+  table <- liftIO $ stToIO PH.new
+  let ?cache = table
+  _ <- getNonceExprTableRec e
+  return table
+
+getNonceExprTableRec ::
+  (MonadIO m, ?cache :: PH.HashTable RealWorld (Nonce t) (Expr t)) =>
+  Expr t tp ->
+  m (Expr t tp)
+getNonceExprTableRec e = case e of
+  AppExpr ae ->
+    cachedEval ?cache (appExprId ae) $ do
+      traverseFC_ (void . getNonceExprTableRec) $ appExprApp ae
+      return e
+  NonceAppExpr ne ->
+    cachedEval ?cache (nonceExprId ne) $ do
+      traverseFC_ (void . getNonceExprTableRec) $ nonceExprApp ne
+      return e
+  BoundVarExpr v ->
+    cachedEval ?cache (bvarId v) $
+      return e
+  BoolExpr{} -> return e
+  SemiRingLiteral{} -> return e
+  FloatExpr{} -> return e
+  StringExpr{} -> return e
+
+
+cachedEval :: (HashableF k, TestEquality k, MonadIO m)
+           => PH.HashTable RealWorld k a
+           -> k tp
+           -> m (a tp)
+           -> m (a tp)
+cachedEval tbl k action = do
+  mr <- liftIO $ stToIO $ PH.lookup tbl k
+  case mr of
+    Just r -> return r
+    Nothing -> do
+      r <- action
+      seq r $ do
+      liftIO $ stToIO $ PH.insert tbl k r
+      return r
