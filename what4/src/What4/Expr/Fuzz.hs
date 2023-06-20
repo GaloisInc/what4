@@ -60,24 +60,53 @@ import           What4.Solver.Adapter
 import qualified What4.Solver.Z3 as Z3
 
 
+data FuzzOptions = FuzzOptions
+  { fuzzSeed :: Int
+  , fuzzBound :: Int
+  , fuzzRounds :: Int
+  }
+  deriving (Eq, Ord, Show)
+
+defaultFuzzOptions :: FuzzOptions
+defaultFuzzOptions = FuzzOptions
+  { fuzzSeed = 0
+  , fuzzBound = 1000000
+  , fuzzRounds = 10
+  }
+
+
 evaluateExpr ::
   forall t st fs tp m .
   (MonadIO m, MonadFail m) =>
   ExprBuilder t st fs ->
   Int ->
-  Integer ->
+  Int ->
   Expr t tp ->
-  m (GroundValue tp, IdxCache t (TypedWrapper GroundValueWrapper))
+  m (GroundValue tp, PM.MapF (Nonce t) (TypedWrapper GroundValueWrapper))
 evaluateExpr sym seed bound expr = do
   let ?bound = bound
-  let ?rand_on_fail = False
-  c <- newIdxCache
-  let ?cache = c
-  val <- evalStateT (evalGroundExprStep sym expr) (Random.mkStdGen seed)
-  return (val, ?cache)
+  evalStateT (evaluateGroundExpr sym expr) (Random.mkStdGen seed)
+
+
+evaluateGroundExpr ::
+  forall t st fs tp m .
+  (MonadIO m, MonadFail m, ?bound :: Int) =>
+  ExprBuilder t st fs ->
+  Expr t tp ->
+  StateT Random.StdGen m (GroundValue tp, PM.MapF (Nonce t) (TypedWrapper GroundValueWrapper))
+evaluateGroundExpr sym expr = do
+  idx_cache <- newIdxCache
+  let ?cache = idx_cache
+  let ?rand_on_fail = True
+
+  val <- evalGroundExprStep sym expr
+
+  cache_map <- getIdxCache ?cache
+
+  return (val, cache_map)
 
 evalGroundExprStep ::
-  (MonadIO m, MonadFail m, ?bound :: Integer, ?rand_on_fail :: Bool, ?cache :: IdxCache t (TypedWrapper GroundValueWrapper)) =>
+  (MonadIO m, MonadFail m, ?bound :: Int, ?rand_on_fail :: Bool, ?cache :: IdxCache t (TypedWrapper GroundValueWrapper)) =>
   ExprBuilder t st fs ->
   Expr t tp ->
   StateT Random.StdGen m (GroundValue tp)
@@ -100,7 +129,7 @@ simplifyExpr ::
   (MonadIO m, MonadFail m) =>
   ExprBuilder t st fs ->
   Int ->
-  Integer ->
+  Int ->
   Int ->
   Expr t tp ->
   m (Expr t tp)
@@ -120,7 +149,7 @@ getEquivalenceClasses ::
   (MonadIO m, MonadFail m) =>
   ExprBuilder t st fs ->
   Int ->
-  Integer ->
+  Int ->
   Int ->
   Expr t tp ->
   m [Some (EquivalenceClass t)]
@@ -130,40 +159,26 @@ getEquivalenceClasses sym seed bound rounds expr = do
 
   liftIO $ Z3.withZ3 sym "z3" defaultLogData $ \session -> do
     foldl (<>) [] <$> mapM
-      (\(Some s) -> fmap Some <$> splitEquivalenceClassCandidate sym session nonce_expr_tbl s)
+      (\(Some s) -> map Some <$> splitEquivalenceClassCandidate sym session nonce_expr_tbl s)
       nonce_candidates
 
 getEquivalenceClassesCandidates ::
   (MonadIO m, MonadFail m) =>
   ExprBuilder t st fs ->
   Int ->
-  Integer ->
+  Int ->
   Int ->
   Expr t tp ->
   m [Some (TypedWrapper (SetF (Nonce t)))]
 getEquivalenceClassesCandidates sym seed bound rounds expr = do
-  eval_caches <- evalStateT (replicateM rounds $ lalala sym bound expr) (Random.mkStdGen seed)
-  case eval_caches of
-    head_cache : tail_caches ->
-      return $ Set.toList $ Set.fromList $ PM.elems $ foldl' intersectionMultimap head_cache tail_caches
-    [] -> fail $ "getEquivalenceClassesCandidates: empty eval_caches, rounds = " ++ show rounds
-
-lalala ::
-  forall t st fs tp m .
-  (MonadIO m, MonadFail m) =>
-  ExprBuilder t st fs ->
-  Integer ->
-  Expr t tp ->
-  StateT Random.StdGen m (PM.MapF @BaseType (Nonce t) (TypedWrapper (SetF (Nonce t))))
-lalala sym bound expr = do
   let ?bound = bound
-  let ?rand_on_fail = True
-  c <- newIdxCache
-  let ?cache = c
-
-  _ <- evalGroundExprStep sym expr
-
-  keyEquivalenceClasses <$> getIdxCache ?cache
+  key_equiv_classes <- evalStateT
+    (replicateM rounds $ keyEquivalenceClasses <$> snd <$> evaluateGroundExpr sym expr)
+    (Random.mkStdGen seed)
+  case key_equiv_classes of
+    head_equiv_class : tail_equiv_classes ->
+      return $ Set.toList $ Set.fromList $ PM.elems $ foldl' intersectionMultimap head_equiv_class tail_equiv_classes
+    [] -> fail $ "getEquivalenceClassesCandidates: empty eval_caches, rounds = " ++ show rounds
 
 splitEquivalenceClassCandidate ::
   forall t st fs tp a m .
@@ -185,7 +200,7 @@ splitEquivalenceClassCandidate sym session nonce_expr_tbl (TypedWrapper _tp (Set
           if isUnsat res then
             return $ EquivalenceClass (class_expr, expr : class_extra_exprs) : tail_classes
           else do
-            tail_classes' <- splitEquivalenceClassCandidateRec tail_classes expr 
+            tail_classes' <- splitEquivalenceClassCandidateRec tail_classes expr
             return $ head_class : tail_classes'
 
   exprs <- mapM

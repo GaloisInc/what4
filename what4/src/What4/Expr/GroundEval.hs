@@ -691,15 +691,15 @@ evalGroundApp f a0 = do
       return $! unGVW (sv Ctx.! i)
 
 randomGroundValue ::
-  (Random.RandomGen g, Monad m, ?bound :: Integer) =>
+  (Random.RandomGen g, Monad m, ?bound :: Int) =>
   BaseTypeRepr tp ->
   StateT g m (GroundValue tp)
 randomGroundValue = \case
   BaseBoolRepr -> state Random.uniform
-  BaseIntegerRepr -> state $ Random.uniformR (negate ?bound, ?bound)
+  BaseIntegerRepr -> state $ Random.uniformR (negate (fromIntegral ?bound), fromIntegral ?bound)
   BaseRealRepr -> do
-    x <- state $ Random.uniformR (negate ?bound, ?bound)
-    y <- state $ Random.uniformR (1, ?bound)
+    x <- state $ Random.uniformR (negate (fromIntegral ?bound), fromIntegral ?bound)
+    y <- state $ Random.uniformR (1, fromIntegral ?bound)
     return $ x % y
   BaseBVRepr w ->
     BV.mkBV w <$> state (Random.uniformR (BV.asUnsigned (BV.minUnsigned w), BV.asUnsigned (BV.maxUnsigned w)))

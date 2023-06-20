@@ -49,6 +49,7 @@ import qualified Data.HashTable.Class as H (toList)
 import qualified Data.HashTable.ST.Basic as H
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Parameterized.Classes
@@ -2586,6 +2587,35 @@ getNonceExprTableRec e = case e of
   SemiRingLiteral{} -> return e
   FloatExpr{} -> return e
   StringExpr{} -> return e
+
+
+getSubexprMap :: Expr t tp -> Map (Some (Expr t)) (Set (Some (Expr t)))
+getSubexprMap e = runST $ do
+  table <- H.new
+  let ?cache = table
+  _ <- getSubexprTableRec e
+  Map.fromList <$> H.toList table
+
+getSubexprTableRec ::
+  (?cache :: H.HashTable s (Some (Expr t)) (Set (Some (Expr t)))) =>
+  Expr t tp ->
+  ST s (Set (Some (Expr t)))
+getSubexprTableRec e = case e of
+  AppExpr ae ->
+    cache ?cache (Some e) $ do
+      subexprs <- foldlMFC' (\acc e' -> (<>) acc <$> getSubexprTableRec e') mempty $ appExprApp ae
+      H.insert ?cache (Some e) subexprs
+      return subexprs
+  NonceAppExpr ne ->
+    cache ?cache (Some e) $ do
+      subexprs <- foldlMFC' (\acc e' -> (<>) acc <$> getSubexprTableRec e') mempty $ nonceExprApp ne
+      H.insert ?cache (Some e) subexprs
+      return subexprs
+  BoundVarExpr{} -> return mempty
+  BoolExpr{} -> return mempty
+  SemiRingLiteral{} -> return mempty
+  FloatExpr{} -> return mempty
+  StringExpr{} -> return mempty
 
 
 cachedEval :: (HashableF k, TestEquality k, MonadIO m)
