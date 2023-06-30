@@ -707,7 +707,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
   getUnsatCoreCommand _ = SMT2.getUnsatCore
   getAbductCommand _ nm e = SMT2.getAbduct nm e
   getAbductNextCommand _ = SMT2.getAbductNext
-  
+
   setOptCommand _ = SMT2.setOption
 
   declareCommand _proxy v argTypes retType =
@@ -1283,7 +1283,7 @@ runGetAbducts :: SMTLib2Tweaks a
              -> Text
              -> Term
              -> IO [String]
-runGetAbducts s n nm p = 
+runGetAbducts s n nm p =
   if (n > 0) then do
     writeGetAbduct (sessionWriter s) nm p
     let valRsp = \x -> case x of
