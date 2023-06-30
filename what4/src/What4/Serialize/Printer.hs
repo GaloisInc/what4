@@ -89,7 +89,7 @@ instance Eq (SomeExprSymFn t) where
 
 instance Ord (SomeExprSymFn t) where
   compare (SomeExprSymFn fn1) (SomeExprSymFn fn2) =
-    compare (Nonce.indexValue $ W4.symFnId fn1) (Nonce.indexValue $ W4.symFnId fn2) 
+    compare (Nonce.indexValue $ W4.symFnId fn1) (Nonce.indexValue $ W4.symFnId fn2)
 
 
 instance Show (SomeExprSymFn t) where
@@ -376,7 +376,7 @@ freshFnName :: W4.ExprSymFn t args ret -> Memo t Text
 freshFnName fn = do
   idCount <- MS.gets envIdCounter
   MS.modify' $ (\e -> e {envIdCounter = idCount + 1})
-  let prefix = case W4.symFnInfo fn of 
+  let prefix = case W4.symFnInfo fn of
                  W4.UninterpFnInfo{} -> "ufn"
                  W4.DefinedFnInfo{} -> "dfn"
                  W4.MatlabSolverFnInfo{} -> "mfn"
@@ -412,7 +412,7 @@ convertExpr initialExpr = do
           sexp <- go initialExpr
           case sexp of
             S.A _ -> return sexp -- Don't memoize atomic s-expressions - that's just silly.
-            _ -> do 
+            _ -> do
               letVarName <- addLetBinding key sexp (W4.exprType initialExpr)
               return $ ident letVarName
   where go :: W4.Expr t tp -> Memo t SExpr
@@ -683,7 +683,7 @@ convertAppExpr' = go . W4.appExprApp
                        ]
 
         -- -- -- -- Helper functions! -- -- -- --
-        
+
         goE :: forall tp' . W4.Expr t tp' -> Memo t SExpr
         goE = convertExpr
 

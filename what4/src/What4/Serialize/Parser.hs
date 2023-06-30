@@ -886,7 +886,7 @@ readLetFnExpr ((S.WFSList [S.WFSAtom (AId f), e]):rst) body = do
 readLetFnExpr bindings _body = E.throwError $
   "invalid s-expression for let-bindings: " ++ (show bindings)
 
-  
+
 -- | Parse an arbitrary expression.
 readExpr ::
   forall sym t st fs . (sym ~ W4.ExprBuilder t st fs)
