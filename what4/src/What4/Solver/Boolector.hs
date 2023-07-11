@@ -24,11 +24,13 @@ module What4.Solver.Boolector
   , boolectorAdapter
   , runBoolectorInOverride
   , withBoolector
+  , withOnlineBoolector
   , boolectorFeatures
   ) where
 
 import           Control.Monad
 import           Data.Bits ( (.|.) )
+import           System.IO
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -91,6 +93,7 @@ boolectorAdapter =
   , solver_adapter_write_smt2 =
       SMT2.writeDefaultSMT2 () "Boolector" defaultWriteSMTLIB2Features
       (Just boolectorStrictParsing)
+  , solver_adapter_with_online_solver = withOnlineBoolector
   }
 
 instance SMT2.SMTLib2Tweaks Boolector where
@@ -154,3 +157,10 @@ instance OnlineSolver (SMT2.Writer Boolector) where
                             feat
                             (Just boolectorStrictParsing) mbIOh sym
   shutdownSolverProcess = SMT2.shutdownSolver Boolector
+
+withOnlineBoolector ::
+  ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t (SMT2.Writer Boolector) -> IO a) ->
+  IO a
+withOnlineBoolector = withOnlineSolver boolectorFeatures boolectorOptions

@@ -21,9 +21,11 @@ module What4.Solver.STP
   , stpFeatures
   , runSTPInOverride
   , withSTP
+  , withOnlineSTP
   ) where
 
 import           Data.Bits
+import           System.IO
 
 import           What4.BaseTypes
 import           What4.Concrete
@@ -94,6 +96,7 @@ stpAdapter =
   , solver_adapter_write_smt2 =
        SMT2.writeDefaultSMT2 STP "STP" defaultWriteSMTLIB2Features
        (Just stpStrictParsing)
+  , solver_adapter_with_online_solver = withOnlineSTP
   }
 
 instance SMT2.SMTLib2Tweaks STP where
@@ -162,3 +165,10 @@ instance OnlineSolver (SMT2.Writer STP) where
       (Just stpStrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver STP
+
+withOnlineSTP ::
+  ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t (SMT2.Writer STP) -> IO a) ->
+  IO a
+withOnlineSTP = withOnlineSolver stpFeatures stpOptions

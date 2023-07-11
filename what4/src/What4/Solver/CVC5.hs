@@ -26,6 +26,7 @@ module What4.Solver.CVC5
   , cvc5Options
   , runCVC5InOverride
   , withCVC5
+  , withOnlineCVC5
   , writeCVC5SMT2File
   , writeMultiAsmpCVC5SMT2File
   , runCVC5SyGuS
@@ -105,6 +106,7 @@ cvc5Adapter =
   , solver_adapter_config_options = cvc5Options
   , solver_adapter_check_sat = runCVC5InOverride
   , solver_adapter_write_smt2 = writeCVC5SMT2File
+  , solver_adapter_with_online_solver = withOnlineCVC5
   }
 
 indexType :: [SMT2.Sort] -> SMT2.Sort
@@ -251,6 +253,13 @@ instance OnlineSolver (SMT2.Writer CVC5) where
           timeout feat (Just cvc5StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver CVC5
+
+withOnlineCVC5 ::
+  ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t (SMT2.Writer CVC5) -> IO a) ->
+  IO a
+withOnlineCVC5 = withOnlineSolver cvc5Features cvc5Options
 
 
 -- | `CVC5_SyGuS` implements a `SMT2.SMTLib2GenericSolver` instance that is

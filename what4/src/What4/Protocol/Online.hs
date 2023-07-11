@@ -13,12 +13,16 @@ solvers that support online interaction modes.
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 module What4.Protocol.Online
   ( OnlineSolver(..)
   , AnOnlineSolver(..)
   , SolverProcess(..)
+  , withOnlineSolver
+  , withMaybeFile
   , solverStdin
   , solverResponse
   , SolverGoalTimeout(..)
@@ -49,7 +53,7 @@ module What4.Protocol.Online
 
 import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
-import           Control.Exception ( SomeException(..), catchJust, tryJust, displayException )
+import           Control.Exception ( SomeException(..), bracket, catchJust, try, tryJust, displayException )
 import           Control.Monad ( unless )
 import           Control.Monad (void, forM, forM_)
 import           Control.Monad.Catch ( Exception, MonadMask, bracket_, catchIf
@@ -71,10 +75,9 @@ import qualified System.IO.Error as IOE
 import qualified System.IO.Streams as Streams
 import           System.Process (ProcessHandle, terminateProcess, waitForProcess)
 
+import           What4.Config
 import           What4.Expr
-import           What4.Interface (SolverEvent(..)
-                                 , SolverStartSATQuery(..)
-                                 , SolverEndSATQuery(..) )
+import           What4.Interface
 import           What4.ProblemFeatures
 import           What4.Protocol.SMTWriter
 import           What4.SatResult
@@ -104,6 +107,28 @@ class SMTReadWriter solver => OnlineSolver solver where
   shutdownSolverProcess :: forall scope.
     SolverProcess scope solver ->
     IO (ExitCode, LazyText.Text)
+
+withOnlineSolver
+  :: OnlineSolver solver
+  => ProblemFeatures
+  -> [ConfigDesc]
+  -> ExprBuilder t st fs
+  -> Maybe Handle
+  -> (SolverProcess t solver -> IO a)
+  -> IO a
+withOnlineSolver features options sym maybe_handle action = do
+  tryExtendConfig options (getConfiguration sym)
+  bracket
+    (startSolverProcess features maybe_handle sym)
+    (try @SomeException . shutdownSolverProcess)
+    action
+
+withMaybeFile :: Maybe FilePath -> IOMode -> (Maybe Handle -> IO r) -> IO r
+withMaybeFile maybe_filename mode =
+  bracket
+    (traverse (\filename -> openFile filename mode) maybe_filename)
+    (try @SomeException . traverse hClose)
+
 
 -- | This datatype describes how a solver will behave following an error.
 data ErrorBehavior

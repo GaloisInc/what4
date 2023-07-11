@@ -27,6 +27,7 @@ module What4.Solver.Z3
   , z3Features
   , runZ3InOverride
   , withZ3
+  , withOnlineZ3
   , writeZ3SMT2File
   , runZ3Horn
   , writeZ3HornSMT2File
@@ -114,6 +115,7 @@ z3Adapter =
   , solver_adapter_config_options = z3Options
   , solver_adapter_check_sat = runZ3InOverride
   , solver_adapter_write_smt2 = writeZ3SMT2File
+  , solver_adapter_with_online_solver = withOnlineZ3
   }
 
 indexType :: [SMT2.Sort] -> SMT2.Sort
@@ -243,6 +245,13 @@ instance OnlineSolver (SMT2.Writer Z3) where
       timeout feat (Just z3StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver Z3
+
+withOnlineZ3 ::
+  ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t (SMT2.Writer Z3) -> IO a) ->
+  IO a
+withOnlineZ3 = withOnlineSolver z3Features z3Options
 
 -- | Check the satisfiability of a set of constrained Horn clauses (CHCs).
 --

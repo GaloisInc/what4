@@ -24,6 +24,7 @@ module What4.Solver.CVC4
   , cvc4Options
   , runCVC4InOverride
   , withCVC4
+  , withOnlineCVC4
   , writeCVC4SMT2File
   , writeMultiAsmpCVC4SMT2File
   ) where
@@ -111,6 +112,7 @@ cvc4Adapter =
   , solver_adapter_config_options = cvc4Options
   , solver_adapter_check_sat = runCVC4InOverride
   , solver_adapter_write_smt2 = writeCVC4SMT2File
+  , solver_adapter_with_online_solver = withOnlineCVC4
   }
 
 indexType :: [SMT2.Sort] -> SMT2.Sort
@@ -247,3 +249,10 @@ instance OnlineSolver (SMT2.Writer CVC4) where
           timeout feat (Just cvc4StrictParsing) mbIOh sym
 
   shutdownSolverProcess = SMT2.shutdownSolver CVC4
+
+withOnlineCVC4 ::
+  ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t (SMT2.Writer CVC4) -> IO a) ->
+  IO a
+withOnlineCVC4 = withOnlineSolver cvc4Features cvc4Options

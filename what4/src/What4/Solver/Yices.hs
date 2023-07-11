@@ -23,6 +23,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -55,6 +56,7 @@ module What4.Solver.Yices
   , yicesAdapter
   , runYicesInOverride
   , writeYicesFile
+  , withOnlineYices
   , yicesPath
   , yicesOptions
   , yicesDefaultFeatures
@@ -726,6 +728,14 @@ yicesStartSolver features auxOutput sym = do -- FIXME
                           , solverGoalTimeout = goalTimeout
                           }
 
+withOnlineYices ::
+  B.ExprBuilder t st fs ->
+  Maybe Handle ->
+  (SolverProcess t Connection -> IO a) ->
+  IO a
+withOnlineYices = withOnlineSolver yicesDefaultFeatures yicesOptions
+
+
 ------------------------------------------------------------------------
 -- Translation code
 
@@ -942,6 +952,7 @@ yicesAdapter =
           (cont . runIdentity . traverseSatResult (\x -> pure (x,Nothing)) pure)
    , solver_adapter_write_smt2 =
        writeDefaultSMT2 () "YICES" yicesSMT2Features (Just yicesStrictParsing)
+   , solver_adapter_with_online_solver = withOnlineYices
    }
 
 -- | Path to yices

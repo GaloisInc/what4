@@ -74,6 +74,7 @@ externalABCAdapter =
   , solver_adapter_config_options = abcOptions
   , solver_adapter_check_sat = runExternalABCInOverride
   , solver_adapter_write_smt2 = writeABCSMT2File
+  , solver_adapter_with_online_solver = \_ _ _ -> fail "ABC does not support online solving"
   }
 
 indexType :: [SMT2.Sort] -> SMT2.Sort

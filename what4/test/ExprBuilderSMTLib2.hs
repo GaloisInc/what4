@@ -22,8 +22,7 @@ import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.Hedgehog.Alt
 import           Test.Tasty.HUnit
 
-import           Control.Exception (bracket, try, finally, SomeException)
-import           Control.Monad (void)
+import           Control.Exception (try, SomeException)
 import           Control.Monad.IO.Class (MonadIO(..))
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
@@ -40,7 +39,6 @@ import           System.Environment ( lookupEnv )
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
-import           System.IO
 import           LibBF
 
 import           What4.BaseTypes
@@ -72,10 +70,6 @@ debugOutputFiles :: Bool
 debugOutputFiles = False
 --debugOutputFiles = True
 
-maybeClose :: Maybe Handle -> IO ()
-maybeClose Nothing = return ()
-maybeClose (Just h) = hClose h
-
 
 userSymbol' :: String -> SolverSymbol
 userSymbol' s = case userSymbol s of
@@ -88,13 +82,8 @@ withSym floatMode pred_gen = withIONonceGenerator $ \gen ->
 
 withYices :: (forall t. SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t Yices.Connection -> IO a) -> IO a
 withYices action = withSym FloatRealRepr $ \sym ->
-  do extendConfig Yices.yicesOptions (getConfiguration sym)
-     bracket
-       (do h <- if debugOutputFiles then Just <$> openFile "yices.out" WriteMode else return Nothing
-           s <- startSolverProcess Yices.yicesDefaultFeatures h sym
-           return (h,s))
-       (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
-       (\(_,s) -> action sym s)
+  withMaybeFile (if debugOutputFiles then Just "yices.out" else Nothing) $ \maybe_handle ->
+    Yices.withOnlineYices sym maybe_handle $ action sym
 
 withZ3 :: (forall t . SimpleExprBuilder t (Flags FloatIEEE) -> Session t Z3.Z3 -> IO ()) -> IO ()
 withZ3 action = withIONonceGenerator $ \nonce_gen -> do
@@ -105,26 +94,16 @@ withZ3 action = withIONonceGenerator $ \nonce_gen -> do
 withOnlineZ3
   :: (forall t . SimpleExprBuilder t (Flags FloatIEEE) -> SolverProcess t (Writer Z3.Z3) -> IO a)
   -> IO a
-withOnlineZ3 action = withSym FloatIEEERepr $ \sym -> do
-  extendConfig Z3.z3Options (getConfiguration sym)
-  bracket
-    (do h <- if debugOutputFiles then Just <$> openFile "z3.out" WriteMode else return Nothing
-        s <- startSolverProcess (defaultFeatures Z3.Z3) h sym
-        return (h,s))
-    (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
-    (\(_,s) -> action sym s)
+withOnlineZ3 action = withSym FloatIEEERepr $ \sym ->
+  withMaybeFile (if debugOutputFiles then Just "z3.out" else Nothing) $ \maybe_handle ->
+    Z3.withOnlineZ3 sym maybe_handle $ action sym
 
 withCVC4
   :: (forall t . SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t (Writer CVC4.CVC4) -> IO a)
   -> IO a
-withCVC4 action = withSym FloatRealRepr $ \sym -> do
-  extendConfig CVC4.cvc4Options (getConfiguration sym)
-  bracket
-    (do h <- if debugOutputFiles then Just <$> openFile "cvc4.out" WriteMode else return Nothing
-        s <- startSolverProcess (defaultFeatures CVC4.CVC4) h sym
-        return (h,s))
-    (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
-    (\(_,s) -> action sym s)
+withCVC4 action = withSym FloatRealRepr $ \sym ->
+  withMaybeFile (if debugOutputFiles then Just "cvc4.out" else Nothing) $ \maybe_handle ->
+    CVC4.withOnlineCVC4 sym maybe_handle $ action sym
 
 withModel
   :: Session t Z3.Z3

@@ -98,6 +98,7 @@ drealAdapter =
            Unknown -> cont Unknown
 
   , solver_adapter_write_smt2 = writeDRealSMT2File
+  , solver_adapter_with_online_solver = \_ _ _ -> fail "dReal does not support online solving"
   }
 
 instance SMT2.SMTLib2Tweaks DReal where

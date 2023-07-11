@@ -40,6 +40,8 @@ import           What4.SatResult
 import           What4.ProblemFeatures
 import           What4.Expr.Builder
 import           What4.Expr.GroundEval
+import           What4.Protocol.Online
+import           What4.Protocol.SMTWriter
 
 
 -- | The main interface for interacting with a solver in an "offline" fashion,
@@ -69,6 +71,15 @@ data SolverAdapter st =
     -- | Write an SMTLib2 problem instance onto the given handle, incorporating
     --   any solver-specific tweaks appropriate to this solver
   , solver_adapter_write_smt2 :: !(forall t fs . ExprBuilder t st fs -> Handle -> [BoolExpr t] -> IO ())
+
+    -- | Write an SMTLib2 problem instance onto the given handle, incorporating
+    --   any solver-specific tweaks appropriate to this solver
+  , solver_adapter_with_online_solver
+       :: !(forall t fs b .
+          ExprBuilder t st fs
+       -> Maybe Handle
+       -> (forall a . SMTReadWriter a => SolverProcess t a -> IO b)
+       -> IO b)
   }
 
 -- | A collection of operations for producing output from solvers.
