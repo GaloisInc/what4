@@ -39,6 +39,7 @@ module What4.Expr.GroundEval
   , cacheEvalGroundExpr
   , cacheEvalGroundExprTyped
   , mkGroundExpr
+  , randomGroundValue
   , defaultValueForType
   , groundEq
   , groundCompare
@@ -60,6 +61,7 @@ import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           LibBF (BigFloat)
 import qualified LibBF as BF
+import qualified System.Random as Random
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -656,6 +658,31 @@ evalGroundApp f a0 = do
     StructField s i _ -> do
       sv <- f s
       return $! unGVW (sv Ctx.! i)
+
+
+-- | Generate a random ground value for the given type.
+randomGroundValue ::
+  (Random.RandomGen g, Monad m, ?bound :: Integer) =>
+  BaseTypeRepr tp ->
+  StateT g m (GroundValue tp)
+randomGroundValue = \case
+  BaseBoolRepr -> state Random.uniform
+  BaseIntegerRepr -> state $ Random.uniformR (negate ?bound, ?bound)
+  BaseRealRepr -> do
+    x <- state $ Random.uniformR (negate ?bound, ?bound)
+    y <- state $ Random.uniformR (1, ?bound)
+    return $ x % y
+  BaseBVRepr w ->
+    BV.mkBV w <$> state (Random.uniformR (BV.asUnsigned (BV.minUnsigned w), BV.asUnsigned (BV.maxUnsigned w)))
+  BaseFloatRepr{} ->
+    BF.bfFromDouble <$> state (Random.uniformR (negate (fromIntegral ?bound), fromIntegral ?bound))
+  BaseComplexRepr -> do
+    x <- randomGroundValue BaseRealRepr
+    y <- randomGroundValue BaseRealRepr
+    return $ x :+ y
+  BaseStringRepr _si -> undefined
+  BaseArrayRepr _idx_tps _elt_tp -> undefined
+  BaseStructRepr flds -> traverseFC (\fld -> GVW <$> randomGroundValue fld) flds
 
 
 -- | Construct an expression from a ground value.
