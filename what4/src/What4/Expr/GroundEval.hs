@@ -13,6 +13,7 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -35,6 +36,8 @@ module What4.Expr.GroundEval
   , evalGroundExpr
   , evalGroundApp
   , evalGroundNonceApp
+  , cacheEvalGroundExpr
+  , cacheEvalGroundExprTyped
   , mkGroundExpr
   , defaultValueForType
   , groundEq
@@ -679,3 +682,27 @@ mkGroundExpr sym tp val = liftIO $ case tp of
   BaseStructRepr fld_tps -> do
     flds' <- Ctx.zipWithM (\fld_tp -> mkGroundExpr sym fld_tp . unGVW) fld_tps val
     mkStruct sym flds'
+
+
+-- | Evaluate a an expression to a ground value. Cache the intermediate results.
+--
+cacheEvalGroundExpr ::
+  (MonadIO m, MonadFail m, ?cache :: IdxCache t GroundValueWrapper) =>
+  (forall tp . Expr t tp -> m (GroundValue tp)) ->
+  (forall tp . Expr t tp -> m (GroundValue tp))
+cacheEvalGroundExpr f e = fmap unGVW $ idxCacheEval ?cache e $ fmap GVW $ do
+  runMaybeT (tryEvalGroundExpr (lift . cacheEvalGroundExpr f) e) >>= \case
+    Just x -> return x
+    Nothing -> f e
+
+-- | Evaluate a an expression to a typed ground value. Cache the intermediate results.
+--
+cacheEvalGroundExprTyped ::
+  (MonadIO m, MonadFail m, ?cache :: IdxCache t (TypedWrapper GroundValueWrapper)) =>
+  (forall tp . Expr t tp -> m (GroundValue tp)) ->
+  (forall tp . Expr t tp -> m (GroundValue tp))
+cacheEvalGroundExprTyped f e =
+  fmap (unGVW . unwrapTyped) $ idxCacheEval ?cache e $ fmap (TypedWrapper (exprType e) . GVW) $ do
+    runMaybeT (tryEvalGroundExpr (lift . cacheEvalGroundExprTyped f) e) >>= \case
+      Just x -> return x
+      Nothing -> f e
