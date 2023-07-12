@@ -385,6 +385,9 @@ class HasAbsValue e => IsExpr e where
     case exprType e of
       BaseFloatRepr fpp -> fpp
 
+  -- | Get the size of expression.
+  exprSize :: e tp -> Natural
+
   -- | Print a sym expression for debugging or display purposes.
   printSymExpr :: e tp -> Doc ann
 

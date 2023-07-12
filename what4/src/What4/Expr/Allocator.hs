@@ -140,11 +140,7 @@ uncachedNonceExpr :: NonceGenerator IO t
                  -> IO (Expr t tp)
 uncachedNonceExpr g pc p v = do
   n <- freshNonce g
-  return $! NonceAppExpr $ NonceAppExprCtor { nonceExprId = n
-                                          , nonceExprLoc = pc
-                                          , nonceExprApp = p
-                                          , nonceExprAbsValue = v
-                                          }
+  return $! mkNonceExpr n pc p v
 
 ------------------------------------------------------------------------
 -- Cached storage
@@ -161,11 +157,7 @@ cachedNonceExpr g h pc p v = do
     Just e -> return e
     Nothing -> do
       n <- freshNonce g
-      let e = NonceAppExpr $ NonceAppExprCtor { nonceExprId = n
-                                            , nonceExprLoc = pc
-                                            , nonceExprApp = p
-                                            , nonceExprAbsValue = v
-                                            }
+      let e = mkNonceExpr n pc p v
       seq e $ stToIO $ PH.insert h p e
       return e
 

@@ -46,6 +46,8 @@ module What4.Protocol.SMTLib2
   , writeCheckSynth
   , runCheckSat
   , runGetAbducts
+  , checkPredSat
+  , checkExprEqSat
   , asSMT2Type
   , setOption
   , getVersion
@@ -1320,6 +1322,36 @@ runCheckSat s doEval =
        Sat _ ->
          do evalFn <- smtExprGroundEvalFn w (smtEvalFuns w r)
             doEval (Sat (evalFn, Nothing))
+
+checkPredSat ::
+  (SMTLib2Tweaks a, MonadIO m) =>
+  Session t a ->
+  (B.Expr t) BaseBoolType ->
+  m (SatResult () ())
+checkPredSat session bool_expr = liftIO $ do
+  let conn = sessionWriter session
+  pushEntryStack conn
+  addCommand conn (pushCommand conn)
+
+  SMTWriter.assume conn bool_expr
+
+  res <- runCheckSat session $ return . forgetModelAndCore
+
+  popEntryStack conn
+  addCommand conn (popCommand conn)
+
+  return res
+
+checkExprEqSat ::
+  (SMTLib2Tweaks a, MonadIO m) =>
+  B.ExprBuilder t st fs ->
+  Session t a ->
+  (B.Expr t) tp ->
+  (B.Expr t) tp ->
+  m (SatResult () ())
+checkExprEqSat sym session x y = do
+  liftIO $ checkPredSat session =<< I.notPred sym =<< I.isEq sym x y
+
 
 instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
   smtEvalFuns w s = smtLibEvalFuns Session { sessionWriter = w

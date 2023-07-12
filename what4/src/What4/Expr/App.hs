@@ -40,6 +40,7 @@ module What4.Expr.App where
 import qualified Control.Exception as Ex
 import           Control.Lens hiding (asIndex, (:>), Empty)
 import           Control.Monad
+import           Control.Monad.IO.Class
 import           Control.Monad.ST
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
@@ -112,6 +113,7 @@ data NonceAppExpr t (tp :: BaseType)
                      , nonceExprLoc :: !ProgramLoc
                      , nonceExprApp :: !(NonceApp t (Expr t) tp)
                      , nonceExprAbsValue :: !(AbstractValue tp)
+                     , nonceExprSize :: !Natural
                      }
 
 -- | This type represents 'Expr' values that were built from an 'App'.
@@ -126,6 +128,7 @@ data AppExpr t (tp :: BaseType)
                 , appExprLoc :: !ProgramLoc
                 , appExprApp :: !(App (Expr t) tp)
                 , appExprAbsValue :: !(AbstractValue tp)
+                , appExprSize :: !Natural
                 }
 
 -- | The main ExprBuilder expression datastructure.  The non-trivial @Expr@
@@ -1020,7 +1023,17 @@ mkExpr n l a v = AppExpr $ AppExprCtor { appExprId  = n
                                     , appExprLoc = l
                                     , appExprApp = a
                                     , appExprAbsValue = v
+                                    , appExprSize = foldl' (+) 1 $ toListFC exprSize a -- foldlFC' (\s e -> s + exprSize e) 1 a
                                     }
+
+mkNonceExpr :: Nonce t tp -> ProgramLoc -> NonceApp t (Expr t) tp -> AbstractValue tp -> Expr t tp
+mkNonceExpr n l a v = NonceAppExpr $ NonceAppExprCtor
+  { nonceExprId = n
+  , nonceExprLoc = l
+  , nonceExprApp = a
+  , nonceExprAbsValue = v
+  , nonceExprSize = 1 + foldlFC' (\s e -> s + exprSize e) 1 a
+  }
 
 
 
@@ -1097,6 +1110,15 @@ instance IsExpr (Expr t) where
 
   asStruct (asApp -> Just (StructCtor _ flds)) = Just flds
   asStruct _ = Nothing
+
+  exprSize = \case
+    SemiRingLiteral{} -> 1
+    BoolExpr{} -> 1
+    FloatExpr{} -> 1
+    StringExpr{} -> 1
+    NonceAppExpr ne -> nonceExprSize ne
+    AppExpr ae -> appExprSize ae
+    BoundVarExpr{} -> 1
 
   printSymExpr = pretty
 
@@ -2556,3 +2578,81 @@ ppApp' a0 = do
     StructCtor _ flds -> prettyApp "struct" (toListFC exprPrettyArg flds)
     StructField s idx _ ->
       prettyApp "field" [exprPrettyArg s, showPrettyArg idx]
+
+
+getNonceExprTable :: MonadIO m => Expr t tp -> m (PH.HashTable RealWorld (Nonce t) (Expr t))
+getNonceExprTable e = do
+  table <- liftIO $ stToIO PH.new
+  let ?cache = table
+  getNonceExprTableRec e
+  return table
+
+getNonceExprTableRec ::
+  (MonadIO m, ?cache :: PH.HashTable RealWorld (Nonce t) (Expr t)) =>
+  Expr t tp ->
+  m ()
+getNonceExprTableRec e = void $ case e of
+  AppExpr ae ->
+    cachedEval ?cache (appExprId ae) $ do
+      traverseFC_ getNonceExprTableRec $ appExprApp ae
+      return e
+  NonceAppExpr ne ->
+    cachedEval ?cache (nonceExprId ne) $ do
+      traverseFC_ getNonceExprTableRec $ nonceExprApp ne
+      return e
+  BoundVarExpr v ->
+    cachedEval ?cache (bvarId v) $
+      return e
+  BoolExpr{} -> return e
+  SemiRingLiteral{} -> return e
+  FloatExpr{} -> return e
+  StringExpr{} -> return e
+
+
+disjointExprNonces :: Expr t tp -> Set (Some (Expr t)) -> Bool
+disjointExprNonces e es = runST $ do
+  table <- H.new
+  let ?cache = table
+  let ?exprs = es
+  getSubexprTableRec e
+
+getSubexprTableRec ::
+  (?cache :: H.HashTable s (Some (Nonce @BaseType t)) Bool, ?exprs :: Set (Some (Expr t))) =>
+  Expr t tp ->
+  ST s Bool
+getSubexprTableRec e = case e of
+  AppExpr ae ->
+    cache ?cache (Some $ appExprId ae) $
+      foldr
+        (\a b -> a >>= \x -> if x then b else return False)
+        (return $ Set.notMember (Some e) ?exprs)
+        (toListFC getSubexprTableRec (appExprApp ae))
+  NonceAppExpr ne ->
+    cache ?cache (Some $ nonceExprId ne) $
+      foldr
+        (\a b -> a >>= \x -> if x then b else return False)
+        (return $ Set.notMember (Some e) ?exprs)
+        (toListFC getSubexprTableRec (nonceExprApp ne))
+  BoundVarExpr v ->
+    cache ?cache (Some $ bvarId v) $
+      return $ Set.notMember (Some e) ?exprs
+  BoolExpr{} -> return True
+  SemiRingLiteral{} -> return True
+  FloatExpr{} -> return True
+  StringExpr{} -> return True
+
+
+cachedEval :: (HashableF k, TestEquality k, MonadIO m)
+           => PH.HashTable RealWorld k a
+           -> k tp
+           -> m (a tp)
+           -> m (a tp)
+cachedEval tbl k action = do
+  mr <- liftIO $ stToIO $ PH.lookup tbl k
+  case mr of
+    Just r -> return r
+    Nothing -> do
+      r <- action
+      seq r $ do
+      liftIO $ stToIO $ PH.insert tbl k r
+      return r
