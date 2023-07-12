@@ -152,6 +152,7 @@ module What4.Expr.Builder
   , insertIdxValue
   , deleteIdxValue
   , clearIdxCache
+  , getIdxCache
   , idxCacheEval
   , idxCacheEval'
 
@@ -507,6 +508,9 @@ deleteIdxValue c e = liftIO $ atomicModifyIORef' (cMap c) $ (\m -> (PM.delete e 
 -- | Remove all values from the IdxCache
 clearIdxCache :: MonadIO m => IdxCache t f -> m ()
 clearIdxCache c = liftIO $ atomicWriteIORef (cMap c) PM.empty
+
+getIdxCache :: MonadIO m => IdxCache t f -> m (PM.MapF (Nonce t) f)
+getIdxCache = liftIO . readIORef . cMap
 
 exprMaybeId :: Expr t tp -> Maybe (Nonce t tp)
 exprMaybeId SemiRingLiteral{} = Nothing
