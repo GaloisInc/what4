@@ -35,6 +35,7 @@ module What4.Expr.GroundEval
   , evalGroundExpr
   , evalGroundApp
   , evalGroundNonceApp
+  , mkGroundExpr
   , defaultValueForType
   , groundEq
   , groundCompare
@@ -652,3 +653,29 @@ evalGroundApp f a0 = do
     StructField s i _ -> do
       sv <- f s
       return $! unGVW (sv Ctx.! i)
+
+
+-- | Construct an expression from a ground value.
+mkGroundExpr ::
+  (IsExprBuilder sym, MonadIO m, MonadFail m) =>
+  sym ->
+  BaseTypeRepr tp ->
+  GroundValue tp ->
+  m (SymExpr sym tp)
+mkGroundExpr sym tp val = liftIO $ case tp of
+  BaseBoolRepr -> return $ backendPred sym val
+  BaseIntegerRepr -> intLit sym val
+  BaseRealRepr -> realLit sym val
+  BaseBVRepr w -> bvLit sym w val
+  BaseFloatRepr fpp -> floatLit sym fpp val
+  BaseComplexRepr -> mkComplexLit sym val
+  BaseStringRepr _si -> stringLit sym val
+  BaseArrayRepr idx_tps elt_tp -> case val of
+    ArrayConcrete dflt_val m -> do
+      dflt_val' <- mkGroundExpr sym elt_tp dflt_val
+      m' <- mapM (mkGroundExpr sym elt_tp) m
+      arrayFromMap sym idx_tps (AUM.fromAscList elt_tp $ Map.toAscList m') dflt_val'
+    ArrayMapping _f -> fail "mkGroundExpr: ArrayMapping not supported"
+  BaseStructRepr fld_tps -> do
+    flds' <- Ctx.zipWithM (\fld_tp -> mkGroundExpr sym fld_tp . unGVW) fld_tps val
+    mkStruct sym flds'
