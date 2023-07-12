@@ -2042,7 +2042,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             bvSelect sym idx2 (addNat n1 n2) a
       -- always reassociate to the right
       _ | Just (BVConcat _w a b) <- asApp x
-        , Just _bv <- asBV b
         , Just Refl <- testEquality (addNat (bvWidth a) (addNat (bvWidth b) (bvWidth y)))
                         (addNat (addNat (bvWidth a) (bvWidth b)) (bvWidth y))
         , Just LeqProof <- isPosNat (addNat (bvWidth b) (bvWidth y)) -> do
