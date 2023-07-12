@@ -37,10 +37,12 @@ module What4.Expr.GroundEval
   , evalGroundNonceApp
   , defaultValueForType
   , groundEq
+  , groundCompare
   ) where
 
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Control.Monad.State
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -95,6 +97,39 @@ type ExprRangeBindings t = RealExpr t -> IO (Maybe Rational, Maybe Rational)
 
 -- | A newtype wrapper around ground value for use in a cache.
 newtype GroundValueWrapper tp = GVW { unGVW :: GroundValue tp }
+
+instance TypedEq GroundValueWrapper where
+  typedEq tp (GVW v1) (GVW v2) =
+    fromMaybe (error "groundEq: ArrayMapping not supported") $ groundEq tp v1 v2
+instance TypedOrd GroundValueWrapper where
+  typedCompare tp (GVW v1) (GVW v2) =
+    fromMaybe (error "groundCompare : ArrayMapping not supported") $ groundCompare tp v1 v2
+
+instance TypedShow GroundValueWrapper where
+  typedShowsPrec tp p (GVW v) = case tp of
+    BaseBoolRepr -> showsPrec p v
+    BaseIntegerRepr -> showsPrec p v
+    BaseRealRepr -> showsPrec p v
+    BaseBVRepr{} -> showsPrec p v
+    BaseFloatRepr{} -> showsPrec p v
+    BaseComplexRepr -> showsPrec p v
+    BaseStringRepr{} -> showsPrec p v
+    BaseArrayRepr{} -> (++) $ typedShow tp (GVW v)
+    BaseStructRepr fld_tps -> showsPrec p $ Ctx.zipWith TypedWrapper fld_tps v
+
+  typedShow tp (GVW v) = case tp of
+    BaseBoolRepr -> show v
+    BaseIntegerRepr -> show v
+    BaseRealRepr -> show v
+    BaseBVRepr{} -> show v
+    BaseFloatRepr{} -> show v
+    BaseComplexRepr -> show v
+    BaseStringRepr{} -> show v
+    BaseArrayRepr _idx_tps elt_tp -> case v of
+      ArrayMapping{} -> "<ArrayMapping>"
+      ArrayConcrete c m ->
+        "(ArrayConcrete " ++ show ((TypedWrapper elt_tp . GVW) c, Map.map (TypedWrapper elt_tp . GVW) m) ++ ")"
+    BaseStructRepr fld_tps -> show $ Ctx.zipWith TypedWrapper fld_tps v
 
 -- | A representation of a ground-value array.
 data GroundArray idx b
@@ -240,37 +275,30 @@ forallIndex :: Ctx.Size (ctx :: Ctx.Ctx k) -> (forall tp . Ctx.Index ctx tp -> B
 forallIndex sz f = Ctx.forIndex sz (\b j -> f j && b) True
 
 
-newtype MAnd x = MAnd { unMAnd :: Maybe Bool }
-instance Functor MAnd where
-  fmap _f (MAnd x) = MAnd x
-instance Applicative MAnd where
-  pure _ = MAnd (Just True)
-  MAnd (Just a) <*> MAnd (Just b) = MAnd (Just $! (a && b))
-  _ <*> _ = MAnd Nothing
-
-mand :: Bool -> MAnd z
-mand = MAnd . Just
-
-coerceMAnd :: MAnd a -> MAnd b
-coerceMAnd (MAnd x) = MAnd x
-
 groundEq :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> Maybe Bool
-groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
-  where
-    f :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> MAnd z
-    f bt x y = case bt of
-      BaseBoolRepr     -> mand $ x == y
-      BaseRealRepr     -> mand $ x == y
-      BaseIntegerRepr  -> mand $ x == y
-      BaseBVRepr _     -> mand $ x == y
-      -- NB, don't use (==) for BigFloat, which is the wrong equality
-      BaseFloatRepr _  -> mand $ BF.bfCompare x y == EQ
-      BaseStringRepr _ -> mand $ x == y
-      BaseComplexRepr  -> mand $ x == y
-      BaseStructRepr flds ->
-        coerceMAnd (Ctx.traverseWithIndex
-          (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
-      BaseArrayRepr{} -> MAnd Nothing
+groundEq tp x y  = fmap ((==) EQ) $ groundCompare tp x y
+
+groundCompare :: BaseTypeRepr tp -> GroundValue tp -> GroundValue tp -> Maybe Ordering
+groundCompare tp x y = case tp of
+  BaseBoolRepr -> Just $ compare x y
+  BaseIntegerRepr -> Just $ compare x y
+  BaseRealRepr -> Just $ compare x y
+  BaseBVRepr{} -> Just $ compare x y
+  -- NB, don't use (<=) for BigFloat, which is the wrong comparison
+  BaseFloatRepr{} -> Just $ BF.bfCompare x y
+  BaseComplexRepr -> Just $ compare x y
+  BaseStringRepr{} -> Just $ compare x y
+  BaseArrayRepr _idx_tps elt_tp -> case (x, y) of
+    (ArrayConcrete c1 m1, ArrayConcrete c2 m2) -> do
+      c_ordering <- groundCompare elt_tp c1 c2
+      let m_keys_ordering = compare (Map.keys m1) (Map.keys m2)
+      m_elems_ordering <- fold $ zipWith (groundCompare elt_tp) (Map.elems m1) (Map.elems m2)
+      Just $ c_ordering <> m_keys_ordering <> m_elems_ordering
+    _ -> Nothing
+  BaseStructRepr fld_tps ->
+    Ctx.traverseAndCollect
+      (\i fld_tp -> groundCompare fld_tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i)))
+      fld_tps
 
 -- | Helper function for evaluating @App@ expressions.
 --
