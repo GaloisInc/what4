@@ -1,4 +1,4 @@
-# next (TBA)
+# 1.5 (July 2023)
 
 * Allow building with GHC 9.6.
 
