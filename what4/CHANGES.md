@@ -6,6 +6,9 @@
   constraint in its instance context. (This is a requirement imposed by
   `MonadTrans` gaining a quantified `Monad` superclass in `mtl-2.3`.)
 
+* Make `what4` simplify expressions of the form
+  `(bvult (bvadd a c) (bvadd b c))` to `(bvult a b)` when it is sound to do so.
+
 # 1.4 (January 2023)
 
 * Allow building with GHC 9.4.
