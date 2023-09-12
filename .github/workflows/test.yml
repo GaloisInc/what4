@@ -77,7 +77,7 @@ jobs:
 
       - uses: cachix/cachix-action@v10
         with:
-          name: galois
+          name: galois2
           authToken: '${{ secrets.CACHIX_TEST_AUTH_TOKEN }}'
 
       - uses: actions/cache/restore@v3
