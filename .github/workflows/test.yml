@@ -78,7 +78,7 @@ jobs:
       - uses: cachix/cachix-action@v10
         with:
           name: galois
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          authToken: '${{ secrets.CACHIX_TEST_AUTH_TOKEN }}'
 
       - uses: actions/cache/restore@v3
         name: Restore cabal store cache
