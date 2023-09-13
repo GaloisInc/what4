@@ -197,3 +197,4 @@ jobs:
             dist-newstyle
           key: |
             ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
+#Just adding this line to rerun tests with a new key
