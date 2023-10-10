@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -22,7 +23,14 @@ import           Language.Haskell.TH
 import           Language.Haskell.TH.Lift
 
 -- NB, orphan instances :-(
+-- See also https://github.com/fosskers/versions/issues/68
+#if MIN_VERSION_versions(6,0,0)
+deriving instance Lift Versions.Chunk
+deriving instance Lift Versions.Chunks
+deriving instance Lift Versions.Release
+#else
 deriving instance Lift Versions.VUnit
+#endif
 deriving instance Lift Versions.Version
 
 ver :: Text -> Q Exp
