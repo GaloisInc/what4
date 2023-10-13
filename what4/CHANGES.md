@@ -1,3 +1,7 @@
+# next (TBA)
+
+* Require building with `versions >= 6.0.2`.
+
 # 1.5 (July 2023)
 
 * Allow building with GHC 9.6.
