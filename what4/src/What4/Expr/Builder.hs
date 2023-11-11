@@ -2560,6 +2560,14 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.uext u w
 
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      Just LeqProof <- return $ isPosNat w
+      a' <- bvLit sym w $ BV.zext w a_bv
+      b' <- bvLit sym w $ BV.zext w b_bv
+      bvIte sym c a' b'
+
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym $ BVZext w x
@@ -2582,6 +2590,14 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       -- Add dynamic check for GHC typechecker.
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.sext u w
+
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      Just LeqProof <- return $ isPosNat w
+      a' <- bvLit sym w $ BV.sext (bvWidth x) w a_bv
+      b' <- bvLit sym w $ BV.sext (bvWidth x) w b_bv
+      bvIte sym c a' b'
 
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
@@ -2613,6 +2629,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   bvNotBits sym x
     | Just xv <- asBV x
     = bvLit sym (bvWidth x) $ xv `BV.xor` (BV.maxUnsigned (bvWidth x))
+
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      a' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) b_bv
+      bvIte sym c a' b'
 
     | otherwise
     = let sr = (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x))
@@ -2693,6 +2716,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvNeg sym x
     | Just xv <- asBV x = bvLit sym (bvWidth x) (BV.negate (bvWidth x) xv)
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      a' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) b_bv
+      bvIte sym c a' b'
     | otherwise =
         do ut <- CFG.getOpt (sbUnaryThreshold sym)
            let ?unaryThreshold = fromInteger ut
