@@ -1118,6 +1118,23 @@ transformExprBV2LIA sym e
     e' <- liftIO $ bvMul sym x =<< bvLit sym w (BV.mkBV w $ 2 ^ BV.asUnsigned y_bv)
     transformExprBV2LIA sym e'
 
+  | Just (BVLshr w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    e' <- liftIO $ bvUdiv sym x =<< bvLit sym w (BV.mkBV w $ 2 ^ BV.asUnsigned y_bv)
+    transformExprBV2LIA sym e'
+
+  | Just (BVUdiv _w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    x' <- transformExprBV2LIA sym x
+    y' <- liftIO $ intLit sym $ BV.asUnsigned y_bv
+    liftIO $ intDiv sym x' y'
+
+  | Just (BVUrem _w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    x' <- transformExprBV2LIA sym x
+    y' <- liftIO $ intLit sym $ BV.asUnsigned y_bv
+    liftIO $ intMod sym x' y'
+
   | otherwise = throwError $ "unsupported " ++ show e
 
 transformCmpLIA2BV ::
