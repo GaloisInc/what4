@@ -1630,6 +1630,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   annotateTerm sym e =
     case e of
+      BoundVarExpr (bvarId -> n) -> return (n, e)
       NonceAppExpr (nonceExprApp -> Annotation _ n _) -> return (n, e)
       _ -> do
         let tpr = exprType e
@@ -1639,11 +1640,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   getAnnotation _sym e =
     case e of
+      BoundVarExpr (bvarId -> n) -> Just n
       NonceAppExpr (nonceExprApp -> Annotation _ n _) -> Just n
       _ -> Nothing
 
   getUnannotatedTerm _sym e =
     case e of
+      BoundVarExpr {} -> Just e
       NonceAppExpr (nonceExprApp -> Annotation _ _ x) -> Just x
       _ -> Nothing
 
