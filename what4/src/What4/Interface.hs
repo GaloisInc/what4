@@ -691,7 +691,8 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
   getAnnotation :: sym -> SymExpr sym tp -> Maybe (SymAnnotation sym tp)
 
   -- | Project the original, unannotated term from an annotated term.
-  --   This returns 'Nothing' for terms that do not have annotations.
+  --   This returns 'Nothing' for terms that do not have annotations,
+  --   or for terms that cannot be separated from their annotations.
   getUnannotatedTerm :: sym -> SymExpr sym tp -> Maybe (SymExpr sym tp)
 
   ----------------------------------------------------------------------
