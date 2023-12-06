@@ -1646,7 +1646,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   getUnannotatedTerm _sym e =
     case e of
-      BoundVarExpr {} -> Just e
       NonceAppExpr (nonceExprApp -> Annotation _ _ x) -> Just x
       _ -> Nothing
 
