@@ -1102,6 +1102,29 @@ transformExprBV2LIA sym e
         (transformExprBV2LIA sym)
         semi_ring_sum
 
+  | Just semi_ring_prod <- asSemiRingProd (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e
+  , Just e' <- WSum.asProdVar semi_ring_prod =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just e' <- WSum.asVar semi_ring_sum =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_prod <- asSemiRingProd (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just e' <- WSum.asProdVar semi_ring_prod =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just (c', e') <- WSum.asWeightedVar semi_ring_sum
+  , Just semi_ring_sum' <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e')) e'
+  , Just (c'', e'') <- WSum.asWeightedVar semi_ring_sum'
+  , Just (BaseIte _ _ c a b) <- asApp e''
+  , Just a_bv <- asBV a
+  , Just b_bv <- asBV b = do
+    x <- liftIO $ bvLit sym (bvWidth e) $ BV.xor c' $ BV.mul (bvWidth e) c'' a_bv
+    y <- liftIO $ bvLit sym (bvWidth e) $ BV.xor c' $ BV.mul (bvWidth e) c'' b_bv
+    transformExprBV2LIA sym =<< liftIO (bvIte sym c x y)
+
   | BoundVarExpr v <- e =
     BoundVarExpr <$> transformVarTp1ToTp2 sym v
 
@@ -1152,13 +1175,15 @@ transformCmpLIA2BV sym e
     liftIO $ bvEq sym x'' y''
 
   | Just (SemiRingLe SR.OrderedSemiRingIntegerRepr x y) <- asApp e = Just $ do
-    let (x_pos, x_neg) = asPositiveNegativeWeightedSum x
-    let (y_pos, y_neg) = asPositiveNegativeWeightedSum y
-    x' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr x_pos y_neg
-    y' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr y_pos x_neg
-    x'' <- transformExprLIA2BV sym x'
-    y'' <- transformExprLIA2BV sym y'
-    liftIO $ bvUle sym x'' y''
+    z <- liftIO $ intSub sym x y
+    let (z_pos, z_neg) = asPositiveNegativeWeightedSum z
+    x' <- liftIO . bvSemiRingZext sym (knownNat :: NatRepr 72)
+      =<< transformExprLIA2BV sym
+      =<< liftIO (semiRingSum sym z_pos)
+    y' <- liftIO . bvSemiRingZext sym (knownNat :: NatRepr 72)
+      =<< transformExprLIA2BV sym
+      =<< liftIO (semiRingSum sym z_neg)
+    liftIO $ bvUle sym x' y'
 
   | otherwise = Nothing
 
@@ -1200,6 +1225,21 @@ transformExprLIA2BV sym e
     liftIO $ bvIte sym c' x' y'
 
   | otherwise = throwError $ "unsupported " ++ show e
+
+bvSemiRingZext :: (1 <= w, 1 <= w', w + 1 <= w')
+  => ExprBuilder t st fs
+  -> NatRepr w'
+  -> Expr t (BaseBVType w)
+  -> IO (Expr t (BaseBVType w'))
+bvSemiRingZext sym w' e
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e =
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        (SR.SemiRingBVRepr SR.BVArithRepr w')
+        (return . BV.zext w')
+        (bvZext sym w')
+        semi_ring_sum
+  | otherwise = bvZext sym w' e
 
 transformVarTp1ToTp2WithCont ::
   forall t st fs tp tp1 tp2 a .
@@ -2911,6 +2951,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvAndBits sym x y
     | x == y = return x -- Special case: idempotency of and
+
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just y_bv <- asBV y = do
+      a' <- bvLit sym (bvWidth x) $ BV.and a_bv y_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and b_bv y_bv
+      bvIte sym c a' b'
+
+    | Just (BaseIte _ _ c a b) <- asApp y
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just x_bv <- asBV x = do
+      a' <- bvLit sym (bvWidth x) $ BV.and x_bv a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and x_bv b_bv
+      bvIte sym c a' b'
 
     | Just (BVOrBits _ bs) <- asApp x
     , bvOrContains y bs
