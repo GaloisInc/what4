@@ -2612,6 +2612,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   bvAndBits sym x y
     | x == y = return x -- Special case: idempotency of and
 
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just y_bv <- asBV y = do
+      a' <- bvLit sym (bvWidth x) $ BV.and a_bv y_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and b_bv y_bv
+      bvIte sym c a' b'
+
+    | Just (BaseIte _ _ c a b) <- asApp y
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just x_bv <- asBV x = do
+      a' <- bvLit sym (bvWidth x) $ BV.and x_bv a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and x_bv b_bv
+      bvIte sym c a' b'
+
     | Just (BVOrBits _ bs) <- asApp x
     , bvOrContains y bs
     = return y -- absorption law
