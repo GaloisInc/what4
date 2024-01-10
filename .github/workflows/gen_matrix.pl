@@ -110,7 +110,6 @@ version(z3, "4_8_8").
 version(z3, "4_8_9").
 
 version(yices, "2_6_4").
-version(yices, "2_6_1").
 version(yices, "2_6").
 
 version(stp, "2_3_3").
