@@ -20,8 +20,9 @@ module What4.Expr.Simplify
   ) where
 
 import           Control.Lens ((^.))
+import           Control.Monad (void, when)
 import           Control.Monad.ST
-import           Control.Monad.State
+import           Control.Monad.State (MonadState(..), State, execState)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -144,7 +145,7 @@ recordExpr n = do
 count_subterms' :: Expr t tp -> Counter ()
 count_subterms' e0 =
   case e0 of
-    BoolExpr{} -> pure () 
+    BoolExpr{} -> pure ()
     SemiRingLiteral{} -> pure ()
     StringExpr{} -> pure ()
     FloatExpr{} -> pure ()

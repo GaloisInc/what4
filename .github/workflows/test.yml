@@ -80,8 +80,8 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - uses: actions/cache@v2
-        name: Cache builds
+      - uses: actions/cache/restore@v3
+        name: Restore cabal store cache
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -103,7 +103,8 @@ jobs:
             8.6.5) GHC_NIXPKGS=github:nixos/nixpkgs/20.09 ;;
             9.0.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-22.05 ;;
             9.2.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-22.05 ;;
-            9.4.4) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-unstable ;;
+            9.4.4) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
+            9.6.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
             *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
           echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} nixpkgs#gmp nixpkgs#zlib nixpkgs#zlib.dev" >> $GITHUB_ENV
@@ -184,3 +185,15 @@ jobs:
         run: |
           cd what4
           $NS -c cabal haddock what4
+
+      - uses: actions/cache/save@v3
+        name: Save cabal store cache
+        if: always()
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: |
+            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}

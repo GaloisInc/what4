@@ -13,15 +13,14 @@ build-type:    Simple
 common dependencies
   build-depends:
     , ansi-wl-pprint       ^>=0.6
-    , base                 >=4.12 && <4.18
+    , base                 >=4.12 && <4.19
     , bytestring
     , containers           ^>=0.6
     , io-streams
     , lens
-    , mtl
     , parameterized-utils  >=2.0  && <2.2
     , text
-    , what4                ^>=1.4
+    , what4                ^>=1.5
 
 library
   import:           dependencies

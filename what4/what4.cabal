@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          what4
-Version:       1.4.0.0.99
+Version:       1.5.1.0.99
 Author:        Galois Inc.
 Maintainer:    rscott@galois.com, kquick@galois.com
 Copyright:     (c) Galois, Inc 2014-2023
@@ -127,7 +127,6 @@ library
     temporary >= 1.2,
     template-haskell,
     text >= 1.2.4.0 && < 2.1,
-    th-abstraction >=0.1 && <0.5,
     th-lift >= 0.8.2 && < 0.9,
     th-lift-instances >= 0.1 && < 0.2,
     time >= 1.8 && < 1.13,
@@ -136,7 +135,7 @@ library
     unordered-containers >= 0.2.10,
     utf8-string >= 1.0.1,
     vector >= 0.12.1,
-    versions >= 4.0 && < 6.0,
+    versions >= 6.0.2 && < 6.1,
     zenc >= 0.1.0 && < 0.2.0,
     ghc-prim >= 0.5.2
 
@@ -422,7 +421,7 @@ test-suite solver_parsing_tests
                , exceptions
                , io-streams
                , lumberjack
-               , tasty-sugar >= 2.0 && < 2.2
+               , tasty-sugar >= 2.0 && < 2.3
                , text
 
 test-suite what4-serialize-tests

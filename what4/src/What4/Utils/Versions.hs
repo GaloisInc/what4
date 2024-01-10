@@ -3,8 +3,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
-
 module What4.Utils.Versions where
 
 import qualified Config as Config
@@ -20,10 +18,6 @@ import           Instances.TH.Lift ()
 
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Lift
-
--- NB, orphan instances :-(
-deriving instance Lift Versions.VUnit
-deriving instance Lift Versions.Version
 
 ver :: Text -> Q Exp
 ver nm =

@@ -101,8 +101,10 @@ import Control.Monad.Fail( MonadFail )
 
 import           Control.Applicative
 import           Control.Exception
-import           Control.Monad.Except
-import           Control.Monad.Reader
+import           Control.Monad (forM, forM_, replicateM_, unless, when)
+import           Control.Monad.IO.Class (MonadIO(..))
+import           Control.Monad.Except (MonadError(..), ExceptT, runExceptT)
+import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
 import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (digitToInt, isAscii)
@@ -708,7 +710,7 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
   getUnsatCoreCommand _ = SMT2.getUnsatCore
   getAbductCommand _ nm e = SMT2.getAbduct nm e
   getAbductNextCommand _ = SMT2.getAbductNext
-  
+
   setOptCommand _ = SMT2.setOption
 
   declareCommand _proxy v argTypes retType =
@@ -1311,7 +1313,7 @@ runGetAbducts :: SMTLib2Tweaks a
              -> Text
              -> Term
              -> IO [String]
-runGetAbducts s n nm p = 
+runGetAbducts s n nm p =
   if (n > 0) then do
     writeGetAbduct (sessionWriter s) nm p
     let valRsp = \x -> case x of

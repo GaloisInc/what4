@@ -39,7 +39,8 @@ import Control.Monad.Fail( MonadFail )
 import qualified Control.Monad.Fail
 #endif
 
-import           Control.Monad.Reader
+import           Control.Monad (when)
+import           Control.Monad.Reader (ReaderT(..))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char
