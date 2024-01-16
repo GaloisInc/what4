@@ -148,6 +148,7 @@ cvc4Features = useComputableReals
            .|. useFloatingPoint
            .|. useBitvectors
            .|. useQuantifiers
+           .|. useVariants
 
 writeMultiAsmpCVC4SMT2File
    :: ExprBuilder t st fs

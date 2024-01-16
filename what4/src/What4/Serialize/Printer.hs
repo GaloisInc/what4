@@ -370,6 +370,7 @@ freshName tp = do
                  W4.BaseBVRepr{} -> "bv"
                  W4.BaseStructRepr{} -> "struct"
                  W4.BaseArrayRepr{} -> "arr"
+                 W4.BaseVariantRepr{} -> "variant"
   return $ T.pack $ prefix++(show $ idCount)
 
 freshFnName :: W4.ExprSymFn t args ret -> Memo t Text
@@ -762,6 +763,7 @@ convertBaseType tp = case tp of
   W4.BaseArrayRepr ixs repr -> S.L [S.A (AId "Array"), S.L $ convertBaseTypes ixs , convertBaseType repr]
   W4.BaseFloatRepr (W4.FloatingPointPrecisionRepr eRepr sRepr) ->
     S.L [ S.A (AId "Float"), S.A (AInt (NR.intValue eRepr)), S.A (AInt (NR.intValue sRepr)) ]
+  W4.BaseVariantRepr _ -> error "TODO RGS"
 
 
 

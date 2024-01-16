@@ -158,6 +158,7 @@ z3Features = useNonlinearArithmetic
          .|. useStrings
          .|. useFloatingPoint
          .|. useBitvectors
+         .|. useVariants
 
 writeZ3SMT2File
    :: ExprBuilder t st fs

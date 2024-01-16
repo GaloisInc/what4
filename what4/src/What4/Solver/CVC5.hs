@@ -147,6 +147,7 @@ cvc5Features = useComputableReals
            .|. useBitvectors
            .|. useQuantifiers
            .|. useProduceAbducts
+           .|. useVariants
 
 writeMultiAsmpCVC5SMT2File
    :: ExprBuilder t st fs

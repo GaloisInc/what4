@@ -113,6 +113,7 @@ module What4.Interface
   , SymStruct
   , SymBV
   , SymArray
+  , SymVariant
 
     -- * Natural numbers
   , SymNat
@@ -210,7 +211,7 @@ import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Ctx
 import           Data.Parameterized.Utils.Endian (Endian(..))
-import           Data.Parameterized.Map (MapF)
+import           Data.Parameterized.Map (MapF, Pair(..))
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import qualified Data.Parameterized.Vector as Vector
@@ -266,6 +267,9 @@ type SymBV sym n = SymExpr sym (BaseBVType n)
 
 -- | Symbolic strings.
 type SymString sym si = SymExpr sym (BaseStringType si)
+
+-- | Symbolic variants.
+type SymVariant sym vs = SymExpr sym (BaseVariantType vs)
 
 ------------------------------------------------------------------------
 -- Type families for the interface.
@@ -369,6 +373,10 @@ class HasAbsValue e => IsExpr e where
   -- | Return the struct fields if this is a concrete struct.
   asStruct :: e (BaseStructType flds) -> Maybe (Ctx.Assignment e flds)
   asStruct _ = Nothing
+
+  -- | TODO RGS: Docs
+  asVariant :: e (BaseVariantType vs) -> Maybe (Pair (Ctx.Index vs) (Ctx.Assignment e))
+  asVariant _ = Nothing
 
   -- | Get type of expression.
   exprType :: e tp -> BaseTypeRepr tp
@@ -635,24 +643,25 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
 
   -- | Return true if two expressions are equal. The default
   -- implementation dispatches 'eqPred', 'bvEq', 'natEq', 'intEq',
-  -- 'realEq', 'cplxEq', 'structEq', or 'arrayEq', depending on the
+  -- 'realEq', 'cplxEq', 'structEq', 'arrayEq', or 'variantEq' depending on the
   -- type.
   isEq :: sym -> SymExpr sym tp -> SymExpr sym tp -> IO (Pred sym)
   isEq sym x y =
     case exprType x of
-      BaseBoolRepr     -> eqPred sym x y
-      BaseBVRepr{}     -> bvEq sym x y
-      BaseIntegerRepr  -> intEq sym x y
-      BaseRealRepr     -> realEq sym x y
-      BaseFloatRepr{}  -> floatEq sym x y
-      BaseComplexRepr  -> cplxEq sym x y
-      BaseStringRepr{} -> stringEq sym x y
-      BaseStructRepr{} -> structEq sym x y
-      BaseArrayRepr{}  -> arrayEq sym x y
+      BaseBoolRepr      -> eqPred sym x y
+      BaseBVRepr{}      -> bvEq sym x y
+      BaseIntegerRepr   -> intEq sym x y
+      BaseRealRepr      -> realEq sym x y
+      BaseFloatRepr{}   -> floatEq sym x y
+      BaseComplexRepr   -> cplxEq sym x y
+      BaseStringRepr{}  -> stringEq sym x y
+      BaseStructRepr{}  -> structEq sym x y
+      BaseArrayRepr{}   -> arrayEq sym x y
+      BaseVariantRepr{} -> variantEq sym x y
 
   -- | Take the if-then-else of two expressions. The default
   -- implementation dispatches 'itePred', 'bvIte', 'natIte', 'intIte',
-  -- 'realIte', 'cplxIte', 'structIte', or 'arrayIte', depending on
+  -- 'realIte', 'cplxIte', 'structIte', 'arrayIte', or 'variantIte' depending on
   -- the type.
   baseTypeIte :: sym
               -> Pred sym
@@ -661,15 +670,16 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
               -> IO (SymExpr sym tp)
   baseTypeIte sym c x y =
     case exprType x of
-      BaseBoolRepr     -> itePred   sym c x y
-      BaseBVRepr{}     -> bvIte     sym c x y
-      BaseIntegerRepr  -> intIte    sym c x y
-      BaseRealRepr     -> realIte   sym c x y
-      BaseFloatRepr{}  -> floatIte  sym c x y
-      BaseStringRepr{} -> stringIte sym c x y
-      BaseComplexRepr  -> cplxIte   sym c x y
-      BaseStructRepr{} -> structIte sym c x y
-      BaseArrayRepr{}  -> arrayIte  sym c x y
+      BaseBoolRepr      -> itePred    sym c x y
+      BaseBVRepr{}      -> bvIte      sym c x y
+      BaseIntegerRepr   -> intIte     sym c x y
+      BaseRealRepr      -> realIte    sym c x y
+      BaseFloatRepr{}   -> floatIte   sym c x y
+      BaseStringRepr{}  -> stringIte  sym c x y
+      BaseComplexRepr   -> cplxIte    sym c x y
+      BaseStructRepr{}  -> structIte  sym c x y
+      BaseArrayRepr{}   -> arrayIte   sym c x y
+      BaseVariantRepr{} -> variantIte sym c x y
 
   -- | Given a symbolic expression, annotate it with a unique identifier
   --   that can be used to maintain a connection with the given term.
@@ -1412,6 +1422,85 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
             -> SymStruct sym flds
             -> SymStruct sym flds
             -> IO (SymStruct sym flds)
+
+  ----------------------------------------------------------------------
+  -- Variant operations
+
+  -- | Create a variant from the variant index and an assignment of
+  -- expressions. (TODO RGS: What about the type assignment? Mention it.)
+  mkVariant :: sym
+            -> Ctx.Assignment (Ctx.Assignment BaseTypeRepr) (vs Ctx.::> v)
+            -> Ctx.Index (vs Ctx.::> v) flds
+            -> Ctx.Assignment (SymExpr sym) flds
+            -> IO (SymVariant sym (vs Ctx.::> v))
+
+  -- | Get the value of a specific field in a variant. The result is undefined
+  -- if the field does not belong to a variant that is active. (TODO RGS:
+  -- is `active` the right term?)
+  variantField :: sym
+               -> SymVariant sym vs
+               -> Ctx.Index vs v
+               -> Ctx.Index v fld
+               -> IO (SymExpr sym fld)
+
+  -- | TODO RGS: Docs
+  variantTest :: sym
+              -> SymVariant sym vs
+              -> Ctx.Index vs v
+              -> IO (Pred sym)
+
+  {-
+  -- | TODO RGS: Docs
+  variantMatch :: sym
+               -> SymVariant sym vs
+               -> BaseTypeRepr tp
+               -> (forall v
+                    .  Ctx.Index vs v
+                    -> Ctx.Assignment (SymExpr sym) v
+                    -> IO (SymExpr sym tp))
+               -> IO (SymExpr sym tp)
+  -}
+
+  -- | Check if two variants are equal.
+  variantEq :: forall vs
+            .  sym
+            -> SymVariant sym vs
+            -> SymVariant sym vs
+            -> IO (Pred sym)
+  variantEq sym x y =
+    case exprType x of
+      BaseVariantRepr vs -> do
+        let f :: IO (Pred sym)
+              -> Ctx.Index vs v
+              -> IO (Pred sym)
+            f mp vIdx = do
+              xTest <- variantTest sym x vIdx
+              yTest <- variantTest sym y vIdx
+              xyTest <- andPred sym xTest yTest
+              fldsEq <- Ctx.forIndex (Ctx.size (vs Ctx.! vIdx)) (g vIdx) mp
+              impliesPred sym xyTest fldsEq
+
+            g :: Ctx.Index vs v
+              -> IO (Pred sym)
+              -> Ctx.Index v flds
+              -> IO (Pred sym)
+            g vIdx mp fldIdx = do
+              xFld <- variantField sym x vIdx fldIdx
+              yFld <- variantField sym x vIdx fldIdx
+              fldEq <- isEq sym xFld yFld
+              case asConstantPred fldEq of
+                Just True -> mp
+                Just False -> return (falsePred sym)
+                _ -> andPred sym fldEq =<< mp
+
+        Ctx.forIndex (Ctx.size vs) f (return (truePred sym))
+
+  -- | Take the if-then-else of two variants.
+  variantIte :: sym
+             -> Pred sym
+             -> SymVariant sym flds
+             -> SymVariant sym flds
+             -> IO (SymVariant sym flds)
 
   -----------------------------------------------------------------------
   -- Array operations
@@ -2990,6 +3079,9 @@ baseIsConcrete x =
       case asConstantArray x of
         Just x' -> baseIsConcrete x'
         Nothing -> False
+    BaseVariantRepr _ -> case asVariant x of
+        Just (Pair _idx x') -> allFC baseIsConcrete x'
+        Nothing -> False
 
 -- | Return some default value for each base type.
 --   For numeric types, this is 0; for booleans, false;
@@ -3017,6 +3109,15 @@ baseDefaultValue sym bt =
     BaseArrayRepr idx bt' -> do
       elt <- baseDefaultValue sym bt'
       constantArray sym idx elt
+    -- TODO RGS: This deserves some commentary
+    BaseVariantRepr vs -> do
+      let f :: BaseTypeRepr tp -> IO (SymExpr sym tp)
+          f v = baseDefaultValue sym v
+
+          idx = Ctx.lastIndex $ Ctx.size vs
+          flds = vs Ctx.! idx
+      flds' <- traverseFC f flds
+      mkVariant sym vs (Ctx.lastIndex (Ctx.size vs)) flds'
 
 -- | Return predicate equivalent to a Boolean.
 backendPred :: IsExprBuilder sym => sym -> Bool -> Pred sym
@@ -3190,6 +3291,10 @@ asConcrete x =
       -- TODO: what about cases where there are updates to the array?
       -- Passing Map.empty is probably wrong.
       pure (ConcreteArray idx c_def Map.empty)
+    BaseVariantRepr variants ->
+      do Pair idx vals <- asVariant x
+         vals' <- traverseFC asConcrete vals
+         pure $ ConcreteVariant variants idx vals'
 
 -- | Create a literal symbolic value from a concrete value.
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
@@ -3211,6 +3316,8 @@ concreteToSym sym = \case
            i' <- traverseFC (concreteToSym sym) i
            x' <- concreteToSym sym x
            arrayUpdate sym arr' i' x'
+   ConcreteVariant variantFldTys idx variantFlds ->
+     mkVariant sym variantFldTys idx =<< traverseFC (concreteToSym sym) variantFlds
 
 ------------------------------------------------------------------------
 -- muxNatRange

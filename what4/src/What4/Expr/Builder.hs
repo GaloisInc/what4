@@ -2751,6 +2751,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | otherwise = sbMakeExpr sym $ BVCountLeadingZeros w x
    where w = bvWidth x
 
+  ----------------------------------------------------------------------
+  -- Struct operations
+
   mkStruct sym args = do
     sbMakeExpr sym $ StructCtor (fmapFC exprType args) args
 
@@ -2762,6 +2765,46 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           sbMakeExpr sym $ StructField s i (flds Ctx.! i)
 
   structIte sym p x y
+    | Just True  <- asConstantPred p = return x
+    | Just False <- asConstantPred p = return y
+    | x == y                         = return x
+    | otherwise                      = mkIte sym p x y
+
+  ----------------------------------------------------------------------
+  -- Variant operations
+
+  mkVariant sym vs idx flds =
+    sbMakeExpr sym $ VariantCtor vs idx flds
+
+  variantField sym v vIdx fldIdx
+    | Just (VariantCtor _ vIdx' flds) <- asApp v
+    , Just Refl <- testEquality vIdx vIdx'
+    = return $! flds Ctx.! fldIdx
+    | otherwise = do
+      case exprType v of
+        BaseVariantRepr vs ->
+          sbMakeExpr sym $
+            VariantField v vIdx fldIdx ((vs Ctx.! vIdx) Ctx.! fldIdx)
+
+  variantTest sym v idx
+    | Just (VariantCtor _ idx' _) <- asApp v
+    = case testEquality idx idx' of
+        Just Refl -> return $! truePred sym
+        Nothing   -> return $! falsePred sym
+    | otherwise
+    = sbMakeExpr sym $ VariantTest v idx
+
+  {-
+  variantMatch sym v f
+    | Just (VariantCtor _ idx flds) <- asApp v
+    = f idx flds
+    {-
+    | otherwise
+    = -- TODO RGS
+    -}
+  -}
+
+  variantIte sym p x y
     | Just True  <- asConstantPred p = return x
     | Just False <- asConstantPred p = return y
     | x == y                         = return x

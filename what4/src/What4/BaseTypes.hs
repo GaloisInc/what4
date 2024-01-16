@@ -43,6 +43,7 @@ module What4.BaseTypes
   , BaseComplexType
   , BaseStructType
   , BaseArrayType
+  , BaseVariantType
     -- * StringInfo data kind
   , StringInfo
     -- ** Constructors for StringInfo
@@ -138,6 +139,8 @@ data BaseType
      -- array in a programming language, but the solver does provide
      -- operations for doing pointwise updates.
    | BaseArrayType  (Ctx.Ctx BaseType) BaseType
+     -- | TODO RGS: Docs
+   | BaseVariantType (Ctx.Ctx (Ctx.Ctx BaseType))
 
 type BaseBoolType    = 'BaseBoolType    -- ^ @:: 'BaseType'@.
 type BaseIntegerType = 'BaseIntegerType -- ^ @:: 'BaseType'@.
@@ -148,6 +151,7 @@ type BaseStringType  = 'BaseStringType  -- ^ @:: 'BaseType'@.
 type BaseComplexType = 'BaseComplexType -- ^ @:: 'BaseType'@.
 type BaseStructType  = 'BaseStructType  -- ^ @:: 'Ctx.Ctx' 'BaseType' -> 'BaseType'@.
 type BaseArrayType   = 'BaseArrayType   -- ^ @:: 'Ctx.Ctx' 'BaseType' -> 'BaseType' -> 'BaseType'@.
+type BaseVariantType = 'BaseVariantType -- ^ @:: 'Ctx.Ctx' ('Ctx.Ctx' 'BaseType') -> 'BaseType'@
 
 -- | This data kind describes the types of floating-point formats.
 -- This consist of the standard IEEE 754-2008 binary floating point formats.
@@ -189,6 +193,10 @@ data BaseTypeRepr (bt::BaseType) :: Type where
    BaseArrayRepr :: !(Ctx.Assignment BaseTypeRepr (idx Ctx.::> tp))
                  -> !(BaseTypeRepr xs)
                  -> BaseTypeRepr (BaseArrayType (idx Ctx.::> tp) xs)
+
+   -- | TODO RGS: Docs
+   BaseVariantRepr :: !(Ctx.Assignment (Ctx.Assignment BaseTypeRepr) (vs Ctx.::> v))
+                   -> BaseTypeRepr (BaseVariantType (vs Ctx.::> v))
 
 data FloatPrecisionRepr (fpp :: FloatPrecision) where
   FloatingPointPrecisionRepr
@@ -252,6 +260,12 @@ instance ( KnownRepr (Ctx.Assignment BaseTypeRepr) idx
          )
       => KnownRepr BaseTypeRepr (BaseArrayType (idx Ctx.::> tp) t) where
   knownRepr = BaseArrayRepr knownRepr knownRepr
+
+instance ( KnownRepr (Ctx.Assignment (Ctx.Assignment BaseTypeRepr)) vs
+         , KnownRepr (Ctx.Assignment BaseTypeRepr) v
+         )
+      => KnownRepr BaseTypeRepr (BaseVariantType (vs Ctx.::> v)) where
+  knownRepr = BaseVariantRepr knownRepr
 
 instance (2 <= eb, 2 <= es, KnownNat eb, KnownNat es) => KnownRepr FloatPrecisionRepr (FloatingPointPrecision eb es) where
   knownRepr = FloatingPointPrecisionRepr knownNat knownNat

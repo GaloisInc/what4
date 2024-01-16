@@ -161,15 +161,16 @@ addFeatures f = VR $ problemFeatures %= (.|. f)
 addFeaturesForVarType :: BaseTypeRepr tp -> VarRecorder s t ()
 addFeaturesForVarType tp =
   case tp of
-    BaseBoolRepr     -> return ()
-    BaseBVRepr _     -> addFeatures useBitvectors
-    BaseIntegerRepr  -> addFeatures useIntegerArithmetic
-    BaseRealRepr     -> addFeatures useLinearArithmetic
-    BaseComplexRepr  -> addFeatures useLinearArithmetic
-    BaseStringRepr _ -> addFeatures useStrings
-    BaseArrayRepr{}  -> addFeatures useSymbolicArrays
-    BaseStructRepr{} -> addFeatures useStructs
-    BaseFloatRepr _  -> addFeatures useFloatingPoint
+    BaseBoolRepr      -> return ()
+    BaseBVRepr _      -> addFeatures useBitvectors
+    BaseIntegerRepr   -> addFeatures useIntegerArithmetic
+    BaseRealRepr      -> addFeatures useLinearArithmetic
+    BaseComplexRepr   -> addFeatures useLinearArithmetic
+    BaseStringRepr _  -> addFeatures useStrings
+    BaseArrayRepr{}   -> addFeatures useSymbolicArrays
+    BaseStructRepr{}  -> addFeatures useStructs
+    BaseFloatRepr _   -> addFeatures useFloatingPoint
+    BaseVariantRepr{} -> addFeatures useVariants
 
 
 -- | Information about bound variables outside this context.
@@ -407,6 +408,7 @@ addTheoryFeatures th =
     StructTheory          -> addFeatures useStructs
     StringTheory          -> addFeatures useStrings
     FloatingPointTheory   -> addFeatures useFloatingPoint
+    VariantTheory         -> addFeatures useVariants
     QuantifierTheory -> return ()
     FnTheory         -> return ()
 

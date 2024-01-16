@@ -36,6 +36,8 @@ data AppTheory
      -- ^ Theory attributed to structs (equivalent to records in CVC4/CVC5/Z3, tuples in Yices)
    | FnTheory
      -- ^ Theory attributed application functions.
+   | VariantTheory
+     -- ^ Theory attributed to variants (equivalent to datatypes in CVC4/CVC5/Z3)
    deriving (Eq, Ord)
 
 quantTheory :: NonceApp t (Expr t) tp -> AppTheory
@@ -60,6 +62,7 @@ typeTheory tp = case tp of
   BaseComplexRepr   -> LinearArithTheory
   BaseStructRepr _  -> StructTheory
   BaseArrayRepr _ _ -> ArrayTheory
+  BaseVariantRepr _ -> VariantTheory
 
 appTheory :: App (Expr t) tp -> AppTheory
 appTheory a0 =
@@ -223,3 +226,11 @@ appTheory a0 =
     -- A struct with its fields.
     StructCtor{}  -> StructTheory
     StructField{} -> StructTheory
+
+    ---------------------
+    -- Variant operations
+
+    VariantCtor{} -> VariantTheory
+    VariantField{} -> VariantTheory
+    VariantTest{} -> VariantTheory
+    -- VariantMatch{} -> VariantTheory

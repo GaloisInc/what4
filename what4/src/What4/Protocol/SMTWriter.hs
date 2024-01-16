@@ -210,6 +210,11 @@ data TypeMap (tp::BaseType) where
   StructTypeMap :: !(Ctx.Assignment TypeMap idx)
                 -> TypeMap (BaseStructType idx)
 
+  -- A variant encoded as an SMTLIB datatype.
+  --
+  -- None of the fields should be arrays encoded as functions.
+  VariantTypeMap :: !(Ctx.Assignment (Ctx.Assignment TypeMap) idx)
+                 -> TypeMap (BaseVariantType idx)
 
 instance ShowF TypeMap
 
@@ -225,6 +230,7 @@ instance Show (TypeMap a) where
   show (PrimArrayTypeMap ctx a) = "PrimArrayTypeMap " ++ showF ctx ++ " " ++ showF a
   show (FnArrayTypeMap ctx a)   = "FnArrayTypeMap " ++ showF ctx ++ " " ++ showF a
   show (StructTypeMap ctx)      = "StructTypeMap " ++ showF ctx
+  show (VariantTypeMap ctx)     = "VariantTypeMap " ++ showF ctx
 
 
 instance Eq (TypeMap tp) where
@@ -970,11 +976,33 @@ class (SupportTermOps (Term h)) => SMTWriter h where
   -- arguments in the struct.
   declareStructDatatype :: WriterConn t h -> Ctx.Assignment TypeMap args -> IO ()
 
+  -- | Declare a variant datatype (if is has not been already) given the number
+  -- of variants and field types.
+  declareVariantDatatype :: WriterConn t h
+                         -> Ctx.Assignment (Ctx.Assignment TypeMap) args
+                         -> IO ()
+
   -- | Build a struct term with the given types and fields
   structCtor :: Ctx.Assignment TypeMap args -> [Term h] -> Term h
 
   -- | Project a field from a struct with the given types
   structProj :: Ctx.Assignment TypeMap args -> Ctx.Index args tp -> Term h -> Term h
+
+  -- | Build a struct term with the given types and fields
+  variantCtor :: Ctx.Assignment (Ctx.Assignment TypeMap) vs
+              -> Ctx.Index vs v
+              -> [Term h]
+              -> Term h
+
+  -- | Project a field from a struct with the given types
+  variantProj :: Ctx.Assignment (Ctx.Assignment TypeMap) vs
+              -> Ctx.Index vs v
+              -> Ctx.Index v fld
+              -> Term h
+              -> Term h
+
+  -- | TODO RGS: Docs
+  variantTest :: Ctx.Index vs v -> Term h -> Term h
 
   -- | Produce a term representing a string literal
   stringTerm :: Text -> Term h
@@ -1172,6 +1200,9 @@ declareTypes conn = \case
   StructTypeMap flds ->
     do traverseFC_ (declareTypes conn) flds
        declareStructDatatype conn flds
+  VariantTypeMap vs ->
+    do traverseFC_ (traverseFC_ (declareTypes conn)) vs
+       declareVariantDatatype conn vs
 
 
 data DefineStyle
@@ -1300,6 +1331,8 @@ typeMapFirstClass conn tp0 = do
               <*> typeMapFirstClass conn eltTp
     BaseStructRepr flds ->
       StructTypeMap <$> traverseFC (typeMapFirstClass conn) flds
+    BaseVariantRepr vs ->
+      VariantTypeMap <$> traverseFC (traverseFC (typeMapFirstClass conn)) vs
 
 getBaseSMT_Type :: ExprBoundVar t tp -> SMTCollector t h (TypeMap tp)
 getBaseSMT_Type v = do
@@ -1440,6 +1473,26 @@ addPartialSideCond conn t (StructTypeMap ctx) (Just abvs) =
                  (ctx Ctx.! i)
                  (Just (unwrapAV (abvs Ctx.! i))))
         (return ())
+
+addPartialSideCond conn t (VariantTypeMap ctx) (Just abvs) =
+  error "TODO RGS"
+{-
+-- TODO RGS: Docs
+addPartialSideCond conn t (VariantTypeMap ctx) (Just abvs) =
+     Ctx.forIndex
+        (Ctx.size ctx)
+        (\start i ->
+            Ctx.forIndex
+              (Ctx.size (ctx Ctx.! i))
+              (\start' j ->
+                do start'
+                   addPartialSideCond conn
+                     (structProj @h ctx i t)
+                     (ctx Ctx.! i)
+                     (Just (unwrapAV (abvs Ctx.! i))))
+              start)
+        (return ())
+-}
 
 addPartialSideCond _ _t (PrimArrayTypeMap _idxTp _resTp) (Just _abv) =
   fail "SMTWriter.addPartialSideCond: bounds on array values not supported"
@@ -2918,6 +2971,32 @@ appSMTExpr ae = do
          let tm = structProj @h flds idx (asBase expr)
          freshBoundTerm tp tm
 
+    --------------------------------------------------------------------
+    -- Variants
+
+    VariantCtor vs idx flds -> do
+      -- Make sure a variant datatype with these fields has been declared.
+      exprs <- traverseFC mkExpr flds
+      vs_types <-
+        traverseFC (traverseFC (evalFirstClassTypeRepr conn (eltSource i))) vs
+
+      liftIO $ declareVariantDatatype conn vs_types
+      let tm = variantCtor @h vs_types idx (toListFC asBase exprs)
+      freshBoundTerm (VariantTypeMap vs_types) tm
+
+    VariantField v vIdx fldIdx _tp -> do
+      expr <- mkExpr v
+      case smtExprType expr of
+        VariantTypeMap flds -> do
+          let tp = (flds Ctx.! vIdx) Ctx.! fldIdx
+          let tm = variantProj @h flds vIdx fldIdx (asBase expr)
+          freshBoundTerm tp tm
+
+    VariantTest v idx -> do
+      expr <- mkExpr v
+      let tm = variantTest @h idx (asBase expr)
+      freshBoundTerm BoolTypeMap tm
+
 defineFn :: SMTWriter h
          => WriterConn t h
          -> Text
@@ -3157,6 +3236,8 @@ getSolverVal conn smtFns (StructTypeMap flds0) tm =
                 -> IO (GroundValueWrapper utp)
               f flds i tp = GVW <$> getSolverVal conn smtFns tp v
                 where v = structProj @h flds i tm
+getSolverVal conn smtFns (VariantTypeMap vs0) tm =
+  error "TODO RGS"
 
 -- | The function creates a function for evaluating elts to concrete values
 -- given a connection to an SMT solver along with some functions for evaluating

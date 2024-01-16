@@ -357,6 +357,12 @@ appVerilogExpr app =
     StructCtor _ _ -> doNotSupportError "structs"
     StructField _ _ _ -> doNotSupportError "structs"
 
+    -- Variants
+    VariantCtor _ _ _ -> doNotSupportError "variants"
+    VariantField _ _ _ _ -> doNotSupportError "variants"
+    VariantTest _ _ -> doNotSupportError "variants"
+    -- VariantMatch _ _ _ -> doNotSupportError "variants"
+
     -- Strings
     StringAppend _ _ -> doNotSupportError "strings"
     StringContains _ _ -> doNotSupportError "strings"

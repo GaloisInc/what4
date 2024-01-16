@@ -438,6 +438,18 @@ class Show a => SMTLib2Tweaks a where
                ]
      in SMT2.Cmd $ app "declare-datatype" [ tp, app "par" [ builder_list tp_names, builder_list [app cnstr flds]]]
 
+  {-
+  -- TODO RGS: Docs
+
+  -- | The sort of variants with the given field types.
+  --
+  -- By default, this uses SMTLIB2 datatypes and are not primitive to the language.
+  smtlib2VariantSort :: NonEmpty [SMT2.Sort] -> SMT2.Sort
+  smtlib2VariantSort flds = SMT2.Sort $ "(Struct" <> Builder.decimal n <> foldMap f flds <> ")"
+       where f :: SMT2.Sort -> Builder
+             f (SMT2.Sort s) = " " <> s
+             n = length flds
+  -}
 
 
 asSMT2Type :: forall a tp . SMTLib2Tweaks a => TypeMap tp -> SMT2.Sort

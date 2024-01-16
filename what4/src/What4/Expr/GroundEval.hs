@@ -46,9 +46,10 @@ import qualified Data.BitVector.Sized as BV
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Foldable
 import qualified Data.Map.Strict as Map
-import           Data.Maybe ( fromMaybe )
+import           Data.Maybe ( fromMaybe, isJust )
 import           Data.Parameterized.Ctx
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Pair (Pair(..))
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
@@ -82,6 +83,7 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
+  GroundValue (BaseVariantType ctx) = Pair (Ctx.Index ctx) (Ctx.Assignment GroundValueWrapper)
 
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
@@ -165,6 +167,10 @@ defaultValueForType tp =
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
     BaseFloatRepr _fpp -> BF.bfPosZero
+    -- TODO RGS: This deserves some commentary
+    BaseVariantRepr ctx ->
+      let idx = Ctx.lastIndex (Ctx.size ctx) in
+      Pair idx (fmapFC (GVW . defaultValueForType) (ctx Ctx.! idx))
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -264,6 +270,17 @@ groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
         coerceMAnd (Ctx.traverseWithIndex
           (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
       BaseArrayRepr{} -> MAnd Nothing
+      BaseVariantRepr vs
+        |  Pair xIdx xFlds <- x
+        ,  Pair yIdx yFlds <- y
+        -> case testEquality xIdx yIdx of
+             Just Refl ->
+               coerceMAnd $
+                 Ctx.traverseWithIndex
+                   (\i tp -> f tp (unGVW (xFlds Ctx.! i)) (unGVW (yFlds Ctx.! i)))
+                   (vs Ctx.! xIdx)
+             Nothing ->
+               MAnd Nothing
 
 -- | Helper function for evaluating @App@ expressions.
 --
@@ -615,3 +632,20 @@ evalGroundApp f a0 = do
     StructField s i _ -> do
       sv <- f s
       return $! unGVW (sv Ctx.! i)
+
+    ------------------------------------------------------------------------
+    -- Variants
+
+    VariantCtor _ idx vs -> do
+      vs' <- traverseFC (\v -> GVW <$> f v) vs
+      return $! Pair idx vs'
+    VariantField v vIdx fldIdx _ -> do
+      Pair vIdx' flds <- f v
+      case testEquality vIdx vIdx' of
+        Just Refl ->
+          return $! unGVW (flds Ctx.! fldIdx)
+        Nothing ->
+          mzero
+    VariantTest v idx -> do
+      Pair idx' _ <- f v
+      return $! isJust (testEquality idx idx')

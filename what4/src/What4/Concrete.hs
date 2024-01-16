@@ -83,6 +83,11 @@ data ConcreteVal tp where
     ConcreteVal b {- A default value -} ->
     Map (Ctx.Assignment ConcreteVal (idx ::> i)) (ConcreteVal b) {- A collection of point-updates -} ->
     ConcreteVal (BaseArrayType (idx ::> i) b)
+  ConcreteVariant ::
+    Ctx.Assignment (Ctx.Assignment BaseTypeRepr) (vs Ctx.::> v) ->
+    Ctx.Index (vs Ctx.::> v) flds ->
+    Ctx.Assignment ConcreteVal flds ->
+    ConcreteVal (BaseVariantType (vs Ctx.::> v))
 
 deriving instance ShowF ConcreteVal
 deriving instance Show (ConcreteVal tp)
@@ -117,6 +122,7 @@ concreteType = \case
   ConcreteBV w _            -> BaseBVRepr w
   ConcreteStruct xs         -> BaseStructRepr (fmapFC concreteType xs)
   ConcreteArray idxTy def _ -> BaseArrayRepr idxTy (concreteType def)
+  ConcreteVariant btys _ _  -> BaseVariantRepr btys
 
 $(return [])
 
@@ -124,6 +130,7 @@ instance TestEquality ConcreteVal where
   testEquality = $(structuralTypeEquality [t|ConcreteVal|]
      [ (ConType [t|NatRepr|] `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType, [|testEqualityFC testEquality|])
+     , (ConType [t|Ctx.Index|] `TypeApp` AnyType `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|ConcreteVal|] `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|StringLiteral|] `TypeApp` AnyType, [|testEquality|])
      , (ConType [t|FloatPrecisionRepr|] `TypeApp` AnyType, [|testEquality|])
@@ -137,6 +144,7 @@ instance OrdF ConcreteVal where
   compareF = $(structuralTypeOrd [t|ConcreteVal|]
      [ (ConType [t|NatRepr|] `TypeApp` AnyType, [|compareF|])
      , (ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType, [|compareFC compareF|])
+     , (ConType [t|Ctx.Index|] `TypeApp` AnyType `TypeApp` AnyType, [|compareF|])
      , (ConType [t|ConcreteVal|] `TypeApp` AnyType, [|compareF|])
      , (ConType [t|StringLiteral|] `TypeApp` AnyType, [|compareF|])
      , (ConType [t|FloatPrecisionRepr|] `TypeApp` AnyType, [|compareF|])
@@ -173,3 +181,4 @@ ppConcrete = \case
                          PP.<> PP.comma
                          PP.<> doc
                          PP.<> PP.pretty ")"
+  ConcreteVariant _ _ _ -> PP.pretty "TODO RGS"

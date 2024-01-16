@@ -58,6 +58,7 @@ import           Data.Parameterized.Nonce
 import           Data.Parameterized.Some
 import           Data.Parameterized.TH.GADT
 import           Data.Parameterized.TraversableFC
+import           Data.Parameterized.TraversableFC.WithIndex
 import           Data.Ratio (numerator, denominator)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -642,6 +643,33 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
               -> !(BaseTypeRepr tp)
               -> App e tp
 
+  ------------------------------------------------------------------------
+  -- Variants
+
+  -- A variant with its fields.
+  VariantCtor :: !(Ctx.Assignment (Ctx.Assignment BaseTypeRepr) (vs Ctx.::> v))
+              -> !(Ctx.Index (vs Ctx.::> v) flds)
+              -> !(Ctx.Assignment e flds)
+              -> App e (BaseVariantType (vs Ctx.::> v))
+
+  VariantField :: !(e (BaseVariantType vs))
+               -> !(Ctx.Index vs v)
+               -> !(Ctx.Index v fld)
+               -> !(BaseTypeRepr fld)
+               -> App e fld
+
+  VariantTest :: !(e (BaseVariantType vs))
+              -> !(Ctx.Index vs v)
+              -> App e BaseBoolType
+
+  {-
+  -- TODO RGS
+  VariantMatch :: !(e (BaseVariantType vs))
+               -> !(BaseTypeRepr tp)
+               -> !(forall v. Ctx.Index vs v -> Ctx.Assignment e v -> App e tp)
+               -> App e tp
+  -}
+
 -- | The Kind of a bound variable.
 data VarKind
   = QuantifierVarKind
@@ -794,6 +822,9 @@ traverseApp =
       , [|UnaryBV.instantiate|]
       )
     , ( ConType [t|Ctx.Assignment BaseTypeRepr|] `TypeApp` AnyType
+      , [|(\_ -> pure) |]
+      )
+    , ( ConType [t|Ctx.Assignment (Ctx.Assignment BaseTypeRepr)|] `TypeApp` AnyType
       , [|(\_ -> pure) |]
       )
     , ( ConType [t|WeightedSum|] `TypeApp` AnyType `TypeApp` AnyType
@@ -1897,6 +1928,9 @@ appType a =
     StructCtor flds _     -> BaseStructRepr flds
     StructField _ _ tp    -> tp
 
+    VariantCtor vs _ _    -> BaseVariantRepr vs
+    VariantField _ _ _ tp -> tp
+    VariantTest{}         -> knownRepr
 
 ------------------------------------------------------------------------
 -- abstractEval
@@ -2074,6 +2108,23 @@ abstractEval f a0 = do
     StructCtor _ flds -> fmapFC (\v -> AbstractValueWrapper (f v)) flds
     StructField s idx _ -> unwrapAV (f s Ctx.! idx)
 
+    VariantCtor variantFldTyss idx flds ->
+      imapFC
+        (\idx' variantFldTys ->
+          case testEquality idx idx' of
+            Just Refl ->
+              fmapFC
+                (\fld ->
+                  AbstractValueWrapper (f fld))
+                flds
+            _ ->
+              Ctx.generate
+                (Ctx.size variantFldTys)
+                (\idx'' ->
+                  AbstractValueWrapper (avTop (variantFldTys Ctx.! idx''))))
+        variantFldTyss
+    VariantField v vIdx fldIdx _ -> unwrapAV ((f v Ctx.! vIdx) Ctx.! fldIdx)
+    VariantTest{} -> Nothing
 
 reduceApp :: IsExprBuilder sym
           => sym
@@ -2237,6 +2288,11 @@ reduceApp sym unary a0 = do
     StructCtor _ args -> mkStruct sym args
     StructField s i _ -> structField sym s i
 
+    VariantCtor vs idx flds -> mkVariant sym vs idx flds
+    VariantField vs vIdx fldIdx _ -> variantField sym vs vIdx fldIdx
+    VariantTest v idx -> variantTest sym v idx
+    -- VariantMatch v f -> variantMatch sym v f
+
 ------------------------------------------------------------------------
 -- App operations
 
@@ -2270,6 +2326,7 @@ ppVarTypeCode tp =
     BaseComplexRepr -> "c"
     BaseArrayRepr _ _ -> "a"
     BaseStructRepr _ -> "struct"
+    BaseVariantRepr _ -> "variant"
 
 -- | Either a argument or text or text
 data PrettyArg (e :: BaseType -> Type) where
@@ -2556,3 +2613,11 @@ ppApp' a0 = do
     StructCtor _ flds -> prettyApp "struct" (toListFC exprPrettyArg flds)
     StructField s idx _ ->
       prettyApp "field" [exprPrettyArg s, showPrettyArg idx]
+
+    ------------------------------------------------------------------------
+    -- SymVariant
+
+    VariantCtor _ _ _ -> error "TODO RGS"
+    VariantField _ _ _ _ -> error "TODO RGS"
+    VariantTest _ _ -> error "TODO RGS"
+    -- VariantMatch _ _ -> error "TODO RGS"

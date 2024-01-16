@@ -46,6 +46,7 @@ module What4.ProblemFeatures
   , useUninterpFunctions
   , useDefinedFunctions
   , useProduceAbducts
+  , useVariants
   , hasProblemFeature
   ) where
 
@@ -131,10 +132,16 @@ useUninterpFunctions = ProblemFeatures 0x2000
 useDefinedFunctions :: ProblemFeatures
 useDefinedFunctions = ProblemFeatures 0x4000
 
--- | Indicates if the solver is able and configured to 
+-- | Indicates if the solver is able and configured to
 --   produce abducts.
 useProduceAbducts :: ProblemFeatures
 useProduceAbducts = ProblemFeatures 0x8000
+
+-- | Indicates whether the problem uses variants.
+--
+-- Variants are modeled using datatypes in CVC4/CVC5/Z3.
+useVariants :: ProblemFeatures
+useVariants = ProblemFeatures 0x10000
 
 -- | Tests if one set of problem features subsumes another.
 --   In particular, @hasProblemFeature x y@ is true iff

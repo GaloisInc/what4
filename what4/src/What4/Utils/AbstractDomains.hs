@@ -104,7 +104,9 @@ import           Control.Exception (assert)
 import           Data.Kind
 import           Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
+import           Data.Parameterized.Pair
 import           Data.Parameterized.TraversableFC
+import           Data.Parameterized.TraversableFC.WithIndex
 import           Data.Ratio (denominator)
 
 import           What4.BaseTypes
@@ -660,6 +662,7 @@ type family AbstractValue (tp::BaseType) :: Type where
   AbstractValue BaseComplexType = Complex RealAbstractValue
   AbstractValue (BaseArrayType idx b) = AbstractValue b
   AbstractValue (BaseStructType ctx) = Ctx.Assignment AbstractValueWrapper ctx
+  AbstractValue (BaseVariantType ctx) = Ctx.Assignment (Ctx.Assignment AbstractValueWrapper) ctx
 
 
 -- | A utility class for values that contain abstract values
@@ -679,6 +682,7 @@ type family ConcreteValue (tp::BaseType) :: Type where
   ConcreteValue BaseComplexType = Complex Rational
   ConcreteValue (BaseArrayType idx b) = ()
   ConcreteValue (BaseStructType ctx) = Ctx.Assignment ConcreteValueWrapper ctx
+  ConcreteValue (BaseVariantType ctx) = Pair (Index ctx) (Assignment ConcreteValueWrapper)
 
 newtype ConcreteValueWrapper tp
       = ConcreteValueWrapper { unwrapCV :: ConcreteValue tp }
@@ -696,6 +700,7 @@ avTop tp =
     BaseFloatRepr{} -> ()
     BaseArrayRepr _a b -> avTop b
     BaseStructRepr flds -> fmapFC (\etp -> AbstractValueWrapper (avTop etp)) flds
+    BaseVariantRepr vs -> fmapFC (fmapFC (\etp -> AbstractValueWrapper (avTop etp))) vs
 
 -- | Create an abstract value that contains the given concrete value.
 avSingle :: BaseTypeRepr tp -> ConcreteValue tp -> AbstractValue tp
@@ -714,6 +719,23 @@ avSingle tp =
         (\ftp v -> AbstractValueWrapper (avSingle ftp (unwrapCV v)))
         flds
         vals
+    BaseVariantRepr variantFldTyss -> \(Pair idx flds) ->
+      imapFC
+        (\idx' variantFldTys ->
+          case testEquality idx idx' of
+            Just Refl ->
+              imapFC
+                (\idx'' fld ->
+                  AbstractValueWrapper
+                    (avSingle
+                      (variantFldTys Ctx.! idx'')
+                      (unwrapCV fld)))
+                flds
+            _ ->
+              Ctx.generate
+                (Ctx.size variantFldTys)
+                (\idx'' -> AbstractValueWrapper (avTop (variantFldTys Ctx.! idx''))))
+        variantFldTyss
 
 ------------------------------------------------------------------------
 -- Abstractable
@@ -814,6 +836,37 @@ instance Abstractable (BaseStructType ctx) where
                   u  = x Ctx.! i
                   v  = y Ctx.! i
 
+instance Abstractable (BaseVariantType ctx) where
+  avJoin (BaseVariantRepr vs) x y = ctxZipWith3 (ctxZipWith3 avJoin') vs x y
+  avOverlap (BaseVariantRepr vFldss) xss yss = Ctx.forIndex (Ctx.size vFldss) f False
+    where f :: forall tp. Bool -> Ctx.Index ctx tp -> Bool
+          f b1 i = Ctx.forIndex (Ctx.size vFlds) (g vFlds xs ys) b1
+            where vFlds = vFldss Ctx.! i
+                  xs    = xss Ctx.! i
+                  ys    = yss Ctx.! i
+
+                  g ::
+                    forall ctx' tp'.
+                    Assignment BaseTypeRepr ctx' ->
+                    Assignment AbstractValueWrapper ctx' ->
+                    Assignment AbstractValueWrapper ctx' ->
+                    Bool -> Ctx.Index ctx' tp' -> Bool
+                  g vFlds' xs' ys' b2 j =
+                      withAbstractable tp (avOverlap tp (unwrapAV x) (unwrapAV y)) && b2
+                    where tp = vFlds' Ctx.! j
+                          x  = xs' Ctx.! j
+                          y  = ys' Ctx.! j
+
+  avCheckEq = error "TODO RGS"
+  {-
+  avCheckEq (BaseVariantRepr vs) x y = Ctx.forIndex (Ctx.size vs) f (Just True)
+    where f :: Maybe Bool -> Ctx.Index ctx tp -> Maybe Bool
+          f b i = combineEqCheck b (withAbstractable tp (avCheckEq tp (unwrapAV u) (unwrapAV v)))
+            where tp = flds Ctx.! i
+                  u  = x Ctx.! i
+                  v  = y Ctx.! i
+  -}
+
 withAbstractable
    :: BaseTypeRepr bt
    -> (Abstractable bt => a)
@@ -829,6 +882,7 @@ withAbstractable bt k =
     BaseArrayRepr _a _b -> k
     BaseStructRepr _flds -> k
     BaseFloatRepr _fpp -> k
+    BaseVariantRepr _vs -> k
 
 -- | Returns true if the concrete value is a member of the set represented
 -- by the abstract value.
