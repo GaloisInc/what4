@@ -27,7 +27,9 @@ getSolverVersion (SolverName solver) =
       if r == ExitSuccess
       then let ol = lines o in
              return $ Right $ SolverVersion
-             $ if null ol then (solver <> " v??") else head ol
+             $ case ol of
+                 [] -> solver <> " v??"
+                 olh:_ -> olh
       else return $ Left $ solver <> " version error: " <> show r <> " /;/ " <> e
     Left (err :: SomeException) -> return $ Left $ solver <> " invocation error: " <> show err
 

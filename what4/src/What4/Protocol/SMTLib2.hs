@@ -112,6 +112,7 @@ import           Data.Foldable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.IORef
+import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid
@@ -152,6 +153,7 @@ import qualified What4.Config as CFG
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import qualified What4.Interface as I
+import           What4.Panic
 import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import           What4.Protocol.ReadDecimal
@@ -1194,8 +1196,24 @@ parseExpr sym sexp = case sexp of
     Just op
       | Just assoc <- opAssoc op
       , length operands > 2 -> case assoc of
-        LeftAssoc -> parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) (head operands) (tail operands)
-        RightAssoc -> parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) (last operands) (init operands)
+        LeftAssoc ->
+          case List.uncons operands of
+            Just (operandHead, operandTail) ->
+              parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) operandHead operandTail
+            Nothing ->
+              panic "parseExpr" [ "Left-associative operator"
+                                , Text.unpack operator
+                                , "with empty list of operands"
+                                ]
+        RightAssoc ->
+          case unsnoc operands of
+            Just (operandInit, operandLast) ->
+              parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) operandLast operandInit
+            Nothing ->
+              panic "parseExpr" [ "Right-associative operator"
+                                , Text.unpack operator
+                                , "with empty list of operands"
+                                ]
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
       exprAssignment arg_types args >>= \case
@@ -1236,6 +1254,27 @@ parseExpr sym sexp = case sexp of
                                        (show n)
     _ -> throwError ""
   _ -> throwError ""
+
+-- | \(\mathcal{O}(n)\). Decompose a list into 'init' and 'last'.
+--
+-- * If the list is empty, returns 'Nothing'.
+-- * If the list is non-empty, returns @'Just' (xs, x)@,
+-- where @xs@ is the 'init'ial part of the list and @x@ is its 'last' element.
+--
+--
+-- 'unsnoc' is dual to 'List.uncons': for a finite list @xs@
+--
+-- > unsnoc xs = (\(hd, tl) -> (reverse tl, hd)) <$> uncons (reverse xs)
+--
+-- This is the same implementation that was introduced to "Data.List" in
+-- @base-4.19.0.0@, but backported to support older versions of @base@.
+unsnoc :: [a] -> Maybe ([a], a)
+-- The lazy pattern ~(a, b) is important to be productive on infinite lists
+-- and not to be prone to stack overflows.
+-- Expressing the recursion via 'foldr' provides for list fusion.
+unsnoc = foldr (\x -> Just . maybe ([], x) (\(~(a, b)) -> (x : a, b))) Nothing
+{-# INLINABLE unsnoc #-}
+
 -- | Verify a list of arguments has a single argument and
 -- return it, else raise an error.
 readOneArg ::
@@ -1360,8 +1399,10 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
           AckUnsat   -> Just $ Unsat ()
           AckUnknown -> Just Unknown
           _ -> Nothing
-    in getLimitedSolverResponse "sat result" satRsp s
-       (head $ reverse $ checkCommands p)
+        cmd = case reverse $ checkCommands p of
+                cmd':_ -> cmd'
+                []     -> panic "smtSatResult" ["Empty list of checkCommands"]
+    in getLimitedSolverResponse "sat result" satRsp s cmd
 
   smtUnsatAssumptionsResult p s =
     let unsatAssumpRsp = \case
