@@ -2560,6 +2560,14 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.uext u w
 
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      Just LeqProof <- return $ isPosNat w
+      a' <- bvLit sym w $ BV.zext w a_bv
+      b' <- bvLit sym w $ BV.zext w b_bv
+      bvIte sym c a' b'
+
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym $ BVZext w x
@@ -2583,6 +2591,14 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.sext u w
 
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      Just LeqProof <- return $ isPosNat w
+      a' <- bvLit sym w $ BV.sext (bvWidth x) w a_bv
+      b' <- bvLit sym w $ BV.sext (bvWidth x) w b_bv
+      bvIte sym c a' b'
+
     | otherwise = do
       Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
       sbMakeExpr sym (BVSext w x)
@@ -2595,6 +2611,22 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvAndBits sym x y
     | x == y = return x -- Special case: idempotency of and
+
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just y_bv <- asBV y = do
+      a' <- bvLit sym (bvWidth x) $ BV.and a_bv y_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and b_bv y_bv
+      bvIte sym c a' b'
+
+    | Just (BaseIte _ _ c a b) <- asApp y
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b
+    , Just x_bv <- asBV x = do
+      a' <- bvLit sym (bvWidth x) $ BV.and x_bv a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.and x_bv b_bv
+      bvIte sym c a' b'
 
     | Just (BVOrBits _ bs) <- asApp x
     , bvOrContains y bs
@@ -2613,6 +2645,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   bvNotBits sym x
     | Just xv <- asBV x
     = bvLit sym (bvWidth x) $ xv `BV.xor` (BV.maxUnsigned (bvWidth x))
+
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      a' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) b_bv
+      bvIte sym c a' b'
 
     | otherwise
     = let sr = (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x))
@@ -2693,6 +2732,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvNeg sym x
     | Just xv <- asBV x = bvLit sym (bvWidth x) (BV.negate (bvWidth x) xv)
+    | Just (BaseIte _ _ c a b) <- asApp x
+    , Just a_bv <- asBV a
+    , Just b_bv <- asBV b = do
+      a' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) a_bv
+      b' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) b_bv
+      bvIte sym c a' b'
     | otherwise =
         do ut <- CFG.getOpt (sbUnaryThreshold sym)
            let ?unaryThreshold = fromInteger ut
@@ -2993,26 +3038,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      else
       sbMakeExpr sym $ ArrayMap idx_tps baseRepr new_map def_map
 
-  arrayIte sym p x y
-       -- Extract all concrete updates out.
-     | ArrayMapView mx x' <- viewArrayMap x
-     , ArrayMapView my y' <- viewArrayMap y
-     , not (AUM.null mx) || not (AUM.null my) = do
-       case exprType x of
-         BaseArrayRepr idxRepr bRepr -> do
-           let both_fn _ u v = baseTypeIte sym p u v
-               left_fn idx u = do
-                 v <- sbConcreteLookup sym y' (Just idx) =<< symbolicIndices sym idx
-                 both_fn idx u v
-               right_fn idx v = do
-                 u <- sbConcreteLookup sym x' (Just idx) =<< symbolicIndices sym idx
-                 both_fn idx u v
-           mz <- AUM.mergeM bRepr both_fn left_fn right_fn mx my
-           z' <- arrayIte sym p x' y'
-
-           sbMakeExpr sym $ ArrayMap idxRepr bRepr mz z'
-
-     | otherwise = mkIte sym p x y
+  arrayIte sym p x y = mkIte sym p x y
 
   arrayEq sym x y
     | x == y =
