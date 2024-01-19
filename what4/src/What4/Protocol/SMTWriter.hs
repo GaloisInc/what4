@@ -829,6 +829,8 @@ cacheValueFn
 cacheValueFn conn n lifetime value = cacheValue conn lifetime $ \entry ->
   stToIO $ PH.insert (symFnCache entry) n value
 
+-- | Construct a function/name bimap. Each function is associated with its
+-- cached name if there is one, otherwise with its original name.
 cacheLookupFnNameBimap :: WriterConn t h -> [SomeExprSymFn t] -> IO (Bimap (SomeExprSymFn t) Text)
 cacheLookupFnNameBimap conn fns = Bimap.fromList <$> mapM
   (\some_fn@(SomeExprSymFn fn) -> do

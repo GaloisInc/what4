@@ -253,11 +253,21 @@ instance OnlineSolver (SMT2.Writer Z3) where
 --
 -- CHCs are represented as pure SMT-LIB2 implications. For more information, see
 -- the [Z3 guide](https://microsoft.github.io/z3guide/docs/fixedpoints/intro/).
+--
+-- There are two ways to solve the CHCs: either by directly solving the problem
+-- as is, or by transforming the problem into a set of linear integer arithmetic
+-- (LIA) CHCs and solving that instead. The latter is done by replacing all
+-- bitvector (BV) operations with LIA operations, and replacing all BV variables
+-- with LIA variables. This transformation is not sound, but in practice it is a
+-- useful heuristic. Then the result is transformed back into a BV result, and
+-- checked for satisfiability. The satisfiability check is necessary because the
+-- transformation is not sound, so LIA solution may not be a solution to the BV
+-- CHCs.
 runZ3Horn ::
   forall sym t st fs .
   sym ~ ExprBuilder t st fs =>
   sym ->
-  Bool ->
+  Bool {- transform the BV CHCs into LIA CHCs -} ->
   LogData ->
   [SomeSymFn sym] ->
   [BoolExpr t] ->
@@ -306,39 +316,44 @@ runZ3Horn sym do_bv_to_lia_transform log_data inv_fns horn_clauses = do
       return
       check_sat_result
 
+  let transform_result_lia_to_bv ::
+        SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) () ->
+        IO (SatResult (MapF (SymFnWrapper sym) (SymFnWrapper sym)) ())
+      transform_result_lia_to_bv = \case
+        Sat lia_defined_fns -> do
+          defined_inv_fns <- MapF.fromList <$> mapM
+            (\(SomeSymFn fn) ->
+              if| Just (SomeSymFn lia_fn) <- Map.lookup (SomeSymFn fn) bv_to_lia_fn_subst
+                , Just (SymFnWrapper lia_defined_fn) <- MapF.lookup (SymFnWrapper lia_fn) lia_defined_fns -> do
+                  some_defined_fn <- transformSymFnLIA2BV sym $ SomeSymFn lia_defined_fn
+                  case some_defined_fn of
+                    SomeSymFn defined_fn
+                      | Just Refl <- testEquality (fnArgTypes fn) (fnArgTypes defined_fn)
+                      , Just Refl <- testEquality (fnReturnType fn) (fnReturnType defined_fn) ->
+                        return $ MapF.Pair (SymFnWrapper fn) (SymFnWrapper defined_fn)
+                    _ -> fail $ "runZ3Horn: function type mismatch in solver result: " ++ show fn
+                | otherwise -> fail $ "runZ3Horn: function not found in solver result: " ++ show fn)
+            inv_fns
+
+          all_unsat <- and <$> mapM
+            (\clause -> do
+              defined_clause <- notPred sym =<< substituteSymFns sym defined_inv_fns clause
+              runZ3InOverride sym (log_data { logVerbosity = 2 }) [defined_clause] $ return . isUnsat)
+            horn_clauses
+
+          return $ if all_unsat then Sat defined_inv_fns else Unknown
+
+        _ -> return Unknown
+
   if do_bv_to_lia_transform then
-    case get_value_result of
-      Sat lia_defined_fns -> do
-        defined_inv_fns <- MapF.fromList <$> mapM
-          (\(SomeSymFn fn) ->
-            if| Just (SomeSymFn lia_fn) <- Map.lookup (SomeSymFn fn) bv_to_lia_fn_subst
-              , Just (SymFnWrapper lia_defined_fn) <- MapF.lookup (SymFnWrapper lia_fn) lia_defined_fns -> do
-                some_defined_fn <- transformSymFnLIA2BV sym $ SomeSymFn lia_defined_fn
-                case some_defined_fn of
-                  SomeSymFn defined_fn
-                    | Just Refl <- testEquality (fnArgTypes fn) (fnArgTypes defined_fn)
-                    , Just Refl <- testEquality (fnReturnType fn) (fnReturnType defined_fn) ->
-                      return $ MapF.Pair (SymFnWrapper fn) (SymFnWrapper defined_fn)
-                  _ -> fail $ "runZ3Horn: unexpected function " ++ show fn
-              | otherwise -> fail $ "runZ3Horn: unexpected function " ++ show fn)
-          inv_fns
-
-        all_unsat <- and <$> mapM
-          (\clause -> do
-            defined_clause <- notPred sym =<< substituteSymFns sym defined_inv_fns clause
-            runZ3InOverride sym (log_data { logVerbosity = 2 }) [defined_clause] $ return . isUnsat)
-          horn_clauses
-
-        return $ if all_unsat then Sat defined_inv_fns else Unknown
-
-      _ -> return Unknown
-
-  else return get_value_result
+    transform_result_lia_to_bv get_value_result
+  else
+    return get_value_result
 
 writeZ3HornSMT2File ::
   sym ~ ExprBuilder t st fs =>
   sym ->
-  Bool ->
+  Bool {- transform the BV CHCs into LIA CHCs -} ->
   Handle ->
   [SomeSymFn sym] ->
   [BoolExpr t] ->

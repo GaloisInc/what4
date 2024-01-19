@@ -955,6 +955,17 @@ evalBoundVars sym e vars exprs = do
   evalBoundVars' tbls sym e
 
 
+-- | `ExprTransformer` and the associated code implement bidirectional bitvector
+-- (BV) to/from linear integer arithmetic (LIA) transformations. This is done by
+-- replacing all BV operations with LIA operations, replacing all BV variables
+-- with LIA variables, and by replacing all BV function symbols with LIA
+-- function symbols. The reverse transformation works the same way, but in
+-- reverse. This transformation is not sound, but in practice it is useful.
+--
+-- This is used to implement `transformPredBV2LIA` and `transformSymFnLIA2BV`,
+-- which in turn are used to implement @runZ3Horn@.
+--
+-- This is highly experimental and may be unstable.
 newtype ExprTransformer t (tp1 :: BaseType) (tp2 :: BaseType) a =
   ExprTransformer (ExceptT String (ReaderT (ExprTransformerTables t tp1 tp2) IO) a)
   deriving (Functor, Applicative, Monad, MonadIO, MonadReader (ExprTransformerTables t tp1 tp2), MonadError String)
@@ -993,7 +1004,7 @@ transformPred sym e0 = exprTransformerCachedEval e0 $ case e0 of
     a' <- traverseApp
       (\a'' -> case testEquality BaseBoolRepr (exprType a'') of
         Just Refl -> transformPred sym a''
-        Nothing -> throwError $ "unsupported " ++ show a'')
+        Nothing -> throwError $ "transformPred: unsupported non-boolean expression " ++ show a'')
       a
     if a == a' then
       return e0
@@ -1024,8 +1035,8 @@ transformPred sym e0 = exprTransformerCachedEval e0 $ case e0 of
           (toListFC Some a)
         case testEquality ((fmapFC exprType a') :> (fnReturnType f)) ((fnArgTypes f') :> (fnReturnType f')) of
           Just Refl -> liftIO $ applySymFn sym f' a'
-          Nothing -> throwError $ "unsupported " ++ show e0
-      _ -> throwError $ "unsupported " ++ show e0
+          Nothing -> throwError $ "transformPred: unsupported FnApp " ++ show e0
+      _ -> throwError $ "transformPred: unsupported NonceAppExpr " ++ show e0
 
   BoundVarExpr{} -> return e0
 
@@ -1045,7 +1056,7 @@ transformFn sym (SomeExprSymFn f) = do
           (toListFC Some $ fnArgTypes f)
         liftIO $ mutateInsertIO inv_subst (SomeExprSymFn f) $
           SomeExprSymFn <$> freshTotalUninterpFn sym (symFnName f) tps BaseBoolRepr
-      | otherwise -> throwError $ "unsupported " ++ show f
+      | otherwise -> throwError $ "transformFn: unsupported UninterpFnInfo " ++ show f
 
     DefinedFnInfo vars e eval_fn
       | Just Refl <- testEquality BaseBoolRepr (fnReturnType f) -> do
@@ -1054,9 +1065,9 @@ transformFn sym (SomeExprSymFn f) = do
         e' <- transformPred sym e
         liftIO $ mutateInsertIO inv_subst (SomeExprSymFn f) $
           SomeExprSymFn <$> definedFn sym (symFnName f) vars' e' eval_fn
-      | otherwise -> throwError $ "unsupported " ++ show f
+      | otherwise -> throwError $ "transformFn: unsupported DefinedFnInfo " ++ show f
 
-    MatlabSolverFnInfo{} -> throwError $ "unsupported " ++ show f
+    MatlabSolverFnInfo{} -> throwError $ "transformFn: unsupported MatlabSolverFnInfo " ++ show f
 
 exprTransformerCachedEval ::
   Expr t tp -> ExprTransformer t tp1 tp2 (Expr t tp) -> ExprTransformer t tp1 tp2 (Expr t tp)
@@ -1158,7 +1169,7 @@ transformExprBV2LIA sym e
     y' <- liftIO $ intLit sym $ BV.asUnsigned y_bv
     liftIO $ intMod sym x' y'
 
-  | otherwise = throwError $ "unsupported " ++ show e
+  | otherwise = throwError $ "transformExprBV2LIA: unsupported " ++ show e
 
 transformCmpLIA2BV ::
   ExprBuilder t st fs ->
@@ -1224,7 +1235,7 @@ transformExprLIA2BV sym e
     y' <- transformExprLIA2BV sym y
     liftIO $ bvIte sym c' x' y'
 
-  | otherwise = throwError $ "unsupported " ++ show e
+  | otherwise = throwError $ "transformExprLIA2BV: unsupported " ++ show e
 
 bvSemiRingZext :: (1 <= w, 1 <= w', w + 1 <= w')
   => ExprBuilder t st fs
@@ -1273,7 +1284,7 @@ applyTp1ToTp2FunWithCont f g k tp e
     k <$> f e
   | Just Refl <- testEquality BaseBoolRepr tp =
     k <$> g e
-  | otherwise = throwError $ "unsupported " ++ show e
+  | otherwise = throwError $ "applyTp1ToTp2FunWithCont: unsupported " ++ show e
 
 mutateInsertIO ::
   (HC.HashTable h, Eq k, Hashable k) =>

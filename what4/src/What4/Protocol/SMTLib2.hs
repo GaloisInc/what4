@@ -1190,13 +1190,12 @@ parseExpr sym sexp = case sexp of
         (Just LeqProof, Just LeqProof) ->
           liftIO $ Some <$> I.bvSelect sym j_repr n_repr arg_expr
         _ -> throwError ""
-  SApp ((SAtom operator) : operands)
-    | Just op <- HashMap.lookup operator (opTable @sym)
-    , Just assoc <- opAssoc op
-    , length operands > 2 -> case assoc of
-      LeftAssoc -> parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) (head operands) (tail operands)
-      RightAssoc -> parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) (last operands) (init operands)
   SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
+    Just op
+      | Just assoc <- opAssoc op
+      , length operands > 2 -> case assoc of
+        LeftAssoc -> parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) (head operands) (tail operands)
+        RightAssoc -> parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) (last operands) (init operands)
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
       exprAssignment arg_types args >>= \case

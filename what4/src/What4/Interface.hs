@@ -2976,7 +2976,18 @@ class ( IsExprBuilder sym
     SymExpr sym tp ->
     IO (SymExpr sym tp)
 
+  -- | Transform a BV predicate into an LIA predicate by replacing all bitvector
+  -- (BV) operations with LIA operations, and replacing all BV variables with
+  -- LIA variables. This transformation is not sound, but in practice it is
+  -- useful. It returns the transformed predicate and a map from the original
+  -- uninterpreted function symbols to the trnasformed uninterpreted function
+  -- symbols.
   transformPredBV2LIA :: sym -> [Pred sym] -> IO ([Pred sym], Map (SomeSymFn sym) (SomeSymFn sym))
+
+  -- | Transform a LIA defined boolean function into a BV defined boolean
+  -- function by replacing all LIA operations with BV operations. Currently, the
+  -- BV width for function parameters is set to 64, and for operations is set to
+  -- 72.
   transformSymFnLIA2BV :: sym -> SomeSymFn sym -> IO (SomeSymFn sym)
 
 
