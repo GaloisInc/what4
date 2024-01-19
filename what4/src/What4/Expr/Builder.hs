@@ -1983,9 +1983,11 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   annotateTerm sym e =
     case e of
+      AppExpr (appExprId -> n) -> return (n, e)
       BoundVarExpr (bvarId -> n) -> return (n, e)
       NonceAppExpr (nonceExprApp -> Annotation _ n _) -> return (n, e)
-      _ -> do
+      NonceAppExpr (nonceExprId -> n) -> return (n, e)
+      _ -> do  -- literals
         let tpr = exprType e
         n <- sbFreshIndex sym
         e' <- sbNonceExpr sym (Annotation tpr n e)
@@ -1993,8 +1995,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   getAnnotation _sym e =
     case e of
+      AppExpr (appExprId -> n) -> Just n
       BoundVarExpr (bvarId -> n) -> Just n
       NonceAppExpr (nonceExprApp -> Annotation _ n _) -> Just n
+      NonceAppExpr (nonceExprId -> n) -> Just n
       _ -> Nothing
 
   getUnannotatedTerm _sym e =
