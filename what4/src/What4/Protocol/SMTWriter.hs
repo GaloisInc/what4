@@ -829,13 +829,15 @@ cacheValueFn
 cacheValueFn conn n lifetime value = cacheValue conn lifetime $ \entry ->
   stToIO $ PH.insert (symFnCache entry) n value
 
+-- | Construct a function/name bimap. Each function is associated with its
+-- cached name if there is one, otherwise with its original name.
 cacheLookupFnNameBimap :: WriterConn t h -> [SomeExprSymFn t] -> IO (Bimap (SomeExprSymFn t) Text)
 cacheLookupFnNameBimap conn fns = Bimap.fromList <$> mapM
   (\some_fn@(SomeExprSymFn fn) -> do
     maybe_smt_sym_fn <- cacheLookupFn conn $ symFnId fn
-    case maybe_smt_sym_fn of
-      Just (SMTSymFn nm _ _) -> return (some_fn, nm)
-      Nothing -> fail $ "Could not find function in cache: " ++ show fn)
+    return $ case maybe_smt_sym_fn of
+      Just (SMTSymFn nm _ _) -> (some_fn, nm)
+      Nothing -> (some_fn, solverSymbolAsText $ symFnName fn))
   fns
 
 -- | Run state with handle.

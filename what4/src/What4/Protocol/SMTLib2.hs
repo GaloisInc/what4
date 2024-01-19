@@ -108,6 +108,7 @@ import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
 import qualified Data.Bimap as Bimap
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (digitToInt, isAscii)
+import           Data.Foldable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.IORef
@@ -984,7 +985,7 @@ parseFn sym nm params_sexp body_sexp = do
       let let_env = HashMap.fromList $ zip nms $ map (mapSome $ I.varExpr sym) vars
       proc_res <- runProcessor (ProcessorEnv { procSym = sym, procLetEnv = let_env }) $ parseExpr sym body_sexp
       Some body_expr <- either fail return proc_res
-      I.SomeSymFn <$> I.definedFn sym (I.safeSymbol $ Text.unpack nm) vars_assign body_expr I.NeverUnfold
+      I.SomeSymFn <$> I.definedFn sym (I.safeSymbol $ Text.unpack nm) vars_assign body_expr I.AlwaysUnfold
 
 parseVar :: I.IsSymExprBuilder sym => sym -> SExp -> IO (Text, Some (I.BoundVar sym))
 parseVar sym sexp = case sexp of
@@ -1065,6 +1066,15 @@ data Op sym where
       Op sym
 
 data Assoc = RightAssoc | LeftAssoc
+  deriving (Eq, Ord, Show)
+
+opAssoc :: Op sym -> Maybe Assoc
+opAssoc = \case
+  Op1{} -> Nothing
+  Op2 _ assoc _ -> assoc
+  BVOp1{} -> Nothing
+  BVOp2 assoc _ -> assoc
+  BVComp2{} -> Nothing
 
 newtype Processor sym a = Processor (ExceptT String (ReaderT (ProcessorEnv sym) IO) a)
   deriving (Functor, Applicative, Monad, MonadIO, MonadError String, MonadReader (ProcessorEnv sym))
@@ -1168,7 +1178,24 @@ parseExpr sym sexp = case sexp of
     BVProof{} <- getBVProof arg1_expr
     BVProof{} <- getBVProof arg2_expr
     liftIO $ Some <$> I.bvConcat sym arg1_expr arg2_expr
+  SApp [SApp ["_", "extract", i_sexp, j_sexp], arg]
+    | Just i <- parseIntSolverValue i_sexp
+    , Just j <- parseIntSolverValue j_sexp -> do
+      let n = i - j + 1
+      Some j_repr <- return $ mkNatRepr $ fromIntegral j
+      Some n_repr <- return $ mkNatRepr $ fromIntegral n
+      Some arg_expr <- parseExpr sym arg
+      BVProof w_repr <- getBVProof arg_expr
+      case (isPosNat n_repr, testLeq (addNat j_repr n_repr) w_repr) of
+        (Just LeqProof, Just LeqProof) ->
+          liftIO $ Some <$> I.bvSelect sym j_repr n_repr arg_expr
+        _ -> throwError ""
   SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
+    Just op
+      | Just assoc <- opAssoc op
+      , length operands > 2 -> case assoc of
+        LeftAssoc -> parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) (head operands) (tail operands)
+        RightAssoc -> parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) (last operands) (init operands)
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
       exprAssignment arg_types args >>= \case

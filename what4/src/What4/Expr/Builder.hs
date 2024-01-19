@@ -22,6 +22,7 @@ somewhat limited.  Consider the @exprBuilderFreshConfig@ or
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyCase #-}
@@ -29,6 +30,7 @@ somewhat limited.  Consider the @exprBuilderFreshConfig@ or
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
@@ -183,7 +185,8 @@ module What4.Expr.Builder
 import qualified Control.Exception as Ex
 import           Control.Lens hiding (asIndex, (:>), Empty)
 import           Control.Monad
-import           Control.Monad.IO.Class
+import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Control.Monad.ST
 import           Control.Monad.Trans.Writer.Strict (writer, runWriter)
 import qualified Data.BitVector.Sized as BV
@@ -191,6 +194,8 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 
 import           Data.Hashable
+import qualified Data.HashTable.Class as HC
+import qualified Data.HashTable.IO as H
 import           Data.IORef
 import           Data.Kind
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -330,6 +335,9 @@ instance Eq (SomeExprSymFn t) where
 instance Ord (SomeExprSymFn t) where
   compare (SomeExprSymFn fn1) (SomeExprSymFn fn2) =
     toOrdering $ fnCompare fn1 fn2
+
+instance Hashable (SomeExprSymFn t) where
+  hashWithSalt s (SomeExprSymFn fn) = hashWithSalt s fn
 
 instance Show (SomeExprSymFn t) where
   show (SomeExprSymFn f) = show f
@@ -945,6 +953,351 @@ evalBoundVars sym e vars exprs = do
                             , fnTable  = fn_tbl
                             }
   evalBoundVars' tbls sym e
+
+
+-- | `ExprTransformer` and the associated code implement bidirectional bitvector
+-- (BV) to/from linear integer arithmetic (LIA) transformations. This is done by
+-- replacing all BV operations with LIA operations, replacing all BV variables
+-- with LIA variables, and by replacing all BV function symbols with LIA
+-- function symbols. The reverse transformation works the same way, but in
+-- reverse. This transformation is not sound, but in practice it is useful.
+--
+-- This is used to implement `transformPredBV2LIA` and `transformSymFnLIA2BV`,
+-- which in turn are used to implement @runZ3Horn@.
+--
+-- This is highly experimental and may be unstable.
+newtype ExprTransformer t (tp1 :: BaseType) (tp2 :: BaseType) a =
+  ExprTransformer (ExceptT String (ReaderT (ExprTransformerTables t tp1 tp2) IO) a)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader (ExprTransformerTables t tp1 tp2), MonadError String)
+
+data ExprTransformerTables t (tp1 :: BaseType) (tp2 :: BaseType) = ExprTransformerTables
+  { evalTables :: !(EvalHashTables t)
+  , transformerSubst :: !(H.BasicHashTable (ExprBoundVar t tp1) (ExprBoundVar t tp2))
+  , transformerFnSubst :: !(H.BasicHashTable (SomeExprSymFn t) (SomeExprSymFn t))
+  }
+
+runExprTransformer :: ExprTransformer t tp1 tp2 a -> ExprTransformerTables t tp1 tp2 -> IO (Either String a)
+runExprTransformer (ExprTransformer action) = runReaderT (runExceptT action)
+
+type BV2LIAExprTransformer t = ExprTransformer t (BaseBVType 64) BaseIntegerType
+type LIA2BVExprTransformer t = ExprTransformer t BaseIntegerType (BaseBVType 64)
+type HasTransformerConstraints t st fs tp1 tp2 =
+  ( KnownRepr BaseTypeRepr tp1
+  , KnownRepr BaseTypeRepr tp2
+  , ?transformCmpTp1ToTp2 :: ExprBuilder t st fs -> Expr t BaseBoolType -> Maybe (ExprTransformer t tp1 tp2 (Expr t BaseBoolType))
+  , ?transformExprTp1ToTp2 :: ExprBuilder t st fs -> Expr t tp1 -> ExprTransformer t tp1 tp2 (Expr t tp2)
+  )
+
+transformPred ::
+  forall t st fs tp1 tp2 .
+  HasTransformerConstraints t st fs tp1 tp2 =>
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  ExprTransformer t tp1 tp2 (Expr t BaseBoolType)
+transformPred sym e0 = exprTransformerCachedEval e0 $ case e0 of
+  _ | Just action <- ?transformCmpTp1ToTp2 sym e0 -> action
+
+  BoolExpr{} -> return e0
+
+  AppExpr ae -> do
+    let a = appExprApp ae
+    a' <- traverseApp
+      (\a'' -> case testEquality BaseBoolRepr (exprType a'') of
+        Just Refl -> transformPred sym a''
+        Nothing -> throwError $ "transformPred: unsupported non-boolean expression " ++ show a'')
+      a
+    if a == a' then
+      return e0
+    else
+      liftIO $ reduceApp sym bvUnary a'
+
+  NonceAppExpr ae -> do
+    case nonceExprApp ae of
+      Annotation tpr n a -> do
+        a' <- transformPred sym a
+        if a == a' then
+          return e0
+        else
+          liftIO $ sbNonceExpr sym $ Annotation tpr n a'
+      Forall v e -> do
+        quantifier <- transformVarTp1ToTp2WithCont sym v (forallPred sym)
+        -- Regenerate forallPred if e is changed by evaluation.
+        runIfChanged e (transformPred sym) e0 $ liftIO . quantifier
+      Exists v e -> do
+        quantifier <- transformVarTp1ToTp2WithCont sym v (existsPred sym)
+        -- Regenerate existsPred if e is changed by evaluation.
+        runIfChanged e (transformPred sym) e0 $ liftIO . quantifier
+      FnApp f a -> do
+        (SomeExprSymFn f') <- transformFn sym $ SomeExprSymFn f
+        (Some a') <- Ctx.fromList <$> mapM
+          (\(Some a'') ->
+            applyTp1ToTp2FunWithCont (?transformExprTp1ToTp2 sym) (transformPred sym) Some (exprType a'') a'')
+          (toListFC Some a)
+        case testEquality ((fmapFC exprType a') :> (fnReturnType f)) ((fnArgTypes f') :> (fnReturnType f')) of
+          Just Refl -> liftIO $ applySymFn sym f' a'
+          Nothing -> throwError $ "transformPred: unsupported FnApp " ++ show e0
+      _ -> throwError $ "transformPred: unsupported NonceAppExpr " ++ show e0
+
+  BoundVarExpr{} -> return e0
+
+transformFn ::
+  forall t st fs tp1 tp2 .
+  HasTransformerConstraints t st fs tp1 tp2 =>
+  ExprBuilder t st fs ->
+  SomeExprSymFn t ->
+  ExprTransformer t tp1 tp2 (SomeExprSymFn t)
+transformFn sym (SomeExprSymFn f) = do
+  inv_subst <- asks transformerFnSubst
+  case symFnInfo f of
+    UninterpFnInfo{}
+      | Just Refl <- testEquality BaseBoolRepr (fnReturnType f) -> do
+        (Some tps) <- Ctx.fromList <$> mapM
+          (\(Some tp) -> applyTp1ToTp2FunWithCont (\_ -> return knownRepr) return Some tp tp)
+          (toListFC Some $ fnArgTypes f)
+        liftIO $ mutateInsertIO inv_subst (SomeExprSymFn f) $
+          SomeExprSymFn <$> freshTotalUninterpFn sym (symFnName f) tps BaseBoolRepr
+      | otherwise -> throwError $ "transformFn: unsupported UninterpFnInfo " ++ show f
+
+    DefinedFnInfo vars e eval_fn
+      | Just Refl <- testEquality BaseBoolRepr (fnReturnType f) -> do
+        (Some vars') <- Ctx.fromList <$>
+          mapM (\(Some v) -> transformVarTp1ToTp2WithCont sym v Some) (toListFC Some vars)
+        e' <- transformPred sym e
+        liftIO $ mutateInsertIO inv_subst (SomeExprSymFn f) $
+          SomeExprSymFn <$> definedFn sym (symFnName f) vars' e' eval_fn
+      | otherwise -> throwError $ "transformFn: unsupported DefinedFnInfo " ++ show f
+
+    MatlabSolverFnInfo{} -> throwError $ "transformFn: unsupported MatlabSolverFnInfo " ++ show f
+
+exprTransformerCachedEval ::
+  Expr t tp -> ExprTransformer t tp1 tp2 (Expr t tp) -> ExprTransformer t tp1 tp2 (Expr t tp)
+exprTransformerCachedEval e action = do
+  tbls <- asks evalTables
+  cachedEval (exprTable tbls) e action
+
+transformCmpBV2LIA ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  Maybe (BV2LIAExprTransformer t (Expr t BaseBoolType))
+transformCmpBV2LIA sym e
+  | Just (BaseEq _ x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- transformExprBV2LIA sym x
+    y' <- transformExprBV2LIA sym y
+    liftIO $ intEq sym x' y'
+
+  | Just (BVUlt x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- transformExprBV2LIA sym x
+    y' <- transformExprBV2LIA sym y
+    liftIO $ intLt sym x' y'
+
+  | Just (BVSlt x y) <- asApp e
+  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
+    x' <- transformExprBV2LIA sym x
+    y' <- transformExprBV2LIA sym y
+    liftIO $ intLt sym x' y'
+
+  | otherwise = Nothing
+
+transformExprBV2LIA ::
+  ExprBuilder t st fs ->
+  Expr t (BaseBVType 64) ->
+  BV2LIAExprTransformer t (Expr t BaseIntegerType)
+transformExprBV2LIA sym e
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e =
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        SR.SemiRingIntegerRepr
+        (return . BV.asSigned (bvWidth e))
+        (transformExprBV2LIA sym)
+        semi_ring_sum
+
+  | Just semi_ring_prod <- asSemiRingProd (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e
+  , Just e' <- WSum.asProdVar semi_ring_prod =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just e' <- WSum.asVar semi_ring_sum =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_prod <- asSemiRingProd (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just e' <- WSum.asProdVar semi_ring_prod =
+    transformExprBV2LIA sym e'
+
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth e)) e
+  , Just (c', e') <- WSum.asWeightedVar semi_ring_sum
+  , Just semi_ring_sum' <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e')) e'
+  , Just (c'', e'') <- WSum.asWeightedVar semi_ring_sum'
+  , Just (BaseIte _ _ c a b) <- asApp e''
+  , Just a_bv <- asBV a
+  , Just b_bv <- asBV b = do
+    x <- liftIO $ bvLit sym (bvWidth e) $ BV.xor c' $ BV.mul (bvWidth e) c'' a_bv
+    y <- liftIO $ bvLit sym (bvWidth e) $ BV.xor c' $ BV.mul (bvWidth e) c'' b_bv
+    transformExprBV2LIA sym =<< liftIO (bvIte sym c x y)
+
+  | BoundVarExpr v <- e =
+    BoundVarExpr <$> transformVarTp1ToTp2 sym v
+
+  | Just (BaseIte _ _ c x y) <- asApp e = do
+    let ?transformCmpTp1ToTp2 = transformCmpBV2LIA
+        ?transformExprTp1ToTp2 = transformExprBV2LIA
+    c' <- transformPred sym c
+    x' <- transformExprBV2LIA sym x
+    y' <- transformExprBV2LIA sym y
+    liftIO $ intIte sym c' x' y'
+
+  | Just (BVShl w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    e' <- liftIO $ bvMul sym x =<< bvLit sym w (BV.mkBV w $ 2 ^ BV.asUnsigned y_bv)
+    transformExprBV2LIA sym e'
+
+  | Just (BVLshr w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    e' <- liftIO $ bvUdiv sym x =<< bvLit sym w (BV.mkBV w $ 2 ^ BV.asUnsigned y_bv)
+    transformExprBV2LIA sym e'
+
+  | Just (BVUdiv _w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    x' <- transformExprBV2LIA sym x
+    y' <- liftIO $ intLit sym $ BV.asUnsigned y_bv
+    liftIO $ intDiv sym x' y'
+
+  | Just (BVUrem _w x y) <- asApp e
+  , Just y_bv <- asBV y = do
+    x' <- transformExprBV2LIA sym x
+    y' <- liftIO $ intLit sym $ BV.asUnsigned y_bv
+    liftIO $ intMod sym x' y'
+
+  | otherwise = throwError $ "transformExprBV2LIA: unsupported " ++ show e
+
+transformCmpLIA2BV ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  Maybe (LIA2BVExprTransformer t (Expr t BaseBoolType))
+transformCmpLIA2BV sym e
+  | Just (BaseEq BaseIntegerRepr x y) <- asApp e = Just $ do
+    let (x_pos, x_neg) = asPositiveNegativeWeightedSum x
+    let (y_pos, y_neg) = asPositiveNegativeWeightedSum y
+    x' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr x_pos y_neg
+    y' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr y_pos x_neg
+    x'' <- transformExprLIA2BV sym x'
+    y'' <- transformExprLIA2BV sym y'
+    liftIO $ bvEq sym x'' y''
+
+  | Just (SemiRingLe SR.OrderedSemiRingIntegerRepr x y) <- asApp e = Just $ do
+    z <- liftIO $ intSub sym x y
+    let (z_pos, z_neg) = asPositiveNegativeWeightedSum z
+    x' <- liftIO . bvSemiRingZext sym (knownNat :: NatRepr 72)
+      =<< transformExprLIA2BV sym
+      =<< liftIO (semiRingSum sym z_pos)
+    y' <- liftIO . bvSemiRingZext sym (knownNat :: NatRepr 72)
+      =<< transformExprLIA2BV sym
+      =<< liftIO (semiRingSum sym z_neg)
+    liftIO $ bvUle sym x' y'
+
+  | otherwise = Nothing
+
+asPositiveNegativeWeightedSum ::
+  Expr t BaseIntegerType ->
+  (WSum.WeightedSum (Expr t) SR.SemiRingInteger, WSum.WeightedSum (Expr t) SR.SemiRingInteger)
+asPositiveNegativeWeightedSum e = do
+  let semi_ring_sum = asWeightedSum SR.SemiRingIntegerRepr e
+  let positive_semi_ring_sum = runIdentity $ WSum.traverseCoeffs
+        (return . max 0)
+        semi_ring_sum
+  let negative_semi_ring_sum = runIdentity $ WSum.traverseCoeffs
+        (return . negate . min 0)
+        semi_ring_sum
+  (positive_semi_ring_sum, negative_semi_ring_sum)
+
+transformExprLIA2BV ::
+  ExprBuilder t st fs ->
+  Expr t BaseIntegerType ->
+  LIA2BVExprTransformer t (Expr t (BaseBVType 64))
+transformExprLIA2BV sym e
+  | Just semi_ring_sum <- asSemiRingSum SR.SemiRingIntegerRepr e =
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        (SR.SemiRingBVRepr SR.BVArithRepr knownNat)
+        (return . BV.mkBV knownNat)
+        (transformExprLIA2BV sym)
+        semi_ring_sum
+
+  | BoundVarExpr v <- e =
+    BoundVarExpr <$> transformVarTp1ToTp2 sym v
+
+  | Just (BaseIte _ _ c x y) <- asApp e = do
+    let ?transformCmpTp1ToTp2 = transformCmpLIA2BV
+        ?transformExprTp1ToTp2 = transformExprLIA2BV
+    c' <- transformPred sym c
+    x' <- transformExprLIA2BV sym x
+    y' <- transformExprLIA2BV sym y
+    liftIO $ bvIte sym c' x' y'
+
+  | otherwise = throwError $ "transformExprLIA2BV: unsupported " ++ show e
+
+bvSemiRingZext :: (1 <= w, 1 <= w', w + 1 <= w')
+  => ExprBuilder t st fs
+  -> NatRepr w'
+  -> Expr t (BaseBVType w)
+  -> IO (Expr t (BaseBVType w'))
+bvSemiRingZext sym w' e
+  | Just semi_ring_sum <- asSemiRingSum (SR.SemiRingBVRepr SR.BVArithRepr (bvWidth e)) e =
+    liftIO . semiRingSum sym =<<
+      WSum.transformSum
+        (SR.SemiRingBVRepr SR.BVArithRepr w')
+        (return . BV.zext w')
+        (bvZext sym w')
+        semi_ring_sum
+  | otherwise = bvZext sym w' e
+
+transformVarTp1ToTp2WithCont ::
+  forall t st fs tp tp1 tp2 a .
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  ExprBuilder t st fs ->
+  ExprBoundVar t tp ->
+  (forall tp' . ExprBoundVar t tp' -> a) ->
+  ExprTransformer t tp1 tp2 a
+transformVarTp1ToTp2WithCont sym v k = applyTp1ToTp2FunWithCont (transformVarTp1ToTp2 sym) return k (bvarType v) v
+
+transformVarTp1ToTp2 ::
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2) =>
+  ExprBuilder t st fs ->
+  ExprBoundVar t tp1 ->
+  ExprTransformer t tp1 tp2 (ExprBoundVar t tp2)
+transformVarTp1ToTp2 sym v = do
+  tbl <- asks transformerSubst
+  liftIO $ mutateInsertIO tbl v $ sbMakeBoundVar sym (bvarName v) knownRepr (bvarKind v) Nothing
+
+applyTp1ToTp2FunWithCont ::
+  forall t tp tp1 tp2 e a .
+  (KnownRepr BaseTypeRepr tp1, KnownRepr BaseTypeRepr tp2, Show (e tp)) =>
+  (e tp1 -> ExprTransformer t tp1 tp2 (e tp2)) ->
+  (e BaseBoolType -> ExprTransformer t tp1 tp2 (e BaseBoolType)) ->
+  (forall tp' . e tp' -> a) ->
+  BaseTypeRepr tp ->
+  e tp ->
+  ExprTransformer t tp1 tp2 a
+applyTp1ToTp2FunWithCont f g k tp e
+  | Just Refl <- testEquality (knownRepr :: BaseTypeRepr tp1) tp =
+    k <$> f e
+  | Just Refl <- testEquality BaseBoolRepr tp =
+    k <$> g e
+  | otherwise = throwError $ "applyTp1ToTp2FunWithCont: unsupported " ++ show e
+
+mutateInsertIO ::
+  (HC.HashTable h, Eq k, Hashable k) =>
+  H.IOHashTable h k v ->
+  k ->
+  IO v ->
+  IO v
+mutateInsertIO tbl k f = H.mutateIO tbl k $ \case
+  Just v -> return (Just v, v)
+  Nothing -> do
+    v <- f
+    return (Just v, v)
+
 
 -- | This attempts to lookup an entry in a symbolic array.
 --
@@ -4104,6 +4457,48 @@ instance IsSymExprBuilder (ExprBuilder t st fs) where
         , fnTable  = fn_tbl
         }
     evalBoundVars' tbls sym e
+
+  transformPredBV2LIA sym exprs = do
+    expr_tbl <- stToIO PH.new
+    fn_tbl  <- stToIO PH.new
+    let tbls = EvalHashTables
+          { exprTable = expr_tbl
+          , fnTable  = fn_tbl
+          }
+    subst <- H.new
+    fn_subst <- H.new
+    let transformer_tbls = ExprTransformerTables
+          { evalTables = tbls
+          , transformerSubst = subst
+          , transformerFnSubst = fn_subst
+          }
+    let ?transformCmpTp1ToTp2 = transformCmpBV2LIA
+        ?transformExprTp1ToTp2 = transformExprBV2LIA
+    lia_exprs <- either fail return =<<
+      runExprTransformer (mapM (transformPred sym) exprs) transformer_tbls
+    bv_to_lia_fn_subst <- Map.fromList <$>
+      map (\(SomeExprSymFn f, SomeExprSymFn g) -> (SomeSymFn f, SomeSymFn g)) <$>
+      H.toList fn_subst
+    return (lia_exprs, bv_to_lia_fn_subst)
+
+  transformSymFnLIA2BV sym (SomeSymFn fn) = do
+    expr_tbl <- stToIO PH.new
+    fn_tbl  <- stToIO PH.new
+    let tbls = EvalHashTables
+          { exprTable = expr_tbl
+          , fnTable  = fn_tbl
+          }
+    subst <- H.new
+    fn_subst <- H.new
+    let transformer_tbls = ExprTransformerTables
+          { evalTables = tbls
+          , transformerSubst = subst
+          , transformerFnSubst = fn_subst
+          }
+    let ?transformCmpTp1ToTp2 = transformCmpLIA2BV
+        ?transformExprTp1ToTp2 = transformExprLIA2BV
+    either fail (\(SomeExprSymFn fn') -> return $ SomeSymFn fn') =<<
+      runExprTransformer (transformFn sym $ SomeExprSymFn fn) transformer_tbls
 
 
 instance IsInterpretedFloatExprBuilder (ExprBuilder t st fs) => IsInterpretedFloatSymExprBuilder (ExprBuilder t st fs)

@@ -205,6 +205,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Coerce (coerce)
 import           Data.Foldable
 import           Data.Kind ( Type )
+import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
@@ -2730,6 +2731,12 @@ type family SymFn sym :: Ctx BaseType -> BaseType -> Type
 
 data SomeSymFn sym = forall args ret . SomeSymFn (SymFn sym args ret)
 
+instance IsSymFn (SymFn sym) => Eq (SomeSymFn sym) where
+  (SomeSymFn fn1) == (SomeSymFn fn2) = isJust $ fnTestEquality fn1 fn2
+
+instance IsSymFn (SymFn sym) => Ord (SomeSymFn sym) where
+  compare (SomeSymFn fn1) (SomeSymFn fn2) = toOrdering $ fnCompare fn1 fn2
+
 -- | Wrapper for `SymFn` that concatenates the arguments and the return types.
 --
 -- This is useful for implementing `TestEquality` and `OrdF` instances for
@@ -2968,6 +2975,21 @@ class ( IsExprBuilder sym
     MapF (SymFnWrapper sym) (SymFnWrapper sym) ->
     SymExpr sym tp ->
     IO (SymExpr sym tp)
+
+  -- | Transform a BV predicate into an LIA predicate by replacing all bitvector
+  -- (BV) operations with LIA operations, and replacing all BV variables with
+  -- LIA variables. This transformation is not sound, but in practice it is
+  -- useful. It returns the transformed predicate and a map from the original
+  -- uninterpreted function symbols to the trnasformed uninterpreted function
+  -- symbols.
+  transformPredBV2LIA :: sym -> [Pred sym] -> IO ([Pred sym], Map (SomeSymFn sym) (SomeSymFn sym))
+
+  -- | Transform a LIA defined boolean function into a BV defined boolean
+  -- function by replacing all LIA operations with BV operations. Currently, the
+  -- BV width for function parameters is set to 64, and for operations is set to
+  -- 72.
+  transformSymFnLIA2BV :: sym -> SomeSymFn sym -> IO (SomeSymFn sym)
+
 
 -- | This returns true if the value corresponds to a concrete value.
 baseIsConcrete :: forall e bt
