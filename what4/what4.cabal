@@ -126,7 +126,7 @@ library
     stm,
     temporary >= 1.2,
     template-haskell,
-    text >= 1.2.4.0 && < 2.1,
+    text >= 1.2.4.0 && < 2.2,
     th-lift >= 0.8.2 && < 0.9,
     th-lift-instances >= 0.1 && < 0.2,
     time >= 1.8 && < 1.13,
