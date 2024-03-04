@@ -1193,6 +1193,16 @@ parseExpr sym sexp = case sexp of
           liftIO $ Some <$> I.bvSelect sym j_repr n_repr arg_expr
         _ -> throwError ""
   SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
+    -- Sometimes, binary operators can be applied to more than two operands,
+    -- e.g., (+ 1 2 3 4). We want to uniformly represent binary operators such
+    -- that they are always applied to two operands, so this case converts the
+    -- expression above to:
+    --
+    -- - (+ (+ (+ 1 2) 3) 4) (if + is left-associative)
+    -- - (+ 1 (+ 2 (+ 3 4))) (if + is right-associative)
+    --
+    -- We then call `parseExpr` and recurse, which will reach one of the cases
+    -- below.
     Just op
       | Just assoc <- opAssoc op
       , length operands > 2 -> case assoc of
