@@ -1204,26 +1204,20 @@ parseExpr sym sexp = case sexp of
     -- We then call `parseExpr` and recurse, which will reach one of the cases
     -- below.
     Just op
-      | Just assoc <- opAssoc op
-      , length operands > 2 -> case assoc of
-        LeftAssoc ->
-          case List.uncons operands of
-            Just (operandHead, operandTail) ->
-              parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) operandHead operandTail
-            Nothing ->
-              panic "parseExpr" [ "Left-associative operator"
-                                , Text.unpack operator
-                                , "with empty list of operands"
-                                ]
-        RightAssoc ->
-          case unsnoc operands of
-            Just (operandInit, operandLast) ->
-              parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) operandLast operandInit
-            Nothing ->
-              panic "parseExpr" [ "Right-associative operator"
-                                , Text.unpack operator
-                                , "with empty list of operands"
-                                ]
+      | Just LeftAssoc <- opAssoc op
+      , op1:op2:op3:ops <- operands ->
+          parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) op1 (op2:op3:ops)
+
+        -- For right-associative operators, we could alternatively call
+        -- init/last on the list of operands and call foldr on the results. The
+        -- downside, however, is that init/last are partial functions. To avoid
+        -- this partiality, we instead match on `reverse operands` and call
+        -- foldl on the results (with the order of acc/arg swapped). This
+        -- achieves the same end result and maintains the same asymptotic
+        -- complexity as using init/tail.
+      | Just RightAssoc <- opAssoc op
+      , op1:op2:op3:ops <- List.reverse operands ->
+          parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, arg, acc]) op1 (op2:op3:ops)
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
       exprAssignment arg_types args >>= \case
@@ -1264,26 +1258,6 @@ parseExpr sym sexp = case sexp of
                                        (show n)
     _ -> throwError ""
   _ -> throwError ""
-
--- | \(\mathcal{O}(n)\). Decompose a list into 'init' and 'last'.
---
--- * If the list is empty, returns 'Nothing'.
--- * If the list is non-empty, returns @'Just' (xs, x)@,
--- where @xs@ is the 'init'ial part of the list and @x@ is its 'last' element.
---
---
--- 'unsnoc' is dual to 'List.uncons': for a finite list @xs@
---
--- > unsnoc xs = (\(hd, tl) -> (reverse tl, hd)) <$> uncons (reverse xs)
---
--- This is the same implementation that was introduced to "Data.List" in
--- @base-4.19.0.0@, but backported to support older versions of @base@.
-unsnoc :: [a] -> Maybe ([a], a)
--- The lazy pattern ~(a, b) is important to be productive on infinite lists
--- and not to be prone to stack overflows.
--- Expressing the recursion via 'foldr' provides for list fusion.
-unsnoc = foldr (\x -> Just . maybe ([], x) (\(~(a, b)) -> (x : a, b))) Nothing
-{-# INLINABLE unsnoc #-}
 
 -- | Verify a list of arguments has a single argument and
 -- return it, else raise an error.
