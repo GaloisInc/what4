@@ -34,6 +34,7 @@ import           Data.Parameterized.Some
 import           What4.Config
 import           What4.Expr
 import           What4.Interface
+import           What4.Panic
 import           What4.Protocol.SMTLib2.Response ( strictSMTParsing )
 import           What4.Protocol.SMTWriter ( parserStrictness, ResponseStrictness(..) )
 import           What4.Protocol.VerilogWriter
@@ -224,6 +225,11 @@ mkConfigTests adapters =
       in fmap mkPCTest adaptrs
 
     deprecatedConfigTests adaptrs =
+      let firstAdapter adptrs =
+            case adptrs of
+              adptr:_ -> adptr
+              [] -> panic "deprecatedConfigTests" ["Empty list of adapters"]
+      in
       [
 
         testCaseSteps "deprecated default_solver is equivalent to solver.default" $
@@ -258,7 +264,7 @@ mkConfigTests adapters =
 
           step "Update the value via regular (text identification)"
           res2 <- try $ setUnicodeOpt settera $
-                  pack $ solver_adapter_name $ head adaptrs
+                  pack $ solver_adapter_name $ firstAdapter adaptrs
           case res2 of
             Right warns -> fmap show warns @?= []
             Left (SomeException e) -> assertFailure $ show e
@@ -283,7 +289,7 @@ mkConfigTests adapters =
 
           step "Reset to original value"
           res4 <- try $ setOpt settera' $
-                  pack $ solver_adapter_name $ head adaptrs
+                  pack $ solver_adapter_name $ firstAdapter adaptrs
           case res4 of
             Right warns -> fmap show warns @?= []
             Left (SomeException e) -> assertFailure $ show e

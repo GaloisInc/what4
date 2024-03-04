@@ -112,6 +112,7 @@ import           Data.Foldable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.IORef
+import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid
@@ -152,6 +153,7 @@ import qualified What4.Config as CFG
 import qualified What4.Expr.Builder as B
 import           What4.Expr.GroundEval
 import qualified What4.Interface as I
+import           What4.Panic
 import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import           What4.Protocol.ReadDecimal
@@ -1191,11 +1193,31 @@ parseExpr sym sexp = case sexp of
           liftIO $ Some <$> I.bvSelect sym j_repr n_repr arg_expr
         _ -> throwError ""
   SApp ((SAtom operator) : operands) -> case HashMap.lookup operator (opTable @sym) of
+    -- Sometimes, binary operators can be applied to more than two operands,
+    -- e.g., (+ 1 2 3 4). We want to uniformly represent binary operators such
+    -- that they are always applied to two operands, so this case converts the
+    -- expression above to:
+    --
+    -- - (+ (+ (+ 1 2) 3) 4) (if + is left-associative)
+    -- - (+ 1 (+ 2 (+ 3 4))) (if + is right-associative)
+    --
+    -- We then call `parseExpr` and recurse, which will reach one of the cases
+    -- below.
     Just op
-      | Just assoc <- opAssoc op
-      , length operands > 2 -> case assoc of
-        LeftAssoc -> parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) (head operands) (tail operands)
-        RightAssoc -> parseExpr sym $ foldr' (\arg acc -> SApp [SAtom operator, arg, acc]) (last operands) (init operands)
+      | Just LeftAssoc <- opAssoc op
+      , op1:op2:op3:ops <- operands ->
+          parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, acc, arg]) op1 (op2:op3:ops)
+
+        -- For right-associative operators, we could alternatively call
+        -- init/last on the list of operands and call foldr on the results. The
+        -- downside, however, is that init/last are partial functions. To avoid
+        -- this partiality, we instead match on `reverse operands` and call
+        -- foldl on the results (with the order of acc/arg swapped). This
+        -- achieves the same end result and maintains the same asymptotic
+        -- complexity as using init/tail.
+      | Just RightAssoc <- opAssoc op
+      , op1:op2:op3:ops <- List.reverse operands ->
+          parseExpr sym $ foldl' (\acc arg -> SApp [SAtom operator, arg, acc]) op1 (op2:op3:ops)
     Just (Op1 arg_types fn) -> do
       args <- mapM (parseExpr sym) operands
       exprAssignment arg_types args >>= \case
@@ -1236,6 +1258,7 @@ parseExpr sym sexp = case sexp of
                                        (show n)
     _ -> throwError ""
   _ -> throwError ""
+
 -- | Verify a list of arguments has a single argument and
 -- return it, else raise an error.
 readOneArg ::
@@ -1360,8 +1383,10 @@ instance SMTLib2Tweaks a => SMTReadWriter (Writer a) where
           AckUnsat   -> Just $ Unsat ()
           AckUnknown -> Just Unknown
           _ -> Nothing
-    in getLimitedSolverResponse "sat result" satRsp s
-       (head $ reverse $ checkCommands p)
+        cmd = case reverse $ checkCommands p of
+                cmd':_ -> cmd'
+                []     -> panic "smtSatResult" ["Empty list of checkCommands"]
+    in getLimitedSolverResponse "sat result" satRsp s cmd
 
   smtUnsatAssumptionsResult p s =
     let unsatAssumpRsp = \case
