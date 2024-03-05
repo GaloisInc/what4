@@ -101,7 +101,7 @@ import Control.Monad.Fail( MonadFail )
 
 import           Control.Applicative
 import           Control.Exception
-import           Control.Monad (forM, forM_, replicateM_, unless, when)
+import           Control.Monad (forM, replicateM_, unless, when)
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Except (MonadError(..), ExceptT, runExceptT)
 import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)

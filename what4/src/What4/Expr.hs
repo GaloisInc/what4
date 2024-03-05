@@ -20,6 +20,7 @@ module What4.Expr
   , curProgramLoc
   , unaryThreshold
   , cacheStartSize
+  , pushMuxOps
   , exprBuilderSplitConfig
   , exprBuilderFreshConfig
   , EmptyExprBuilderState(..)

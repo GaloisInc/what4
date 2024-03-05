@@ -33,6 +33,7 @@ import           Data.Parameterized.Some
 
 import           What4.Config
 import           What4.Expr
+import           What4.Expr.Builder ( asApp, pushMuxOpsOption )
 import           What4.Interface
 import           What4.Panic
 import           What4.Protocol.SMTLib2.Response ( strictSMTParsing )
@@ -87,6 +88,7 @@ mkConfigTests adapters =
   [
     testGroup "deprecated configs" (deprecatedConfigTests adapters)
   , testGroup "strict parsing config" (strictParseConfigTests adapters)
+  , testGroup "push mux ops config" (pushMuxOpsConfigTests adapters)
   ]
   where
     wantOptSetFailure withText res = case res of
@@ -223,6 +225,44 @@ mkConfigTests adapters =
 
               ]
       in fmap mkPCTest adaptrs
+
+    pushMuxOpsConfigTests adaptrs =
+      let -- A basic test that ensures that pushMuxOps actually takes effect
+          -- when enabled or disabled.
+          mkPushZextMuxTest ::
+            forall a.
+            Bool ->
+            (forall t. Expr t (BaseBVType 64) -> IO a) ->
+            IO a
+          mkPushZextMuxTest pushMuxOpsVal k =
+            withAdapters adaptrs $ \sym -> do
+              pmo <- getOptionSetting pushMuxOpsOption (getConfiguration sym)
+              show <$> setOpt pmo pushMuxOpsVal >>= (@?= "[]")
+              let w = knownNat @32
+              a <- bvLit sym w $ mkBV w 27
+              b <- bvLit sym w $ mkBV w 42
+              c <- freshConstant sym (safeSymbol "c") BaseBoolRepr
+              ite <- bvIte sym c a b
+              zextIte <- bvZext sym (knownNat @64) ite
+              k zextIte
+      in [ testCase "enable pushMuxOps" $
+           mkPushZextMuxTest True $ \zextIte ->
+           case asApp zextIte of
+             Just (BaseIte {}) -> pure ()
+             _ -> assertFailure $ unlines
+                    [ "zext not pushed down through ite"
+                    , show $ printSymExpr zextIte
+                    ]
+
+         , testCase "disable pushMuxOps" $
+           mkPushZextMuxTest False $ \zextIte ->
+           case asApp zextIte of
+             Just (BVZext {}) -> pure ()
+             _ -> assertFailure $ unlines
+                    [ "zext should be at the head of the application"
+                    , show $ printSymExpr zextIte
+                    ]
+         ]
 
     deprecatedConfigTests adaptrs =
       let firstAdapter adptrs =
