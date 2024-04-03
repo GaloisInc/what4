@@ -12,9 +12,3 @@
     name: Use bvOne
     lhs: "What4.Interface.bvLit sym w (Data.BitVector.Sized.one w)"
     rhs: 'What4.Interface.bvOne sym w'
-
-# TODO:
-# - error:
-#     name: Use PP.viaShow
-#     lhs: "Prettyprinter.pretty (show x)"
-#     rhs: 'Prettyprinter.viaShow x'

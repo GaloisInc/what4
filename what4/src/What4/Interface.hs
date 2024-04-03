@@ -156,6 +156,10 @@ module What4.Interface
   , SymEncoder(..)
 
     -- * Utility combinators
+    -- ** Bitvector operations
+  , bvZero
+  , bvOne
+
     -- ** Boolean operations
   , backendPred
   , andAllOf
@@ -179,10 +183,6 @@ module What4.Interface
 
     -- * Exceptions
   , InvalidRange(..)
-
-    -- * Bitvector utilities
-  , bvZero
-  , bvOne
 
     -- * Reexports
   , module Data.Parameterized.NatRepr
@@ -1121,7 +1121,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
   -- | Return the bitvector of the desired width with all 0 bits;
   --   this is the minimum unsigned integer.
   minUnsignedBV :: (1 <= w) => sym -> NatRepr w -> IO (SymBV sym w)
-  minUnsignedBV sym w = bvZero sym w
+  minUnsignedBV sym w = bvLit sym w (BV.zero w)
 
   -- | Return the bitvector of the desired width with all bits set;
   --   this is the maximum unsigned integer.
@@ -3309,5 +3309,6 @@ zeroStatistics = Statistics { statAllocs = 0
 bvZero :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
 bvZero = minUnsignedBV
 
+-- | A bitvector that is all zeroes except the LSB, which is one.
 bvOne :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
 bvOne sym w = bvLit sym w (BV.one w)
