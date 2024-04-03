@@ -106,7 +106,7 @@ clampedIntMul :: (IsExprBuilder sym, 1 <= w)
 clampedIntMul sym x y = do
   let w = bvWidth x
   (hi,lo) <- signedWideMultiplyBV sym x y
-  zro    <- bvLit sym w (BV.zero w)
+  zro    <- bvZero sym w
   ones   <- maxUnsignedBV sym w
   ok_pos <- join $ andPred sym <$> (notPred sym =<< bvIsNeg sym lo)
                               <*> bvEq sym hi zro
@@ -178,7 +178,7 @@ clampedUIntSub sym x y = do
        sym
        no_underflow
        (bvSub sym x y) -- Perform subtraction if y >= x
-       (bvLit sym w (BV.zero w)) -- Otherwise return min int
+       (bvZero sym w) -- Otherwise return min int
 
 clampedUIntMul :: (IsExprBuilder sym, 1 <= w)
                => sym

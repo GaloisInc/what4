@@ -2114,7 +2114,7 @@ reduceApp sym unary a0 = do
         SR.SemiRingRealRepr ->
           maybe (realLit sym 1) return =<< WSum.prodEvalM (realMul sym) return pd
         SR.SemiRingBVRepr SR.BVArithRepr w ->
-          maybe (bvLit sym w (BV.one w)) return =<< WSum.prodEvalM (bvMul sym) return pd
+          maybe (bvOne sym w) return =<< WSum.prodEvalM (bvMul sym) return pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           maybe (bvLit sym w (BV.maxUnsigned w)) return =<< WSum.prodEvalM (bvAndBits sym) return pd
 
@@ -2136,7 +2136,7 @@ reduceApp sym unary a0 = do
 
     BVOrBits w bs ->
       case bvOrToList bs of
-        [] -> bvLit sym w (BV.zero w)
+        [] -> bvZero sym w
         (x:xs) -> foldM (bvOrBits sym) x xs
 
     BVTestBit i e -> testBitBV sym i e

@@ -1340,7 +1340,7 @@ sbConcreteLookup sym arr0 mcidx idx
   , Ctx.Empty Ctx.:> idx0 <- idx
   , Ctx.Empty Ctx.:> update_idx0 <- update_idx = do
     diff <- bvSub sym idx0 update_idx0
-    is_diff_zero <- bvEq sym diff =<< bvLit sym (bvWidth diff) (BV.zero (bvWidth diff))
+    is_diff_zero <- bvEq sym diff =<< bvZero sym (bvWidth diff)
     case asConstantPred is_diff_zero of
       Just True -> return v
       Just False -> sbConcreteLookup sym arr mcidx idx
@@ -2647,7 +2647,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvFill sym w p
     | Just True  <- asConstantPred p = bvLit sym w (BV.maxUnsigned w)
-    | Just False <- asConstantPred p = bvLit sym w (BV.zero w)
+    | Just False <- asConstantPred p = bvZero sym w
     | otherwise = sbMakeExpr sym $ BVFill w p
 
   bvIte sym c x y
@@ -2781,7 +2781,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) (BV.zero (bvWidth x))
+   = bvZero sym (bvWidth x)
 
    | Just xv <- asBV x, Just n <- asBV y
    = bvLit sym (bvWidth x) (BV.shl (bvWidth x) xv (BV.asNatural n))
@@ -2797,7 +2797,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    -- shift by more than word width returns 0
    | let (lo, _hi) = BVD.ubounds (exprAbsValue y)
    , lo >= intValue (bvWidth x)
-   = bvLit sym (bvWidth x) (BV.zero (bvWidth x))
+   = bvZero sym (bvWidth x)
 
    | Just xv <- asBV x, Just n <- asBV y
    = bvLit sym (bvWidth x) $ BV.lshr (bvWidth x) xv (BV.asNatural n)
@@ -2957,7 +2957,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       sbMakeExpr sym (BVSext w x)
 
   bvXorBits sym x y
-    | x == y = bvLit sym (bvWidth x) (BV.zero (bvWidth x))  -- special case: x `xor` x = 0
+    | x == y = bvZero sym (bvWidth x)  -- special case: x `xor` x = 0
     | otherwise
     = let sr = SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x)
        in semiRingAdd sym sr x y
@@ -3124,7 +3124,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
             ubv
     | otherwise = do
           let w = bvWidth x
-          zro <- bvLit sym w (BV.zero w)
+          zro <- bvZero sym w
           notPred sym =<< bvEq sym x zro
 
   bvUdiv = bvBinDivOp (const BV.uquot) BVUdiv
@@ -3455,7 +3455,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   predToBV sym p w
     | Just b <- asConstantPred p =
-        if b then bvLit sym w (BV.one w) else bvLit sym w (BV.zero w)
+        if b then bvOne sym w else bvZero sym w
     | otherwise =
        case testNatCases w (knownNat @1) of
          NatCaseEQ   -> sbMakeExpr sym (BVFill (knownNat @1) p)

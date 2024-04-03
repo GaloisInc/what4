@@ -75,8 +75,8 @@ bvProblem sym = do
   inv <- freshTotalUninterpFn sym (safeSymbol "inv") knownRepr knownRepr
   i <- freshConstant sym (safeSymbol "i") $ BaseBVRepr $ knownNat @64
   n <- freshConstant sym (safeSymbol "n") knownRepr
-  zero <- bvLit sym knownNat $ BV.zero knownNat
-  one <- bvLit sym knownNat $ BV.one knownNat
+  zero <- bvZero sym knownNat
+  one <- bvOne sym knownNat
   ult_1_n <- bvUlt sym one n
   inv_0_n <- applySymFn sym inv $ Empty :> zero :> n
   -- 1 < n ==> inv(0, n)

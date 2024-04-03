@@ -156,6 +156,10 @@ module What4.Interface
   , SymEncoder(..)
 
     -- * Utility combinators
+    -- ** Bitvector operations
+  , bvZero
+  , bvOne
+
     -- ** Boolean operations
   , backendPred
   , andAllOf
@@ -945,7 +949,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
 
   -- | Return true if bitvector is negative.
   bvIsNeg :: (1 <= w) => sym -> SymBV sym w -> IO (Pred sym)
-  bvIsNeg sym x = bvSlt sym x =<< bvLit sym (bvWidth x) (BV.zero (bvWidth x))
+  bvIsNeg sym x = bvSlt sym x =<< bvZero sym (bvWidth x)
 
   -- | If-then-else applied to bitvectors.
   bvIte :: (1 <= w)
@@ -1693,7 +1697,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       -- Handle case where i < 0
       min_sym <- intLit sym 0
       is_lt <- intLt sym i min_sym
-      iteM bvIte sym is_lt (bvLit sym w (BV.zero w)) $ do
+      iteM bvIte sym is_lt (bvZero sym w) $ do
         -- Handle case where i > maxUnsigned w
         let max_val = maxUnsigned w
             max_val_bv = BV.maxUnsigned w
@@ -1743,7 +1747,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
   intToUInt :: (1 <= m, 1 <= n) => sym -> SymBV sym m -> NatRepr n -> IO (SymBV sym n)
   intToUInt sym e w = do
     p <- bvIsNeg sym e
-    iteM bvIte sym p (bvLit sym w (BV.zero w)) (uintSetWidth sym e w)
+    iteM bvIte sym p (bvZero sym w) (uintSetWidth sym e w)
 
   -- | Convert an unsigned bitvector to the nearest signed bitvector with
   -- the given width (clamp on overflow).
@@ -3027,7 +3031,7 @@ baseDefaultValue sym bt =
   case bt of
     BaseBoolRepr    -> return $! falsePred sym
     BaseIntegerRepr -> intLit sym 0
-    BaseBVRepr w    -> bvLit sym w (BV.zero w)
+    BaseBVRepr w    -> bvZero sym w
     BaseRealRepr    -> return $! realZero sym
     BaseFloatRepr fpp -> floatPZero sym fpp
     BaseComplexRepr -> mkComplexLit sym (0 :+ 0)
@@ -3294,3 +3298,17 @@ data Statistics
 zeroStatistics :: Statistics
 zeroStatistics = Statistics { statAllocs = 0
                             , statNonLinearOps = 0 }
+
+----------------------------------------------------------------------
+-- Bitvector utilities
+
+-- | An alias for 'minUnsignedBv'.
+--
+-- Useful in contexts where you want to convey the zero-ness of the value more
+-- than its minimality.
+bvZero :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
+bvZero = minUnsignedBV
+
+-- | A bitvector that is all zeroes except the LSB, which is one.
+bvOne :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
+bvOne sym w = bvLit sym w (BV.one w)
