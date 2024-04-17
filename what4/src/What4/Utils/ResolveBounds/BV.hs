@@ -97,15 +97,13 @@ resolveSymBV ::
   -> SearchStrategy
      -- ^ The strategy to use when searching for lower and upper bounds. For
      --   many use cases, 'ExponentialSearch' is a reasonable default.
-  -> PN.NatRepr w
-     -- ^ The bitvector width
   -> WPO.SolverProcess scope solver
      -- ^ The online solver process to use to search for lower and upper
      --   bounds.
   -> WI.SymBV sym w
      -- ^ The bitvector to resolve.
   -> IO (ResolvedSymBV w)
-resolveSymBV sym searchStrat w proc symBV =
+resolveSymBV sym searchStrat proc symBV =
   -- First check, if the SymBV can be trivially resolved as concrete. If so,
   -- this can avoid the need to call out to the solver at all.
   case WI.asBV symBV of
@@ -154,6 +152,8 @@ resolveSymBV sym searchStrat w proc symBV =
                 (BV.asUnsigned lowerBound) (BV.asUnsigned upperBound)
         else pure $ BVConcrete modelForBV
   where
+    w = WI.bvWidth symBV
+
     conn :: WPS.WriterConn scope solver
     conn = WPO.solverConn proc
 

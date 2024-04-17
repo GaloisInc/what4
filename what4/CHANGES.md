@@ -1,3 +1,8 @@
+# next
+
+* `What4.Utils.ResolveBounds.BV.resolveSymBV` no longer requires the width of
+  the bitvector as an explicit `NatRepr` argument. The argument can be removed.
+
 # 1.5.1 (October 2023)
 
 * Require building with `versions >= 6.0.2`.
