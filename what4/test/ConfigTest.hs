@@ -471,10 +471,12 @@ testHelp =
     withChecklist "builtins" $ do
       cfg <- initialConfig 0 []
       help <- configHelp "" cfg
+      let nonEmptyOr :: (a -> b) -> b -> [a] -> b
+          nonEmptyOr f = foldr (\h _ -> f h)
       help `checkValues`
         (Empty
         :> Val "num" length 1
-        :> Val "verbosity" (L.isInfixOf "verbosity =" . show . head) True
+        :> Val "verbosity" (nonEmptyOr (L.isInfixOf "verbosity =" . show) False) True
         )
 
 

@@ -26,7 +26,7 @@ common bldflags
 library
   import: bldflags
   build-depends:
-    base >= 4.7 && < 4.19,
+    base >= 4.7 && < 4.20,
     blt >= 0.12.1,
     containers,
     what4 >= 0.4,

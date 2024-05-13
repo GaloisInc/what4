@@ -1068,7 +1068,7 @@ issue182Test sym solver = do
     let idx = Ctx.Empty Ctx.:> idxInt
     let arrLookup = arrayLookup sym arr idx
     elt <- arrLookup
-    bvZero <- bvLit sym w (BV.zero w)
+    bvZero <- bvZero sym w
     p <- bvEq sym elt bvZero
 
     checkSatisfiableWithModel solver "test" p $ \case
@@ -1133,7 +1133,7 @@ testUnsafeSetAbstractValue1 = testCase "test unsafeSetAbstractValue1" $
     e1A <- freshConstant sym (userSymbol' "x1") (BaseBVRepr w)
     let e1A' = unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e1A
     unsignedBVBounds e1A' @?= Just (2, 2)
-    e1B <- bvAdd sym e1A' =<< bvLit sym w (BV.one w)
+    e1B <- bvAdd sym e1A' =<< bvOne sym w
     case asBV e1B of
       Just bv -> bv @?= BV.mkBV w 3
       Nothing -> assertFailure $ unlines
@@ -1151,7 +1151,7 @@ testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
     e2C <- bvAdd sym e2A e2B
     (_, e2C') <- annotateTerm sym $ unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e2C
     unsignedBVBounds e2C' @?= Just (2, 2)
-    e2D <- bvAdd sym e2C' =<< bvLit sym w (BV.one w)
+    e2D <- bvAdd sym e2C' =<< bvOne sym w
     case asBV e2D of
       Just bv -> bv @?= BV.mkBV w 3
       Nothing -> assertFailure $ unlines
