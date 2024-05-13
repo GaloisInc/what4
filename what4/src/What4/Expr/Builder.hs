@@ -668,11 +668,16 @@ unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInte
 -- Configuration option for controlling whether to push certain ExprBuilder
 -- operations (e.g., @zext@) down to the branches of @ite@ expressions.
 
--- | TODO RGS: Docs
+-- | If this option enabled, push certain 'ExprBuilder' operations (e.g.,
+-- @zext@) down to the branches of @ite@ expressions. In some (but not all)
+-- circumstances, this can result in operations that are easier for SMT solvers
+-- to reason about.
+--
+-- This option is named \"backend.push_mux_ops\".
 pushMuxOpsOption :: CFG.ConfigOption BaseBoolType
 pushMuxOpsOption = CFG.configOption BaseBoolRepr "backend.push_mux_ops"
 
--- | TODO RGS: Docs
+-- | The 'CFG.ConfigDesc' for 'pushMuxOpsOption'.
 pushMuxOpsDesc :: CFG.ConfigDesc
 pushMuxOpsDesc = CFG.mkOpt pushMuxOpsOption sty help (Just (ConcreteBool False))
   where sty = CFG.boolOptSty

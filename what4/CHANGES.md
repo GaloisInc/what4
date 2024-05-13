@@ -2,6 +2,11 @@
 
 * Add support for the `bitwuzla` SMT solver.
 
+* Add `pushMuxOps` and `pushMuxOpsOption`. If this option is enabled, What4 will
+  push certain `ExprBuilder` operations (e.g., `zext`) down to the branches of
+  `ite` expressions. In some (but not all) circumstances, this can result in
+  operations that are easier for SMT solvers to reason about.
+
 # 1.5.1 (October 2023)
 
 * Require building with `versions >= 6.0.2`.
