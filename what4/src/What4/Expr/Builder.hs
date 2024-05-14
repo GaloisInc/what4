@@ -58,6 +58,7 @@ module What4.Expr.Builder
   , sbNonceExpr
   , curProgramLoc
   , unaryThreshold
+  , pushMuxOps
   , cacheStartSize
   , userState
   , exprCounter
@@ -76,6 +77,7 @@ module What4.Expr.Builder
     -- * configuration options
   , unaryThresholdOption
   , cacheStartSizeOption
+  , pushMuxOpsOption
   , cacheTerms
 
     -- * Expr
@@ -374,6 +376,12 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
           -- | The starting size when building a new cache
         , sbCacheStartSize :: !(CFG.OptionSetting BaseIntegerType)
 
+          -- | If enabled, push certain 'ExprBuilder' operations (e.g., @zext@)
+          -- down to the branches of @ite@ expressions. In some (but not all)
+          -- circumstances, this can result in operations that are easier for
+          -- SMT solvers to reason about.
+        , sbPushMuxOps :: !(CFG.OptionSetting BaseBoolType)
+
           -- | Counter to generate new unique identifiers for elements and functions.
         , sbExprCounter :: !(NonceGenerator IO t)
 
@@ -421,6 +429,9 @@ unaryThreshold = to sbUnaryThreshold
 cacheStartSize :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
 cacheStartSize = to sbCacheStartSize
 
+pushMuxOps :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseBoolType)
+pushMuxOps = to sbPushMuxOps
+
 -- | Return a new expr builder where the configuration object has
 --   been "split" using the @splitConfig@ operation.
 --   The returned sym will share any preexisting options with the
@@ -456,9 +467,11 @@ exprBuilderFreshConfig sym =
      cfg <- CFG.initialConfig 0
               [ unaryThresholdDesc
               , cacheStartSizeDesc
+              , pushMuxOpsDesc
               ]
      unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
      cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
+     pushMuxOpsSetting  <- CFG.getOptionSetting pushMuxOpsOption cfg
      CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
      nonLinearOps <- newIORef 0
 
@@ -466,6 +479,7 @@ exprBuilderFreshConfig sym =
                 , sbFloatReduce = True
                 , sbUnaryThreshold = unarySetting
                 , sbCacheStartSize = cacheStartSetting
+                , sbPushMuxOps = pushMuxOpsSetting
                 , sbProgramLoc = loc_ref
                 , sbCurAllocator = storage_ref
                 , sbNonLinearOps = nonLinearOps
@@ -650,7 +664,28 @@ unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInte
   where sty = CFG.integerWithMinOptSty (CFG.Inclusive 0)
         help = Just "Maximum number of values in unary bitvector encoding."
 
+------------------------------------------------------------------------
+-- Configuration option for controlling whether to push certain ExprBuilder
+-- operations (e.g., @zext@) down to the branches of @ite@ expressions.
 
+-- | If this option enabled, push certain 'ExprBuilder' operations (e.g.,
+-- @zext@) down to the branches of @ite@ expressions. In some (but not all)
+-- circumstances, this can result in operations that are easier for SMT solvers
+-- to reason about. The expressions that may be pushed down are determined on a
+-- case-by-case basis in the 'IsExprBuilder' instance for 'ExprBuilder', but
+-- this control applies to all such push-down checks.
+--
+-- This option is named \"backend.push_mux_ops\".
+pushMuxOpsOption :: CFG.ConfigOption BaseBoolType
+pushMuxOpsOption = CFG.configOption BaseBoolRepr "backend.push_mux_ops"
+
+-- | The 'CFG.ConfigDesc' for 'pushMuxOpsOption'.
+pushMuxOpsDesc :: CFG.ConfigDesc
+pushMuxOpsDesc = CFG.mkOpt pushMuxOpsOption sty help (Just (ConcreteBool False))
+  where sty = CFG.boolOptSty
+        help = Just $
+          "If this option enabled, push certain ExprBuilder operations " <>
+          "(e.g., zext) down to the branches of ite expressions."
 
 newExprBuilder ::
   FloatModeRepr fm
@@ -678,9 +713,11 @@ newExprBuilder floatMode st gen = do
   cfg <- CFG.initialConfig 0
            [ unaryThresholdDesc
            , cacheStartSizeDesc
+           , pushMuxOpsDesc
            ]
   unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
   cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
+  pushMuxOpsSetting  <- CFG.getOptionSetting pushMuxOpsOption cfg
   CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
   nonLinearOps <- newIORef 0
 
@@ -691,6 +728,7 @@ newExprBuilder floatMode st gen = do
                , sbFloatReduce = True
                , sbUnaryThreshold = unarySetting
                , sbCacheStartSize = cacheStartSetting
+               , sbPushMuxOps = pushMuxOpsSetting
                , sbProgramLoc = loc_ref
                , sbExprCounter = gen
                , sbCurAllocator = storage_ref
@@ -2913,17 +2951,20 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.uext u w
 
-    | Just (BaseIte _ _ c a b) <- asApp x
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b = do
-      Just LeqProof <- return $ isPosNat w
-      a' <- bvLit sym w $ BV.zext w a_bv
-      b' <- bvLit sym w $ BV.zext w b_bv
-      bvIte sym c a' b'
-
     | otherwise = do
-      Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
-      sbMakeExpr sym $ BVZext w x
+      pmo <- CFG.getOpt (sbPushMuxOps sym)
+      if | pmo
+         , Just (BaseIte _ _ c a b) <- asApp x
+         , Just a_bv <- asBV a
+         , Just b_bv <- asBV b -> do
+             Just LeqProof <- return $ isPosNat w
+             a' <- bvLit sym w $ BV.zext w a_bv
+             b' <- bvLit sym w $ BV.zext w b_bv
+             bvIte sym c a' b'
+
+         | otherwise -> do
+             Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
+             sbMakeExpr sym $ BVZext w x
 
   bvSext sym w x
     | Just xv <- asBV x = do
@@ -2944,17 +2985,20 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       Just LeqProof <- return $ isPosNat w
       bvUnary sym $ UnaryBV.sext u w
 
-    | Just (BaseIte _ _ c a b) <- asApp x
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b = do
-      Just LeqProof <- return $ isPosNat w
-      a' <- bvLit sym w $ BV.sext (bvWidth x) w a_bv
-      b' <- bvLit sym w $ BV.sext (bvWidth x) w b_bv
-      bvIte sym c a' b'
-
     | otherwise = do
-      Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
-      sbMakeExpr sym (BVSext w x)
+      pmo <- CFG.getOpt (sbPushMuxOps sym)
+      if | pmo
+         , Just (BaseIte _ _ c a b) <- asApp x
+         , Just a_bv <- asBV a
+         , Just b_bv <- asBV b -> do
+             Just LeqProof <- return $ isPosNat w
+             a' <- bvLit sym w $ BV.sext (bvWidth x) w a_bv
+             b' <- bvLit sym w $ BV.sext (bvWidth x) w b_bv
+             bvIte sym c a' b'
+
+         | otherwise -> do
+             Just LeqProof <- return $ testLeq (knownNat :: NatRepr 1) w
+             sbMakeExpr sym (BVSext w x)
 
   bvXorBits sym x y
     | x == y = bvZero sym (bvWidth x)  -- special case: x `xor` x = 0
@@ -2965,22 +3009,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   bvAndBits sym x y
     | x == y = return x -- Special case: idempotency of and
 
-    | Just (BaseIte _ _ c a b) <- asApp x
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b
-    , Just y_bv <- asBV y = do
-      a' <- bvLit sym (bvWidth x) $ BV.and a_bv y_bv
-      b' <- bvLit sym (bvWidth x) $ BV.and b_bv y_bv
-      bvIte sym c a' b'
-
-    | Just (BaseIte _ _ c a b) <- asApp y
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b
-    , Just x_bv <- asBV x = do
-      a' <- bvLit sym (bvWidth x) $ BV.and x_bv a_bv
-      b' <- bvLit sym (bvWidth x) $ BV.and x_bv b_bv
-      bvIte sym c a' b'
-
     | Just (BVOrBits _ bs) <- asApp x
     , bvOrContains y bs
     = return y -- absorption law
@@ -2990,8 +3018,28 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = return x -- absorption law
 
     | otherwise
-    = let sr = SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x)
-       in semiRingMul sym sr x y
+    = do pmo <- CFG.getOpt (sbPushMuxOps sym)
+         if | pmo
+            , Just (BaseIte _ _ c a b) <- asApp x
+            , Just a_bv <- asBV a
+            , Just b_bv <- asBV b
+            , Just y_bv <- asBV y -> do
+                a' <- bvLit sym (bvWidth x) $ BV.and a_bv y_bv
+                b' <- bvLit sym (bvWidth x) $ BV.and b_bv y_bv
+                bvIte sym c a' b'
+
+            | pmo
+            , Just (BaseIte _ _ c a b) <- asApp y
+            , Just a_bv <- asBV a
+            , Just b_bv <- asBV b
+            , Just x_bv <- asBV x -> do
+                a' <- bvLit sym (bvWidth x) $ BV.and x_bv a_bv
+                b' <- bvLit sym (bvWidth x) $ BV.and x_bv b_bv
+                bvIte sym c a' b'
+
+            | otherwise
+            -> let sr = SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x)
+                in semiRingMul sym sr x y
 
   -- XOR by the all-1 constant of the bitwise semiring.
   -- This is equivalant to negation
@@ -2999,16 +3047,18 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just xv <- asBV x
     = bvLit sym (bvWidth x) $ xv `BV.xor` (BV.maxUnsigned (bvWidth x))
 
-    | Just (BaseIte _ _ c a b) <- asApp x
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b = do
-      a' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) a_bv
-      b' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) b_bv
-      bvIte sym c a' b'
-
     | otherwise
-    = let sr = (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x))
-       in semiRingSum sym $ WSum.addConstant sr (asWeightedSum sr x) (BV.maxUnsigned (bvWidth x))
+    = do pmo <- CFG.getOpt (sbPushMuxOps sym)
+         if | pmo
+            , Just (BaseIte _ _ c a b) <- asApp x
+            , Just a_bv <- asBV a
+            , Just b_bv <- asBV b -> do
+                a' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) a_bv
+                b' <- bvLit sym (bvWidth x) $ BV.complement (bvWidth x) b_bv
+                bvIte sym c a' b'
+            | otherwise ->
+                let sr = (SR.SemiRingBVRepr SR.BVBitsRepr (bvWidth x))
+                 in semiRingSum sym $ WSum.addConstant sr (asWeightedSum sr x) (BV.maxUnsigned (bvWidth x))
 
   bvOrBits sym x y =
     case (asBV x, asBV y) of
@@ -3085,20 +3135,23 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   bvNeg sym x
     | Just xv <- asBV x = bvLit sym (bvWidth x) (BV.negate (bvWidth x) xv)
-    | Just (BaseIte _ _ c a b) <- asApp x
-    , Just a_bv <- asBV a
-    , Just b_bv <- asBV b = do
-      a' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) a_bv
-      b' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) b_bv
-      bvIte sym c a' b'
-    | otherwise =
-        do ut <- CFG.getOpt (sbUnaryThreshold sym)
-           let ?unaryThreshold = fromInteger ut
-           sbTryUnaryTerm sym
-             (do ux <- asUnaryBV sym x
-                 Just (UnaryBV.neg sym ux))
-             (do let sr = SR.SemiRingBVRepr SR.BVArithRepr (bvWidth x)
-                 scalarMul sym sr (BV.mkBV (bvWidth x) (-1)) x)
+    | otherwise = do
+        pmo <- CFG.getOpt (sbPushMuxOps sym)
+        if | pmo
+           , Just (BaseIte _ _ c a b) <- asApp x
+           , Just a_bv <- asBV a
+           , Just b_bv <- asBV b -> do
+               a' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) a_bv
+               b' <- bvLit sym (bvWidth x) $ BV.negate (bvWidth x) b_bv
+               bvIte sym c a' b'
+           | otherwise -> do
+               ut <- CFG.getOpt (sbUnaryThreshold sym)
+               let ?unaryThreshold = fromInteger ut
+               sbTryUnaryTerm sym
+                 (do ux <- asUnaryBV sym x
+                     Just (UnaryBV.neg sym ux))
+                 (do let sr = SR.SemiRingBVRepr SR.BVArithRepr (bvWidth x)
+                     scalarMul sym sr (BV.mkBV (bvWidth x) (-1)) x)
 
   bvIsNonzero sym x
     | Just (BaseIte _ _ p t f) <- asApp x
@@ -3391,7 +3444,28 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      else
       sbMakeExpr sym $ ArrayMap idx_tps baseRepr new_map def_map
 
-  arrayIte sym p x y = mkIte sym p x y
+  arrayIte sym p x y = do
+    pmo <- CFG.getOpt (sbPushMuxOps sym)
+    if   -- Extract all concrete updates out.
+       | not pmo
+       , ArrayMapView mx x' <- viewArrayMap x
+       , ArrayMapView my y' <- viewArrayMap y
+       , not (AUM.null mx) || not (AUM.null my) -> do
+         case exprType x of
+           BaseArrayRepr idxRepr bRepr -> do
+             let both_fn _ u v = baseTypeIte sym p u v
+                 left_fn idx u = do
+                   v <- sbConcreteLookup sym y' (Just idx) =<< symbolicIndices sym idx
+                   both_fn idx u v
+                 right_fn idx v = do
+                   u <- sbConcreteLookup sym x' (Just idx) =<< symbolicIndices sym idx
+                   both_fn idx u v
+             mz <- AUM.mergeM bRepr both_fn left_fn right_fn mx my
+             z' <- arrayIte sym p x' y'
+
+             sbMakeExpr sym $ ArrayMap idxRepr bRepr mz z'
+
+       | otherwise -> mkIte sym p x y
 
   arrayEq sym x y
     | x == y =
