@@ -471,7 +471,7 @@ exprBuilderFreshConfig sym =
               ]
      unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
      cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
-     pushMuxOpsStartSetting <- CFG.getOptionSetting pushMuxOpsOption cfg
+     pushMuxOpsSetting  <- CFG.getOptionSetting pushMuxOpsOption cfg
      CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
      nonLinearOps <- newIORef 0
 
@@ -479,7 +479,7 @@ exprBuilderFreshConfig sym =
                 , sbFloatReduce = True
                 , sbUnaryThreshold = unarySetting
                 , sbCacheStartSize = cacheStartSetting
-                , sbPushMuxOps = pushMuxOpsStartSetting
+                , sbPushMuxOps = pushMuxOpsSetting
                 , sbProgramLoc = loc_ref
                 , sbCurAllocator = storage_ref
                 , sbNonLinearOps = nonLinearOps
@@ -671,7 +671,9 @@ unaryThresholdDesc = CFG.mkOpt unaryThresholdOption sty help (Just (ConcreteInte
 -- | If this option enabled, push certain 'ExprBuilder' operations (e.g.,
 -- @zext@) down to the branches of @ite@ expressions. In some (but not all)
 -- circumstances, this can result in operations that are easier for SMT solvers
--- to reason about.
+-- to reason about. The expressions that may be pushed down are determined on a
+-- case-by-case basis in the 'IsExprBuilder' instance for 'ExprBuilder', but
+-- this control applies to all such push-down checks.
 --
 -- This option is named \"backend.push_mux_ops\".
 pushMuxOpsOption :: CFG.ConfigOption BaseBoolType
@@ -681,8 +683,9 @@ pushMuxOpsOption = CFG.configOption BaseBoolRepr "backend.push_mux_ops"
 pushMuxOpsDesc :: CFG.ConfigDesc
 pushMuxOpsDesc = CFG.mkOpt pushMuxOpsOption sty help (Just (ConcreteBool False))
   where sty = CFG.boolOptSty
-        help = Just "Maximum number of values in unary bitvector encoding."
-
+        help = Just $
+          "If this option enabled, push certain ExprBuilder operations " <>
+          "(e.g., zext) down to the branches of ite expressions."
 
 newExprBuilder ::
   FloatModeRepr fm
@@ -714,7 +717,7 @@ newExprBuilder floatMode st gen = do
            ]
   unarySetting       <- CFG.getOptionSetting unaryThresholdOption cfg
   cacheStartSetting  <- CFG.getOptionSetting cacheStartSizeOption cfg
-  pushMuxOpsStartSetting <- CFG.getOptionSetting pushMuxOpsOption cfg
+  pushMuxOpsSetting  <- CFG.getOptionSetting pushMuxOpsOption cfg
   CFG.extendConfig [cacheOptDesc gen storage_ref cacheStartSetting] cfg
   nonLinearOps <- newIORef 0
 
@@ -725,7 +728,7 @@ newExprBuilder floatMode st gen = do
                , sbFloatReduce = True
                , sbUnaryThreshold = unarySetting
                , sbCacheStartSize = cacheStartSetting
-               , sbPushMuxOps = pushMuxOpsStartSetting
+               , sbPushMuxOps = pushMuxOpsSetting
                , sbProgramLoc = loc_ref
                , sbExprCounter = gen
                , sbCurAllocator = storage_ref
