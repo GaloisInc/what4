@@ -14,6 +14,9 @@
 
 * Add support for the `bitwuzla` SMT solver.
 
+* Add `bvZero` and `bvOne` functions, which are convenient shorthand for
+  constructing bitvectors with the values `0` and `1`, respectively.
+
 * Add `pushMuxOps` and `pushMuxOpsOption`. If this option is enabled, What4 will
   push certain `ExprBuilder` operations (e.g., `zext`) down to the branches of
   `ite` expressions. In some (but not all) circumstances, this can result in
