@@ -1,5 +1,7 @@
 # next (TBA)
 
+* Allow building with GHC 9.8.
+
 * Add support for the `bitwuzla` SMT solver.
 
 * Add `pushMuxOps` and `pushMuxOpsOption`. If this option is enabled, What4 will
