@@ -2,6 +2,16 @@
 
 * Allow building with GHC 9.8.
 
+* Add more robust support for Constrained Horn Clause (CHC) solving:
+  * The `IsSymExprBuilder` class now has two additional methods,
+    `transformPredBV2LIA` and `transformSymFnLIA2BV`, which describe how to
+    transform a bitvector (BV) predicate into a linear integer arithmetic (LIA)
+    predicate and vice versa.
+  * The `runZ3Horn` and `writeZ3HornSMT2File` functions now take an additional
+    `Bool` argument. When this argument is `True`, Z3 will transform bitvector
+    CHCs into linear integer arithmetic CHCs, which can sometimes help Z3 to
+    solve CHC problems that it couldn't in a bitvector setting.
+
 * Add support for the `bitwuzla` SMT solver.
 
 * Add `pushMuxOps` and `pushMuxOpsOption`. If this option is enabled, What4 will
