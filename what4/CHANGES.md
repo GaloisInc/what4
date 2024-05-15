@@ -7,6 +7,10 @@
   `ite` expressions. In some (but not all) circumstances, this can result in
   operations that are easier for SMT solvers to reason about.
 
+* `annotateTerm` no longer adds annotations to bound variable expressions, which
+  already have annotations attached to them. This should result in slightly
+  better performance and better pretty-printing.
+
 # 1.5.1 (October 2023)
 
 * Require building with `versions >= 6.0.2`.
