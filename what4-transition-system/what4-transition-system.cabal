@@ -20,7 +20,7 @@ common dependencies
     , lens
     , parameterized-utils  >=2.0  && <2.2
     , text
-    , what4                ^>=1.5
+    , what4                ^>=1.6
 
 library
   import:           dependencies

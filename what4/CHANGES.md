@@ -1,4 +1,4 @@
-# next (TBA)
+# 1.6 (May 2024)
 
 * Allow building with GHC 9.8.
 
