@@ -44,6 +44,9 @@ module What4.Concrete
   , fromConcreteString
   , fromConcreteBV
   , fromConcreteComplex
+
+  , fromIndexLit
+  , toIndexLit
   ) where
 
 import qualified Data.List as List
@@ -61,6 +64,7 @@ import           Data.Parameterized.TH.GADT
 import           Data.Parameterized.TraversableFC
 
 import           What4.BaseTypes
+import           What4.IndexLit
 import           What4.Utils.Complex
 import           What4.Utils.StringLiteral
 
@@ -117,6 +121,25 @@ concreteType = \case
   ConcreteBV w _            -> BaseBVRepr w
   ConcreteStruct xs         -> BaseStructRepr (fmapFC concreteType xs)
   ConcreteArray idxTy def _ -> BaseArrayRepr idxTy (concreteType def)
+
+fromIndexLit :: IndexLit tp -> ConcreteVal tp
+fromIndexLit =
+  \case
+    IntIndexLit i -> ConcreteInteger i
+    BVIndexLit w bv -> ConcreteBV w bv
+
+toIndexLit :: ConcreteVal tp -> Maybe (IndexLit tp)
+toIndexLit = \case
+  ConcreteInteger i         -> Just (IntIndexLit i)
+  ConcreteBV w bv           -> Just (BVIndexLit w bv)
+  -- Explicitly match all constructors to get a warning if we add one
+  ConcreteBool{}            -> Nothing
+  ConcreteReal{}            -> Nothing
+  ConcreteFloat{}           -> Nothing
+  ConcreteString{}          -> Nothing
+  ConcreteComplex{}         -> Nothing
+  ConcreteStruct{}          -> Nothing
+  ConcreteArray{}           -> Nothing
 
 $(return [])
 
