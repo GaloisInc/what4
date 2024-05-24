@@ -24,6 +24,9 @@
 module What4.Expr.GroundEval
   ( -- * Ground evaluation
     GroundValue
+  , fromConcrete
+  , toConcrete
+  , groundToSym
   , GroundValueWrapper(..)
   , groundToSym
   , GroundArray(..)
@@ -56,6 +59,7 @@ import           LibBF (BigFloat)
 import qualified LibBF as BF
 
 import           What4.BaseTypes
+import           What4.Concrete (ConcreteVal(..), fromIndexLit, toIndexLit)
 import           What4.Interface
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
@@ -70,6 +74,7 @@ import           What4.Utils.Arithmetic ( roundAway )
 import           What4.Utils.Complex
 import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
+import Data.Functor.Product (Product(Pair))
 
 
 type family GroundValue (tp :: BaseType) where
@@ -117,6 +122,55 @@ groundToSym sym tpr val =
            i' <- traverseFC (indexLit sym) i
            x' <- groundToSym sym tpr' x
            arrayUpdate sym arr' i' x'
+
+-- | Convert a 'ConcreteVal' into a 'GroundValue'
+--
+-- May fail if the 'ConcreteVal' contains ill-typed array indices.
+fromConcrete :: ConcreteVal tp -> Maybe (GroundValue tp)
+fromConcrete =
+  \case
+    ConcreteBool b -> Just b
+    ConcreteInteger i -> Just i
+    ConcreteReal r -> Just r
+    ConcreteFloat _fpp bf -> Just bf
+    ConcreteString  s -> Just s
+    ConcreteComplex c -> Just c
+    ConcreteBV _w bv -> Just bv
+    ConcreteStruct fs -> traverseFC (fmap GVW . fromConcrete) fs
+    ConcreteArray _idxTys def upds ->
+      let upds' =
+            fmap Map.fromList $
+              traverse (\(idxs, val) -> (,) <$> traverseFC toIndexLit idxs <*> fromConcrete val) $
+              Map.toList upds
+      in ArrayConcrete <$> fromConcrete def <*> upds'
+
+-- | Convert a 'GroundValue' to a 'ConcreteVal'
+--
+-- Fails on 'ArrayMapping'.
+toConcrete :: BaseTypeRepr tp -> GroundValue tp -> Maybe (ConcreteVal tp)
+toConcrete tpr val =
+  case tpr of
+    BaseBoolRepr -> Just (ConcreteBool val)
+    BaseIntegerRepr -> Just (ConcreteInteger val)
+    BaseRealRepr -> Just (ConcreteReal val)
+    BaseFloatRepr fpp -> Just (ConcreteFloat fpp val)
+    BaseStringRepr {} -> Just (ConcreteString val)
+    BaseComplexRepr -> Just (ConcreteComplex val)
+    BaseBVRepr w -> Just (ConcreteBV w val)
+    BaseStructRepr xs ->
+      ConcreteStruct <$>
+        traverseFC
+          (\(Pair tpr' (GVW gv)) -> toConcrete tpr' gv)
+          (Ctx.zipWith Pair xs val)
+    BaseArrayRepr idxTys ty ->
+      case val of
+        ArrayMapping {} -> Nothing
+        ArrayConcrete def upds ->
+          ConcreteArray idxTys
+          <$> toConcrete ty def
+          <*> (fmap Map.fromList $
+                (traverse (\(idxs, gval) -> (,) <$> pure (fmapFC fromIndexLit idxs) <*> toConcrete ty gval) $
+                Map.toList upds))
 
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
