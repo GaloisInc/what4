@@ -125,14 +125,6 @@ instance SMT2.SMTLib2Tweaks CVC5 where
   smtlib2arraySelect a i = SMT2.arraySelect a (indexCtor i)
   smtlib2arrayUpdate a i = SMT2.arrayStore a (indexCtor i)
 
-  smtlib2declareStructCmd _ = Nothing
-  smtlib2StructSort []  = Syntax.varSort "Tuple"
-  smtlib2StructSort tps = Syntax.Sort $ "(Tuple" <> foldMap f tps <> ")"
-    where f x = " " <> Syntax.unSort x
-
-  smtlib2StructCtor args = Syntax.term_app "mkTuple" args
-  smtlib2StructProj _n i x = Syntax.term_app (Syntax.builder_list ["_", "tupSel", fromString (show i)]) [ x ]
-
 cvc5Features :: ProblemFeatures
 cvc5Features = useComputableReals
            .|. useIntegerArithmetic

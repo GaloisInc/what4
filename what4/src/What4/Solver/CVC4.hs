@@ -131,6 +131,14 @@ instance SMT2.SMTLib2Tweaks CVC4 where
   smtlib2arraySelect a i = SMT2.arraySelect a (indexCtor i)
   smtlib2arrayUpdate a i = SMT2.arrayStore a (indexCtor i)
 
+  -- CVC4's support for user-defined datatypes is somewhat buggy (see
+  -- https://github.com/cvc5/cvc5/issues/3402). Instead of using user-defined
+  -- datatypes to encode What4 structs, we instead use CVC4's built-in Tuple
+  -- datatype, which does not suffer from this bug. We use the Tuple syntax
+  -- described in https://cvc4.github.io/datatypes.html#tuples.
+  --
+  -- Note that this bug has been fixed in CVC5, so we do not apply the same
+  -- workaround in What4.Solver.CVC5.
   smtlib2declareStructCmd _ = Nothing
   smtlib2StructSort []  = Syntax.varSort "Tuple"
   smtlib2StructSort tps = Syntax.Sort $ "(Tuple" <> foldMap f tps <> ")"
