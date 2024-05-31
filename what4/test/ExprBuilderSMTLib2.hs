@@ -1068,8 +1068,8 @@ issue182Test sym solver = do
     let idx = Ctx.Empty Ctx.:> idxInt
     let arrLookup = arrayLookup sym arr idx
     elt <- arrLookup
-    bvZero <- bvZero sym w
-    p <- bvEq sym elt bvZero
+    zeroBV <- bvZero sym w
+    p <- bvEq sym elt zeroBV
 
     checkSatisfiableWithModel solver "test" p $ \case
       Sat fn ->
