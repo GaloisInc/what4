@@ -53,7 +53,6 @@ import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
-import qualified Prettyprinter as PP
 import           LibBF (BigFloat)
 import qualified LibBF as BF
 
@@ -85,7 +84,7 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
 
--- | Inject 'GroundValue' back into 'SymExpr'
+-- | Inject a 'GroundValue' back into a 'SymExpr'.
 --
 -- c.f. 'What4.Interface.concreteToSym'.
 groundToSym ::
@@ -104,11 +103,13 @@ groundToSym sym tpr val =
     BaseStringRepr _ -> stringLit sym val
     BaseComplexRepr -> mkComplexLit sym val
     BaseStructRepr tps ->
-      mkStruct sym =<< Ctx.zipWithM (\tp (GVW gv) -> groundToSym  sym tp gv) tps val
+      mkStruct sym =<< Ctx.zipWithM (\tp (GVW gv) -> groundToSym sym tp gv) tps val
     BaseArrayRepr idxTy tpr' ->
       case val of
-        ArrayConcrete def xs0 ->
-          go (Map.toAscList xs0) =<< constantArray sym idxTy =<< groundToSym sym tpr' def
+        ArrayConcrete def xs0 -> do
+          def' <- groundToSym sym tpr' def
+          arr <- constantArray sym idxTy def'
+          go (Map.toAscList xs0) arr
         ArrayMapping _ -> fail "Can't evaluate `groundToSym` on `ArrayMapping`"
       where
       go [] arr = return arr
