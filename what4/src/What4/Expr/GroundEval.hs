@@ -25,6 +25,7 @@ module What4.Expr.GroundEval
   ( -- * Ground evaluation
     GroundValue
   , GroundValueWrapper(..)
+  , groundToSym
   , GroundArray(..)
   , lookupArray
   , GroundEvalFn(..)
@@ -82,6 +83,41 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
+
+-- | Inject a 'GroundValue' back into a 'SymExpr'.
+--
+-- c.f. 'What4.Interface.concreteToSym'.
+groundToSym ::
+  IsExprBuilder sym =>
+  sym ->
+  BaseTypeRepr tp ->
+  GroundValue tp ->
+  IO (SymExpr sym tp)
+groundToSym sym tpr val =
+  case tpr of
+    BaseBoolRepr -> pure (if val then truePred sym else falsePred sym)
+    BaseBVRepr w -> bvLit sym w val
+    BaseIntegerRepr -> intLit sym val
+    BaseRealRepr -> realLit sym val
+    BaseFloatRepr fpp -> floatLit sym fpp val
+    BaseStringRepr _ -> stringLit sym val
+    BaseComplexRepr -> mkComplexLit sym val
+    BaseStructRepr tps ->
+      mkStruct sym =<< Ctx.zipWithM (\tp (GVW gv) -> groundToSym sym tp gv) tps val
+    BaseArrayRepr idxTy tpr' ->
+      case val of
+        ArrayConcrete def xs0 -> do
+          def' <- groundToSym sym tpr' def
+          arr <- constantArray sym idxTy def'
+          go (Map.toAscList xs0) arr
+        ArrayMapping _ -> fail "Can't evaluate `groundToSym` on `ArrayMapping`"
+      where
+      go [] arr = return arr
+      go ((i, x) : xs) arr =
+        do arr' <- go xs arr
+           i' <- traverseFC (indexLit sym) i
+           x' <- groundToSym sym tpr' x
+           arrayUpdate sym arr' i' x'
 
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
