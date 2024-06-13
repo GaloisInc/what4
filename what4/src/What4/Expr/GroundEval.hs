@@ -57,7 +57,6 @@ import           LibBF (BigFloat)
 import qualified LibBF as BF
 
 import           What4.BaseTypes
-import           What4.Concrete (ConcreteVal(..), fromIndexLit, toIndexLit)
 import           What4.Interface
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
@@ -72,7 +71,6 @@ import           What4.Utils.Arithmetic ( roundAway )
 import           What4.Utils.Complex
 import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral
-import Data.Functor.Product (Product(Pair))
 
 
 type family GroundValue (tp :: BaseType) where
