@@ -29,9 +29,7 @@ import qualified What4.SatResult as WSat
 -- | Reasons why attempting to resolve a symbolic expression as concrete can
 -- fail.
 data ConcretizationFailure
-  = ConversionError
-    -- ^ 'WEG.fromConcrete' failed
-  | SolverUnknown
+  = SolverUnknown
     -- ^ Querying the SMT solver yielded @UNKNOWN@.
   | UnsatInitialAssumptions
     -- ^ Querying the SMT solver for an initial model of the expression failed
@@ -59,11 +57,8 @@ concretize ::
   WI.SymExpr sym tp ->
   IO (Either ConcretizationFailure (WEG.GroundValue tp))
 concretize sym sp val =
-  case WI.asConcrete val of
-    Just val' ->
-      case WEG.fromConcrete val' of
-        Just val'' -> pure (Right val'')
-        Nothing -> pure (Left ConversionError)
+  case WEG.asGround val of
+    Just gVal -> pure (Right gVal)
     Nothing -> do
       -- First, check to see if there is a model of the symbolic value.
       res <- WPO.inNewFrame sp $ do

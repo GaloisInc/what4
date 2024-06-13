@@ -24,11 +24,9 @@
 module What4.Expr.GroundEval
   ( -- * Ground evaluation
     GroundValue
-  , fromConcrete
-  , toConcrete
+  , asGround
   , groundToSym
   , GroundValueWrapper(..)
-  , groundToSym
   , GroundArray(..)
   , lookupArray
   , GroundEvalFn(..)
@@ -88,6 +86,20 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
 
+-- | Return a ground representation of a value, if it is ground.
+asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)
+asGround x =
+  case exprType x of
+    BaseBoolRepr       -> asConstantPred x
+    BaseIntegerRepr    -> asInteger x
+    BaseRealRepr       -> asRational x
+    BaseStringRepr _si -> asString x
+    BaseComplexRepr    -> asComplex x
+    BaseBVRepr _w       -> asBV x
+    BaseFloatRepr _fpp  -> asFloat x
+    BaseStructRepr _   -> asStruct x >>= traverseFC (fmap GVW . asGround)
+    BaseArrayRepr _idx _tp -> Nothing
+
 -- | Inject a 'GroundValue' back into a 'SymExpr'.
 --
 -- c.f. 'What4.Interface.concreteToSym'.
@@ -122,55 +134,6 @@ groundToSym sym tpr val =
            i' <- traverseFC (indexLit sym) i
            x' <- groundToSym sym tpr' x
            arrayUpdate sym arr' i' x'
-
--- | Convert a 'ConcreteVal' into a 'GroundValue'
---
--- May fail if the 'ConcreteVal' contains ill-typed array indices.
-fromConcrete :: ConcreteVal tp -> Maybe (GroundValue tp)
-fromConcrete =
-  \case
-    ConcreteBool b -> Just b
-    ConcreteInteger i -> Just i
-    ConcreteReal r -> Just r
-    ConcreteFloat _fpp bf -> Just bf
-    ConcreteString  s -> Just s
-    ConcreteComplex c -> Just c
-    ConcreteBV _w bv -> Just bv
-    ConcreteStruct fs -> traverseFC (fmap GVW . fromConcrete) fs
-    ConcreteArray _idxTys def upds ->
-      let upds' =
-            fmap Map.fromList $
-              traverse (\(idxs, val) -> (,) <$> traverseFC toIndexLit idxs <*> fromConcrete val) $
-              Map.toList upds
-      in ArrayConcrete <$> fromConcrete def <*> upds'
-
--- | Convert a 'GroundValue' to a 'ConcreteVal'
---
--- Fails on 'ArrayMapping'.
-toConcrete :: BaseTypeRepr tp -> GroundValue tp -> Maybe (ConcreteVal tp)
-toConcrete tpr val =
-  case tpr of
-    BaseBoolRepr -> Just (ConcreteBool val)
-    BaseIntegerRepr -> Just (ConcreteInteger val)
-    BaseRealRepr -> Just (ConcreteReal val)
-    BaseFloatRepr fpp -> Just (ConcreteFloat fpp val)
-    BaseStringRepr {} -> Just (ConcreteString val)
-    BaseComplexRepr -> Just (ConcreteComplex val)
-    BaseBVRepr w -> Just (ConcreteBV w val)
-    BaseStructRepr xs ->
-      ConcreteStruct <$>
-        traverseFC
-          (\(Pair tpr' (GVW gv)) -> toConcrete tpr' gv)
-          (Ctx.zipWith Pair xs val)
-    BaseArrayRepr idxTys ty ->
-      case val of
-        ArrayMapping {} -> Nothing
-        ArrayConcrete def upds ->
-          ConcreteArray idxTys
-          <$> toConcrete ty def
-          <*> (fmap Map.fromList $
-                (traverse (\(idxs, gval) -> (,) <$> pure (fmapFC fromIndexLit idxs) <*> toConcrete ty gval) $
-                Map.toList upds))
 
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
