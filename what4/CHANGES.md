@@ -1,3 +1,8 @@
+# next (TBA)
+
+* Fix a bug in which `what4`'s CVC5 adapter would fail to parse models
+  involving structs. ([#265](https://github.com/GaloisInc/what4/issues/265))
+
 # 1.6 (May 2024)
 
 * Allow building with GHC 9.8.
