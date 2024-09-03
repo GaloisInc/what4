@@ -9,7 +9,7 @@ License-file:  LICENSE
 Build-type:    Simple
 Homepage:      https://github.com/GaloisInc/what4
 Bug-reports:   https://github.com/GaloisInc/what4/issues
-Tested-with:   GHC==8.6.5, GHC==8.8.4, GHC==8.10.7, GHC==9.0.2
+Tested-with:   GHC==8.8.4, GHC==8.10.7, GHC==9.0.2, GHC==9.2.2, GHC==9.4.4, GHC==9.6.2, GHC==9.8.1
 Category:      Formal Methods, Theorem Provers, Symbolic Computation, SMT
 Synopsis:      Solver-agnostic symbolic values support for issuing queries
 Description:
