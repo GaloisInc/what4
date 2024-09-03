@@ -3,6 +3,10 @@
 * Fix a bug in which `what4`'s CVC5 adapter would fail to parse models
   involving structs. ([#265](https://github.com/GaloisInc/what4/issues/265))
 
+* Add `What4.Expr.GroundEval.groundToSym`, which allows injecting
+  `GroundValue`s back into `SymExpr`s.
+  ([#268](https://github.com/GaloisInc/what4/pull/268))
+
 # 1.6 (May 2024)
 
 * Allow building with GHC 9.8.
