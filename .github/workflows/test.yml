@@ -100,7 +100,6 @@ jobs:
         run: |
           GHC=haskell.compiler.ghc$(echo ${{ matrix.ghc }} | sed -e s,\\.,,g)
           case ${{ matrix.ghc }} in
-            8.6.5) GHC_NIXPKGS=github:nixos/nixpkgs/20.09 ;;
             9.0.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-22.05 ;;
             9.2.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-22.05 ;;
             9.4.4) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
