@@ -91,7 +91,7 @@ showsWord16String (Word16String xs0) tl = '"' : go (BS.unpack xs0)
 --   where the 16bit words are encoded as two bytes
 --   in little-endian order.
 --
---   PRECONDITION: the input bytestring must 
+--   PRECONDITION: the input bytestring must
 --   have a length which is a multiple of 2.
 fromLEByteString :: ByteString -> Word16String
 fromLEByteString xs
