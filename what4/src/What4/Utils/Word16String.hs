@@ -20,7 +20,9 @@ module What4.Utils.Word16String
 , take
 , append
 , length
-, foldl'
+-- Qualify this name to disambiguate it from the Prelude version of foldl'
+-- (defined in base-4.20 or later).
+, What4.Utils.Word16String.foldl'
 , findSubstring
 , isInfixOf
 , isPrefixOf
