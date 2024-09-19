@@ -34,7 +34,7 @@ module What4.Expr.BoolMap
 
 import           Control.Lens (_1, over)
 import           Data.Hashable
-import           Data.List (foldl')
+import qualified Data.List as List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Kind (Type)
 import           Data.Parameterized.Classes
@@ -150,7 +150,7 @@ addVar x p1 (BoolMap bm) = maybe InconsistentMap BoolMap $ AM.alterF f (Wrap x) 
 -- | Generate a bool map from a list of terms and polarities by repeatedly
 --   calling @addVar@.
 fromVars :: (HashableF f, OrdF f) => [(f BaseBoolType, Polarity)] -> BoolMap f
-fromVars = foldl' (\m (x,p) -> addVar x p m) (BoolMap AM.empty)
+fromVars = List.foldl' (\m (x,p) -> addVar x p m) (BoolMap AM.empty)
 
 -- | Merge two bool maps, performing resolution as necessary.
 combine :: OrdF f => BoolMap f -> BoolMap f -> BoolMap f

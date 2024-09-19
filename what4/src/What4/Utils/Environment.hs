@@ -24,7 +24,7 @@ import Control.Monad.Fail( MonadFail )
 
 import Control.Monad.IO.Class
 import Data.Char
-import Data.List (foldl')
+import qualified Data.List as List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified System.Directory as Sys
@@ -81,7 +81,7 @@ expandEnvironmentPath base_map path = do
   let init_map = Map.fromList [ ("MSS_BINPATH", prog_path) ]
   -- Extend init_map with environment variables.
   env <- getEnvironment
-  let expanded_map = foldl' (\m (k,v) -> Map.insert k v m) init_map env
+  let expanded_map = List.foldl' (\m (k,v) -> Map.insert k v m) init_map env
   -- Return expanded path.
   expandVars (Map.union base_map expanded_map) path
 

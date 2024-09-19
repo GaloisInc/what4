@@ -74,7 +74,7 @@ import           Control.Monad (unless)
 import qualified Data.BitVector.Sized as BV
 import           Data.Hashable
 import           Data.Kind
-import           Data.List (foldl')
+import qualified Data.List as List (foldl')
 import           Data.Maybe
 import           Data.Parameterized.Classes
 
@@ -432,7 +432,7 @@ traverseProdVars f pd =
     traverse (_1 (traverseWrap f)) (AM.toList (_prodMap pd))
  where
   sr = prodRepr pd
-  rebuild = foldl' (\m (WrapF t, occ) -> AM.insert (WrapF t) (mkProdNote sr occ t) occ m) AM.empty
+  rebuild = List.foldl' (\m (WrapF t, occ) -> AM.insert (WrapF t) (mkProdNote sr occ t) occ m) AM.empty
 
 
 -- | This returns a variable times a constant.
