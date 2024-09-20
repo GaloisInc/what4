@@ -109,7 +109,7 @@ jobs:
             *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
           echo "GHC_NIXPKGS=${GHC_NIXPKGS}" >> $GITHUB_ENV
-          echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} ${GHC_NIXPKGS}#gmp ${GHC_NIXPKGS}#zlib ${GHC_NIXPKGS}#zlib.dev" >> $GITHUB_ENV
+          echo NS="nix shell ${GHC_NIXPKGS}#pkg-config ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} ${GHC_NIXPKGS}#gmp ${GHC_NIXPKGS}#zlib ${GHC_NIXPKGS}#zlib.dev" >> $GITHUB_ENV
           # In a normal nix derivation, there is a pkgconfig hook that automatically
           # handles this, but since we are just using a nix shell this must be setup
           # manually so that if the haskell zlib package is built, it finds the right
