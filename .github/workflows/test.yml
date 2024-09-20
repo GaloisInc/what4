@@ -108,7 +108,8 @@ jobs:
             9.10.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-24.05 ;;
             *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
-          echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} nixpkgs#gmp nixpkgs#zlib nixpkgs#zlib.dev" >> $GITHUB_ENV
+          echo "GHC_NIXPKGS=${GHC_NIXPKGS}" >> $GITHUB_ENV
+          echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} ${GHC_NIXPKGS}#gmp ${GHC_NIXPKGS}#zlib ${GHC_NIXPKGS}#zlib.dev" >> $GITHUB_ENV
 
       - name: Cabal update
         shell: bash
@@ -147,11 +148,11 @@ jobs:
         # following adds a zlib package-specific stanza for these.
         run: |
           cd what4
-          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw nixpkgs#zlib)/lib --extra-include-dirs=$(nix eval --raw nixpkgs#zlib.dev)/include
+          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib --extra-include-dirs=$(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include
           echo "" >> ../cabal.project.local
           echo package zlib >> ../cabal.project.local
-          echo "  extra-lib-dirs: $(nix eval --raw nixpkgs#zlib)/lib" >> ../cabal.project.local
-          echo "  extra-include-dirs: $(nix eval --raw nixpkgs#zlib.dev)/include" >> ../cabal.project.local
+          echo "  extra-lib-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib" >> ../cabal.project.local
+          echo "  extra-include-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include" >> ../cabal.project.local
           cp ../cabal.project.local ./
 
       - name: Build
