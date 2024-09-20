@@ -24,7 +24,7 @@ on:
 # (e.g. cabal complains it can't find a valid version of the "happy"
 # tool).
 env:
-  CACHE_VERSION: 3
+  CACHE_VERSION: 4
 
 jobs:
   genmatrix:
@@ -154,6 +154,7 @@ jobs:
           echo "  extra-lib-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib" >> ../cabal.project.local
           echo "  extra-include-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include" >> ../cabal.project.local
           cp ../cabal.project.local ./
+          cat ../cabal.project.local
 
       - name: Build
         shell: bash
