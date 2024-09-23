@@ -13,7 +13,6 @@ import           Test.Tasty.HUnit
 import           Data.Maybe
 import           System.Environment
 
-import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Context
 import           Data.Parameterized.Map (MapF)
 import           Data.Parameterized.Nonce

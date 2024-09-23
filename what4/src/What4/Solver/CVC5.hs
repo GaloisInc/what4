@@ -35,7 +35,6 @@ module What4.Solver.CVC5
 
 import           Control.Monad (forM_, when)
 import           Data.Bits
-import           Data.String
 import           System.IO
 import qualified System.IO.Streams as Streams
 

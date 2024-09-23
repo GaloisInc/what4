@@ -20,7 +20,9 @@ module What4.Utils.Word16String
 , take
 , append
 , length
-, foldl'
+-- Qualify this name to disambiguate it from the Prelude version of foldl'
+-- (defined in base-4.20 or later).
+, What4.Utils.Word16String.foldl'
 , findSubstring
 , isInfixOf
 , isPrefixOf
@@ -91,7 +93,7 @@ showsWord16String (Word16String xs0) tl = '"' : go (BS.unpack xs0)
 --   where the 16bit words are encoded as two bytes
 --   in little-endian order.
 --
---   PRECONDITION: the input bytestring must 
+--   PRECONDITION: the input bytestring must
 --   have a length which is a multiple of 2.
 fromLEByteString :: ByteString -> Word16String
 fromLEByteString xs

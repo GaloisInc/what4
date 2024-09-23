@@ -44,7 +44,6 @@ module What4.Utils.AnnotatedMap
 
 import           Data.Functor.Identity
 import qualified Data.Foldable as Foldable
-import           Data.Foldable (foldl')
 import           Prelude hiding (null, filter, lookup)
 
 import qualified Data.FingerTree as FT
@@ -57,19 +56,19 @@ filterFingerTree ::
   FT.Measured v a =>
   (a -> Bool) -> FT.FingerTree v a -> FT.FingerTree v a
 filterFingerTree p =
-  foldl' (\xs x -> if p x then xs FT.|> x else xs) FT.empty
+  Foldable.foldl' (\xs x -> if p x then xs FT.|> x else xs) FT.empty
 
 mapMaybeFingerTree ::
   (FT.Measured v2 a2) =>
   (a1 -> Maybe a2) -> FT.FingerTree v1 a1 -> FT.FingerTree v2 a2
 mapMaybeFingerTree f =
-  foldl' (\xs x -> maybe xs (xs FT.|>) (f x)) FT.empty
+  Foldable.foldl' (\xs x -> maybe xs (xs FT.|>) (f x)) FT.empty
 
 traverseMaybeFingerTree ::
   (Applicative f, FT.Measured v2 a2) =>
   (a1 -> f (Maybe a2)) -> FT.FingerTree v1 a1 -> f (FT.FingerTree v2 a2)
 traverseMaybeFingerTree f =
-   foldl' (\m x -> rebuild <$> m <*> f x) (pure FT.empty)
+   Foldable.foldl' (\m x -> rebuild <$> m <*> f x) (pure FT.empty)
  where
  rebuild ys Nothing  = ys
  rebuild ys (Just y) = ys FT.|> y

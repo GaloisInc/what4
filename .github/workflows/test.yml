@@ -24,7 +24,7 @@ on:
 # (e.g. cabal complains it can't find a valid version of the "happy"
 # tool).
 env:
-  CACHE_VERSION: 3
+  CACHE_VERSION: 4
 
 jobs:
   genmatrix:
@@ -105,9 +105,16 @@ jobs:
             9.4.4) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
             9.6.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
             9.8.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.11 ;;
+            9.10.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-24.05 ;;
             *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
-          echo NS="nix shell ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} nixpkgs#gmp nixpkgs#zlib nixpkgs#zlib.dev" >> $GITHUB_ENV
+          echo "GHC_NIXPKGS=${GHC_NIXPKGS}" >> $GITHUB_ENV
+          echo NS="nix shell ${GHC_NIXPKGS}#pkg-config ${GHC_NIXPKGS}#cabal-install ${GHC_NIXPKGS}#${GHC} ${GHC_NIXPKGS}#gmp ${GHC_NIXPKGS}#zlib ${GHC_NIXPKGS}#zlib.dev" >> $GITHUB_ENV
+          # In a normal nix derivation, there is a pkgconfig hook that automatically
+          # handles this, but since we are just using a nix shell this must be setup
+          # manually so that if the haskell zlib package is built, it finds the right
+          # zlib packge config.
+          echo PKG_CONFIG_PATH=$(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/lib/pkgconfig >> $GITHUB_ENV
 
       - name: Cabal update
         shell: bash
@@ -146,12 +153,13 @@ jobs:
         # following adds a zlib package-specific stanza for these.
         run: |
           cd what4
-          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw nixpkgs#zlib)/lib --extra-include-dirs=$(nix eval --raw nixpkgs#zlib.dev)/include
+          $NS -c cabal configure --enable-tests -fdRealTestDisable -fsolverTests --extra-lib-dirs=$(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib --extra-include-dirs=$(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include
           echo "" >> ../cabal.project.local
           echo package zlib >> ../cabal.project.local
-          echo "  extra-lib-dirs: $(nix eval --raw nixpkgs#zlib)/lib" >> ../cabal.project.local
-          echo "  extra-include-dirs: $(nix eval --raw nixpkgs#zlib.dev)/include" >> ../cabal.project.local
+          echo "  extra-lib-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib" >> ../cabal.project.local
+          echo "  extra-include-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include" >> ../cabal.project.local
           cp ../cabal.project.local ./
+          cat ../cabal.project.local
 
       - name: Build
         shell: bash
