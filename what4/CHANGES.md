@@ -1,3 +1,7 @@
+# next (TBA)
+
+* Allow building with GHC 9.10.
+
 # 1.6.1 (Sep 2024)
 
 * Fix a bug in which `what4`'s CVC5 adapter would fail to parse models
