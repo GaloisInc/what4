@@ -3218,6 +3218,8 @@ asConcrete x =
       pure (ConcreteArray idx c_def Map.empty)
 
 -- | Create a literal symbolic value from a concrete value.
+--
+-- c.f. 'What4.Expr.GroundEval.groundToSym'
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
 concreteToSym sym = \case
    ConcreteBool True    -> return (truePred sym)
