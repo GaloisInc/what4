@@ -2134,14 +2134,14 @@ appSMTExpr ae = do
       let pol (x,Positive) = mkBaseExpr x
           pol (x,Negative) = notExpr <$> mkBaseExpr x
       in
-      case BM.viewBoolMap xs of
-        BM.BoolMapUnit ->
+      case BM.viewConjMap xs of
+        BM.ConjTrue ->
           return $ SMTExpr BoolTypeMap $ boolExpr True
-        BM.BoolMapDualUnit ->
+        BM.ConjFalse ->
           return $ SMTExpr BoolTypeMap $ boolExpr False
-        BM.BoolMapTerms (t:|[]) ->
+        BM.Conjuncts (t:|[]) ->
           SMTExpr BoolTypeMap <$> pol t
-        BM.BoolMapTerms (t:|ts) ->
+        BM.Conjuncts (t:|ts) ->
           do cnj <- andAll <$> mapM pol (t:ts)
              freshBoundTerm BoolTypeMap cnj
 

@@ -320,15 +320,7 @@ evalGroundApp f a0 = do
       if xv then f y else f z
 
     NotPred x -> not <$> f x
-    ConjPred xs ->
-      let pol (x,Positive) = f x
-          pol (x,Negative) = not <$> f x
-      in
-      case BM.viewBoolMap xs of
-        BM.BoolMapUnit -> return True
-        BM.BoolMapDualUnit -> return False
-        BM.BoolMapTerms (t:|ts) ->
-          foldl' (&&) <$> pol t <*> mapM pol ts
+    ConjPred cm -> BM.evalConj f cm
 
     RealIsInteger x -> (\xv -> denominator xv == 1) <$> f x
     BVTestBit i x ->

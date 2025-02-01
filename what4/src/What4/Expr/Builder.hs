@@ -1548,16 +1548,16 @@ realSum sym s = semiRingSum sym s
 bvSum :: ExprBuilder t st fs -> WeightedSum (Expr t) (SR.SemiRingBV flv w) -> IO (BVExpr t w)
 bvSum sym s = semiRingSum sym s
 
-conjPred :: ExprBuilder t st fs -> BoolMap (Expr t) -> IO (BoolExpr t)
-conjPred sym bm =
-  case BM.viewBoolMap bm of
-    BoolMapUnit     -> return $ truePred sym
-    BoolMapDualUnit -> return $ falsePred sym
-    BoolMapTerms ((x,p):|[]) ->
+conjPred :: ExprBuilder t st fs -> BM.ConjMap (Expr t) -> IO (BoolExpr t)
+conjPred sym cm =
+  case BM.viewConjMap cm of
+    BM.ConjTrue -> return $ truePred sym
+    BM.ConjFalse -> return $ falsePred sym
+    BM.Conjuncts ((x,p):|[]) ->
       case p of
         Positive -> return x
         Negative -> notPred sym x
-    _ -> sbMakeExpr sym $ ConjPred bm
+    _ -> sbMakeExpr sym $ ConjPred cm
 
 bvUnary :: (1 <= w) => ExprBuilder t st fs -> UnaryBV (BoolExpr t) w -> IO (BVExpr t w)
 bvUnary sym u
@@ -1985,7 +1985,7 @@ tryAndAbsorption ::
   BoolExpr t ->
   Bool
 tryAndAbsorption (asApp -> Just (NotPred (asApp -> Just (ConjPred as)))) (asConjunction -> bs)
-  = checkAbsorption (BM.reversePolarities as) bs
+  = checkAbsorption (BM.reversePolarities (BM.getConjMap as)) bs
 tryAndAbsorption _ _ = False
 
 
@@ -1997,7 +1997,7 @@ tryOrAbsorption ::
   BoolExpr t ->
   Bool
 tryOrAbsorption (asApp -> Just (ConjPred as)) (asDisjunction -> bs)
-  = checkAbsorption as bs
+  = checkAbsorption (BM.getConjMap as) bs
 tryOrAbsorption _ _ = False
 
 
@@ -2095,7 +2095,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    go a b
      | Just (ConjPred as) <- asApp a
      , Just (ConjPred bs) <- asApp b
-     = conjPred sym $ BM.combine as bs
+     = conjPred sym $ as <> bs
 
      | tryAndAbsorption a b
      = return b
@@ -2104,13 +2104,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      = return a
 
      | Just (ConjPred as) <- asApp a
-     = conjPred sym $ uncurry BM.addVar (asPosAtom b) as
+     = conjPred sym $ uncurry BM.addConjunct (asPosAtom b) as
 
      | Just (ConjPred bs) <- asApp b
-     = conjPred sym $ uncurry BM.addVar (asPosAtom a) bs
+     = conjPred sym $ uncurry BM.addConjunct (asPosAtom a) bs
 
      | otherwise
-     = conjPred sym $ BM.fromVars [asPosAtom a, asPosAtom b]
+     = conjPred sym $ BM.ConjMap (BM.fromVars [asPosAtom a, asPosAtom b])
 
   orPred sym x y =
     case (asConstantPred x, asConstantPred y) of
@@ -2125,7 +2125,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
    go a b
      | Just (NotPred (asApp -> Just (ConjPred as))) <- asApp a
      , Just (NotPred (asApp -> Just (ConjPred bs))) <- asApp b
-     = notPred sym =<< conjPred sym (BM.combine as bs)
+     = notPred sym =<< conjPred sym (as <> bs)
 
      | tryOrAbsorption a b
      = return b
@@ -2134,13 +2134,13 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      = return a
 
      | Just (NotPred (asApp -> Just (ConjPred as))) <- asApp a
-     = notPred sym =<< conjPred sym (uncurry BM.addVar (asNegAtom b) as)
+     = notPred sym =<< conjPred sym (uncurry BM.addConjunct (asNegAtom b) as)
 
      | Just (NotPred (asApp -> Just (ConjPred bs))) <- asApp b
-     = notPred sym =<< conjPred sym (uncurry BM.addVar (asNegAtom a) bs)
+     = notPred sym =<< conjPred sym (uncurry BM.addConjunct (asNegAtom a) bs)
 
      | otherwise
-     = notPred sym =<< conjPred sym (BM.fromVars [asNegAtom a, asNegAtom b])
+     = notPred sym =<< conjPred sym (BM.ConjMap (BM.fromVars [asNegAtom a, asNegAtom b]))
 
   itePred sb c x y
       -- ite c c y = c || y

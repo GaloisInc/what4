@@ -11,8 +11,10 @@ laws like commutativity, associativity and resolution.
 -}
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ViewPatterns #-}
+
 module What4.Expr.BoolMap
   ( BoolMap
   , var
@@ -30,6 +32,12 @@ module What4.Expr.BoolMap
   , reversePolarities
   , removeVar
   , Wrap(..)
+    -- * 'ConjMap'
+  , ConjMap(..)
+  , ConjMapView(..)
+  , viewConjMap
+  , addConjunct
+  , evalConj
   ) where
 
 import           Control.Lens (_1, over)
@@ -42,6 +50,7 @@ import           Data.Parameterized.Classes
 import           What4.BaseTypes
 import qualified What4.Utils.AnnotatedMap as AM
 import           What4.Utils.IncrHash
+import Data.Coerce (coerce)
 
 -- | Describes the occurrence of a variable or expression, whether it is
 --   negated or not.
@@ -91,6 +100,8 @@ instance OrdF f => Eq (BoolMap f) where
   BoolMap m1 == BoolMap m2 = AM.eqBy (==) m1 m2
   _ == _ = False
 
+instance OrdF f => Semigroup (BoolMap f) where
+  (<>) = combine
 
 -- | Traverse the expressions in a bool map, and rebuild the map.
 traverseVars :: (Applicative m, HashableF g, OrdF g) =>
@@ -182,3 +193,45 @@ reversePolarities (BoolMap m) = BoolMap $! fmap negatePolarity m
 removeVar :: OrdF f => BoolMap f -> f BaseBoolType -> BoolMap f
 removeVar InconsistentMap _ = InconsistentMap
 removeVar (BoolMap m) x = BoolMap (AM.delete (Wrap x) m)
+
+--------------------------------------------------------------------------------
+-- ConjMap
+
+newtype ConjMap f = ConjMap { getConjMap :: BoolMap f }
+  deriving (Eq, Hashable, Semigroup)
+
+-- | Represents the state of a 'ConjMap'. See 'viewConjMap'.
+--
+-- Like 'BoolMapView', but with more specific names for readability.
+data ConjMapView f
+  = ConjFalse
+    -- ^ A 'ConjMap' with no expressions
+  | ConjTrue
+    -- ^ An inconsistent 'ConjMap'
+  | Conjuncts (NonEmpty (f BaseBoolType, Polarity))
+    -- ^ The terms appearing in the 'ConjMap', of which there is at least one
+
+conjMapView :: BoolMapView f -> ConjMapView f
+conjMapView BoolMapUnit = ConjTrue
+conjMapView BoolMapDualUnit = ConjFalse
+conjMapView (BoolMapTerms ts) = Conjuncts ts
+
+-- | Deconstruct the given 'ConjMap' for later processing
+viewConjMap :: ConjMap f -> ConjMapView f
+viewConjMap = conjMapView . viewBoolMap . getConjMap
+{-# INLINE viewConjMap #-}
+
+addConjunct :: (HashableF f, OrdF f) => f BaseBoolType -> Polarity -> ConjMap f -> ConjMap f
+addConjunct t p = coerce (addVar t p)
+{-# INLINE addConjunct #-}
+
+evalConj :: Applicative m => (f BaseBoolType -> m Bool) -> ConjMap f -> m Bool
+evalConj f cm =
+  let pol (x, Positive) = f x
+      pol (x, Negative) = not <$> f x
+  in
+  case viewConjMap cm of
+    ConjTrue -> pure True
+    ConjFalse -> pure False
+    Conjuncts (t:|ts) ->
+      List.foldl' (&&) <$> pol t <*> traverse pol ts
