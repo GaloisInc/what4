@@ -78,6 +78,9 @@ instance (HashableF f, TestEquality f) => Hashable (Wrap f x) where
 --   conjunctions this corresponds to a contradiction and
 --   represents false; for disjunction, this corresponds to the law of
 --   the excluded middle and represents true.
+--
+--   The annotation on the 'AM.AnnotatedMap' is an incremental hash ('IncrHash')
+--   of the map, used to support a fast 'Hashable' instance.
 
 data BoolMap (f :: BaseType -> Type)
   = InconsistentMap
