@@ -233,7 +233,7 @@ import           What4.Symbol
 import           What4.Expr.Allocator
 import           What4.Expr.App
 import qualified What4.Expr.ArrayUpdateMap as AUM
-import           What4.Expr.BoolMap (BoolMap, Polarity(..), BoolMapView(..))
+import           What4.Expr.BoolMap (BoolMap, Polarity(..))
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.MATLAB
 import           What4.Expr.WeightedSum (WeightedSum, SemiRingProduct)

@@ -14,6 +14,8 @@ laws like commutativity, associativity and resolution.
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module What4.Expr.BoolMap
   ( BoolMap
@@ -34,7 +36,10 @@ module What4.Expr.BoolMap
   , Wrap(..)
     -- * 'ConjMap'
   , ConjMap(..)
-  , ConjMapView(..)
+  , ConjMapView
+  , pattern ConjTrue
+  , pattern ConjFalse
+  , pattern Conjuncts
   , viewConjMap
   , addConjunct
   , evalConj
@@ -197,32 +202,47 @@ removeVar (BoolMap m) x = BoolMap (AM.delete (Wrap x) m)
 --------------------------------------------------------------------------------
 -- ConjMap
 
+-- No idea why `coerce` needs these the explicit type applications in this
+-- section...
+
+-- | A 'BoolMap' representing a conjunction.
 newtype ConjMap f = ConjMap { getConjMap :: BoolMap f }
   deriving (Eq, Hashable, Semigroup)
 
 -- | Represents the state of a 'ConjMap'. See 'viewConjMap'.
 --
--- Like 'BoolMapView', but with more specific names for readability.
-data ConjMapView f
-  = ConjFalse
-    -- ^ A 'ConjMap' with no expressions
-  | ConjTrue
-    -- ^ An inconsistent 'ConjMap'
-  | Conjuncts (NonEmpty (f BaseBoolType, Polarity))
-    -- ^ The terms appearing in the 'ConjMap', of which there is at least one
+-- Like 'BoolMapView', but with more specific patterns for readability.
+newtype ConjMapView f = ConjMapView (BoolMapView f)
 
-conjMapView :: BoolMapView f -> ConjMapView f
-conjMapView BoolMapUnit = ConjTrue
-conjMapView BoolMapDualUnit = ConjFalse
-conjMapView (BoolMapTerms ts) = Conjuncts ts
+pattern ConjTrue :: ConjMapView f
+pattern ConjTrue = ConjMapView BoolMapUnit
+
+pattern ConjFalse :: ConjMapView f
+pattern ConjFalse = ConjMapView BoolMapDualUnit
+
+pattern Conjuncts :: NonEmpty (f BaseBoolType, Polarity) -> ConjMapView f
+pattern Conjuncts ts = ConjMapView (BoolMapTerms ts)
+
+{-# COMPLETE ConjTrue, ConjFalse, Conjuncts #-}
 
 -- | Deconstruct the given 'ConjMap' for later processing
-viewConjMap :: ConjMap f -> ConjMapView f
-viewConjMap = conjMapView . viewBoolMap . getConjMap
+viewConjMap :: forall f. ConjMap f -> ConjMapView f
+viewConjMap =
+  coerce @(BoolMap f -> BoolMapView f) @(ConjMap f -> ConjMapView f) viewBoolMap
 {-# INLINE viewConjMap #-}
 
-addConjunct :: (HashableF f, OrdF f) => f BaseBoolType -> Polarity -> ConjMap f -> ConjMap f
-addConjunct t p = coerce (addVar t p)
+addConjunct ::
+  forall f.
+  (HashableF f, OrdF f) =>
+  f BaseBoolType ->
+  Polarity ->
+  ConjMap f ->
+  ConjMap f
+addConjunct =
+  coerce
+    @(f BaseBoolType -> Polarity -> BoolMap f -> BoolMap f)
+    @(f BaseBoolType -> Polarity -> ConjMap f -> ConjMap f)
+    addVar
 {-# INLINE addConjunct #-}
 
 evalConj :: Applicative m => (f BaseBoolType -> m Bool) -> ConjMap f -> m Bool

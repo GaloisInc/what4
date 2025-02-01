@@ -44,7 +44,6 @@ import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Maybe
 import qualified Data.BitVector.Sized as BV
-import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Foldable
 import qualified Data.Map.Strict as Map
 import           Data.Maybe ( fromMaybe )
