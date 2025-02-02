@@ -210,7 +210,9 @@ boolTests :: T.TestTree
 boolTests =
   T.testGroup
     "boolean normalization tests"
-    [ THG.testProperty "boolean normalization" $
+    [ -- Test that the rewrite rules rewrite expressions into a sufficiently
+      -- normal form (defined by 'isNormal').
+      THG.testProperty "boolean rewrites normalize" $
         HG.property $ do
           Some ng <- liftIO newIONonceGenerator
           sym <- liftIO (newExprBuilder FloatIEEERepr EmptyExprBuilderState ng)
@@ -220,16 +222,23 @@ boolTests =
           unless ok $
             liftIO (putStrLn ("Not normalized:\n" ++ show (printSymExpr e')))
           HG.assert ok
-    , THG.testProperty "boolean normalization 2" $
+    , THG.testProperty "boolean rewrites preserve semantics" $
         HG.property $ do
           Some ng <- liftIO newIONonceGenerator
           sym <- liftIO (newExprBuilder FloatIEEERepr EmptyExprBuilderState ng)
           (e, vars) <- HG.forAllT (doGenExpr sym)
+          -- Concretely evaluate the `BExpr` to get the expected semantics.
           let expected = State.evalState (eval getVar e) vars
+          -- Generate a `Expr` with uninterpreted variables. It is important to
+          -- not interpret the variables into `truePred` and `falsePred` here,
+          -- to avoid only hitting the `asConstantPred` cases in the rewrites.
           e' <- liftIO (interp sym (pure . uninterpVar) e)
+          -- Finally, substitute values in for the variables, simplifying the
+          -- `Expr` along the way until we get a concrete boolean.
           let vs = Map.toList (getValuation vars)
           let substs = foldr (\(v, b) -> MapF.insert v (if b then truePred sym else falsePred sym)) MapF.empty vs
           e'' <- liftIO (substituteBoundVars sym substs e')
+          -- Check that the `BExpr` and `Expr` agreed on the semantics.
           case asConstantPred e'' of
             Just actual -> actual HG.=== expected
             Nothing -> HG.failure

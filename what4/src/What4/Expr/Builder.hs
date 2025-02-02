@@ -19,6 +19,20 @@ threads may still clobber state others have set (e.g., the current
 program location) so the potential for truly multithreaded use is
 somewhat limited.  Consider the @exprBuilderFreshConfig@ or
 @exprBuilderSplitConfig@ operations if this is a concern.
+
+-- * Boolean expressions
+
+'ExprBuilder' tries to rewrite expressions in order to keep them as simple
+and concrete as possible. In particular, here are a few considerations for
+boolean-typed expressions:
+
+* Disjunctions are implicitly represented as negated conjunctions
+* Conjunctions are represented via 'BM.ConjMap' (see docs on that type)
+* @xor@ is represented as the negation of equality
+
+Boolean expressions are expected to be somewhat normalized at all times.
+For example, there should never be a double negation (nested 'NotPred').
+See @isNormal@ in @test/Bool.hs@ for the exact expectations.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
@@ -2048,6 +2062,8 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   ----------------------------------------------------------------------
   -- Bool operations.
+  --
+  -- See Boolean expressions in the module-level docs for some discussion.
 
   truePred  = sbTrue
   falsePred = sbFalse
