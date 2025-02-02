@@ -30,6 +30,7 @@ module What4.Expr.BoolMap
   , isNull
   , BoolMapView(..)
   , viewBoolMap
+  , foldMapVars
   , traverseVars
   , reversePolarities
   , removeVar
@@ -46,16 +47,17 @@ module What4.Expr.BoolMap
   ) where
 
 import           Control.Lens (_1, over)
+import           Data.Coerce (coerce)
 import           Data.Hashable
 import qualified Data.List as List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Kind (Type)
 import           Data.Parameterized.Classes
+import           Data.Parameterized.TraversableF
 
 import           What4.BaseTypes
 import qualified What4.Utils.AnnotatedMap as AM
 import           What4.Utils.IncrHash
-import Data.Coerce (coerce)
 
 -- | Describes the occurrence of a variable or expression, whether it is
 --   negated or not.
@@ -107,6 +109,14 @@ instance OrdF f => Eq (BoolMap f) where
 
 instance OrdF f => Semigroup (BoolMap f) where
   (<>) = combine
+
+-- | Specialized version of 'foldMapVars'
+instance FoldableF BoolMap where
+  foldMapF f = foldMapVars f
+
+foldMapVars :: Monoid m => (f BaseBoolType -> m) -> BoolMap f -> m
+foldMapVars _ InconsistentMap = mempty
+foldMapVars f (BoolMap am) = foldMap (f . unWrap . fst) (AM.toList am)
 
 -- | Traverse the expressions in a bool map, and rebuild the map.
 traverseVars :: (Applicative m, HashableF g, OrdF g) =>
@@ -207,7 +217,7 @@ removeVar (BoolMap m) x = BoolMap (AM.delete (Wrap x) m)
 
 -- | A 'BoolMap' representing a conjunction.
 newtype ConjMap f = ConjMap { getConjMap :: BoolMap f }
-  deriving (Eq, Hashable, Semigroup)
+  deriving (Eq, FoldableF, Hashable, Semigroup)
 
 -- | Represents the state of a 'ConjMap'. See 'viewConjMap'.
 --
