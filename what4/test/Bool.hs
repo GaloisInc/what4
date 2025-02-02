@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Bool (boolTests) where
+module Bool where
 
 import Control.Monad (unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -20,8 +20,8 @@ import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
 import Hedgehog (GenT)
 import Hedgehog.Gen qualified as Gen
+import Hedgehog.Internal.Gen qualified as HG
 import Hedgehog.Internal.Property qualified as HG
-import Hedgehog qualified as HG
 import Test.Tasty.Hedgehog qualified as THG
 import Test.Tasty qualified as T
 import What4.Expr.BoolMap qualified as BM
@@ -173,6 +173,15 @@ _interpVar sym vs v =
 uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
 uninterpVar = BoundVarExpr
 
+isNot :: Expr t BaseBoolType -> Bool
+isNot e =
+  case e of
+    AppExpr ae ->
+      case appExprApp ae of
+        NotPred {} -> True
+        _ -> False
+    _ -> False
+
 isNormalIte ::
   ExprBuilder t st fs ->
   Expr t BaseBoolType -> 
@@ -183,6 +192,7 @@ isNormalIte sym c l r = do
   isNormal sym c
   isNormal sym l
   isNormal sym r
+  unless (not (isNot c)) (Left "negated ite condition")
   unless (c /= l) (Left "ite cond == LHS")
   unless (c /= r) (Left "ite cond == RHS")
   unless (c /= truePred sym) (Left "ite cond == true")
@@ -222,14 +232,9 @@ isNormal sym =
     AppExpr ae ->
       case appExprApp ae of
         NotPred (asApp -> Just NotPred {}) -> Left "double negation"
-
+        NotPred e -> isNormal sym e
         ConjPred cm -> isNormalMap sym cm
-        NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap sym cm
-        NotPred (BoundVarExpr {}) -> Right ()
         BaseIte BaseBoolRepr _sz c l r -> isNormalIte sym c l r
-        -- TODO:
-        -- NotPred (asApp -> Just BaseIte {}) -> Left "negated ite"
-        NotPred (asApp -> Just BaseIte {}) -> pure ()
         _ -> Left "non-normal app"
     _ -> Left "non-normal expr"
 
