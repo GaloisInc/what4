@@ -11,6 +11,8 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict qualified as State
 import Control.Monad.Trans (lift)
 import Data.Coerce (coerce)
+import Data.Either (isRight)
+import Data.Foldable (traverse_)
 import Data.Map qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Parameterized.Map qualified as MapF
@@ -58,8 +60,7 @@ genBExpr var =
     -- TODO: Generate Eq
     -- , Eq <$> genBExpr var <*> genBExpr var
     , Or <$> genBExpr var <*> genBExpr var
-    -- TODO: Generate Ite
-    -- , Ite <$> genBExpr var <*> genBExpr var <*> genBExpr var
+    , Ite <$> genBExpr var <*> genBExpr var <*> genBExpr var
     ]
 
 newtype Valuation t
@@ -172,45 +173,65 @@ _interpVar sym vs v =
 uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
 uninterpVar = BoundVarExpr
 
-isNormalMap :: BM.ConjMap (Expr t) -> Bool
-isNormalMap cm =
+isNormalIte ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType -> 
+  Expr t BaseBoolType -> 
+  Expr t BaseBoolType -> 
+  Either String ()
+isNormalIte sym c l r = do
+  isNormal sym c
+  isNormal sym l
+  isNormal sym r
+  unless (c /= l) (Left "ite cond == LHS")
+  unless (c /= r) (Left "ite cond == RHS")
+  unless (c /= truePred sym) (Left "ite cond == true")
+  unless (c /= falsePred sym) (Left "ite cond == false")
+
+isNormalMap :: ExprBuilder t st fs -> BM.ConjMap (Expr t) -> Either String ()
+isNormalMap sym cm =
   case BM.viewConjMap cm of
-    BM.ConjTrue -> True
-    BM.ConjFalse -> False
-    BM.Conjuncts conjs -> all (uncurry isNormalConjunct) conjs
+    BM.ConjTrue -> Right ()
+    BM.ConjFalse -> Right ()
+    BM.Conjuncts conjs -> traverse_ (uncurry (isNormalConjunct sym)) conjs
   where
-    isNormalConjunct :: Expr t BaseBoolType -> BM.Polarity -> Bool
-    isNormalConjunct expr pol =
+    isNormalConjunct ::
+      ExprBuilder t st fs ->
+      Expr t BaseBoolType ->
+      BM.Polarity ->
+      Either String ()
+    isNormalConjunct s expr pol =
       case expr of
-        BoolExpr {} -> True
-        BoundVarExpr {} -> True
+        BoolExpr {} -> Right ()
+        BoundVarExpr {} -> Right ()
         AppExpr ae ->
           case appExprApp ae of
-            -- This should be expressed via polarity
-            NotPred {} -> False
+            NotPred {} -> Left "not should be expressed via polarity"
             -- This must be an OR, if it is an AND it should be combined with
             -- its parent
-            ConjPred {} -> pol == BM.Negative
-            _ -> False
-        _ -> False
+            ConjPred {} -> unless (pol == BM.Negative) (Left "and inside and")
+            BaseIte BaseBoolRepr _sz c l r -> isNormalIte s c l r
+            _ -> Left "non-normal app in conjunct"
+        _ -> Left "non-normal expr in conjunct"
 
-isNormal :: Expr t BaseBoolType -> Bool
-isNormal =
+isNormal :: ExprBuilder t st fs -> Expr t BaseBoolType -> Either String ()
+isNormal sym =
   \case
-    BoolExpr {} -> True
-    BoundVarExpr {} -> True
+    BoolExpr {} -> Right ()
+    BoundVarExpr {} -> Right ()
     AppExpr ae ->
       case appExprApp ae of
-        -- We explicitly do *not* want to see double negations
-        NotPred (asApp -> Just NotPred {}) -> False
-        ConjPred cm -> isNormalMap cm
-        -- NotPred (asApp -> Just (ConjPred {})) -> True
-        NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap cm
-        -- NotPred (asApp -> Just (BaseEq BaseBoolRepr (BoundVarExpr {}) r)) -> isNormal r
-        -- NotPred (asApp -> Just (BaseEq BaseBoolRepr l (BoundVarExpr {}))) -> isNormal l
-        NotPred (BoundVarExpr {}) -> True
-        _ -> False
-    _ -> False
+        NotPred (asApp -> Just NotPred {}) -> Left "double negation"
+
+        ConjPred cm -> isNormalMap sym cm
+        NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap sym cm
+        NotPred (BoundVarExpr {}) -> Right ()
+        BaseIte BaseBoolRepr _sz c l r -> isNormalIte sym c l r
+        -- TODO:
+        -- NotPred (asApp -> Just BaseIte {}) -> Left "negated ite"
+        NotPred (asApp -> Just BaseIte {}) -> pure ()
+        _ -> Left "non-normal app"
+    _ -> Left "non-normal expr"
 
 boolTests :: T.TestTree
 boolTests =
@@ -224,10 +245,10 @@ boolTests =
           sym <- liftIO (newExprBuilder FloatIEEERepr EmptyExprBuilderState ng)
           (e, _vars) <- HG.forAllT (doGenExpr sym)
           e' <- liftIO (interp sym (pure . uninterpVar) e)
-          let ok = isNormal e'
-          unless ok $
+          let ok = isNormal sym e'
+          unless (isRight ok) $
             liftIO (putStrLn ("Not normalized:\n" ++ show (printSymExpr e')))
-          HG.assert ok
+          ok HG.=== Right ()
     , THG.testProperty "boolean rewrites preserve semantics" $
         HG.property $ do
           Some ng <- liftIO newIONonceGenerator
