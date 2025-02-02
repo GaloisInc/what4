@@ -13,7 +13,6 @@ import Control.Monad.Trans (lift)
 import Data.Coerce (coerce)
 import Data.Map qualified as Map
 import Data.Maybe qualified as Maybe
-import Data.Monoid (All(getAll, All))
 import Data.Parameterized.Map qualified as MapF
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
@@ -174,19 +173,24 @@ uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
 uninterpVar = BoundVarExpr
 
 isNormalMap :: BM.ConjMap (Expr t) -> Bool
-isNormalMap = getAll . BM.foldMapVars (All . isNormalMapEntry) . BM.getConjMap
+isNormalMap cm =
+  case BM.viewConjMap cm of
+    BM.ConjTrue -> True
+    BM.ConjFalse -> False
+    BM.Conjuncts conjs -> all (uncurry isNormalConjunct) conjs
   where
-    isNormalMapEntry =
-      \case
+    isNormalConjunct :: Expr t BaseBoolType -> BM.Polarity -> Bool
+    isNormalConjunct expr pol =
+      case expr of
         BoolExpr {} -> True
         BoundVarExpr {} -> True
         AppExpr ae ->
           case appExprApp ae of
-            NotPred (BoundVarExpr {}) -> True
-            -- An OR inside an AND
-            NotPred (asApp -> Just ConjPred {}) -> True
-            -- TODO: We do *not* want to see an un-negated map in here
-            ConjPred {} -> True
+            -- This should be expressed via polarity
+            NotPred {} -> False
+            -- This must be an OR, if it is an AND it should be combined with
+            -- its parent
+            ConjPred {} -> pol == BM.Negative
             _ -> False
         _ -> False
 
@@ -197,6 +201,8 @@ isNormal =
     BoundVarExpr {} -> True
     AppExpr ae ->
       case appExprApp ae of
+        -- We explicitly do *not* want to see double negations
+        NotPred (asApp -> Just NotPred {}) -> False
         ConjPred cm -> isNormalMap cm
         -- NotPred (asApp -> Just (ConjPred {})) -> True
         NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap cm
