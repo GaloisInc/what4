@@ -14,7 +14,6 @@ import Data.Coerce (coerce)
 import Data.Either (isRight)
 import Data.Foldable (traverse_)
 import Data.Map qualified as Map
-import Data.Maybe qualified as Maybe
 import Data.Parameterized.Map qualified as MapF
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
@@ -29,7 +28,6 @@ import What4.Expr.Builder
 import What4.Expr (EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.Interface
 
--- | Boolean expressions that should always normalize
 data BExpr a
   = -- 0-ary
     Lit !Bool
@@ -68,7 +66,10 @@ newtype Valuation t
   deriving Show
 
 getValue :: ExprBoundVar t BaseBoolType -> Valuation t -> Bool
-getValue v = Maybe.fromJust . Map.lookup v . getValuation
+getValue v vs =
+  case Map.lookup v (getValuation vs) of
+    Nothing -> error "getValue: bad variable"
+    Just b -> b
 
 genFreshVar ::
   (HG.MonadGen m, MonadIO m) =>
@@ -105,13 +106,14 @@ doGenExpr sym =
   let vars0 = Valuation Map.empty in
   State.runStateT (genBExpr @(State.StateT _ (GenT IO)) (genVar @(GenT IO) sym)) vars0
 
-interp ::
+toSymExpr ::
   IsExprBuilder sym =>
   sym ->
+  -- | How to handle variables
   (a -> IO (SymExpr sym BaseBoolType)) ->
   BExpr a ->
   IO (SymExpr sym BaseBoolType)
-interp sym var = go
+toSymExpr sym var = go
   where
   go =
     \case
@@ -141,6 +143,10 @@ interp sym var = go
         r' <- go r
         itePred sym c' l' r'
 
+-- | For use with 'toSymExpr', to leave variables uninterpreted
+uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
+uninterpVar = BoundVarExpr
+
 eval :: Applicative f => (a -> f Bool) -> BExpr a -> f Bool
 eval var = go
   where
@@ -157,21 +163,9 @@ eval var = go
       Xor l r -> (/=) <$> go l <*> go r
       Ite c l r -> ite <$> go c <*> go l <*> go r
 
+-- | For use with 'eval', to interpret variables
 getVar :: ExprBoundVar t BaseBoolType -> State.State (Valuation t) Bool
 getVar v = State.gets (getValue v)
-
-_interpVar ::
-  ExprBuilder t st fs ->
-  Valuation t ->
-  ExprBoundVar t BaseBoolType ->
-  IO (Expr t BaseBoolType)
-_interpVar sym vs v =
-  if getValue v vs
-  then pure (truePred sym)
-  else pure (falsePred sym)
-
-uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
-uninterpVar = BoundVarExpr
 
 isNot :: Expr t BaseBoolType -> Bool
 isNot e =
@@ -228,6 +222,7 @@ isNormalMap sym cm =
     BM.ConjFalse -> Left "inconsistent conjunction map"
     BM.Conjuncts conjs -> traverse_ (uncurry (isNormalConjunct sym)) conjs
 
+-- | Is this boolean expression sufficiently normalized?
 isNormal :: ExprBuilder t st fs -> Expr t BaseBoolType -> Either String ()
 isNormal sym =
   \case
@@ -255,7 +250,7 @@ boolTests =
           Some ng <- liftIO newIONonceGenerator
           sym <- liftIO (newExprBuilder FloatIEEERepr EmptyExprBuilderState ng)
           (e, _vars) <- HG.forAllT (doGenExpr sym)
-          e' <- liftIO (interp sym (pure . uninterpVar) e)
+          e' <- liftIO (toSymExpr sym (pure . uninterpVar) e)
           let ok = isNormal sym e'
           unless (isRight ok) $
             liftIO (putStrLn ("Not normalized:\n" ++ show (printSymExpr e')))
@@ -270,7 +265,7 @@ boolTests =
           -- Generate a `Expr` with uninterpreted variables. It is important to
           -- not interpret the variables into `truePred` and `falsePred` here,
           -- to avoid only hitting the `asConstantPred` cases in the rewrites.
-          e' <- liftIO (interp sym (pure . uninterpVar) e)
+          e' <- liftIO (toSymExpr sym (pure . uninterpVar) e)
           -- Finally, substitute values in for the variables, simplifying the
           -- `Expr` along the way until we get a concrete boolean.
           let vs = Map.toList (getValuation vars)
