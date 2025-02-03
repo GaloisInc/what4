@@ -6,7 +6,7 @@
 
 module Bool where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict qualified as State
 import Control.Monad.Trans (lift)
@@ -192,11 +192,34 @@ isNormalIte sym c l r = do
   isNormal sym c
   isNormal sym l
   isNormal sym r
-  unless (not (isNot c)) (Left "negated ite condition")
-  unless (c /= l) (Left "ite cond == LHS")
-  unless (c /= r) (Left "ite cond == RHS")
-  unless (c /= truePred sym) (Left "ite cond == true")
-  unless (c /= falsePred sym) (Left "ite cond == false")
+  when (isNot c) (Left "negated ite condition")
+  when (c == l) (Left "ite cond == LHS")
+  when (c == r) (Left "ite cond == RHS")
+  when (c == truePred sym) (Left "ite cond == true")
+  when (c == falsePred sym) (Left "ite cond == false")
+
+isNormalConjunct ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  BM.Polarity ->
+  Either String ()
+isNormalConjunct sym expr pol =
+  case expr of
+    BoolExpr {} -> Right ()
+    BoundVarExpr {} -> Right ()
+    AppExpr ae ->
+      case appExprApp ae of
+        NotPred {} -> Left "not should be expressed via polarity"
+        -- This must be an OR, if it is an AND it should be combined with
+        -- its parent
+        ConjPred cm' -> do
+          when (pol == BM.Positive) (Left "and inside and")
+          -- Note that it is possible to have ORs inside ORs, e.g., if the outer
+          -- OR used to be an AND but was negated.
+          isNormalMap sym cm'
+        BaseIte BaseBoolRepr _sz c l r -> isNormalIte sym c l r
+        _ -> Left "non-normal app in conjunct"
+    _ -> Left "non-normal expr in conjunct"
 
 isNormalMap :: ExprBuilder t st fs -> BM.ConjMap (Expr t) -> Either String ()
 isNormalMap sym cm =
@@ -204,25 +227,6 @@ isNormalMap sym cm =
     BM.ConjTrue -> Left "empty conjunction map"
     BM.ConjFalse -> Left "inconsistent conjunction map"
     BM.Conjuncts conjs -> traverse_ (uncurry (isNormalConjunct sym)) conjs
-  where
-    isNormalConjunct ::
-      ExprBuilder t st fs ->
-      Expr t BaseBoolType ->
-      BM.Polarity ->
-      Either String ()
-    isNormalConjunct s expr pol =
-      case expr of
-        BoolExpr {} -> Right ()
-        BoundVarExpr {} -> Right ()
-        AppExpr ae ->
-          case appExprApp ae of
-            NotPred {} -> Left "not should be expressed via polarity"
-            -- This must be an OR, if it is an AND it should be combined with
-            -- its parent
-            ConjPred {} -> unless (pol == BM.Negative) (Left "and inside and")
-            BaseIte BaseBoolRepr _sz c l r -> isNormalIte s c l r
-            _ -> Left "non-normal app in conjunct"
-        _ -> Left "non-normal expr in conjunct"
 
 isNormal :: ExprBuilder t st fs -> Expr t BaseBoolType -> Either String ()
 isNormal sym =
@@ -231,9 +235,11 @@ isNormal sym =
     BoundVarExpr {} -> Right ()
     AppExpr ae ->
       case appExprApp ae of
+        NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap sym cm
+        ConjPred cm -> isNormalMap sym cm
+
         NotPred (asApp -> Just NotPred {}) -> Left "double negation"
         NotPred e -> isNormal sym e
-        ConjPred cm -> isNormalMap sym cm
         BaseIte BaseBoolRepr _sz c l r -> isNormalIte sym c l r
         _ -> Left "non-normal app"
     _ -> Left "non-normal expr"
