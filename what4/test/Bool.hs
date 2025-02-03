@@ -201,8 +201,8 @@ isNormalIte sym c l r = do
 isNormalMap :: ExprBuilder t st fs -> BM.ConjMap (Expr t) -> Either String ()
 isNormalMap sym cm =
   case BM.viewConjMap cm of
-    BM.ConjTrue -> Right ()
-    BM.ConjFalse -> Right ()
+    BM.ConjTrue -> Left "empty conjunction map"
+    BM.ConjFalse -> Left "inconsistent conjunction map"
     BM.Conjuncts conjs -> traverse_ (uncurry (isNormalConjunct sym)) conjs
   where
     isNormalConjunct ::
