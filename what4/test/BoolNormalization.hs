@@ -22,6 +22,7 @@ import What4.Interface
 
 import Bool
 
+-- | Get the size of an expression. Lower is better.
 sz :: Expr t tp -> Int
 sz =
   \case
@@ -44,7 +45,7 @@ main = do
         case HG.nodeValue x of
           Nothing -> error "whoops"
           Just (bExpr, _vars) -> do
-            e <- interp sym (pure . uninterpVar) bExpr
+            e <- toSymExpr sym (pure . uninterpVar) bExpr
             -- Audit the quality of the generated expressions:
             -- putStrLn "--------------------------------------"
             -- putStrLn (show bExpr)
