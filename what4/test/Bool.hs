@@ -199,7 +199,7 @@ isNormalConjunct ::
   Either String ()
 isNormalConjunct sym expr pol =
   case expr of
-    BoolExpr {} -> Right ()
+    BoolExpr {} -> Left "boolean literal inside conjunction"
     BoundVarExpr {} -> Right ()
     AppExpr ae ->
       case appExprApp ae of
@@ -230,11 +230,9 @@ isNormal sym =
     BoundVarExpr {} -> Right ()
     AppExpr ae ->
       case appExprApp ae of
-        NotPred (asApp -> Just (ConjPred cm)) -> isNormalMap sym cm
-        ConjPred cm -> isNormalMap sym cm
-
         NotPred (asApp -> Just NotPred {}) -> Left "double negation"
         NotPred e -> isNormal sym e
+        ConjPred cm -> isNormalMap sym cm
         BaseIte BaseBoolRepr _sz c l r -> isNormalIte sym c l r
         _ -> Left "non-normal app"
     _ -> Left "non-normal expr"
