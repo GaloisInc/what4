@@ -331,10 +331,11 @@ evalGroundApp :: forall t tp
               -> MaybeT IO (GroundValue tp)
 evalGroundApp f a0 = do
   case a0 of
-    BaseEq bt x y ->
-      do x' <- f x
-         y' <- f y
-         MaybeT (return (groundEq bt x' y'))
+    BaseEq _eqs -> error "TODO: evalGroundApp Equalities"
+    -- BaseEq bt x y ->
+    --   do x' <- f x
+    --      y' <- f y
+    --      MaybeT (return (groundEq bt x' y'))
 
     BaseIte _ _ x y z -> do
       xv <- f x
