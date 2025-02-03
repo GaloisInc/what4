@@ -370,6 +370,14 @@ test-suite exprs_tests
                , containers
                , mtl
 
+executable bool-normalization
+  import: bldflags, testdefs-hedgehog, testdefs-hunit
+  main-is: BoolNormalization.hs
+  other-modules: Bool
+  build-depends: containers
+               , mtl
+               , transformers
+
 
 test-suite iteexprs_tests
   import: bldflags, testdefs-hedgehog, testdefs-hunit
