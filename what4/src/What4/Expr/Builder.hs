@@ -222,6 +222,7 @@ import qualified LibBF as BF
 import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
+import qualified What4.Equalities as Eqs
 import           What4.FloatMode
 import           What4.Interface
 import           What4.InterpretedFloatingPoint
@@ -1118,11 +1119,7 @@ transformCmpBV2LIA ::
   Expr t BaseBoolType ->
   Maybe (BV2LIAExprTransformer t (Expr t BaseBoolType))
 transformCmpBV2LIA sym e
-  | Just (BaseEq _ x y) <- asApp e
-  , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
-    x' <- transformExprBV2LIA sym x
-    y' <- transformExprBV2LIA sym y
-    liftIO $ intEq sym x' y'
+  | Just (BaseEq eqs) <- asApp e = error "TODO: transformCmpBV2LIA Equations"
 
   | Just (BVUlt x y) <- asApp e
   , Just Refl <- testEquality (BaseBVRepr $ knownNat @64) (exprType x) = Just $ do
@@ -1214,14 +1211,14 @@ transformCmpLIA2BV ::
   Expr t BaseBoolType ->
   Maybe (LIA2BVExprTransformer t (Expr t BaseBoolType))
 transformCmpLIA2BV sym e
-  | Just (BaseEq BaseIntegerRepr x y) <- asApp e = Just $ do
-    let (x_pos, x_neg) = asPositiveNegativeWeightedSum x
-    let (y_pos, y_neg) = asPositiveNegativeWeightedSum y
-    x' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr x_pos y_neg
-    y' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr y_pos x_neg
-    x'' <- transformExprLIA2BV sym x'
-    y'' <- transformExprLIA2BV sym y'
-    liftIO $ bvEq sym x'' y''
+  | Just (BaseEq eqs) <- asApp e = error ("TODO: transformCmpLIA2BV Equations")
+    -- let (x_pos, x_neg) = asPositiveNegativeWeightedSum x
+    -- let (y_pos, y_neg) = asPositiveNegativeWeightedSum y
+    -- x' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr x_pos y_neg
+    -- y' <- liftIO $ semiRingSum sym $ WSum.add SR.SemiRingIntegerRepr y_pos x_neg
+    -- x'' <- transformExprLIA2BV sym x'
+    -- y'' <- transformExprLIA2BV sym y'
+    -- liftIO $ bvEq sym x'' y''
 
   | Just (SemiRingLe SR.OrderedSemiRingIntegerRepr x y) <- asApp e = Just $ do
     z <- liftIO $ intSub sym x y
@@ -1767,10 +1764,10 @@ semiRingEq sym sr rec x y
       (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
       _ -> do xr <- semiRingSum sym x'
               yr <- semiRingSum sym y'
-              sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min xr yr) (max xr yr)
+              sbMakeExpr sym (BaseEq (Eqs.fromEqual xr yr))
 
   | otherwise =
-    sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min x y) (max x y)
+    sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
 
 semiRingAdd ::
   forall t st fs sr.
@@ -2078,7 +2075,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         (Just True, _)     -> return y
         (_, Just False)    -> notPred sym x
         (_, Just True)     -> return x
-        _ -> sbMakeExpr sym $ BaseEq BaseBoolRepr (min x y) (max x y)
+        _ -> sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
 
   xorPred sym x y = notPred sym =<< eqPred sym x y
 
@@ -2756,7 +2753,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
           _ -> do xr <- semiRingSum sym x'
                   yr <- semiRingSum sym y'
-                  sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min xr yr) (max xr yr)
+                  sbMakeExpr sym (BaseEq (Eqs.fromEqual xr yr))
 
     | otherwise = do
         ut <- CFG.getOpt (sbUnaryThreshold sym)
@@ -2765,7 +2762,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
            , Just uy <- asUnaryBV sym y
            -> UnaryBV.eq sym ux uy
            | otherwise
-           -> sbMakeExpr sym $ BaseEq (BaseBVRepr (bvWidth x)) (min x y) (max x y)
+           -> sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
 
   bvSlt sym x y
     | Just xc <- asBV x
@@ -3232,7 +3229,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just y' <- asString y
     = return $! backendPred sym (isJust (testEquality x' y'))
   stringEq sym x y
-    = sbMakeExpr sym $ BaseEq (BaseStringRepr (stringInfo x)) x y
+    = sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
 
   stringIte _sym c x y
     | Just c' <- asConstantPred c
@@ -3471,7 +3468,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | x == y =
       return $! truePred sym
     | otherwise =
-      sbMakeExpr sym $! BaseEq (exprType x) x y
+      sbMakeExpr sym $! BaseEq (Eqs.fromEqual x y)
 
   arrayTrueOnEntries sym f a
     | Just True <- exprAbsValue a =
@@ -3788,7 +3785,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     pure . backendPred sym $! (BF.bfCompare x y == EQ)
   floatEq sym x y
     | x == y = return $! truePred sym
-    | otherwise = floatIEEELogicBinOp (BaseEq (exprType x)) sym x y
+    | otherwise = sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
 
   floatNe sym x y = notPred sym =<< floatEq sym x y
 

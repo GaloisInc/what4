@@ -146,10 +146,10 @@ appVerilogExpr app =
       etrue' <- exprToVerilogExpr etrue
       efalse' <- exprToVerilogExpr efalse
       mux b' etrue' efalse'
-    BaseEq _ e1 e2 -> do
-      e1' <- exprToVerilogExpr e1
-      e2' <- exprToVerilogExpr e2
-      binop Eq e1' e2'
+    BaseEq _eqs -> error "TODO: appVerilogExpr Equalities"
+      -- e1' <- exprToVerilogExpr e1
+      -- e2' <- exprToVerilogExpr e2
+      -- binop Eq e1' e2'
 
     -- Boolean operations
     NotPred e -> do
