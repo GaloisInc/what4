@@ -239,6 +239,11 @@ library
 
     Test.Verification
 
+  other-modules:
+    What4.Equalities
+    What4.UnionFind
+    What4.UnionFindF
+
   if impl(ghc >= 8.6)
     default-extensions: NoStarIsType
 

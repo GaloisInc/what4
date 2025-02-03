@@ -47,6 +47,7 @@ import           Data.Hashable
 import qualified Data.HashTable.Class as H (toList)
 import qualified Data.HashTable.ST.Basic as H
 import           Data.Kind
+import qualified Data.List as List
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -79,6 +80,7 @@ import           What4.Interface
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
+import qualified What4.Equalities as Eqs
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.Expr.BoolMap (BoolMap, Polarity(..), Wrap(..))
 import qualified What4.Expr.BoolMap as BM
@@ -179,11 +181,7 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     !(e tp) ->
     App e tp
 
-  BaseEq ::
-    !(BaseTypeRepr tp) ->
-    !(e tp) ->
-    !(e tp) ->
-    App e BaseBoolType
+  BaseEq :: !(Eqs.Equalities e) -> App e BaseBoolType
 
   ------------------------------------------------------------------------
   -- Boolean operations
@@ -785,13 +783,16 @@ instance FoldableFC App where
     where g :: (f tp -> a) -> f tp -> Const a (Dummy tp)
           g f v = Const (f v)
 
-traverseApp :: (Applicative m, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
+traverseApp :: (Applicative m, EqF f, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
             => (forall tp. e tp -> m (f tp))
             -> App e utp -> m ((App f) utp)
 traverseApp =
   $(structuralTraversal [t|App|]
     [ ( ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
       , [|UnaryBV.instantiate|]
+      )
+    , ( ConType [t|Eqs.Equalities|] `TypeApp` AnyType
+      , [| Eqs.traverseEqualities |]
       )
     , ( ConType [t|Ctx.Assignment BaseTypeRepr|] `TypeApp` AnyType
       , [|(\_ -> pure) |]
@@ -861,6 +862,9 @@ appEqF = $(structuralTypeEquality [t|App|]
 
 instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => Eq (App e tp) where
   x == y = isJust (testEquality x y)
+
+instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => EqF (App e) where
+  eqF x y = isJust (testEquality x y)
 
 instance (Eq (e BaseBoolType), Eq (e BaseRealType), HashableF e, HasAbsValue e, OrdF e) => TestEquality (App e) where
   testEquality = appEqF
@@ -1290,6 +1294,9 @@ instance TestEquality (Expr t) where
     case compareF x y of
       EQF -> Just Refl
       _ -> Nothing
+
+instance EqF (Expr t) where
+  eqF x y = isJust (testEquality x y)
 
 instance OrdF (Expr t)  where
   compareF = compareExpr
@@ -2079,6 +2086,8 @@ abstractEval f a0 = do
 
 
 reduceApp :: IsExprBuilder sym
+          => EqF (SymExpr sym)
+          => OrdF (SymExpr sym)
           => sym
           -> (forall w. (1 <= w) => sym -> UnaryBV (Pred sym) w -> IO (SymExpr sym (BaseBVType w)))
           -> App (SymExpr sym) tp
@@ -2086,7 +2095,18 @@ reduceApp :: IsExprBuilder sym
 reduceApp sym unary a0 = do
   case a0 of
     BaseIte _ _ c x y -> baseTypeIte sym c x y
-    BaseEq _ x y -> isEq sym x y
+    BaseEq e -> do
+      let b = Eqs.toBasis e
+      eqs <-
+        foldM
+          (\p (Eqs.Equation lhs rhs) -> andPred sym p =<< isEq sym lhs rhs)
+          (truePred sym)
+          (Eqs.basisEquations b)
+      foldM
+        (\p (Eqs.Inequation lhs rhs) -> andPred sym p =<< notPred sym =<< isEq sym lhs rhs)
+        eqs
+        (Eqs.basisInequations b)
+      
 
     NotPred x -> notPred sym x
     ConjPred cm ->
@@ -2318,7 +2338,7 @@ ppNonceApp ppFn a0 = do
     FnApp f a -> resolve <$> ppFn f
       where resolve f_nm = prettyApp "apply" (f_nm : toListFC exprPrettyArg a)
 
-instance ShowF e => Pretty (App e u) where
+instance (EqF e, OrdF e, ShowF e) => Pretty (App e u) where
   pretty a = pretty nm <+> sep (ppArg <$> args)
     where (nm, args) = ppApp' a
           ppArg :: PrettyArg e -> Doc ann
@@ -2326,17 +2346,36 @@ instance ShowF e => Pretty (App e u) where
           ppArg (PrettyText txt) = pretty txt
           ppArg (PrettyFunc fnm fargs) = parens (pretty fnm <+> sep (ppArg <$> fargs))
 
-instance ShowF e => Show (App e u) where
+instance (EqF e, OrdF e, ShowF e) => Show (App e u) where
   show = show . pretty
 
-ppApp' :: forall e u . App e u -> PrettyApp e
+ppApp' :: forall e u . (EqF e, OrdF e, ShowF e) => App e u -> PrettyApp e
 ppApp' a0 = do
   let ppSExpr :: Text -> [e x] -> PrettyApp e
       ppSExpr f l = prettyApp f (exprPrettyArg <$> l)
 
   case a0 of
     BaseIte _ _ c x y -> prettyApp "ite" [exprPrettyArg c, exprPrettyArg x, exprPrettyArg y]
-    BaseEq _ x y -> ppSExpr "eq" [x, y]
+    BaseEq eqs ->
+      let b = Eqs.toBasis eqs in
+      let es = Eqs.basisEquations b in
+      let is = Eqs.basisInequations b in
+      if | [Eqs.Equation lhs rhs] <- es
+         , List.null is -> 
+           ppSExpr "=" [lhs, rhs]
+         | [Eqs.Inequation lhs rhs] <- is
+         , List.null es -> 
+           ppSExpr "!=" [lhs, rhs]
+         | otherwise ->
+           let ppEs =
+                 map
+                   (\(Eqs.Equation lhs rhs) -> PrettyFunc "=" [exprPrettyArg lhs, exprPrettyArg rhs])
+                   es
+               ppIs =
+                 map
+                   (\(Eqs.Inequation lhs rhs) -> PrettyFunc "!=" [exprPrettyArg lhs, exprPrettyArg rhs])
+                   is
+            in prettyApp "eqs" (ppEs ++ ppIs)
 
     NotPred x -> ppSExpr "not" [x]
 

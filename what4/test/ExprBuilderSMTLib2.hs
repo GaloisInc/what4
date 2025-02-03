@@ -474,6 +474,12 @@ testUninterpretedFunctionScope = testCase "uninterpreted function scope" $
     p0 <- intEq sym x y
     p1 <- notPred sym =<< intEq sym e0 e1
     p2 <- andPred sym p0 p1
+    putStrLn ("~~~~~ p0")
+    print (printSymExpr p0)
+    putStrLn ("~~~~~ p1")
+    print (printSymExpr p1)
+    putStrLn ("~~~~~ p2")
+    print (printSymExpr p2)
     res1 <- checkSatisfiable s "test" p2
     isUnsat res1 @? "unsat"
     res2 <- checkSatisfiable s "test" p2

@@ -68,7 +68,7 @@ appTheory a0 =
     -- Boolean operations
 
     BaseIte tp _ _ _ _ -> typeTheory tp
-    BaseEq tp _ _ -> typeTheory tp
+    BaseEq _ -> error "TODO: multiple theories!"
 
     NotPred{} -> BoolTheory
     ConjPred{} -> BoolTheory

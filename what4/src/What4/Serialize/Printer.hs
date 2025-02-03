@@ -472,10 +472,11 @@ convertAppExpr' = go . W4.appExprApp
           s2 <- goE e2
           s3 <- goE e3
           return $ S.L [ident "ite", s1, s2, s3]
-        go (W4.BaseEq _bt e1 e2) = do
-          s1 <- goE e1
-          s2 <- goE e2
-          return $ S.L [ident "=", s1, s2]
+        go (W4.BaseEq _eqs) = error "TODO: convertAppExpr' Equalities"
+        -- go (W4.BaseEq _bt e1 e2) = do
+        --   s1 <- goE e1
+        --   s2 <- goE e2
+        --   return $ S.L [ident "=", s1, s2]
         go (W4.NotPred e) = do
           s <- goE e
           return $ S.L [ident "notp", s]

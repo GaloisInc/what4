@@ -111,7 +111,7 @@ import           Control.Monad.Fail ( MonadFail )
 
 import           Control.Exception
 import           Control.Lens hiding ((.>), Strict)
-import           Control.Monad (forM_, unless, when)
+import           Control.Monad (forM, forM_, unless, when)
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader (ReaderT(..), asks)
 import           Control.Monad.ST
@@ -149,6 +149,7 @@ import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
 import qualified What4.Config as CFG
+import qualified What4.Equalities as Eqs
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
@@ -2063,30 +2064,62 @@ appSMTExpr ae = do
   liftIO $ updateProgramLoc conn (appExprLoc ae)
   case appExprApp ae of
 
-    BaseEq _ x y ->
-      do xe <- mkExpr x
-         ye <- mkExpr y
+    BaseEq e -> do
+      let b = Eqs.toBasis e
+      eqs <-
+        forM (Eqs.basisEquations b) $ \(Eqs.Equation x y) -> do
+           xe <- mkExpr x
+           ye <- mkExpr y
 
-         let xtp = smtExprType xe
-         let ytp = smtExprType ye
+           let xtp = smtExprType xe
+           let ytp = smtExprType ye
 
-         let checkArrayType z (FnArrayTypeMap{}) = do
-               fail $ show $
-                 vcat
-                 [ pretty (smtWriterName conn) <+>
-                   "does not support checking equality for the array generated at"
-                   <+> pretty (plSourceLoc (exprLoc z)) <> ":"
-                 , indent 2 (pretty z)
-                 ]
-             checkArrayType _ _ = return ()
+           let checkArrayType z (FnArrayTypeMap{}) = do
+                 fail $ show $
+                   vcat
+                   [ pretty (smtWriterName conn) <+>
+                     "does not support checking equality for the array generated at"
+                     <+> pretty (plSourceLoc (exprLoc z)) <> ":"
+                   , indent 2 (pretty z)
+                   ]
+               checkArrayType _ _ = return ()
 
-         checkArrayType x xtp
-         checkArrayType y ytp
+           checkArrayType x xtp
+           checkArrayType y ytp
 
-         when (xtp /= ytp) $ do
-           fail $ unwords ["Type representations are not equal:", show xtp, show ytp]
+           when (xtp /= ytp) $ do
+             fail $ unwords ["Type representations are not equal:", show xtp, show ytp]
 
-         freshBoundTerm BoolTypeMap $ asBase xe .== asBase ye
+           pure (asBase xe .== asBase ye)
+      ineqs <-
+        forM (Eqs.basisInequations b) $ \(Eqs.Inequation x y) -> do
+           xe <- mkExpr x
+           ye <- mkExpr y
+
+           let xtp = smtExprType xe
+           let ytp = smtExprType ye
+
+           let checkArrayType z (FnArrayTypeMap{}) = do
+                 fail $ show $
+                   vcat
+                   [ pretty (smtWriterName conn) <+>
+                     "does not support checking equality for the array generated at"
+                     <+> pretty (plSourceLoc (exprLoc z)) <> ":"
+                   , indent 2 (pretty z)
+                   ]
+               checkArrayType _ _ = return ()
+
+           checkArrayType x xtp
+           checkArrayType y ytp
+
+           when (xtp /= ytp) $ do
+             fail $ unwords ["Type representations are not equal:", show xtp, show ytp]
+
+           pure (notExpr (asBase xe .== asBase ye))
+
+      let eq = andAll eqs
+      let ineq = andAll ineqs
+      freshBoundTerm BoolTypeMap (andAll [eq, ineq])
 
     BaseIte btp _ c x y -> do
       let errMsg typename =
