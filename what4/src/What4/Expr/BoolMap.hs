@@ -82,18 +82,17 @@ instance OrdF f => Ord (Wrap f x) where
 instance (HashableF f, TestEquality f) => Hashable (Wrap f x) where
   hashWithSalt s (Wrap a) = hashWithSaltF s a
 
--- | This data structure keeps track of a collection of expressions
---   together with their polarities. Such a collection might represent
---   either a conjunction or a disjunction of expressions.  The
---   implementation uses a map from expression values to their
---   polarities, and thus automatically implements the associative,
---   commutative and idempotency laws common to both conjunctions and
---   disjunctions.  Moreover, if the same expression occurs in the
---   collection with opposite polarities, the entire collection
---   collapses via a resolution step to an \"inconsistent\" map.  For
---   conjunctions this corresponds to a contradiction and
---   represents false; for disjunction, this corresponds to the law of
---   the excluded middle and represents true.
+-- | A representation of a conjunction or a disjunction.
+--
+--   This data structure keeps track of a collection of expressions together
+--   with their polarities.  The implementation uses a map from expression
+--   values to their polarities, and thus automatically implements the
+--   associative, commutative and idempotency laws common to both conjunctions
+--   and disjunctions.  Moreover, if the same expression occurs in the
+--   collection with opposite polarities, the entire collection collapses
+--   via a resolution step to an \"inconsistent\" map.  For conjunctions this
+--   corresponds to a contradiction and represents false; for disjunction, this
+--   corresponds to the law of the excluded middle and represents true.
 --
 --   The annotation on the 'AM.AnnotatedMap' is an incremental hash ('IncrHash')
 --   of the map, used to support a fast 'Hashable' instance.
@@ -212,9 +211,6 @@ removeVar (BoolMap m) x = BoolMap (AM.delete (Wrap x) m)
 --------------------------------------------------------------------------------
 -- ConjMap
 
--- No idea why `coerce` needs these the explicit type applications in this
--- section...
-
 -- | A 'BoolMap' representing a conjunction.
 newtype ConjMap f = ConjMap { getConjMap :: BoolMap f }
   deriving (Eq, FoldableF, Hashable, Semigroup)
@@ -238,6 +234,8 @@ pattern Conjuncts ts = ConjMapView (BoolMapTerms ts)
 -- | Deconstruct the given 'ConjMap' for later processing
 viewConjMap :: forall f. ConjMap f -> ConjMapView f
 viewConjMap =
+  -- The explicit type annotations on `coerce` are likely necessary because of
+  -- https://gitlab.haskell.org/ghc/ghc/-/issues/21003
   coerce @(BoolMap f -> BoolMapView f) @(ConjMap f -> ConjMapView f) viewBoolMap
 {-# INLINE viewConjMap #-}
 
@@ -249,6 +247,8 @@ addConjunct ::
   ConjMap f ->
   ConjMap f
 addConjunct =
+  -- The explicit type annotations on `coerce` are likely necessary because of
+  -- https://gitlab.haskell.org/ghc/ghc/-/issues/21003
   coerce
     @(f BaseBoolType -> Polarity -> BoolMap f -> BoolMap f)
     @(f BaseBoolType -> Polarity -> ConjMap f -> ConjMap f)

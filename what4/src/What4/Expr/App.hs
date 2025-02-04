@@ -191,9 +191,9 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   -- Invariant: The argument to a NotPred must not be another NotPred.
   NotPred :: !(e BaseBoolType) -> App e BaseBoolType
 
-  -- Invariant: The BoolMap must contain at least two elements. No
-  -- element may be a NotPred; negated elements must be represented
-  -- with Negative element polarity.
+  -- Invariant: The 'BM.ConjMap' must contain at least two elements. No element
+  -- may be a NotPred; negated elements must be represented with Negative
+  -- element polarity. See also 'isNormal' in @test/Bool.hs@.
   ConjPred :: !(BM.ConjMap e) -> App e BaseBoolType
 
   ------------------------------------------------------------------------

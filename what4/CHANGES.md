@@ -1,3 +1,7 @@
+# next
+
+* The `BoolMap` parameter of `ConjPred` is now a `ConjMap`.
+
 # 1.6.2 (Sep 2024)
 
 * Allow building with GHC 9.10.

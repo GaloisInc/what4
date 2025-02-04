@@ -55,9 +55,13 @@ genBExpr var =
       Not <$> genBExpr var
       -- binary
     , And <$> genBExpr var <*> genBExpr var
-    -- TODO: Generate Eq
+    -- TODO: Generate Eq, Xor.
+    --
+    -- This would require updating 'isNormal' to take these into account.
+    --
     -- , Eq <$> genBExpr var <*> genBExpr var
     , Or <$> genBExpr var <*> genBExpr var
+    -- , Xor <$> genBExpr var <*> genBExpr var
     , Ite <$> genBExpr var <*> genBExpr var <*> genBExpr var
     ]
 
