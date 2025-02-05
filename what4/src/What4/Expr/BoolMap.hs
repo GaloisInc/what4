@@ -242,6 +242,9 @@ viewConjMap =
   coerce @(BoolMap f -> BoolMapView f) @(ConjMap f -> ConjMapView f) viewBoolMap
 {-# INLINE viewConjMap #-}
 
+-- | Add a conjunct to a 'ConjMap'.
+--
+-- Wrapper around 'addVar'.
 addConjunct ::
   forall f.
   (HashableF f, OrdF f) =>
@@ -258,6 +261,8 @@ addConjunct =
     addVar
 {-# INLINE addConjunct #-}
 
+-- | Given the means to evaluate the conjuncts of a 'ConjMap' to a concrete
+-- 'Bool', evaluate the whole conjunction to a 'Bool'.
 evalConj :: Applicative m => (f BaseBoolType -> m Bool) -> ConjMap f -> m Bool
 evalConj f cm =
   let pol (x, Positive) = f x
