@@ -135,7 +135,10 @@ instance (OrdF f, HashableF f) => Hashable (BoolMap f) where
       Nothing -> hashWithSalt s (1::Int)
       Just h  -> hashWithSalt (hashWithSalt s (1::Int)) h
 
--- | Represents the state of a bool map
+-- | Represents the state of a 'BoolMap' (either a conjunction or disjunction).
+--
+-- If you know you are dealing with a 'BoolMap' that represents a conjunction,
+-- consider using 'ConjMap' and 'viewConjMap' for the sake of clarity.
 data BoolMapView f
   = BoolMapUnit
        -- ^ A bool map with no expressions, represents the unit of the corresponding operation
