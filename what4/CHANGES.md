@@ -1,6 +1,9 @@
 # next
 
-* The `BoolMap` parameter of `ConjPred` is now a `ConjMap`.
+* The `BoolMap` parameter of `ConjPred` is now a `ConjMap`. This is a `newtype`
+  wrapper around `BoolMap` that makes clear that the `BoolMap` in question
+  represents a conjunction (as `BoolMap`s may also represent disjunctions).
+  See the Haddocks on `ConjMap` for more details.
 
 # 1.6.2 (Sep 2024)
 
