@@ -2,20 +2,19 @@
 -- completely simplified away. Higher is better. This is one mechanism for
 -- evaluating rewrite rules.
 
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Main (main) where
 
 import Control.Monad (foldM)
-import Control.Monad.State.Strict qualified as State
+import qualified Control.Monad.State.Strict as State
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
 import Data.Parameterized.TraversableFC (traverseFC_)
-import Hedgehog.Internal.Gen qualified as HG
-import Hedgehog.Internal.Tree qualified as HG
-import Hedgehog qualified as HG
+import qualified Hedgehog.Internal.Gen as HG
+import qualified Hedgehog.Internal.Tree as HG
+import qualified Hedgehog as HG
 import What4.Expr.Builder
 import What4.Expr (EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.Interface

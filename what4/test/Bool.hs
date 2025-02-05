@@ -1,5 +1,4 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -8,22 +7,22 @@ module Bool where
 
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State.Strict qualified as State
+import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (lift)
 import Data.Coerce (coerce)
 import Data.Either (isRight)
 import Data.Foldable (traverse_)
-import Data.Map qualified as Map
-import Data.Parameterized.Map qualified as MapF
+import qualified Data.Map as Map
+import qualified Data.Parameterized.Map as MapF
 import Data.Parameterized.Nonce (newIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
 import Hedgehog (GenT)
-import Hedgehog.Gen qualified as Gen
-import Hedgehog.Internal.Gen qualified as HG
-import Hedgehog.Internal.Property qualified as HG
-import Test.Tasty.Hedgehog qualified as THG
-import Test.Tasty qualified as T
-import What4.Expr.BoolMap qualified as BM
+import qualified Hedgehog.Gen as Gen
+import qualified Hedgehog.Internal.Gen as HG
+import qualified Hedgehog.Internal.Property as HG
+import qualified Test.Tasty.Hedgehog as THG
+import qualified Test.Tasty as T
+import qualified What4.Expr.BoolMap as BM
 import What4.Expr.Builder
 import What4.Expr (EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.Interface
