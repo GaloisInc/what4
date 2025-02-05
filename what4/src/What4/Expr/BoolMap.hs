@@ -11,8 +11,12 @@ laws like commutativity, associativity and resolution.
 -}
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+
 module What4.Expr.BoolMap
   ( BoolMap
   , var
@@ -26,18 +30,30 @@ module What4.Expr.BoolMap
   , isNull
   , BoolMapView(..)
   , viewBoolMap
+  , foldMapVars
   , traverseVars
   , reversePolarities
   , removeVar
   , Wrap(..)
+    -- * 'ConjMap'
+  , ConjMap(..)
+  , ConjMapView
+  , pattern ConjTrue
+  , pattern ConjFalse
+  , pattern Conjuncts
+  , viewConjMap
+  , addConjunct
+  , evalConj
   ) where
 
 import           Control.Lens (_1, over)
+import           Data.Coerce (coerce)
 import           Data.Hashable
 import qualified Data.List as List (foldl')
 import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Kind (Type)
 import           Data.Parameterized.Classes
+import           Data.Parameterized.TraversableF
 
 import           What4.BaseTypes
 import qualified What4.Utils.AnnotatedMap as AM
@@ -66,18 +82,20 @@ instance OrdF f => Ord (Wrap f x) where
 instance (HashableF f, TestEquality f) => Hashable (Wrap f x) where
   hashWithSalt s (Wrap a) = hashWithSaltF s a
 
--- | This data structure keeps track of a collection of expressions
---   together with their polarities. Such a collection might represent
---   either a conjunction or a disjunction of expressions.  The
---   implementation uses a map from expression values to their
---   polarities, and thus automatically implements the associative,
---   commutative and idempotency laws common to both conjunctions and
---   disjunctions.  Moreover, if the same expression occurs in the
---   collection with opposite polarities, the entire collection
---   collapses via a resolution step to an \"inconsistent\" map.  For
---   conjunctions this corresponds to a contradiction and
---   represents false; for disjunction, this corresponds to the law of
---   the excluded middle and represents true.
+-- | A representation of a conjunction or a disjunction.
+--
+--   This data structure keeps track of a collection of expressions together
+--   with their polarities.  The implementation uses a map from expression
+--   values to their polarities, and thus automatically implements the
+--   associative, commutative and idempotency laws common to both conjunctions
+--   and disjunctions.  Moreover, if the same expression occurs in the
+--   collection with opposite polarities, the entire collection collapses
+--   via a resolution step to an \"inconsistent\" map.  For conjunctions this
+--   corresponds to a contradiction and represents false; for disjunction, this
+--   corresponds to the law of the excluded middle and represents true.
+--
+--   The annotation on the 'AM.AnnotatedMap' is an incremental hash ('IncrHash')
+--   of the map, used to support a fast 'Hashable' instance.
 
 data BoolMap (f :: BaseType -> Type)
   = InconsistentMap
@@ -88,6 +106,16 @@ instance OrdF f => Eq (BoolMap f) where
   BoolMap m1 == BoolMap m2 = AM.eqBy (==) m1 m2
   _ == _ = False
 
+instance OrdF f => Semigroup (BoolMap f) where
+  (<>) = combine
+
+-- | Specialized version of 'foldMapVars'
+instance FoldableF BoolMap where
+  foldMapF f = foldMapVars f
+
+foldMapVars :: Monoid m => (f BaseBoolType -> m) -> BoolMap f -> m
+foldMapVars _ InconsistentMap = mempty
+foldMapVars f (BoolMap am) = foldMap (f . unWrap . fst) (AM.toList am)
 
 -- | Traverse the expressions in a bool map, and rebuild the map.
 traverseVars :: (Applicative m, HashableF g, OrdF g) =>
@@ -107,7 +135,10 @@ instance (OrdF f, HashableF f) => Hashable (BoolMap f) where
       Nothing -> hashWithSalt s (1::Int)
       Just h  -> hashWithSalt (hashWithSalt s (1::Int)) h
 
--- | Represents the state of a bool map
+-- | Represents the state of a 'BoolMap' (either a conjunction or disjunction).
+--
+-- If you know you are dealing with a 'BoolMap' that represents a conjunction,
+-- consider using 'ConjMap' and 'viewConjMap' for the sake of clarity.
 data BoolMapView f
   = BoolMapUnit
        -- ^ A bool map with no expressions, represents the unit of the corresponding operation
@@ -179,3 +210,66 @@ reversePolarities (BoolMap m) = BoolMap $! fmap negatePolarity m
 removeVar :: OrdF f => BoolMap f -> f BaseBoolType -> BoolMap f
 removeVar InconsistentMap _ = InconsistentMap
 removeVar (BoolMap m) x = BoolMap (AM.delete (Wrap x) m)
+
+--------------------------------------------------------------------------------
+-- ConjMap
+
+-- | A 'BoolMap' representing a conjunction.
+newtype ConjMap f = ConjMap { getConjMap :: BoolMap f }
+  deriving (Eq, FoldableF, Hashable, Semigroup)
+
+-- | Represents the state of a 'ConjMap'. See 'viewConjMap'.
+--
+-- Like 'BoolMapView', but with more specific patterns for readability.
+newtype ConjMapView f = ConjMapView (BoolMapView f)
+
+pattern ConjTrue :: ConjMapView f
+pattern ConjTrue = ConjMapView BoolMapUnit
+
+pattern ConjFalse :: ConjMapView f
+pattern ConjFalse = ConjMapView BoolMapDualUnit
+
+pattern Conjuncts :: NonEmpty (f BaseBoolType, Polarity) -> ConjMapView f
+pattern Conjuncts ts = ConjMapView (BoolMapTerms ts)
+
+{-# COMPLETE ConjTrue, ConjFalse, Conjuncts #-}
+
+-- | Deconstruct the given 'ConjMap' for later processing
+viewConjMap :: forall f. ConjMap f -> ConjMapView f
+viewConjMap =
+  -- The explicit type annotations on `coerce` are likely necessary because of
+  -- https://gitlab.haskell.org/ghc/ghc/-/issues/21003
+  coerce @(BoolMap f -> BoolMapView f) @(ConjMap f -> ConjMapView f) viewBoolMap
+{-# INLINE viewConjMap #-}
+
+-- | Add a conjunct to a 'ConjMap'.
+--
+-- Wrapper around 'addVar'.
+addConjunct ::
+  forall f.
+  (HashableF f, OrdF f) =>
+  f BaseBoolType ->
+  Polarity ->
+  ConjMap f ->
+  ConjMap f
+addConjunct =
+  -- The explicit type annotations on `coerce` are likely necessary because of
+  -- https://gitlab.haskell.org/ghc/ghc/-/issues/21003
+  coerce
+    @(f BaseBoolType -> Polarity -> BoolMap f -> BoolMap f)
+    @(f BaseBoolType -> Polarity -> ConjMap f -> ConjMap f)
+    addVar
+{-# INLINE addConjunct #-}
+
+-- | Given the means to evaluate the conjuncts of a 'ConjMap' to a concrete
+-- 'Bool', evaluate the whole conjunction to a 'Bool'.
+evalConj :: Applicative m => (f BaseBoolType -> m Bool) -> ConjMap f -> m Bool
+evalConj f cm =
+  let pol (x, Positive) = f x
+      pol (x, Negative) = not <$> f x
+  in
+  case viewConjMap cm of
+    ConjTrue -> pure True
+    ConjFalse -> pure False
+    Conjuncts (t:|ts) ->
+      List.foldl' (&&) <$> pol t <*> traverse pol ts

@@ -156,7 +156,7 @@ appVerilogExpr app =
       e' <- exprToVerilogExpr e
       unop Not e'
     --DisjPred es -> boolMapToExpr False True Or es
-    ConjPred es -> boolMapToExpr True False And es
+    ConjPred es -> boolMapToExpr True False And (BMap.getConjMap es)
 
     -- Semiring operations
     -- We only support bitvector semiring operations

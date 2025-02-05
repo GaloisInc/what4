@@ -80,7 +80,7 @@ import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
 import qualified What4.Expr.ArrayUpdateMap as AUM
-import           What4.Expr.BoolMap (BoolMap, Polarity(..), BoolMapView(..), Wrap(..))
+import           What4.Expr.BoolMap (BoolMap, Polarity(..), Wrap(..))
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.MATLAB
 import           What4.Expr.WeightedSum (WeightedSum, SemiRingProduct)
@@ -191,10 +191,10 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   -- Invariant: The argument to a NotPred must not be another NotPred.
   NotPred :: !(e BaseBoolType) -> App e BaseBoolType
 
-  -- Invariant: The BoolMap must contain at least two elements. No
-  -- element may be a NotPred; negated elements must be represented
-  -- with Negative element polarity.
-  ConjPred :: !(BoolMap e) -> App e BaseBoolType
+  -- Invariant: The 'BM.ConjMap' must contain at least two elements. No element
+  -- may be a NotPred; negated elements must be represented with Negative
+  -- element polarity. See also 'isNormal' in @test/Bool.hs@.
+  ConjPred :: !(BM.ConjMap e) -> App e BaseBoolType
 
   ------------------------------------------------------------------------
   -- Semiring operations
@@ -814,6 +814,9 @@ traverseApp =
     , ( ConType [t|BoolMap|] `TypeApp` AnyType
       , [| BM.traverseVars |]
       )
+    , ( ConType [t|BM.ConjMap|] `TypeApp` AnyType
+      , [| \f cm -> BM.ConjMap <$> BM.traverseVars f (BM.getConjMap cm) |]
+      )
     , ( ConType [t|Ctx.Assignment|] `TypeApp` AnyType `TypeApp` AnyType
       , [| traverseFC |]
       )
@@ -1158,20 +1161,20 @@ asWeightedSum sr x
 asConjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
 asConjunction (BoolExpr True _) = []
 asConjunction (asApp -> Just (ConjPred xs)) =
- case BM.viewBoolMap xs of
-   BoolMapUnit     -> []
-   BoolMapDualUnit -> [(BoolExpr False initializationLoc, Positive)]
-   BoolMapTerms (tm:|tms) -> tm:tms
+ case BM.viewConjMap xs of
+   BM.ConjTrue -> []
+   BM.ConjFalse -> [(BoolExpr False initializationLoc, Positive)]
+   BM.Conjuncts (tm:|tms) -> tm:tms
 asConjunction x = [(x,Positive)]
 
 
 asDisjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
 asDisjunction (BoolExpr False _) = []
 asDisjunction (asApp -> Just (NotPred (asApp -> Just (ConjPred xs)))) =
- case BM.viewBoolMap xs of
-   BoolMapUnit     -> []
-   BoolMapDualUnit -> [(BoolExpr True initializationLoc, Positive)]
-   BoolMapTerms (tm:|tms) -> map (over _2 BM.negatePolarity) (tm:tms)
+ case BM.viewConjMap xs of
+   BM.ConjTrue -> []
+   BM.ConjFalse -> [(BoolExpr True initializationLoc, Positive)]
+   BM.Conjuncts (tm:|tms) -> map (over _2 BM.negatePolarity) (tm:tms)
 asDisjunction x = [(x,Positive)]
 
 asPosAtom :: Expr t BaseBoolType -> (Expr t BaseBoolType, Polarity)
@@ -2086,11 +2089,11 @@ reduceApp sym unary a0 = do
     BaseEq _ x y -> isEq sym x y
 
     NotPred x -> notPred sym x
-    ConjPred bm ->
-      case BM.viewBoolMap bm of
-        BoolMapDualUnit -> return $ falsePred sym
-        BoolMapUnit     -> return $ truePred sym
-        BoolMapTerms tms ->
+    ConjPred cm ->
+      case BM.viewConjMap cm of
+        BM.ConjFalse -> return $ falsePred sym
+        BM.ConjTrue -> return $ truePred sym
+        BM.Conjuncts tms ->
           do let pol (p, Positive) = return p
                  pol (p, Negative) = notPred sym p
              x:|xs <- mapM pol tms
@@ -2337,14 +2340,14 @@ ppApp' a0 = do
 
     NotPred x -> ppSExpr "not" [x]
 
-    ConjPred xs ->
+    ConjPred cm ->
       let pol (x,Positive) = exprPrettyArg x
           pol (x,Negative) = PrettyFunc "not" [ exprPrettyArg x ]
        in
-       case BM.viewBoolMap xs of
-         BoolMapUnit      -> prettyApp "true" []
-         BoolMapDualUnit  -> prettyApp "false" []
-         BoolMapTerms tms -> prettyApp "and" (map pol (toList tms))
+       case BM.viewConjMap cm of
+         BM.ConjTrue -> prettyApp "true" []
+         BM.ConjFalse-> prettyApp "false" []
+         BM.Conjuncts tms -> prettyApp "and" (map pol (toList tms))
 
     RealIsInteger x -> ppSExpr "isInteger" [x]
     BVTestBit i x   -> prettyApp "testBit"  [exprPrettyArg x, showPrettyArg i]

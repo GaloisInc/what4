@@ -479,7 +479,7 @@ convertAppExpr' = go . W4.appExprApp
         go (W4.NotPred e) = do
           s <- goE e
           return $ S.L [ident "notp", s]
-        go (W4.ConjPred bm) = convertBoolMap "andp" True bm
+        go (W4.ConjPred cm) = convertBoolMap "andp" True (BooM.getConjMap cm)
         go (W4.BVSlt e1 e2) = do
           s1 <- goE e1
           s2 <- goE e2

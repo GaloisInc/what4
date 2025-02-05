@@ -33,6 +33,8 @@ import           What4.Concrete
 import           What4.Expr
 import           What4.Interface
 
+import Bool (boolTests)
+
 type IteExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
 withTestSolver :: (forall t. IteExprBuilder t (Flags FloatIEEE) -> IO a) -> IO a
@@ -385,4 +387,5 @@ main = defaultMain $ testGroup "What4 Expressions"
       return (asConcrete s)
     (fromConcreteString <$> s) === Just ""
   , testInjectiveConversions
+  , boolTests
   ]
