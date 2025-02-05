@@ -28,22 +28,38 @@ import What4.Expr.Builder
 import What4.Expr (EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.Interface
 
-data BExpr a
+-- | A tree of API calls to 'IsExprBuilder' methods.
+--
+-- Instances may be \"interpreted\" into 'IsExprBuilder' calls via 'toSymExpr'.
+-- Data flows from children to parents.
+--
+-- Given a means to evaluate variables to 'Bool's, these expressions can
+-- also be evaluated directly (via 'eval'), in order to compare the result to
+-- 'asConstantPred'.
+data BExpr var
   = -- 0-ary
+    -- | 'falsePred', 'truePred'
     Lit !Bool
-  | Var !a
+    -- | 'freshConstant'
+  | Var !var
     -- unary
-  | Not !(BExpr a)
+    -- | 'notPred'
+  | Not !(BExpr var)
     -- binary
-  | And !(BExpr a) !(BExpr a)
-  | Eq !(BExpr a) !(BExpr a)
-  | Or !(BExpr a) !(BExpr a)
-  | Xor !(BExpr a) !(BExpr a)
+    -- | 'andPred'
+  | And !(BExpr var) !(BExpr var)
+    -- | 'eqPred'
+  | Eq !(BExpr var) !(BExpr var)
+    -- | 'orPred'
+  | Or !(BExpr var) !(BExpr var)
+    -- | 'xorPred'
+  | Xor !(BExpr var) !(BExpr var)
     -- tertiary
-  | Ite !(BExpr a) !(BExpr a) !(BExpr a)
+    -- | 'itePred'
+  | Ite !(BExpr var) !(BExpr var) !(BExpr var)
   deriving Show
 
-genBExpr :: HG.MonadGen m => m a -> m (BExpr a)
+genBExpr :: HG.MonadGen m => m var -> m (BExpr var)
 genBExpr var =
   Gen.recursive
     Gen.choice
@@ -114,8 +130,8 @@ toSymExpr ::
   IsExprBuilder sym =>
   sym ->
   -- | How to handle variables
-  (a -> IO (SymExpr sym BaseBoolType)) ->
-  BExpr a ->
+  (var -> IO (SymExpr sym BaseBoolType)) ->
+  BExpr var ->
   IO (SymExpr sym BaseBoolType)
 toSymExpr sym var = go
   where
@@ -151,7 +167,7 @@ toSymExpr sym var = go
 uninterpVar :: ExprBoundVar t BaseBoolType -> Expr t BaseBoolType
 uninterpVar = BoundVarExpr
 
-eval :: Applicative f => (a -> f Bool) -> BExpr a -> f Bool
+eval :: Applicative f => (var -> f Bool) -> BExpr var -> f Bool
 eval var = go
   where
   ite c l r = if c then l else r
