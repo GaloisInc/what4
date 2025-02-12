@@ -255,6 +255,7 @@ evalGroundNonceApp :: Monad m
 evalGroundNonceApp fn a0 =
   case a0 of
     Annotation _ _ t -> fn t
+    Opaque _ t -> fn t
     Forall{} -> mzero
     Exists{} -> mzero
     MapOverArrays{} -> mzero

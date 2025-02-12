@@ -93,6 +93,7 @@ nonceAppExprVerilogExpr nae =
     -- TODO: implement uninterpreted functions as uninterpreted functions
     FnApp _ _ -> doNotSupportError "named function applications"
     Annotation _ _ e -> exprToVerilogExpr e
+    Opaque _ e -> exprToVerilogExpr e
 
 boolMapToExpr ::
   (IsExprBuilder sym, SymExpr sym ~ Expr n) =>

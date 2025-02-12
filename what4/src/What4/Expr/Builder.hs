@@ -927,6 +927,12 @@ evalBoundVars' tbls sym e0 =
             return e0
           else
             sbNonceExpr sym $ Annotation tpr n a'
+        Opaque tpr e -> do
+          e' <- evalBoundVars' tbls sym e
+          if e == e' then
+            return e0
+          else
+            sbNonceExpr sym $ Opaque tpr e'
         Forall v e -> do
           recordBoundVar (exprTable tbls) v
           -- Regenerate forallPred if e is changed by evaluation.
@@ -2033,6 +2039,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     return $ Statistics { statAllocs = allocs
                         , statNonLinearOps = nonLinearOps }
 
+  ----------------------------------------------------------------------
+  -- Annotations and opaque expressions
+
   annotateTerm sym e =
     case e of
       BoundVarExpr (bvarId -> n) -> return (n, e)
@@ -2053,6 +2062,16 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     case e of
       NonceAppExpr (nonceExprApp -> Annotation _ _ x) -> Just x
       _ -> Nothing
+
+  opacify sym e =
+    case e of
+      NonceAppExpr (nonceExprApp -> Opaque _ _) -> return e
+      _ -> sbNonceExpr sym (Opaque (exprType e) e)
+
+  clarify _sym e =
+    case e of
+      NonceAppExpr (nonceExprApp -> Opaque _ e') -> e'
+      _ -> e
 
   ----------------------------------------------------------------------
   -- Program location operations
