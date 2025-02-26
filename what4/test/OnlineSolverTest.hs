@@ -422,7 +422,10 @@ timeoutTests testLevel solvers =
                 -- quickly (~0.25s).  This doesn't allow timeout
                 -- testing, and the speed suggests an improper
                 -- result as well.
-                (SolverName "CVC4", SolverVersion v) | "1.7" `elem` words v->
+                (SolverName "CVC4", SolverVersion v) | "1.7" `elem` words v ->
+                  ignoreTestBecause "solver completes too quickly"
+                -- TODO(#278): Maybe the same problem as above?
+                (SolverName "CVC4", SolverVersion v) | "1.8" `elem` words v ->
                   ignoreTestBecause "solver completes too quickly"
                 _ -> id
         in maybeSkipTest $ testGroup (snamestr $ testSolverName sti)
