@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          what4
-Version:       1.6.2.0.99
+Version:       1.6.3
 Author:        Galois Inc.
 Maintainer:    rscott@galois.com, kquick@galois.com
 Copyright:     (c) Galois, Inc 2014-2023
