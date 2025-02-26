@@ -1647,8 +1647,11 @@ startSolver solver ack setup tmout feats strictOpt auxOutput sym = do
 shutdownSolver
   :: SMTLib2GenericSolver a => a -> SolverProcess t (Writer a) -> IO (Exit.ExitCode, Lazy.Text)
 shutdownSolver _solver p = do
-  -- Tell solver to exit
-  writeExit (solverConn p)
+  -- Tell solver to exit, if the process is still running
+  status <- Streams.getProcessExitCode (solverHandle p)
+  case status of
+    Just _ -> return ()
+    Nothing -> writeExit (solverConn p)
   txt <- readAllLines (solverStderr p)
   stopHandleReader (solverStderr p)
   ec <- solverCleanupCallback p

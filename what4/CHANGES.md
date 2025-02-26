@@ -1,3 +1,10 @@
+# next (TBA)
+
+* Fixed a bug where `What4.Protocol.SMTLib2.shutdownSolver` would raise
+  an exception if the solver process had already terminated. This can occur
+  when a solver fails to gracefully time out and the process is killed via
+  `What4.Protocol.killSolver`.
+
 # 1.6.2 (Sep 2024)
 
 * Allow building with GHC 9.10.
