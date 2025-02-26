@@ -1,4 +1,4 @@
-# next (TBA)
+# 1.6.3 (Feb 2025)
 
 * Fixed a bug where `What4.Protocol.SMTLib2.shutdownSolver` would raise
   an exception if the solver process had already terminated. This can occur
