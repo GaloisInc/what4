@@ -1,5 +1,10 @@
 # next
 
+* Fixed a bug where `What4.Protocol.SMTLib2.shutdownSolver` would raise
+  an exception if the solver process had already terminated. This can occur
+  when a solver fails to gracefully time out and the process is killed via
+  `What4.Protocol.killSolver`.
+
 * The `BoolMap` parameter of `ConjPred` is now a `ConjMap`. This is a `newtype`
   wrapper around `BoolMap` that makes clear that the `BoolMap` in question
   represents a conjunction (as `BoolMap`s may also represent disjunctions).
