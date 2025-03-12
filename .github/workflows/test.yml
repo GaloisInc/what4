@@ -17,6 +17,15 @@ on:
 # * nix tool version 2.11.0
 #   - all nix operations use new tool suite and cmdline interface (available in 2.4+) instead of older format
 
+# The CACHE_VERSION can be updated to force the use of a new cache if
+# the current cache contents become corrupted/invalid.  This can
+# sometimes happen when (for example) the OS version is changed but
+# older .so files are cached, which can have various effects
+# (e.g. cabal complains it can't find a valid version of the "happy"
+# tool).
+env:
+  CACHE_VERSION: 4
+
 jobs:
   genmatrix:
     runs-on: ubuntu-latest
@@ -75,12 +84,6 @@ jobs:
         name: Restore cabal store cache
         id: cache
         env:
-          # The CACHE_VERSION can be updated to force the use of a new cache
-          # if the current cache contents become corrupted/invalid.  This can
-          # sometimes happen when (for example) the OS version is changed but
-          # older .so files are cached, which can have various effects (e.g.
-          # cabal complains it can't find a valid version of the "happy" tool).
-          CACHE_VERSION: 4
           key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ runner.arch }}-ghc${{ matrix.ghc }}
         with:
           path: |
