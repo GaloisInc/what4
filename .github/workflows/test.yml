@@ -82,6 +82,9 @@ jobs:
 
       - uses: actions/cache/restore@v4
         name: Restore cabal store cache
+        id: cache
+        env:
+          key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ runner.arch }}-ghc${{ matrix.ghc }}
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -89,9 +92,9 @@ jobs:
             ~/.cabal/store
             dist-newstyle
           key: |
-            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
+            ${{ env.key }}-${{ github.ref }}
           restore-keys: |
-            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-
+            ${{ env.key }}-
 
       - name: Setup Environment Vars
         # Setup a nix shell environment command that will supply the
@@ -205,5 +208,4 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             dist-newstyle
-          key: |
-            ${{ env.CACHE_VERSION }}-cabal-${{ runner.os }}-ghc${{ matrix.ghc }}-${{ github.ref }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
