@@ -22,7 +22,6 @@ library
     abcBridge >= 0.11,
     bv-sized >= 1.0.0,
     containers,
-    what4 >= 0.4,
     directory,
     io-streams,
     lens,
@@ -32,7 +31,10 @@ library
     text,
     transformers,
     unordered-containers,
-    utf8-string
+    utf8-string,
+    -- what4 lives in the same repo and this package isn't released
+    -- separately; no version bound is needed.
+    what4
 
   hs-source-dirs: src
 
