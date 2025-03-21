@@ -29,12 +29,14 @@ library
     base >= 4.7 && < 4.21,
     blt >= 0.12.1,
     containers,
-    what4 >= 0.4,
     lens >= 1.2,
     parameterized-utils,
     prettyprinter >= 1.7.0,
     text,
-    transformers
+    transformers,
+    -- what4 lives in the same repo and this package isn't released
+    -- separately; no version bound is needed.
+    what4
 
   hs-source-dirs: src
 
