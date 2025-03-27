@@ -128,23 +128,6 @@ jobs:
         shell: bash
         run: $NS -c cabal update
 
-      - name: Package's Cabal/GHC compatibility
-        shell: bash
-        # Using setup will use the cabal library installed with GHC
-        # instead of the cabal library of the Cabal-install tool to
-        # verify the cabal file is compatible with the associated
-        # GHC cabal library version.  Cannot run configure or build,
-        # because dependencies aren't present, but a clean is
-        # sufficient to cause parsing/validation of the cabal file.
-        run: |
-          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
-          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
-          setup_bin() { echo setup.${{ matrix.ghc }}; }
-          with_ghc()  { $NS -c ${@}; }
-          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-
       - name: Cabal check
         shell: bash
         run: |
@@ -213,3 +196,24 @@ jobs:
             ~/.local/state/cabal/store
             dist-newstyle
           key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # The following step happens here for two reasons:
+      #
+      # 1. It rarely fails, going last can save some time if earlier steps fail
+      # 2. It must come after we save the Cabal cache as it runs `cabal clean`
+      - name: Package's Cabal/GHC compatibility
+        shell: bash
+        # Using setup will use the cabal library installed with GHC
+        # instead of the cabal library of the Cabal-install tool to
+        # verify the cabal file is compatible with the associated
+        # GHC cabal library version.  Cannot run configure or build,
+        # because dependencies aren't present, but a clean is
+        # sufficient to cause parsing/validation of the cabal file.
+        run: |
+          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
+          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
+          setup_bin() { echo setup.${{ matrix.ghc }}; }
+          with_ghc()  { $NS -c ${@}; }
+          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
