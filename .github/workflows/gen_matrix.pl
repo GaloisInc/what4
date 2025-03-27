@@ -72,7 +72,7 @@ solver(abc).
 %% The main version selected is usually the "most commonly used"
 %% version (which is not necessarily the "most recently released"
 %% version.
-main_version(ubuntu, "ubuntu-latest").
+main_version(ubuntu, "ubuntu-24.04").
 main_version(ghc, "9.2.2").
 main_version(z3, "4_8_14").
 main_version(yices, "2_6_4").
@@ -92,7 +92,7 @@ main_version(abc, "2021_12_30").
 %% statement.  There is no significance to ordering and the following
 %% can be ordered or grouped in any sequence.
 
-version(ubuntu, "ubuntu-latest").
+version(ubuntu, "ubuntu-24.04").
 
 version(ghc, "9.10.1").
 version(ghc, "9.8.1").
