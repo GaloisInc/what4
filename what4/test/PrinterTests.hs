@@ -1,8 +1,12 @@
+
+{-# LANGUAGE DataKinds #-}
+
 import Test.Tasty
 import Test.Tasty.HUnit
 import What4.InterpretedFloatingPoint(FloatInfoRepr (HalfFloatRepr, SingleFloatRepr, DoubleFloatRepr, QuadFloatRepr, X86_80FloatRepr, DoubleDoubleFloatRepr))
 import Prettyprinter
-import What4.BaseTypes (StringInfoRepr(UnicodeRepr, Char16Repr, Char8Repr))
+import What4.BaseTypes (StringInfoRepr(UnicodeRepr, Char16Repr, Char8Repr), FloatPrecisionRepr (FloatingPointPrecisionRepr), NatRepr)
+import Data.Parameterized (knownNat)
 
 
 
@@ -32,6 +36,13 @@ testPrintDoubleDoubleInfoRepr :: TestTree
 testPrintDoubleDoubleInfoRepr = testPrettyPrint "Print double double repr" DoubleDoubleFloatRepr "DoubleDouble"
 
 
+
+five :: NatRepr 5 
+five = knownNat
+
+eleven :: NatRepr 11
+eleven = knownNat
+
 main :: IO ()
 main = defaultMain $
   testGroup "printers" $ 
@@ -46,4 +57,7 @@ main = defaultMain $
     testPrettyPrint "Print unicode repr" UnicodeRepr "Unicode",
     testPrettyPrint "Print char16 repr" Char16Repr "Char16",
     testPrettyPrint "Print char8 repr" Char8Repr "Char8"
+  ],
+  testGroup "Float precision repr prints" $ [
+    testPrettyPrint "Print float precision repr" (FloatingPointPrecisionRepr five eleven) "FloatingPrecision-5-11"
   ]]

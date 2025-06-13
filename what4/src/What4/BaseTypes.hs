@@ -31,6 +31,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE  OverloadedStrings #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module What4.BaseTypes
   ( -- * BaseType data kind
@@ -291,7 +292,10 @@ instance Show (BaseTypeRepr bt) where
 instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
-  pretty = viaShow
+  pretty :: FloatPrecisionRepr fpp -> Doc ann
+  pretty (FloatingPointPrecisionRepr exp' sig) = 
+    cat ["FloatingPrecision-", pretty $ natValue exp' , "-", pretty $ natValue sig]
+    
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
 instance ShowF FloatPrecisionRepr
