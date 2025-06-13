@@ -7,6 +7,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module What4.InterpretedFloatingPoint
   ( -- * FloatInfo data kind
@@ -100,7 +101,13 @@ instance Hashable (FloatInfoRepr fi) where
   hashWithSalt = $(structuralHashWithSalt [t|FloatInfoRepr|] [])
 
 instance Pretty (FloatInfoRepr fi) where
-  pretty = viaShow
+  pretty HalfFloatRepr =  "Half"
+  pretty SingleFloatRepr = "Float"
+  pretty DoubleFloatRepr = "Double"
+  pretty QuadFloatRepr = "Quad"
+  pretty X86_80FloatRepr = "X86_80"
+  pretty DoubleDoubleFloatRepr = "DoubleDouble"
+
 instance Show (FloatInfoRepr fi) where
   showsPrec = $(structuralShowsPrec [t|FloatInfoRepr|])
 instance ShowF FloatInfoRepr
