@@ -303,16 +303,15 @@ test-suite config-test
                , tasty-checklist >= 1.0 && < 1.1
                , text
 
-
 test-suite printer-test
   import: bldflags, testdefs-hunit
   main-is: PrinterTests.hs
   type: exitcode-stdio-1.0
   build-depends:
     base,
+    prettyprinter,
     tasty,
-    tasty-hunit,
-    prettyprinter
+    tasty-hunit
 
 test-suite online-solver-test
   import: bldflags, testdefs-hunit
