@@ -295,11 +295,12 @@ instance Pretty (FloatPrecisionRepr fpp) where
   pretty :: FloatPrecisionRepr fpp -> Doc ann
   pretty (FloatingPointPrecisionRepr exp' sig) = 
     cat ["FloatingPrecision-", pretty $ natValue exp' , "-", pretty $ natValue sig]
-    
+
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
 instance ShowF FloatPrecisionRepr
 
+-- | Prints string type reprs, matching the syntax of curcible atoms https://github.com/GaloisInc/crucible/blob/a2502010cab0de44ec4c3b802453dc1009181d6b/crucible-syntax/src/Lang/Crucible/Syntax/Atoms.hs#L148-L151
 instance Pretty (StringInfoRepr si) where
   pretty UnicodeRepr = "Unicode"
   pretty Char16Repr = "Char16"

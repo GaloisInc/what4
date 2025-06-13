@@ -100,6 +100,7 @@ instance HashableF FloatInfoRepr where
 instance Hashable (FloatInfoRepr fi) where
   hashWithSalt = $(structuralHashWithSalt [t|FloatInfoRepr|] [])
 
+-- | Prints float type reprs, matching the atoms in crucible https://github.com/GaloisInc/crucible/blob/a2502010cab0de44ec4c3b802453dc1009181d6b/crucible-syntax/src/Lang/Crucible/Syntax/Atoms.hs#L153-L159
 instance Pretty (FloatInfoRepr fi) where
   pretty HalfFloatRepr =  "Half"
   pretty SingleFloatRepr = "Float"
