@@ -22,6 +22,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -30,6 +31,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module What4.BaseTypes
   ( -- * BaseType data kind
     type BaseType
@@ -289,13 +291,19 @@ instance Show (BaseTypeRepr bt) where
 instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
-  pretty = viaShow
+  pretty (FloatingPointPrecisionRepr exp' sig) = 
+    parens ("FloatingPrecision" <+> (pretty $ natValue exp') <+> (pretty $ natValue sig))
+
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
 instance ShowF FloatPrecisionRepr
 
+-- | Prints string type reprs, matching the syntax of crucible atoms https://github.com/GaloisInc/crucible/blob/a2502010cab0de44ec4c3b802453dc1009181d6b/crucible-syntax/src/Lang/Crucible/Syntax/Atoms.hs#L148-L151
 instance Pretty (StringInfoRepr si) where
-  pretty = viaShow
+  pretty UnicodeRepr = "Unicode"
+  pretty Char16Repr = "Char16"
+  pretty Char8Repr = "Char8"
+
 instance Show (StringInfoRepr si) where
   showsPrec = $(structuralShowsPrec [t|StringInfoRepr|])
 instance ShowF StringInfoRepr
