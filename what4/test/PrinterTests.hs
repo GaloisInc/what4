@@ -59,5 +59,5 @@ main = defaultMain $
     testPrettyPrint "Print char8 repr" Char8Repr "Char8"
   ],
   testGroup "Float precision repr prints" $ [
-    testPrettyPrint "Print float precision repr" (FloatingPointPrecisionRepr five eleven) "FloatingPrecision-5-11"
+    testPrettyPrint "Print float precision repr" (FloatingPointPrecisionRepr five eleven) "(FloatingPrecision 5 11)"
   ]]

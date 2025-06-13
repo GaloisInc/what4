@@ -292,7 +292,7 @@ instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
   pretty (FloatingPointPrecisionRepr exp' sig) = 
-    cat ["FloatingPrecision-", pretty $ natValue exp' , "-", pretty $ natValue sig]
+    parens ("FloatingPrecision" <+> (pretty $ natValue exp') <+> (pretty $ natValue sig))
 
 instance Show (FloatPrecisionRepr fpp) where
   showsPrec = $(structuralShowsPrec [t|FloatPrecisionRepr|])
