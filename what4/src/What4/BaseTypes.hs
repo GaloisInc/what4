@@ -30,6 +30,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE  OverloadedStrings #-}
+
 module What4.BaseTypes
   ( -- * BaseType data kind
     type BaseType
@@ -295,7 +297,10 @@ instance Show (FloatPrecisionRepr fpp) where
 instance ShowF FloatPrecisionRepr
 
 instance Pretty (StringInfoRepr si) where
-  pretty = viaShow
+  pretty UnicodeRepr = "Unicode"
+  pretty Char16Repr = "Char16"
+  pretty Char8Repr = "Char8"
+
 instance Show (StringInfoRepr si) where
   showsPrec = $(structuralShowsPrec [t|StringInfoRepr|])
 instance ShowF StringInfoRepr

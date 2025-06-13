@@ -2,6 +2,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import What4.InterpretedFloatingPoint(FloatInfoRepr (HalfFloatRepr, SingleFloatRepr, DoubleFloatRepr, QuadFloatRepr, X86_80FloatRepr, DoubleDoubleFloatRepr))
 import Prettyprinter
+import What4.BaseTypes (StringInfoRepr(UnicodeRepr, Char16Repr, Char8Repr))
 
 
 
@@ -33,10 +34,16 @@ testPrintDoubleDoubleInfoRepr = testPrettyPrint "Print double double repr" Doubl
 
 main :: IO ()
 main = defaultMain $
-  testGroup "Float printers" $ 
+  testGroup "printers" $ 
+  [ testGroup "Float printers" $ 
   [testPrintFloatInfoRepr, 
   testPrintHalfFloatRepr, 
   testPrintDoubleInfoRepr, 
   testPrintQuadInfoRepr, 
   testPrintX86_80InfoRepr, 
-  testPrintDoubleDoubleInfoRepr]
+  testPrintDoubleDoubleInfoRepr],
+  testGroup "String repr printers" $ [
+    testPrettyPrint "Print unicode repr" UnicodeRepr "Unicode",
+    testPrettyPrint "Print char16 repr" Char16Repr "Char16",
+    testPrettyPrint "Print char8 repr" Char8Repr "Char8"
+  ]]
