@@ -42,17 +42,22 @@ import qualified Control.Monad.Fail
 import           Control.Monad (when)
 import           Control.Monad.Reader (ReaderT(..))
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char
 import           Data.HashSet (HashSet)
 import qualified Data.HashSet as HSet
 import           Data.Ratio
 import           Data.String
+import qualified Data.Text as Text
+import           Data.Text.Encoding (decodeUtf8With)
+import           Data.Text.Encoding.Error (lenientDecode)
 import           Data.Word
 import           System.IO
 
 c2b :: Char -> Word8
 c2b = fromIntegral . fromEnum
+
+decode :: BS.ByteString -> String
+decode = Text.unpack . decodeUtf8With lenientDecode
 
 ------------------------------------------------------------------------
 -- Parser definitions
@@ -162,7 +167,7 @@ parseQuotedString = do
   matchChar '"'
   l <- takeChars (/= '"')
   matchChar '"'
-  pure $ UTF8.toString l
+  pure $ decode l
 
 -- | Defines common operations for parsing SMTLIB results.
 class CanParse a where
@@ -309,7 +314,7 @@ matchApp actions = do
   case filter (\(m,_p) -> m == w) actions of
     [] -> do
       w' <- takeChars (\c -> c `notElem` ['\r', '\n'])
-      fail $ "Unsupported keyword: " ++ UTF8.toString (w <> w')
+      fail $ "Unsupported keyword: " ++ decode (w <> w')
     [(_,p)] -> p
     _:_:_ -> fail $ "internal error: Duplicate keywords " ++ show w
 

@@ -11,11 +11,14 @@ module What4.Utils.Streams
 ( logErrorStream
 ) where
 
-import qualified Data.ByteString.UTF8 as UTF8
+import           Data.ByteString (ByteString)
+import           Data.Text (unpack)
+import           Data.Text.Encoding (decodeUtf8With)
+import           Data.Text.Encoding.Error (lenientDecode)
 import qualified System.IO.Streams as Streams
 
 -- | Write from input stream to a logging function.
-logErrorStream :: Streams.InputStream UTF8.ByteString
+logErrorStream :: Streams.InputStream ByteString
                -> (String -> IO ()) -- ^ Logging function
                -> IO ()
 logErrorStream err_stream logFn = do
@@ -23,5 +26,5 @@ logErrorStream err_stream logFn = do
   let write_err Nothing = return ()
       write_err (Just b) = logFn b
   err_output <- Streams.makeOutputStream write_err
-  lns <- Streams.map UTF8.toString =<< Streams.lines err_stream
+  lns <- Streams.map (unpack . decodeUtf8With lenientDecode) =<< Streams.lines err_stream
   Streams.connect lns err_output
