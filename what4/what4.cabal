@@ -124,7 +124,6 @@ library
     s-cargot >= 0.1 && < 0.2,
     scientific >= 0.3.6,
     stm,
-    temporary >= 1.2,
     template-haskell,
     text >= 1.2.4.0 && < 2.2,
     th-lift >= 0.8.2 && < 0.9,
@@ -137,7 +136,6 @@ library
     vector >= 0.12.1,
     versions >= 6.0.2 && < 6.1,
     zenc >= 0.1.0 && < 0.2.0,
-    ghc-prim >= 0.5.2
 
   default-extensions:
      NondecreasingIndentation
