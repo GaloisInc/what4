@@ -80,6 +80,7 @@ module What4.Expr.Builder
   , stopCaching
   , exprBuilderSplitConfig
   , exprBuilderFreshConfig
+  , uninterpFnCache
 
     -- * Specialized representations
   , bvUnary
@@ -414,7 +415,7 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
 
         , sbVarBindings :: !(IORef (SymbolVarBimap t))
 
-        , sbUninterpFnCache :: !(IORef (Map (SolverSymbol, Some (Ctx.Assignment BaseTypeRepr)) (SomeSymFn (ExprBuilder t st fs))))
+        , sbUninterpFnCache :: !(IORef (Map SolverSymbol (PM.MapF (Assignment BaseTypeRepr) (SymFnWrapper (ExprBuilder t st fs)))))
 
           -- | Cache for Matlab functions
         , sbMatlabFnCache :: !(PH.HashTable RealWorld (MatlabFnWrapper t) (ExprSymFnWrapper t))
@@ -445,6 +446,9 @@ cacheStartSize = to sbCacheStartSize
 
 pushMuxOps :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseBoolType)
 pushMuxOps = to sbPushMuxOps
+
+uninterpFnCache :: Getter (ExprBuilder t st fs) (IORef (Map SolverSymbol (PM.MapF (Assignment BaseTypeRepr) (SymFnWrapper (ExprBuilder t st fs)))))
+uninterpFnCache = to sbUninterpFnCache
 
 -- | Return a new expr builder where the configuration object has
 --   been "split" using the @splitConfig@ operation.
@@ -4639,18 +4643,13 @@ cachedUninterpFn
   -> IO (SymFn sym args ret)
 cachedUninterpFn sym fn_name arg_types ret_type handler = do
   fn_cache <- readIORef $ sbUninterpFnCache sym
-  case Map.lookup fn_key fn_cache of
-    Just (SomeSymFn fn)
-      | Just Refl <- testEquality (fnArgTypes fn) arg_types
-      , Just Refl <- testEquality (fnReturnType fn) ret_type
-      -> return fn
-      | otherwise
-      -> fail "Duplicate uninterpreted function declaration."
+  case Map.lookup fn_name fn_cache >>= PM.lookup (arg_types Ctx.:> ret_type) of
+    Just (SymFnWrapper fn) -> pure fn
     Nothing -> do
       fn <- handler sym fn_name arg_types ret_type
-      atomicModifyIORef' (sbUninterpFnCache sym) (\m -> (Map.insert fn_key (SomeSymFn fn) m, ()))
+      _ <- atomicModifyIORef' (sbUninterpFnCache sym)
+        (\m -> (Map.alter (Just . PM.insert (arg_types Ctx.:> ret_type) (SymFnWrapper fn) . fromMaybe PM.empty) fn_name m, ()))
       return fn
-  where fn_key =  (fn_name, Some (arg_types Ctx.:> ret_type))
 
 mkUninterpFnApp
   :: (sym ~ ExprBuilder t st fs)
