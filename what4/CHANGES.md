@@ -1,3 +1,7 @@
+# Next release (TBA)
+
+* Expose `ExprBuilder`'s uninterpreted functoin cache
+
 # 1.7 (March 2025)
 
 * The `BoolMap` parameter of `ConjPred` is now a `ConjMap`. This is a `newtype`

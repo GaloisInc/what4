@@ -80,7 +80,7 @@ module What4.Expr.Builder
   , stopCaching
   , exprBuilderSplitConfig
   , exprBuilderFreshConfig
-  , uninterpFnCache
+  , uninterpFnCache, UninterpFunCache
 
     -- * Specialized representations
   , bvUnary
@@ -415,7 +415,7 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
 
         , sbVarBindings :: !(IORef (SymbolVarBimap t))
 
-        , sbUninterpFnCache :: !(IORef (Map SolverSymbol (PM.MapF (Assignment BaseTypeRepr) (SymFnWrapper (ExprBuilder t st fs)))))
+        , sbUninterpFnCache :: !(IORef (UninterpFunCache t st fs))
 
           -- | Cache for Matlab functions
         , sbMatlabFnCache :: !(PH.HashTable RealWorld (MatlabFnWrapper t) (ExprSymFnWrapper t))
@@ -426,6 +426,11 @@ data ExprBuilder t (st :: Type -> Type) (fs :: Type)
           -- when passed to the solver.
         , sbFloatMode :: !(FloatModeRepr fm)
         }
+
+-- | Keep track of uninterpred functions we've already made
+type UninterpFunCache t st fs =
+  Map SolverSymbol (PM.MapF (Assignment BaseTypeRepr)
+                            (SymFnWrapper (ExprBuilder t st fs)))
 
 type instance SymFn (ExprBuilder t st fs) = ExprSymFn t
 type instance SymExpr (ExprBuilder t st fs) = Expr t
@@ -447,7 +452,7 @@ cacheStartSize = to sbCacheStartSize
 pushMuxOps :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseBoolType)
 pushMuxOps = to sbPushMuxOps
 
-uninterpFnCache :: Getter (ExprBuilder t st fs) (IORef (Map SolverSymbol (PM.MapF (Assignment BaseTypeRepr) (SymFnWrapper (ExprBuilder t st fs)))))
+uninterpFnCache :: Getter (ExprBuilder t st fs) (IORef (UninterpFunCache t st fs))
 uninterpFnCache = to sbUninterpFnCache
 
 -- | Return a new expr builder where the configuration object has
@@ -4647,8 +4652,9 @@ cachedUninterpFn sym fn_name arg_types ret_type handler = do
     Just (SymFnWrapper fn) -> pure fn
     Nothing -> do
       fn <- handler sym fn_name arg_types ret_type
-      _ <- atomicModifyIORef' (sbUninterpFnCache sym)
-        (\m -> (Map.alter (Just . PM.insert (arg_types Ctx.:> ret_type) (SymFnWrapper fn) . fromMaybe PM.empty) fn_name m, ()))
+      let updArgs  = PM.insert (arg_types Ctx.:> ret_type) (SymFnWrapper fn)
+          updCache = Map.alter (Just . updArgs . fromMaybe PM.empty) fn_name
+      _ <- atomicModifyIORef' (sbUninterpFnCache sym) (\m -> (updCache m, ()))
       return fn
 
 mkUninterpFnApp
