@@ -1,6 +1,6 @@
-# next
+# Next release (TBA)
 
-Nothing yet.
+* Expose `ExprBuilder`'s uninterpreted functoin cache
 
 # 1.7 (March 2025)
 
