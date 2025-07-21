@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          what4
-Version:       1.7
+Version:       1.7.0.0.99
 Author:        Galois Inc.
 Maintainer:    rscott@galois.com, kquick@galois.com
 Copyright:     (c) Galois, Inc 2014-2023
@@ -124,7 +124,6 @@ library
     s-cargot >= 0.1 && < 0.2,
     scientific >= 0.3.6,
     stm,
-    temporary >= 1.2,
     template-haskell,
     text >= 1.2.4.0 && < 2.2,
     th-lift >= 0.8.2 && < 0.9,
@@ -133,11 +132,9 @@ library
     transformers >= 0.4,
     unliftio >= 0.2 && < 0.3,
     unordered-containers >= 0.2.10,
-    utf8-string >= 1.0.1,
     vector >= 0.12.1,
     versions >= 6.0.2 && < 6.1,
     zenc >= 0.1.0 && < 0.2.0,
-    ghc-prim >= 0.5.2
 
   default-extensions:
      NondecreasingIndentation
@@ -302,6 +299,16 @@ test-suite config-test
                , prettyprinter
                , tasty-checklist >= 1.0 && < 1.1
                , text
+
+test-suite printer-test
+  import: bldflags, testdefs-hunit
+  main-is: PrinterTests.hs
+  type: exitcode-stdio-1.0
+  build-depends:
+    base,
+    prettyprinter,
+    tasty,
+    tasty-hunit
 
 test-suite online-solver-test
   import: bldflags, testdefs-hunit

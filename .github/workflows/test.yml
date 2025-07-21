@@ -28,7 +28,7 @@ env:
 
 jobs:
   genmatrix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.gen-matrix.outputs.matrix }}
     steps:
@@ -89,8 +89,12 @@ jobs:
           # latter as part of the cache key
           key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-ghc${{ matrix.ghc }}
         with:
+          # Note that in Cabal 3.12 and later, ~/.cabal/store moved to
+          # ~/.local/state/cabal/store. We support lots of versions of GHC and
+          # Cabal, so we cache both. Someday, we can remove the former.
           path: |
-            ${{ steps.setup-haskell.outputs.cabal-store }}
+            ~/.cabal/store
+            ~/.local/state/cabal/store
             dist-newstyle
           key: |
             ${{ env.key }}-${{ github.ref }}
@@ -123,23 +127,6 @@ jobs:
       - name: Cabal update
         shell: bash
         run: $NS -c cabal update
-
-      - name: Package's Cabal/GHC compatibility
-        shell: bash
-        # Using setup will use the cabal library installed with GHC
-        # instead of the cabal library of the Cabal-install tool to
-        # verify the cabal file is compatible with the associated
-        # GHC cabal library version.  Cannot run configure or build,
-        # because dependencies aren't present, but a clean is
-        # sufficient to cause parsing/validation of the cabal file.
-        run: |
-          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
-          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
-          setup_bin() { echo setup.${{ matrix.ghc }}; }
-          with_ghc()  { $NS -c ${@}; }
-          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
 
       - name: Cabal check
         shell: bash
@@ -205,6 +192,28 @@ jobs:
         if: always()
         with:
           path: |
-            ${{ steps.setup-haskell.outputs.cabal-store }}
+            ~/.cabal/store
+            ~/.local/state/cabal/store
             dist-newstyle
           key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # The following step happens here for two reasons:
+      #
+      # 1. It rarely fails, going last can save some time if earlier steps fail
+      # 2. It must come after we save the Cabal cache as it runs `cabal clean`
+      - name: Package's Cabal/GHC compatibility
+        shell: bash
+        # Using setup will use the cabal library installed with GHC
+        # instead of the cabal library of the Cabal-install tool to
+        # verify the cabal file is compatible with the associated
+        # GHC cabal library version.  Cannot run configure or build,
+        # because dependencies aren't present, but a clean is
+        # sufficient to cause parsing/validation of the cabal file.
+        run: |
+          defsetup()  { echo import Distribution.Simple; echo main = defaultMain; }
+          setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
+          setup_bin() { echo setup.${{ matrix.ghc }}; }
+          with_ghc()  { $NS -c ${@}; }
+          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)

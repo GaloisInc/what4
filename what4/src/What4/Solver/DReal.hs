@@ -31,10 +31,12 @@ import           Control.Exception
 import           Control.Lens(folded)
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8 hiding (try)
-import qualified Data.ByteString.UTF8 as UTF8
+import           Data.ByteString (ByteString)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Text.Encoding ( decodeUtf8 )
+import           Data.Text (unpack)
+import           Data.Text.Encoding ( decodeUtf8, decodeUtf8With )
+import           Data.Text.Encoding.Error (lenientDecode)
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as Text
 import qualified Data.Text.Lazy.Builder as Builder
@@ -61,6 +63,9 @@ import qualified What4.Protocol.SMTWriter as SMTWriter
 import           What4.Utils.Process
 import           What4.Utils.Streams (logErrorStream)
 import           What4.Utils.HandleReader
+
+decode :: ByteString -> String
+decode = unpack . decodeUtf8With lenientDecode
 
 data DReal = DReal deriving Show
 
@@ -260,7 +265,7 @@ dRealLoBound = choice
    , do _ <- char '['
         sign <- option 1 (char '-' >> return (-1))
         num <- takeWhile1 (\c -> c `elem` ("0123456789+-eE." :: String))
-        case readFloat (UTF8.toString num) of
+        case readFloat (decode num) of
           (x,""):_ -> return $ Just (sign * x)
           _ -> fail "expected rational bound"
    ]
@@ -271,7 +276,7 @@ dRealHiBound = choice
    , do sign <- option 1 (char '-' >> return (-1))
         num <- takeWhile1 (\c -> c `elem` ("0123456789+-eE." :: String))
         _ <- char ']'
-        case readFloat (UTF8.toString num) of
+        case readFloat (decode num) of
           (x,""):_ -> return $ Just (sign * x)
           _ -> fail "expected rational bound"
    ]
