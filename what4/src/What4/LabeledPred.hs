@@ -32,7 +32,6 @@ import Control.Lens
 import Data.Bifunctor.TH (deriveBifunctor, deriveBifoldable, deriveBitraversable)
 import Data.Data (Data)
 import Data.Coerce (coerce)
-import Data.Data (Typeable)
 import Data.Eq.Deriving (deriveEq1, deriveEq2)
 import Data.Foldable (foldrM)
 import Data.Ord.Deriving (deriveOrd1, deriveOrd2)
@@ -49,7 +48,7 @@ data LabeledPred pred msg
        -- | Message added when assumption/assertion was made.
      , _labeledPredMsg :: !msg
      }
-   deriving (Eq, Data, Functor, Foldable, Generic, Generic1, Ord, Show, Traversable, Typeable)
+   deriving (Eq, Data, Functor, Foldable, Generic, Generic1, Ord, Show, Traversable)
 
 $(deriveBifunctor     ''LabeledPred)
 $(deriveBifoldable    ''LabeledPred)

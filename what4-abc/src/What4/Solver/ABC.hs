@@ -573,7 +573,9 @@ evalNonce ntk n eval_fn fallback = do
   -- Look to see if literals have been assigned to expression.
   mnm <- liftST $ H.lookup (nameCache ntk) n
   case mnm of
-    Just (B l) -> return $ eval_fn l
+    -- NB: Do not use `return $ eval_fn l` here until support for GHC 9.12 is
+    -- dropped (see https://gitlab.haskell.org/ghc/ghc/-/issues/27149).
+    Just (B l) -> return (eval_fn l)
     Just (BV w bv) -> do
       SizedBV w' bv' <- asBV (return . eval_fn) bv
       case w `testEquality` w' of

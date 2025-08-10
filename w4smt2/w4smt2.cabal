@@ -20,7 +20,6 @@ common bldflags
     -Wall
     -Werror=ambiguous-fields
     -Werror=badly-staged-types
-    -Werror=compat-unqualified-imports
     -Werror=data-kinds-tc
     -Werror=deferred-type-errors
     -Werror=deprecated-flags
