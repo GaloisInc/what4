@@ -131,12 +131,6 @@ jobs:
       - name: Cabal update
         run: $NS -c cabal update
 
-      - name: Cabal check
-        run: |
-          (cd what4;     $NS -c cabal check)
-          (cd what4-abc; $NS -c cabal check)
-          (cd what4-blt; $NS -c cabal check)
-
       - name: Cabal configure what4
         # Note: the extra-lib-dirs and extra-include-dirs specified on
         # the command-line are placed at the top-level of the
@@ -184,6 +178,12 @@ jobs:
         run: |
           cd what4
           $NS -c cabal haddock what4
+
+      - name: Cabal check
+        run: |
+          (cd what4;     $NS -c cabal check)
+          (cd what4-abc; $NS -c cabal check)
+          (cd what4-blt; $NS -c cabal check)
 
       - uses: actions/cache/save@v4
         name: Save cabal store cache
