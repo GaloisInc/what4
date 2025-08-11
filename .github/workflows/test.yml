@@ -26,6 +26,10 @@ on:
 env:
   CACHE_VERSION: 4
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   genmatrix:
     runs-on: ubuntu-24.04
@@ -125,18 +129,15 @@ jobs:
           echo PKG_CONFIG_PATH=$(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/lib/pkgconfig >> $GITHUB_ENV
 
       - name: Cabal update
-        shell: bash
         run: $NS -c cabal update
 
       - name: Cabal check
-        shell: bash
         run: |
           (cd what4;     $NS -c cabal check)
           (cd what4-abc; $NS -c cabal check)
           (cd what4-blt; $NS -c cabal check)
 
       - name: Cabal configure what4
-        shell: bash
         # Note: the extra-lib-dirs and extra-include-dirs specified on
         # the command-line are placed at the top-level of the
         # generated cabal.project.local, but only apply to the primary
@@ -153,13 +154,11 @@ jobs:
           cat ../cabal.project.local
 
       - name: Build
-        shell: bash
         run: |
           cd what4
           $NS -c cabal build
 
       - name: Test
-        shell: bash
         run: |
           cd what4
           echo ABC version $(nix eval github:GaloisInc/flakes#abc.v${{ matrix.abc }}.version)
@@ -182,7 +181,6 @@ jobs:
             -c cabal test
 
       - name: Documentation
-        shell: bash
         run: |
           cd what4
           $NS -c cabal haddock what4
@@ -202,7 +200,6 @@ jobs:
       # 1. It rarely fails, going last can save some time if earlier steps fail
       # 2. It must come after we save the Cabal cache as it runs `cabal clean`
       - name: Package's Cabal/GHC compatibility
-        shell: bash
         # Using setup will use the cabal library installed with GHC
         # instead of the cabal library of the Cabal-install tool to
         # verify the cabal file is compatible with the associated
