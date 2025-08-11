@@ -181,9 +181,10 @@ jobs:
 
       - name: Cabal check
         run: |
-          (cd what4;     $NS -c cabal check)
+          (cd what4; $NS -c cabal check)
           (cd what4-abc; $NS -c cabal check)
           (cd what4-blt; $NS -c cabal check)
+          (cd what4-transition-system; $NS -c cabal check)
 
       - uses: actions/cache/save@v4
         name: Save cabal store cache
