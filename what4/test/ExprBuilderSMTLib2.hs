@@ -1094,6 +1094,26 @@ issue182Test sym solver = do
 
       _ -> fail "expected satisfible model"
 
+-- | A regression test for #315.
+issue315Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue315Test sym solver = do
+    let w = knownNat @61
+    x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w)
+    xsi <- sbvToInteger sym x
+    xi <- bvToInteger sym x
+    p <- intEq sym xsi xi
+
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do xEval <- groundEval fn x
+           (xEval == BV.zero w) @? "non-zero result"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1256,6 +1276,7 @@ main = do
         , testCase "Z3 multidim array"$ withOnlineZ3 multidimArrayTest
 
         , testCase "Z3 #182 test case" $ withOnlineZ3 issue182Test
+        , testCase "Z3 #315 test case" $ withOnlineZ3 issue315Test
 
         , arrayCopyTest
         , arraySetTest
@@ -1306,6 +1327,7 @@ main = do
         , cvcTestCase "multidim array"$ withCVC multidimArrayTest
 
         , cvcTestCase "#182 test case" $ withCVC issue182Test
+        , cvcTestCase "#315 test case" $ withCVC issue315Test
         ]
   let cvc4Tests = cvcTests CVC4
   let cvc5Tests = cvcTests CVC5
@@ -1319,6 +1341,7 @@ main = do
         , testCase "Yices pair"    $ withYices pairTest
         , testCase "Yices rounding" $ withYices roundingTest
         , testCase "Yices #182 test case" $ withYices issue182Test
+        , testCase "Yices #315 test case" $ withYices issue315Test
         ]
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))

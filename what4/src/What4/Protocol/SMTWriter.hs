@@ -1604,17 +1604,20 @@ bvIntTerm w x = sumExpr ((\i -> digit (i-1)) <$> [1..natValue w])
                      (fromInteger (2^d))
                      0
 
-sbvIntTerm :: SupportTermOps v
+sbvIntTerm :: (SupportTermOps v, 1 <= w)
            => NatRepr w
            -> v
            -> v
-sbvIntTerm w0 x0 = sumExpr (signed_offset : go w0 x0 (natValue w0 - 2))
+sbvIntTerm w0 x0 = sumExpr (signed_offset : go w0 x0 (intValue w0 - 2))
  where signed_offset = ite (bvTestBit w0 (natValue w0 - 1) x0)
                            (fromInteger (negate (2^(widthVal w0 - 1))))
                            0
-       go :: SupportTermOps v => NatRepr w -> v -> Natural -> [v]
+       -- NB: We deliberately make `n` an `Integer` here instead of a
+       -- `Natural`. In the case of a length-1 signed bitvector, `n`, will be
+       -- `-1`, which isn't representable as a `Natural`.
+       go :: SupportTermOps v => NatRepr w -> v -> Integer -> [v]
        go w x n
-        | n > 0     = digit w x n : go w x (n-1)
+        | n > 0     = digit w x (fromInteger n) : go w x (n-1)
         | n == 0    = [digit w x 0]
         | otherwise = [] -- this branch should only be called in the degenerate case
                          -- of length 1 signed bitvectors

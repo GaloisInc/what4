@@ -1,6 +1,7 @@
-# next
+# next (TBA)
 
-Nothing yet.
+* Fix a bug in which `sbvToInteger` could erroneously throw an `arithmetic
+  underflow` exception when called on a length-1 signed bitvector.
 
 # 1.7 (March 2025)
 
