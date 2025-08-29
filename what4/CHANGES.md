@@ -1,5 +1,6 @@
 # next (TBA)
 
+* Expose `ExprBuilder`'s uninterpreted function cache
 * Fix a bug in which `sbvToInteger` could erroneously throw an `arithmetic
   underflow` exception when called on a length-1 signed bitvector.
 
