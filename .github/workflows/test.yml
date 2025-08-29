@@ -47,7 +47,7 @@ jobs:
       - uses: cachix/cachix-action@v15
         with:
           name: galois
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          authToken: '${{ secrets.CACHIX_WHAT4 }}'
       - id: gen-matrix
         run: |
           echo ::set-output name=matrix::$(nix run nixpkgs#swiProlog -- .github/workflows/gen_matrix.pl)
@@ -78,7 +78,7 @@ jobs:
       - uses: cachix/cachix-action@v15
         with:
           name: galois
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          authToken: '${{ secrets.CACHIX_WHAT4 }}'
 
       - uses: actions/cache/restore@v4
         name: Restore cabal store cache
