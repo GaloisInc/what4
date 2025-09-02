@@ -1,6 +1,8 @@
-# Next release (TBA)
+# next (TBA)
 
-* Expose `ExprBuilder`'s uninterpreted functoin cache
+* Expose `ExprBuilder`'s uninterpreted function cache
+* Fix a bug in which `sbvToInteger` could erroneously throw an `arithmetic
+  underflow` exception when called on a length-1 signed bitvector.
 
 # 1.7 (March 2025)
 

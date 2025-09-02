@@ -1598,31 +1598,41 @@ bvIntTerm :: forall v w
           => NatRepr w
           -> v
           -> v
-bvIntTerm w x = sumExpr ((\i -> digit (i-1)) <$> [1..natValue w])
- where digit :: Natural -> v
+bvIntTerm w x = sumExpr digits
+ where -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
+       -- bvIntTerm's type signature.
+       digits :: [v]
+       digits = (\i -> digit (i-1)) <$> [1..natValue w]
+
+       digit :: Natural -> v
        digit d = ite (bvTestBit w d x)
                      (fromInteger (2^d))
                      0
 
-sbvIntTerm :: SupportTermOps v
+-- @sbvIntTerm w x@ builds an integer term that has the same value as the
+-- signed integer value of the bitvector @x@. This is done by explicitly
+-- decomposing the positional notation of the bitvector into a sum of powers of
+-- 2, plus an offset to ensure that the number is signed appropriately.
+sbvIntTerm :: forall v w
+            . (SupportTermOps v, 1 <= w)
            => NatRepr w
            -> v
            -> v
-sbvIntTerm w0 x0 = sumExpr (signed_offset : go w0 x0 (natValue w0 - 2))
- where signed_offset = ite (bvTestBit w0 (natValue w0 - 1) x0)
-                           (fromInteger (negate (2^(widthVal w0 - 1))))
-                           0
-       go :: SupportTermOps v => NatRepr w -> v -> Natural -> [v]
-       go w x n
-        | n > 0     = digit w x n : go w x (n-1)
-        | n == 0    = [digit w x 0]
-        | otherwise = [] -- this branch should only be called in the degenerate case
-                         -- of length 1 signed bitvectors
+sbvIntTerm w x = sumExpr (signedOffset : digits)
+ where -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
+       -- sbvIntTerm's type signature.
+       signedOffset :: v
+       signedOffset = ite (bvTestBit w (natValue w - 1) x)
+                          (fromInteger (negate (2^(widthVal w - 1))))
+                          0
 
-       digit :: SupportTermOps v => NatRepr w -> v -> Natural -> v
-       digit w x d = ite (bvTestBit w d x)
-                         (fromInteger (2^d))
-                         0
+       digits :: [v]
+       digits = (\i -> digit (i-1)) <$> [1..natValue w]
+
+       digit :: SupportTermOps v => Natural -> v
+       digit d = ite (bvTestBit w d x)
+                     (fromInteger (2^d))
+                     0
 
 unsupportedTerm  :: MonadFail m => Expr t tp -> m a
 unsupportedTerm e =
