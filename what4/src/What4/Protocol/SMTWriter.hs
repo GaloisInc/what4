@@ -1598,11 +1598,11 @@ bvIntTerm :: forall v w
           => NatRepr w
           -> v
           -> v
-bvIntTerm w x = sumExpr powersOfTwo
+bvIntTerm w x = sumExpr digits
  where -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
        -- bvIntTerm's type signature.
-       powersOfTwo :: [v]
-       powersOfTwo = (\i -> digit (i-1)) <$> [1..natValue w]
+       digits :: [v]
+       digits = (\i -> digit (i-1)) <$> [1..natValue w]
 
        digit :: Natural -> v
        digit d = ite (bvTestBit w d x)
@@ -1618,7 +1618,7 @@ sbvIntTerm :: forall v w
            => NatRepr w
            -> v
            -> v
-sbvIntTerm w x = sumExpr (signedOffset : powersOfTwo)
+sbvIntTerm w x = sumExpr (signedOffset : digits)
  where -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
        -- sbvIntTerm's type signature.
        signedOffset :: v
@@ -1626,8 +1626,8 @@ sbvIntTerm w x = sumExpr (signedOffset : powersOfTwo)
                           (fromInteger (negate (2^(widthVal w - 1))))
                           0
 
-       powersOfTwo :: [v]
-       powersOfTwo = (\i -> digit (i-1)) <$> [1..natValue w]
+       digits :: [v]
+       digits = (\i -> digit (i-1)) <$> [1..natValue w]
 
        digit :: SupportTermOps v => Natural -> v
        digit d = ite (bvTestBit w d x)
