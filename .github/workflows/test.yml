@@ -75,7 +75,7 @@ jobs:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - uses: cachix/cachix-action@v10
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_WHAT4 }}'
