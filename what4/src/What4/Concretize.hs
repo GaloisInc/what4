@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 module What4.Concretize
-  ( GroundingFailure
+  ( GroundingFailure(..)
   , groundFromModel
   , ConcretizationFailure(..)
   , concretize
