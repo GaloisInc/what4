@@ -13,7 +13,9 @@
 {-# LANGUAGE TypeOperators #-}
 
 module What4.Concretize
-  ( ConcretizationFailure(..)
+  ( GroundingFailure
+  , groundFromModel
+  , ConcretizationFailure(..)
   , concretize
   ) where
 
@@ -24,14 +26,38 @@ import qualified What4.Protocol.Online as WPO
 import qualified What4.Protocol.SMTWriter as WPS
 import qualified What4.SatResult as WSat
 
--- | Reasons why attempting to resolve a symbolic expression as concrete can
--- fail.
-data ConcretizationFailure
+-- | Reasons why attempting to resolve a symbolic expression as ground can fail.
+data GroundingFailure
   = SolverUnknown
     -- ^ Querying the SMT solver yielded @UNKNOWN@.
   | UnsatInitialAssumptions
     -- ^ Querying the SMT solver for an initial model of the expression failed
     -- due to the initial assumptions in scope being unsatisfiable.
+  deriving Show
+
+-- | Get a 'WEG.GroundValue' for a 'WI.SymExpr' by asking the solver for a
+-- model.
+groundFromModel ::
+  ( sym ~ WEB.ExprBuilder scope st fs
+  , WPO.OnlineSolver solver
+  ) =>
+  WPO.SolverProcess scope solver ->
+  -- | The symbolic term to query from the model
+  WI.SymExpr sym tp ->
+  IO (Either GroundingFailure (WEG.GroundValue tp))
+groundFromModel sp val =
+  case WEG.asGround val of
+    Just gVal -> pure (Right gVal)
+    Nothing -> do
+      WPO.inNewFrame sp $ do
+        msat <- WPO.checkAndGetModel sp "Ground value using model"
+        case msat of
+          WSat.Unknown -> pure $ Left SolverUnknown
+          WSat.Unsat {} -> pure $ Left UnsatInitialAssumptions
+          WSat.Sat mdl -> Right <$> WEG.groundEval mdl val
+
+data ConcretizationFailure
+  = GroundingFailure GroundingFailure
   | MultipleModels
     -- ^ There are multiple possible models for the expression, which means it
     -- is truly symbolic and therefore unable to be concretized.
@@ -58,28 +84,25 @@ concretize sym sp val =
   case WEG.asGround val of
     Just gVal -> pure (Right gVal)
     Nothing -> do
-      WPO.inNewFrame sp $ do
-        -- First, check to see if there is a model of the symbolic value.
-        msat <- WPO.checkAndGetModel sp "Concretize value (with no assumptions)"
-        case msat of
-          WSat.Unknown -> pure $ Left SolverUnknown
-          WSat.Unsat {} -> pure $ Left UnsatInitialAssumptions
-          WSat.Sat mdl -> do
-            concVal <- WEG.groundEval mdl val
-            -- We found a model, so check to see if this is the only possible
-            -- model for this symbolic value.  We do this by adding a blocking
-            -- clause that assumes the SymBV is /not/ equal to the model we
-            -- found in the previous step. If this is unsatisfiable, the SymBV
-            -- can only be equal to that model, so we can conclude it is
-            -- concrete. If it is satisfiable, on the other hand, the SymBV can
-            -- be multiple values, so it is truly symbolic.
-            WPO.inNewFrame sp $ do
-              injectedConcVal <- WEG.groundToSym sym (WI.exprType val) concVal
-              eq <- WI.isEq sym val injectedConcVal
-              block <- WI.notPred sym eq
-              WPS.assume (WPO.solverConn sp) block
-              msat' <- WPO.checkAndGetModel sp "Concretize value (with blocking clause)"
-              case msat' of
-                WSat.Unknown -> pure $ Left SolverUnknown -- Total failure
-                WSat.Sat _mdl -> pure $ Left MultipleModels  -- There are multiple models
-                WSat.Unsat {} -> pure $ Right concVal -- There is a single concrete result
+      -- First, check to see if there is a model of the symbolic value.
+      concVal_ <- groundFromModel sp val
+      case concVal_ of
+        Left e -> pure (Left (GroundingFailure e))
+        Right concVal -> do
+          -- We found a model, so check to see if this is the only possible
+          -- model for this symbolic value.  We do this by adding a blocking
+          -- clause that assumes the SymBV is /not/ equal to the model we
+          -- found in the previous step. If this is unsatisfiable, the SymBV
+          -- can only be equal to that model, so we can conclude it is
+          -- concrete. If it is satisfiable, on the other hand, the SymBV can
+          -- be multiple values, so it is truly symbolic.
+          WPO.inNewFrame sp $ do
+            injectedConcVal <- WEG.groundToSym sym (WI.exprType val) concVal
+            eq <- WI.isEq sym val injectedConcVal
+            block <- WI.notPred sym eq
+            WPS.assume (WPO.solverConn sp) block
+            msat' <- WPO.checkAndGetModel sp "Concretize value (with blocking clause)"
+            case msat' of
+              WSat.Unknown -> pure $ Left $ GroundingFailure $ SolverUnknown
+              WSat.Sat _mdl -> pure $ Left $ MultipleModels
+              WSat.Unsat {} -> pure $ Right concVal -- There is a single concrete result
