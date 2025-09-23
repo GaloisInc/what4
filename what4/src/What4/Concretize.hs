@@ -82,4 +82,4 @@ concretize sym sp val =
               case msat' of
                 WSat.Unknown -> pure $ Left SolverUnknown -- Total failure
                 WSat.Sat _mdl -> pure $ Left MultipleModels  -- There are multiple models
-                WSat.Unsat {} -> pure (Right concVal) -- There is a single concrete result
+                WSat.Unsat {} -> pure $ Right concVal -- There is a single concrete result
