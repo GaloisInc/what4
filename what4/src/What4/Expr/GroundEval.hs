@@ -85,6 +85,8 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
 
 -- | Return a ground representation of a value, if it is ground.
+--
+-- c.f. 'What4.Interface.asConcrete'.
 asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)
 asGround x =
   case exprType x of
@@ -96,7 +98,10 @@ asGround x =
     BaseBVRepr _w       -> asBV x
     BaseFloatRepr _fpp  -> asFloat x
     BaseStructRepr _   -> asStruct x >>= traverseFC (fmap GVW . asGround)
-    BaseArrayRepr _idx _tp -> Nothing
+    BaseArrayRepr _idx _tp -> do
+      def <- asConstantArray x
+      groundDef <- asGround def
+      pure (ArrayConcrete groundDef Map.empty)
 
 -- | Inject a 'GroundValue' back into a 'SymExpr'.
 --

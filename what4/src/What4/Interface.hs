@@ -3199,6 +3199,8 @@ cplxLogBase base sym x = do
 
 -- | Return a concrete representation of a value, if it
 --   is concrete.
+--
+-- c.f. 'What4.GroundEval.asGround'.
 asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
