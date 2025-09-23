@@ -87,6 +87,9 @@ instance PP.Pretty SearchStrategy where
 -- If it cannot, return the lower and upper bounds. This is primarly intended
 -- for compound expressions whose bounds cannot trivially be determined by
 -- using 'WI.signedBVBounds' or 'WI.unsignedBVBounds'.
+--
+-- For just resolving a bitvector as concrete without searching for bounds, see
+-- 'What4.Concretize.concretize'.
 resolveSymBV ::
      forall w sym solver scope st fs
    . ( 1 PN.<= w
