@@ -1,5 +1,8 @@
 # next (TBA)
 
+* Add `asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)`
+* Add `What4.Concretize`, a module for concretizing symbolic values using models
+  from solvers.
 * Expose `ExprBuilder`'s uninterpreted function cache
 * Fix a bug in which `sbvToInteger` could erroneously throw an `arithmetic
   underflow` exception when called on a length-1 signed bitvector.
