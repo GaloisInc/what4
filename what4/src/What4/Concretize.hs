@@ -6,6 +6,11 @@
 -- License          : BSD3
 -- Maintainer       : Langston Barrett <langston@galois.com>
 -- Stability        : provisional
+--
+-- In our terminology, concretization is the process of (1) obtaining a
+-- model from an SMT solver and (2) requesting the value of a particular set
+-- of symbolic expressions in said model. The operation (2) alone is called
+-- "grounding", see "What4.GroundEval".
 -----------------------------------------------------------------------
 
 {-# LANGUAGE DataKinds #-}
