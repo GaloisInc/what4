@@ -3199,6 +3199,8 @@ cplxLogBase base sym x = do
 
 -- | Return a concrete representation of a value, if it
 --   is concrete.
+--
+-- c.f. 'What4.GroundEval.asGround'.
 asConcrete :: IsExpr e => e tp -> Maybe (ConcreteVal tp)
 asConcrete x =
   case exprType x of
@@ -3218,6 +3220,8 @@ asConcrete x =
       pure (ConcreteArray idx c_def Map.empty)
 
 -- | Create a literal symbolic value from a concrete value.
+--
+-- c.f. 'What4.Expr.GroundEval.groundToSym'
 concreteToSym :: IsExprBuilder sym => sym -> ConcreteVal tp -> IO (SymExpr sym tp)
 concreteToSym sym = \case
    ConcreteBool True    -> return (truePred sym)

@@ -9,6 +9,8 @@
 --
 -- Given a collection of assignments to the symbolic values appearing in
 -- an expression, this module computes the ground value.
+--
+-- See also "What4.Concretize".
 ------------------------------------------------------------------------
 
 {-# LANGUAGE CPP #-}
@@ -24,8 +26,9 @@
 module What4.Expr.GroundEval
   ( -- * Ground evaluation
     GroundValue
-  , GroundValueWrapper(..)
+  , asGround
   , groundToSym
+  , GroundValueWrapper(..)
   , GroundArray(..)
   , lookupArray
   , GroundEvalFn(..)
@@ -82,6 +85,25 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
+
+-- | Return a ground representation of a value, if it is ground.
+--
+-- c.f. 'What4.Interface.asConcrete'.
+asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)
+asGround x =
+  case exprType x of
+    BaseBoolRepr       -> asConstantPred x
+    BaseIntegerRepr    -> asInteger x
+    BaseRealRepr       -> asRational x
+    BaseStringRepr _si -> asString x
+    BaseComplexRepr    -> asComplex x
+    BaseBVRepr _w       -> asBV x
+    BaseFloatRepr _fpp  -> asFloat x
+    BaseStructRepr _   -> asStruct x >>= traverseFC (fmap GVW . asGround)
+    BaseArrayRepr _idx _tp -> do
+      def <- asConstantArray x
+      groundDef <- asGround def
+      pure (ArrayConcrete groundDef Map.empty)
 
 -- | Inject a 'GroundValue' back into a 'SymExpr'.
 --
