@@ -89,7 +89,7 @@ instance PP.Pretty SearchStrategy where
 -- using 'WI.signedBVBounds' or 'WI.unsignedBVBounds'.
 --
 -- For just resolving a bitvector as concrete without searching for bounds, see
--- 'What4.Concretize.concretize'.
+-- 'What4.Concretize.uniquelyConcretize'.
 resolveSymBV ::
      forall w sym solver scope st fs
    . ( 1 PN.<= w

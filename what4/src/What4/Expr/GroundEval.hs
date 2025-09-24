@@ -9,6 +9,8 @@
 --
 -- Given a collection of assignments to the symbolic values appearing in
 -- an expression, this module computes the ground value.
+--
+-- See also "What4.Concretize".
 ------------------------------------------------------------------------
 
 {-# LANGUAGE CPP #-}

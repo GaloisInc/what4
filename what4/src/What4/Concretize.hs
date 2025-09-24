@@ -13,10 +13,10 @@
 {-# LANGUAGE TypeOperators #-}
 
 module What4.Concretize
-  ( GroundingFailure(..)
-  , groundFromModel
-  , ConcretizationFailure(..)
+  ( ConcretizationFailure(..)
   , concretize
+  , UniqueConcretizationFailure(..)
+  , uniquelyConcretize
   ) where
 
 import qualified What4.Expr.Builder as WEB
@@ -27,7 +27,7 @@ import qualified What4.Protocol.SMTWriter as WPS
 import qualified What4.SatResult as WSat
 
 -- | Reasons why attempting to resolve a symbolic expression as ground can fail.
-data GroundingFailure
+data ConcretizationFailure
   = SolverUnknown
     -- ^ Querying the SMT solver yielded @UNKNOWN@.
   | UnsatInitialAssumptions
@@ -38,18 +38,18 @@ data GroundingFailure
 -- | Get a 'WEG.GroundValue' for a 'WI.SymExpr' by asking an online solver for
 -- a model.
 --
--- In contrast with 'concretize', this function returns the value of the
+-- In contrast with 'uniquelyConcretize', this function returns the value of the
 -- 'WI.SymExpr' in just one of potentially many distinct models. See the Haddock
--- on 'concretize' for a further comparison.
-groundFromModel ::
+-- on 'uniquelyConcretize' for a further comparison.
+concretize ::
   ( sym ~ WEB.ExprBuilder scope st fs
   , WPO.OnlineSolver solver
   ) =>
   WPO.SolverProcess scope solver ->
   -- | The symbolic term to query from the model
   WI.SymExpr sym tp ->
-  IO (Either GroundingFailure (WEG.GroundValue tp))
-groundFromModel sp val =
+  IO (Either ConcretizationFailure (WEG.GroundValue tp))
+concretize sp val =
   case WEG.asGround val of
     Just gVal -> pure (Right gVal)
     Nothing -> do
@@ -60,22 +60,22 @@ groundFromModel sp val =
           WSat.Unsat {} -> pure $ Left UnsatInitialAssumptions
           WSat.Sat mdl -> Right <$> WEG.groundEval mdl val
 
-data ConcretizationFailure
-  = GroundingFailure GroundingFailure
+data UniqueConcretizationFailure
+  = GroundingFailure ConcretizationFailure
   | MultipleModels
     -- ^ There are multiple possible models for the expression, which means it
     -- is truly symbolic and therefore unable to be concretized.
   deriving Show
 
--- | Attempt to resolve the given 'WI.SymExpr' to a concrete value using an
--- online SMT solver connection.
+-- | Attempt to resolve the given 'WI.SymExpr' to a unique concrete value using
+-- an online SMT solver connection.
 --
 -- The implementation of this function (1) asks for a model from the solver.
 -- If it gets one, it (2) adds a blocking clause and asks for another. If there
 -- was only one model, concretize the initial value and return it with 'Right'.
 -- Otherwise, return an explanation of why concretization failed with 'Left'.
--- This behavior is contrasted with 'groundFromModel', which just does (1).
-concretize ::
+-- This behavior is contrasted with 'concretize', which just does (1).
+uniquelyConcretize ::
   ( sym ~ WEB.ExprBuilder scope st fs
   , WPO.OnlineSolver solver
   ) =>
@@ -84,13 +84,13 @@ concretize ::
   WPO.SolverProcess scope solver ->
   -- | The symbolic term to concretize
   WI.SymExpr sym tp ->
-  IO (Either ConcretizationFailure (WEG.GroundValue tp))
-concretize sym sp val =
+  IO (Either UniqueConcretizationFailure (WEG.GroundValue tp))
+uniquelyConcretize sym sp val =
   case WEG.asGround val of
     Just gVal -> pure (Right gVal)
     Nothing -> do
       -- First, check to see if there is a model of the symbolic value.
-      concVal_ <- groundFromModel sp val
+      concVal_ <- concretize sp val
       case concVal_ of
         Left e -> pure (Left (GroundingFailure e))
         Right concVal -> do
