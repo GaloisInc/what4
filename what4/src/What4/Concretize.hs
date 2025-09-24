@@ -35,8 +35,12 @@ data GroundingFailure
     -- due to the initial assumptions in scope being unsatisfiable.
   deriving Show
 
--- | Get a 'WEG.GroundValue' for a 'WI.SymExpr' by asking the solver for a
--- model.
+-- | Get a 'WEG.GroundValue' for a 'WI.SymExpr' by asking an online solver for
+-- a model.
+--
+-- In contrast with 'concretize', this function returns the value of the
+-- 'WI.SymExpr' in just one of potentially many distinct models. See the Haddock
+-- on 'concretize' for a further comparison.
 groundFromModel ::
   ( sym ~ WEB.ExprBuilder scope st fs
   , WPO.OnlineSolver solver
@@ -66,10 +70,11 @@ data ConcretizationFailure
 -- | Attempt to resolve the given 'WI.SymExpr' to a concrete value using an
 -- online SMT solver connection.
 --
--- The implementation of this function asks for a model from the solver. If it
--- gets one, it adds a blocking clause and asks for another. If there was only
--- one model, concretize the initial value and return it with 'Right'.
+-- The implementation of this function (1) asks for a model from the solver.
+-- If it gets one, it (2) adds a blocking clause and asks for another. If there
+-- was only one model, concretize the initial value and return it with 'Right'.
 -- Otherwise, return an explanation of why concretization failed with 'Left'.
+-- This behavior is contrasted with 'groundFromModel', which just does (1).
 concretize ::
   ( sym ~ WEB.ExprBuilder scope st fs
   , WPO.OnlineSolver solver
@@ -91,11 +96,11 @@ concretize sym sp val =
         Right concVal -> do
           -- We found a model, so check to see if this is the only possible
           -- model for this symbolic value.  We do this by adding a blocking
-          -- clause that assumes the SymBV is /not/ equal to the model we
-          -- found in the previous step. If this is unsatisfiable, the SymBV
-          -- can only be equal to that model, so we can conclude it is
-          -- concrete. If it is satisfiable, on the other hand, the SymBV can
-          -- be multiple values, so it is truly symbolic.
+          -- clause that assumes the `SymExpr` is /not/ equal to the model we
+          -- found in the previous step. If this is unsatisfiable, the SymExpr
+          -- can only be equal to that model, so we can conclude it is concrete.
+          -- If it is satisfiable, on the other hand, the `SymExpr` can be
+          -- multiple values, so it is truly symbolic.
           WPO.inNewFrame sp $ do
             injectedConcVal <- WEG.groundToSym sym (WI.exprType val) concVal
             eq <- WI.isEq sym val injectedConcVal
