@@ -69,7 +69,7 @@ data UniqueConcretizationFailure
   = GroundingFailure ConcretizationFailure
   | MultipleModels
     -- ^ There are multiple possible models for the expression, which means it
-    -- is truly symbolic and therefore unable to be concretized.
+    -- is truly symbolic and therefore unable to be uniquely concretized.
   deriving Show
 
 -- | Attempt to resolve the given 'WI.SymExpr' to a unique concrete value using
