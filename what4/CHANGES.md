@@ -4,6 +4,7 @@
   were lost after @reset-assertions@. These constraints are now properly
   re-asserted after reset. This fix ensures that variables cached with
   @DeleteNever@ maintain their necessary constraints across solver resets.
+* Replace `lens` with `microlens-{,-mtl,-th}`.
 
 # 1.7.3 -- 2026-01-26
 

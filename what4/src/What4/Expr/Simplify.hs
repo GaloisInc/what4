@@ -19,7 +19,7 @@ module What4.Expr.Simplify
   , count_subterms
   ) where
 
-import           Control.Lens ((^.))
+import           Lens.Micro ((^.))
 import           Control.Monad (void, when)
 import           Control.Monad.ST
 import           Control.Monad.State (MonadState(..), State, execState)
