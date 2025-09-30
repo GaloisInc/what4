@@ -18,7 +18,7 @@ module What4.Protocol.ReadDecimal
 import Control.Monad.Fail( MonadFail )
 #endif
 
-import Control.Lens (over, _1)
+import Lens.Micro (over, _1)
 import Data.Ratio
 
 -- | Read decimal number, returning rational and rest of string, or a failure

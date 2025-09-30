@@ -202,7 +202,7 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Exception (assert, Exception)
-import           Control.Lens
+import           Lens.Micro
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.BitVector.Sized as BV
@@ -3103,18 +3103,18 @@ realExprAsInteger x =
 -- | Compute the conjunction of a sequence of predicates.
 andAllOf :: IsExprBuilder sym
          => sym
-         -> Fold s (Pred sym)
+         -> SimpleFold s (Pred sym)
          -> s
          -> IO (Pred sym)
-andAllOf sym f s = foldlMOf f (andPred sym) (truePred sym) s
+andAllOf sym f s = foldM (andPred sym) (truePred sym) (toListOf f s)
 
 -- | Compute the disjunction of a sequence of predicates.
 orOneOf :: IsExprBuilder sym
          => sym
-         -> Fold s (Pred sym)
+         -> SimpleFold s (Pred sym)
          -> s
          -> IO (Pred sym)
-orOneOf sym f s = foldlMOf f (orPred sym) (falsePred sym) s
+orOneOf sym f s = foldM (orPred sym) (falsePred sym) (toListOf f s)
 
 -- | Return predicate that holds if value is non-zero.
 isNonZero :: IsExprBuilder sym => sym -> SymCplx sym -> IO (Pred sym)

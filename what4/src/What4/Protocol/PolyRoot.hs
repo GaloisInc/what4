@@ -24,7 +24,7 @@ module What4.Protocol.PolyRoot
   ) where
 
 import           Control.Applicative
-import           Control.Lens
+import           Lens.Micro
 import qualified Data.Attoparsec.Text as Atto
 import qualified Data.Map as Map
 import           Data.Ratio

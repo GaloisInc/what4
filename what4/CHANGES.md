@@ -1,5 +1,6 @@
 # next (TBA)
 
+* Replace `lens` with `microlens-{,-mtl,-th}`.
 * Fix a bug in which `what4`'s Bitwuzla adapter would generate invalid code
   involving SMT arrays.
 

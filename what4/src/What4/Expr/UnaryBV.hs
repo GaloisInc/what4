@@ -56,7 +56,7 @@ module What4.Expr.UnaryBV
   ) where
 
 import           Control.Exception (assert)
-import           Control.Lens
+import           Lens.Micro
 import           Control.Monad
 import           Data.Bits
 import           Data.Hashable

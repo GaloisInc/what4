@@ -110,7 +110,8 @@ import           Control.Monad.Fail ( MonadFail )
 #endif
 
 import           Control.Exception
-import           Control.Lens hiding ((.>), Strict)
+import           Lens.Micro
+import           Lens.Micro.Mtl (use, (+=), (.=))
 import           Control.Monad (forM_, unless, when)
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader (ReaderT(..), asks)

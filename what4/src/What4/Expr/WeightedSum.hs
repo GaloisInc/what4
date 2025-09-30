@@ -69,7 +69,8 @@ module What4.Expr.WeightedSum
   , prodContains
   ) where
 
-import           Control.Lens
+import           Data.Functor.Identity (Identity(..))
+import           Lens.Micro
 import           Control.Monad (unless)
 import qualified Data.BitVector.Sized as BV
 import           Data.Hashable

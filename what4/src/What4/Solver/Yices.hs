@@ -72,7 +72,7 @@ import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
 import           Control.Exception
                    (assert, SomeException(..), tryJust, throw, displayException, Exception(..))
-import           Control.Lens ((^.), folded)
+import           Lens.Micro ((^.), folded)
 import           Control.Monad
 import           Control.Monad.Identity
 import qualified Data.Attoparsec.Text as Atto
