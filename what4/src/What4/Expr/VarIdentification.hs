@@ -41,7 +41,8 @@ module What4.Expr.VarIdentification
 import Control.Monad.Fail( MonadFail )
 #endif
 
-import           Control.Lens
+import           Lens.Micro
+import           Lens.Micro.Mtl
 import           Control.Monad (when)
 import           Control.Monad.Reader (MonadReader(..), ReaderT(..))
 import           Control.Monad.ST
@@ -103,28 +104,28 @@ data CollectedVarInfo t
                       }
 
 -- | Describes types of functionality required by solver based on the problem.
-problemFeatures :: Simple Lens (CollectedVarInfo t) ProblemFeatures
+problemFeatures :: Lens' (CollectedVarInfo t) ProblemFeatures
 problemFeatures = lens _problemFeatures (\s v -> s { _problemFeatures = v })
 
-uninterpConstants :: Simple Lens (CollectedVarInfo t) (Set (Some (ExprBoundVar t)))
+uninterpConstants :: Lens' (CollectedVarInfo t) (Set (Some (ExprBoundVar t)))
 uninterpConstants = lens _uninterpConstants (\s v -> s { _uninterpConstants = v })
 
 -- | Expressions appearing in the problem as existentially quantified when
 -- the problem is expressed in negation normal form.  This is a map
 -- from the existential quantifier element to the info.
-existQuantifiers :: Simple Lens (CollectedVarInfo t) (QuantifierInfoMap t)
+existQuantifiers :: Lens' (CollectedVarInfo t) (QuantifierInfoMap t)
 existQuantifiers = lens _existQuantifiers (\s v -> s { _existQuantifiers = v })
 
 -- | Expressions appearing in the problem as existentially quantified when
 -- the problem is expressed in negation normal form.  This is a map
 -- from the existential quantifier element to the info.
-forallQuantifiers :: Simple Lens (CollectedVarInfo t) (QuantifierInfoMap t)
+forallQuantifiers :: Lens' (CollectedVarInfo t) (QuantifierInfoMap t)
 forallQuantifiers = lens _forallQuantifiers (\s v -> s { _forallQuantifiers = v })
 
-latches :: Simple Lens (CollectedVarInfo t) (Set (Some (ExprBoundVar t)))
+latches :: Lens' (CollectedVarInfo t) (Set (Some (ExprBoundVar t)))
 latches = lens _latches (\s v -> s { _latches = v })
 
-varErrors :: Simple Lens (CollectedVarInfo t) (Seq (Doc Void))
+varErrors :: Lens' (CollectedVarInfo t) (Seq (Doc Void))
 varErrors = lens _varErrors (\s v -> s { _varErrors = v })
 
 -- | Return variables needed to define element as a predicate

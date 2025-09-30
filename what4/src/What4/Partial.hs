@@ -75,7 +75,7 @@ import What4.BaseTypes
 import What4.Interface (IsExprBuilder, SymExpr, IsExpr, Pred)
 import What4.Interface (truePred, andPred, notPred, itePred, asConstantPred)
 
-import Control.Lens.TH (makeLenses)
+import Lens.Micro.TH (makeLenses)
 import Data.Bifunctor.TH (deriveBifunctor, deriveBifoldable, deriveBitraversable)
 import Data.Eq.Deriving (deriveEq1, deriveEq2)
 import Data.Ord.Deriving (deriveOrd1, deriveOrd2)
