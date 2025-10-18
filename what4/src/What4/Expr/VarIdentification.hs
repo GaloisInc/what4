@@ -306,7 +306,14 @@ recurseAssertedAppExprVars scope p e = go e
  go (asApp -> Just (NotPred x)) =
         recordAssertionVars scope (BM.negatePolarity p) x
 
- -- TODO: BaseEq
+ go (asApp -> Just (ConjPred cm)) =
+   let pol (x,BM.Positive) = recordAssertionVars scope p x
+       pol (x,BM.Negative) = recordAssertionVars scope (BM.negatePolarity p) x
+   in
+   case BM.viewConjMap cm of
+     BM.ConjTrue -> return ()
+     BM.ConjFalse -> return ()
+     BM.Conjuncts (t:|ts) -> mapM_ pol (t:ts)
 
  go (asApp -> Just (BaseIte BaseBoolRepr _ c x y)) =
    do recordExprVars scope c

@@ -2192,6 +2192,21 @@ appSMTExpr ae = do
 
     NotPred x -> freshBoundTerm BoolTypeMap . notExpr =<< mkBaseExpr x
 
+    ConjPred xs ->
+      let pol (x,Positive) = mkBaseExpr x
+          pol (x,Negative) = notExpr <$> mkBaseExpr x
+      in
+      case BM.viewConjMap xs of
+        BM.ConjTrue ->
+          return $ SMTExpr BoolTypeMap $ boolExpr True
+        BM.ConjFalse ->
+          return $ SMTExpr BoolTypeMap $ boolExpr False
+        BM.Conjuncts (t:|[]) ->
+          SMTExpr BoolTypeMap <$> pol t
+        BM.Conjuncts (t:|ts) ->
+          do cnj <- andAll <$> mapM pol (t:ts)
+             freshBoundTerm BoolTypeMap cnj
+
     ------------------------------------------
     -- Real operations.
 
