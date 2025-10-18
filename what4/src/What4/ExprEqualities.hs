@@ -1,3 +1,5 @@
+-- TODO: When adding `p == True`, look for `~ p == True`, etc.
+
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
@@ -95,11 +97,11 @@ equal ::
   Result f
 equal (ExprEqualities e) x y
  | definitelyNotEqual x y = ResFalse
- | otherwise =
-   let (e', Eqs.findValue -> root) = Eqs.equal e x y in
+ | Just (e', Eqs.findValue -> root) <- Eqs.equal e x y =
    if definitelyNotEqual x root || definitelyNotEqual y root
    then ResFalse
    else Equalities (ExprEqualities e')
+ | otherwise = ResFalse
 {-# INLINABLE equal #-}  -- See Note [Inline]
  -- TODO: Check for incompatibilities with inequalities? Would be O(n)
 

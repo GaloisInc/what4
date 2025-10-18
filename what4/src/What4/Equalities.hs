@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -21,6 +22,7 @@ module What4.Equalities
 
 import Control.Monad (foldM)
 import Data.Kind (Type)
+import qualified Data.Maybe as Maybe
 import Data.Parameterized.Classes
 import Data.Parameterized.Some (Some(Some))
 import Prelude hiding (and)
@@ -58,7 +60,8 @@ fromEqual ::
   f x ->
   f x ->
   Equalities f
-fromEqual x y = fst (equal empty x y)
+fromEqual x y = fst (Maybe.fromJust (equal empty x y))
+-- TODO: comment on fromJust
 
 -- TODO? Add inequality keys? Would require type-level name for Equalities.
 type Find :: (k -> Type) -> k -> Type
@@ -79,12 +82,21 @@ equal ::
   Equalities f ->
   f x ->
   f x ->
-  (Equalities f, Find f x)
+  Maybe (Equalities f, Find f x)
 equal (Equalities u) x y =
   let fx = UF.insert u x UF.emptyKeySet in
   let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
-  let (u', f) = UF.unionByKey (UF.findUnionFind fy) (UF.findKey fx) (UF.findKey fy) in
-  (Equalities u', fromFind f)
+  let u' = UF.findUnionFind fy in
+  let kx = UF.findKey fx in
+  let ky = UF.findKey fy in
+  let notEqXKeys = BaseUF.annAnn (UF.findValue fx) in
+  let notEqYKeys = BaseUF.annAnn (UF.findValue fy) in
+  if | kx == ky -> Just (Equalities u', fromFind fx)
+     | UF.memberKeySet kx notEqYKeys -> Nothing
+     | UF.memberKeySet ky notEqXKeys -> Nothing
+     | otherwise ->
+        let (u'', f) = UF.unionByKey u' kx ky in
+        Just (Equalities u'', fromFind f)
 
 notEqual ::
   EqF f =>
@@ -93,6 +105,7 @@ notEqual ::
   f x ->
   f x ->
   Maybe (Equalities f)
+  -- TODO: Ensure `find`s aren't equal
 notEqual (Equalities u) x y =
   -- Store the inequality in the root of the lesser
   --
@@ -176,7 +189,7 @@ and ::
   Equalities f ->
   Equalities f ->
   Maybe (Equalities f)
-and x y =
+and x y = do
   let b = toBasis y
-      x' = foldr (\(Equation lhs rhs) es -> fst (equal es lhs rhs)) x (basisEquations b)
-  in foldM (\es (Inequation lhs rhs) -> notEqual es lhs rhs) x' (basisInequations b)
+  x' <- foldM (\es (Equation lhs rhs) -> fmap fst (equal es lhs rhs)) x (basisEquations b)
+  foldM (\es (Inequation lhs rhs) -> notEqual es lhs rhs) x' (basisInequations b)
