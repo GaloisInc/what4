@@ -81,6 +81,7 @@ import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
 import qualified What4.Equalities as Eqs
+import qualified What4.ExprEqualities as ExEqs
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.Expr.BoolMap (BoolMap, Polarity(..), Wrap(..))
 import qualified What4.Expr.BoolMap as BM

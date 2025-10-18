@@ -3802,7 +3802,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     pure . backendPred sym $! (BF.bfCompare x y == EQ)
   floatEq sym x y
     | x == y = return $! truePred sym
-    | otherwise = sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+    | otherwise = baseEq sym x y
 
   floatNe sym x y = notPred sym =<< floatEq sym x y
 

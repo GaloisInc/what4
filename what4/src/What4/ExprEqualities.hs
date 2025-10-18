@@ -5,14 +5,19 @@
 
 module What4.ExprEqualities
   ( ExprEqualities
+  , Result(..)
   , empty
   , fromEqual
   , equal
   , notEqual
   , traverseExprEqualities
+  , and
+  , toBasis
   ) where
 
+import Data.Coerce (coerce)
 import Data.Parameterized.Classes
+import Prelude hiding (and)
 import qualified What4.Interface as WI
 import qualified What4.Equalities as Eqs
 import qualified What4.Utils.AbstractDomains as WA
@@ -113,15 +118,10 @@ traverseExprEqualities ::
 traverseExprEqualities f (ExprEqualities e) =
   ExprEqualities <$> Eqs.traverseEqualities f e
 
--- equal ::
---   EqF f =>
---   OrdF f =>
---   Equalities f ->
---   f x ->
---   f x ->
---   Equalities f
--- equal (Equalities u) x y =
---   let fx = UF.insert u x UF.emptyKeySet in
---   let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
---   Equalities
---     (UF.unionByKey (UF.findUnionFind fy) (UF.findKey fx) (UF.findKey fy))
+and :: (EqF f, OrdF f) => ExprEqualities f -> ExprEqualities f -> ExprEqualities f
+and = coerce Eqs.and
+{-# INLINE and #-}
+
+toBasis :: (EqF f, OrdF f) => ExprEqualities f -> Eqs.Basis f
+toBasis = coerce Eqs.toBasis
+{-# INLINE toBasis #-}
