@@ -104,8 +104,6 @@ module What4.Expr.Builder
   , ppExpr
   , ppExprTop
   , exprMaybeId
-  , asConjunction
-  , asDisjunction
   , Polarity(..)
   , BM.negatePolarity
     -- ** AppExpr
@@ -1568,17 +1566,6 @@ realSum sym s = semiRingSum sym s
 bvSum :: ExprBuilder t st fs -> WeightedSum (Expr t) (SR.SemiRingBV flv w) -> IO (BVExpr t w)
 bvSum sym s = semiRingSum sym s
 
-conjPred :: ExprBuilder t st fs -> BM.ConjMap (Expr t) -> IO (BoolExpr t)
-conjPred sym cm =
-  case BM.viewConjMap cm of
-    BM.ConjTrue -> return $ truePred sym
-    BM.ConjFalse -> return $ falsePred sym
-    BM.Conjuncts ((x,p):|[]) ->
-      case p of
-        Positive -> return x
-        Negative -> notPred sym x
-    _ -> sbMakeExpr sym $ ConjPred cm
-
 bvUnary :: (1 <= w) => ExprBuilder t st fs -> UnaryBV (BoolExpr t) w -> IO (BVExpr t w)
 bvUnary sym u
   -- BGS: We probably don't need to re-truncate the result, but
@@ -2005,41 +1992,6 @@ foldIndicesInRangeBounds sym f0 a0 bnds0 = do
               je <- intLit sym j
               f a (i Ctx.:> je)
 
--- | Examine the list of terms, and determine if any one of them
---   appears in the given @BoolMap@ with the same polarity.
-checkAbsorption ::
-  BoolMap (Expr t) ->
-  [(BoolExpr t, Polarity)] ->
-  Bool
-checkAbsorption _bm [] = False
-checkAbsorption bm ((x,p):_)
-  | Just p' <- BM.contains bm x, p == p' = True
-checkAbsorption bm (_:xs) = checkAbsorption bm xs
-
--- | If @tryAndAbsorption x y@ returns @True@, that means that @y@
--- implies @x@, so that the conjunction @x AND y = y@. A @False@
--- result gives no information.
-tryAndAbsorption ::
-  BoolExpr t ->
-  BoolExpr t ->
-  Bool
-tryAndAbsorption (asApp -> Just (NotPred (asApp -> Just (ConjPred as)))) (asConjunction -> bs)
-  = checkAbsorption (BM.reversePolarities (BM.getConjMap as)) bs
-tryAndAbsorption _ _ = False
-
-
--- | If @tryOrAbsorption x y@ returns @True@, that means that @x@
--- implies @y@, so that the disjunction @x OR y = y@. A @False@
--- result gives no information.
-tryOrAbsorption ::
-  BoolExpr t ->
-  BoolExpr t ->
-  Bool
-tryOrAbsorption (asApp -> Just (ConjPred as)) (asDisjunction -> bs)
-  = checkAbsorption (BM.getConjMap as) bs
-tryOrAbsorption _ _ = False
-
-
 
 instance IsExprBuilder (ExprBuilder t st fs) where
   getConfiguration = sbConfiguration
@@ -2134,10 +2086,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
    where
    go a b
-     | Just (ConjPred as) <- asApp a
-     , Just (ConjPred bs) <- asApp b
-     = conjPred sym $ as <> bs
-
      | Just (BaseEq as) <- asApp a
      , Just (BaseEq bs) <- asApp b
      = sbMakeExpr sym (BaseEq (Eqs.and as bs))
@@ -2152,20 +2100,44 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      , Just (BaseEq bs) <- asApp b
      = sbMakeExpr sym (BaseEq (Eqs.andNot bs as'))
 
-     | tryAndAbsorption a b
-     = return b
+     | Just (BaseEq as) <- asApp a
+     , Just (NotPred b') <- asApp b
+     = sbMakeExpr sym (BaseEq (Eqs.equal as b' (falsePred sym)))
 
-     | tryAndAbsorption b a
-     = return a
+     | Just (BaseEq bs) <- asApp b
+     , Just (NotPred a') <- asApp a
+     = sbMakeExpr sym (BaseEq (Eqs.equal bs a' (falsePred sym)))
 
-     | Just (ConjPred as) <- asApp a
-     = conjPred sym $ uncurry BM.addConjunct (asPosAtom b) as
+     | Just (BaseEq as) <- asApp a
+     = sbMakeExpr sym (BaseEq (Eqs.equal as b (truePred sym)))
 
-     | Just (ConjPred bs) <- asApp b
-     = conjPred sym $ uncurry BM.addConjunct (asPosAtom a) bs
+     | Just (BaseEq bs) <- asApp b
+     = sbMakeExpr sym (BaseEq (Eqs.equal bs a (truePred sym)))
+
+     | Just (NotPred a') <- asApp a
+     , Just (NotPred b') <- asApp b
+     = do
+       let l = Eqs.fromEqual a' (falsePred sym)
+       let r = Eqs.fromEqual b' (falsePred sym)
+       sbMakeExpr sym (BaseEq (Eqs.and l r))
+
+     | Just (NotPred a') <- asApp a
+     = do
+       let l = Eqs.fromEqual a' (falsePred sym)
+       let r = Eqs.fromEqual b (truePred sym)
+       sbMakeExpr sym (BaseEq (Eqs.and l r))
+
+     | Just (NotPred b') <- asApp b
+     = do
+       let l = Eqs.fromEqual a (truePred sym)
+       let r = Eqs.fromEqual b' (falsePred sym)
+       sbMakeExpr sym (BaseEq (Eqs.and l r))
 
      | otherwise
-     = conjPred sym $ BM.ConjMap (BM.fromVars [asPosAtom a, asPosAtom b])
+     = do
+       let l = Eqs.fromEqual a (truePred sym)
+       let r = Eqs.fromEqual b (truePred sym)
+       sbMakeExpr sym (BaseEq (Eqs.and l r))
 
   orPred sym x y =
     case (asConstantPred x, asConstantPred y) of
@@ -2174,28 +2146,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
       (_, Just True)  -> return y
       (_, Just False) -> return x
       _ | x == y -> return x -- or is idempotent
-        | otherwise -> go x y
-
-   where
-   go a b
-     | Just (NotPred (asApp -> Just (ConjPred as))) <- asApp a
-     , Just (NotPred (asApp -> Just (ConjPred bs))) <- asApp b
-     = notPred sym =<< conjPred sym (as <> bs)
-
-     | tryOrAbsorption a b
-     = return b
-
-     | tryOrAbsorption b a
-     = return a
-
-     | Just (NotPred (asApp -> Just (ConjPred as))) <- asApp a
-     = notPred sym =<< conjPred sym (uncurry BM.addConjunct (asNegAtom b) as)
-
-     | Just (NotPred (asApp -> Just (ConjPred bs))) <- asApp b
-     = notPred sym =<< conjPred sym (uncurry BM.addConjunct (asNegAtom a) bs)
-
-     | otherwise
-     = notPred sym =<< conjPred sym (BM.ConjMap (BM.fromVars [asNegAtom a, asNegAtom b]))
+        | otherwise -> do
+            l <- notPred sym x
+            r <- notPred sym y
+            notPred sym =<< andPred sym l r
 
   itePred sb c x y
     | Just (IteNot c') <- reduceIte c x y = itePred sb c' y x

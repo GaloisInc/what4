@@ -189,11 +189,6 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
   -- Invariant: The argument to a NotPred must not be another NotPred.
   NotPred :: !(e BaseBoolType) -> App e BaseBoolType
 
-  -- Invariant: The 'BM.ConjMap' must contain at least two elements. No element
-  -- may be a NotPred; negated elements must be represented with Negative
-  -- element polarity. See also 'isNormal' in @test/Bool.hs@.
-  ConjPred :: !(BM.ConjMap e) -> App e BaseBoolType
-
   ------------------------------------------------------------------------
   -- Semiring operations
 
@@ -1162,24 +1157,24 @@ asWeightedSum sr x
   | Just s <- asSemiRingSum sr x = s
   | otherwise = WSum.var sr x
 
-asConjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
-asConjunction (BoolExpr True _) = []
-asConjunction (asApp -> Just (ConjPred xs)) =
- case BM.viewConjMap xs of
-   BM.ConjTrue -> []
-   BM.ConjFalse -> [(BoolExpr False initializationLoc, Positive)]
-   BM.Conjuncts (tm:|tms) -> tm:tms
-asConjunction x = [(x,Positive)]
+-- asConjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
+-- asConjunction (BoolExpr True _) = []
+-- asConjunction (asApp -> Just (BaseEq e)) =
+--  case BM.viewConjMap xs of
+--    BM.ConjTrue -> []
+--    BM.ConjFalse -> [(BoolExpr False initializationLoc, Positive)]
+--    BM.Conjuncts (tm:|tms) -> tm:tms
+-- asConjunction x = [(x,Positive)]
 
 
-asDisjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
-asDisjunction (BoolExpr False _) = []
-asDisjunction (asApp -> Just (NotPred (asApp -> Just (ConjPred xs)))) =
- case BM.viewConjMap xs of
-   BM.ConjTrue -> []
-   BM.ConjFalse -> [(BoolExpr True initializationLoc, Positive)]
-   BM.Conjuncts (tm:|tms) -> map (over _2 BM.negatePolarity) (tm:tms)
-asDisjunction x = [(x,Positive)]
+-- asDisjunction :: Expr t BaseBoolType -> [(Expr t BaseBoolType, Polarity)]
+-- asDisjunction (BoolExpr False _) = []
+-- asDisjunction (asApp -> Just (NotPred (asApp -> Just (ConjPred xs)))) =
+--  case BM.viewConjMap xs of
+--    BM.ConjTrue -> []
+--    BM.ConjFalse -> [(BoolExpr True initializationLoc, Positive)]
+--    BM.Conjuncts (tm:|tms) -> map (over _2 BM.negatePolarity) (tm:tms)
+-- asDisjunction x = [(x,Positive)]
 
 asPosAtom :: Expr t BaseBoolType -> (Expr t BaseBoolType, Polarity)
 asPosAtom (asApp -> Just (NotPred x)) = (x, Negative)
@@ -1799,7 +1794,6 @@ appType a =
     BaseEq{} -> knownRepr
 
     NotPred{} -> knownRepr
-    ConjPred{} -> knownRepr
 
     RealIsInteger{} -> knownRepr
     BVTestBit{} -> knownRepr
@@ -1943,7 +1937,6 @@ abstractEval f a0 = do
     BaseEq{} -> Nothing
 
     NotPred{} -> Nothing
-    ConjPred{} -> Nothing
 
     SemiRingLe{} -> Nothing
     RealIsInteger{} -> Nothing
@@ -2109,15 +2102,6 @@ reduceApp sym unary a0 = do
       
 
     NotPred x -> notPred sym x
-    ConjPred cm ->
-      case BM.viewConjMap cm of
-        BM.ConjFalse -> return $ falsePred sym
-        BM.ConjTrue -> return $ truePred sym
-        BM.Conjuncts tms ->
-          do let pol (p, Positive) = return p
-                 pol (p, Negative) = notPred sym p
-             x:|xs <- mapM pol tms
-             foldM (andPred sym) x xs
 
     SemiRingSum s ->
       case WSum.sumRepr s of
@@ -2378,15 +2362,6 @@ ppApp' a0 = do
             in prettyApp "eqs" (ppEs ++ ppIs)
 
     NotPred x -> ppSExpr "not" [x]
-
-    ConjPred cm ->
-      let pol (x,Positive) = exprPrettyArg x
-          pol (x,Negative) = PrettyFunc "not" [ exprPrettyArg x ]
-       in
-       case BM.viewConjMap cm of
-         BM.ConjTrue -> prettyApp "true" []
-         BM.ConjFalse-> prettyApp "false" []
-         BM.Conjuncts tms -> prettyApp "and" (map pol (toList tms))
 
     RealIsInteger x -> ppSExpr "isInteger" [x]
     BVTestBit i x   -> prettyApp "testBit"  [exprPrettyArg x, showPrettyArg i]
