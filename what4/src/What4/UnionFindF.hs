@@ -217,9 +217,10 @@ unionByKey ::
   UnionFind u ann f ->
   Key u x ->
   Key u x ->
-  UnionFind u ann f
+  (UnionFind u ann f, Find u ann f x)
 unionByKey (UnionFind u) (Key k1) (Key k2) =
-  UnionFind (UF.unionByKey u k1 k2)
+  let (u', r) = UF.unionByKey u k1 k2 in
+  (UnionFind u', unsafeCoerceFind r)
 {-# INLINE unionByKey #-}
 
 unionByValue ::
@@ -229,9 +230,10 @@ unionByValue ::
   UnionFind u ann f ->
   UF.Annotated ann (f x) ->
   UF.Annotated ann (f x) ->
-  UnionFind u ann f
+  (UnionFind u ann f, Find u ann f x)
 unionByValue (UnionFind u) v1 v2 =
-  UnionFind (UF.unionByValue u (toAny <$> v1) (toAny <$> v2))
+  let (u', r) = UF.unionByValue u (toAny <$> v1) (toAny <$> v2) in
+  (UnionFind u', unsafeCoerceFind r)
 {-# INLINE unionByValue #-}
 
 mapAnn ::

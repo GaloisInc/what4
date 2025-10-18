@@ -240,6 +240,7 @@ library
     Test.Verification
 
   other-modules:
+    What4.ExprEqualities
     What4.Equalities
     What4.UnionFind
     What4.UnionFindF

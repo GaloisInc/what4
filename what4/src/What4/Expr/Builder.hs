@@ -2142,16 +2142,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      , Just (BaseEq bs) <- asApp b
      = sbMakeExpr sym (BaseEq (Eqs.and as bs))
 
-     | Just (BaseEq as) <- asApp a
-     , Just (NotPred bs) <- asApp b
-     , Just (BaseEq bs') <- asApp bs
-     = sbMakeExpr sym (BaseEq (Eqs.andNot as bs'))
-
-     | Just (NotPred as) <- asApp a
-     , Just (BaseEq as') <- asApp as
-     , Just (BaseEq bs) <- asApp b
-     = sbMakeExpr sym (BaseEq (Eqs.andNot bs as'))
-
      | tryAndAbsorption a b
      = return b
 
