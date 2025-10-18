@@ -71,7 +71,6 @@ appTheory a0 =
     BaseEq _ -> error "TODO: multiple theories!"
 
     NotPred{} -> BoolTheory
-    ConjPred{} -> BoolTheory
 
     RealIsInteger{} -> LinearArithTheory
 
