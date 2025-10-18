@@ -43,6 +43,7 @@ fromEqual ::
   f x ->
   Result f
 fromEqual = equal empty
+{-# INLINE fromEqual #-}
 
 definitelyEqual ::
   EqF f =>
@@ -121,6 +122,7 @@ traverseExprEqualities f (ExprEqualities e) =
 and :: (EqF f, OrdF f) => ExprEqualities f -> ExprEqualities f -> ExprEqualities f
 and = coerce Eqs.and
 {-# INLINE and #-}
+-- TODO: Make an `and` that uses `Result`
 
 toBasis :: (EqF f, OrdF f) => ExprEqualities f -> Eqs.Basis f
 toBasis = coerce Eqs.toBasis

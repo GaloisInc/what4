@@ -2092,9 +2092,6 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = sbMakeExpr sym (NotPred x)
 
   eqPred sym x y
-    | x == y
-    = return (truePred sym)
-
     | Just (NotPred x') <- asApp x
     = xorPred sym x' y
 
@@ -3260,12 +3257,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     do l <- curProgramLoc sym
        return $! StringExpr s l
 
-  stringEq sym x y
-    | Just x' <- asString x
-    , Just y' <- asString y
-    = return $! backendPred sym (isJust (testEquality x' y'))
-  stringEq sym x y
-    = eq sym x y
+  stringEq sym x y = eq sym x y
 
   stringIte _sym c x y
     | Just c' <- asConstantPred c
@@ -3500,11 +3492,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
        | otherwise -> mkIte sym p x y
 
-  arrayEq sym x y
-    | x == y =
-      return $! truePred sym
-    | otherwise =
-      eq sym x y
+  arrayEq sym x y = eq sym x y
 
   arrayTrueOnEntries sym f a
     | Just True <- exprAbsValue a =
@@ -3817,11 +3805,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   floatFMA sym r x y z =
     let BaseFloatRepr fpp = exprType x in sbMakeExpr sym $ FloatFMA fpp r x y z
 
-  floatEq sym (FloatExpr _ x _) (FloatExpr _ y _) =
-    pure . backendPred sym $! (BF.bfCompare x y == EQ)
-  floatEq sym x y
-    | x == y = return $! truePred sym
-    | otherwise = eq sym x y
+  floatEq sym x y = eq sym x y
 
   floatNe sym x y = notPred sym =<< floatEq sym x y
 
