@@ -58,6 +58,7 @@ import Data.Parameterized.Some (Some (Some))
 
 -- This does not need an @f@ parameter because it is determined by @u@
 newtype Key u x = Key { getKey :: UF.Key u }
+  deriving Eq
 
 keyValue :: Key u x -> Int
 keyValue = UF.keyValue . getKey

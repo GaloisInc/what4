@@ -48,7 +48,9 @@ fromEqual ::
   f x ->
   f x ->
   Result f
-fromEqual = equal empty
+fromEqual x y
+  | definitelyEqual x y = ResTrue
+  | otherwise = equal empty x y
 {-# INLINE fromEqual #-}
 
 definitelyEqual ::
@@ -92,7 +94,6 @@ equal ::
   f x ->
   Result f
 equal (ExprEqualities e) x y
- | definitelyEqual x y = ResTrue
  | definitelyNotEqual x y = ResFalse
  | otherwise =
    let (e', Eqs.findValue -> root) = Eqs.equal e x y in
@@ -111,9 +112,11 @@ notEqual ::
   f x ->
   Result f
 notEqual (ExprEqualities e) x y
- | definitelyEqual x y = ResFalse
- | definitelyNotEqual x y = ResTrue
- | otherwise = Equalities (ExprEqualities (Eqs.notEqual e x y))
+  | definitelyEqual x y = ResFalse
+  | otherwise =
+      case Eqs.notEqual e x y of
+        Nothing -> ResFalse
+        Just e' -> Equalities (ExprEqualities e')
  -- TODO: Check for incompatibilities with inequalities? Would be O(n)
 {-# INLINABLE notEqual #-}  -- See Note [Inline]
 
@@ -127,7 +130,7 @@ traverseExprEqualities ::
 traverseExprEqualities f (ExprEqualities e) =
   ExprEqualities <$> Eqs.traverseEqualities f e
 
-and :: (EqF f, OrdF f) => ExprEqualities f -> ExprEqualities f -> ExprEqualities f
+and :: (EqF f, OrdF f) => ExprEqualities f -> ExprEqualities f -> Maybe (ExprEqualities f)
 and = coerce Eqs.and
 {-# INLINE and #-}
 -- TODO: Make an `and` that uses `Result`

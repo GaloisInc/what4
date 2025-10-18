@@ -23,6 +23,7 @@ module What4.Equalities
   , and
   ) where
 
+import Control.Monad (foldM)
 import Data.Kind (Type)
 import Data.Parameterized.Classes
 import Data.Parameterized.Some (Some(Some))
@@ -100,21 +101,25 @@ notEqual ::
   Equalities f ->
   f x ->
   f x ->
-  Equalities f
+  Maybe (Equalities f)
 notEqual (Equalities u) x y =
   -- Store the inequality in the root of the lesser
   --
   -- TODO: Should probably store it in the *lesser root*
   case compareF x y of
+    EQF -> Nothing
     GTF ->
       let fx = UF.insert u x UF.emptyKeySet in
       let fy = UF.insert (UF.findUnionFind fx) y (UF.singletonKeySet (UF.findKey fx)) in
-      Equalities (UF.findUnionFind fy)
+      if UF.findKey fx == UF.findKey fy
+      then Nothing
+      else Just (Equalities (UF.findUnionFind fy))
     LTF ->
       let fy = UF.insert u y UF.emptyKeySet in
       let fx = UF.insert (UF.findUnionFind fy) x (UF.singletonKeySet (UF.findKey fy)) in
-      Equalities (UF.findUnionFind fx)
-    EQF -> error "Equalities.notEqual: don't do that"
+      if UF.findKey fx == UF.findKey fy
+      then Nothing
+      else Just (Equalities (UF.findUnionFind fx))
 
 traverseEqualities ::
   Applicative m =>
@@ -193,8 +198,12 @@ ppBasisEqs :: (EqF f, OrdF f, ShowF f) => Basis f -> [PP.Doc ann]
 ppBasisEqs b =
   map PP.pretty (basisEquations b) ++ map PP.pretty (basisInequations b)
 
-and :: (EqF f, OrdF f) => Equalities f -> Equalities f -> Equalities f
+and ::
+  (EqF f, OrdF f) =>
+  Equalities f ->
+  Equalities f ->
+  Maybe (Equalities f)
 and x y =
   let b = toBasis y
       x' = foldr (\(Equation lhs rhs) es -> fst (equal es lhs rhs)) x (basisEquations b)
-  in foldr (\(Inequation lhs rhs) es -> notEqual es lhs rhs) x' (basisInequations b)
+  in foldM (\es (Inequation lhs rhs) -> notEqual es lhs rhs) x' (basisInequations b)
