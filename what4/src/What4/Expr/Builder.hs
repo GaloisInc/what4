@@ -200,7 +200,7 @@ module What4.Expr.Builder
   ) where
 
 import qualified Control.Exception as Ex
-import           Control.Lens hiding (asIndex, (:>), Empty)
+import           Lens.Micro
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Monad.Reader
@@ -210,6 +210,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 
+import           Data.Functor.Identity (Identity(..))
 import           Data.Hashable
 import qualified Data.HashTable.Class as HC
 import qualified Data.HashTable.IO as H
@@ -437,22 +438,22 @@ type instance SymExpr (ExprBuilder t st fs) = Expr t
 type instance BoundVar (ExprBuilder t st fs) = ExprBoundVar t
 type instance SymAnnotation (ExprBuilder t st fs) = Nonce t
 
-exprCounter :: Getter (ExprBuilder t st fs) (NonceGenerator IO t)
+exprCounter :: SimpleGetter (ExprBuilder t st fs) (NonceGenerator IO t)
 exprCounter = to sbExprCounter
 
 userState :: Lens' (ExprBuilder t st fs) (st t)
 userState = lens sbUserState (\sym st -> sym{ sbUserState = st })
 
-unaryThreshold :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
+unaryThreshold :: SimpleGetter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
 unaryThreshold = to sbUnaryThreshold
 
-cacheStartSize :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
+cacheStartSize :: SimpleGetter (ExprBuilder t st fs) (CFG.OptionSetting BaseIntegerType)
 cacheStartSize = to sbCacheStartSize
 
-pushMuxOps :: Getter (ExprBuilder t st fs) (CFG.OptionSetting BaseBoolType)
+pushMuxOps :: SimpleGetter (ExprBuilder t st fs) (CFG.OptionSetting BaseBoolType)
 pushMuxOps = to sbPushMuxOps
 
-uninterpFnCache :: Getter (ExprBuilder t st fs) (IORef (UninterpFunCache t st fs))
+uninterpFnCache :: SimpleGetter (ExprBuilder t st fs) (IORef (UninterpFunCache t st fs))
 uninterpFnCache = to sbUninterpFnCache
 
 -- | Return a new expr builder where the configuration object has

@@ -38,11 +38,12 @@ syntax formers used in What4.ExprBuilder.
 module What4.Expr.App where
 
 import qualified Control.Exception as Ex
-import           Control.Lens hiding (asIndex, (:>), Empty)
+import           Lens.Micro
 import           Control.Monad
 import           Control.Monad.ST
 import qualified Data.BitVector.Sized as BV
 import           Data.Foldable
+import           Data.Functor.Const (Const(..))
 import           Data.Hashable
 import qualified Data.HashTable.Class as H (toList)
 import qualified Data.HashTable.ST.Basic as H

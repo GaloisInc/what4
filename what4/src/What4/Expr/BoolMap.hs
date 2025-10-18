@@ -46,7 +46,7 @@ module What4.Expr.BoolMap
   , evalConj
   ) where
 
-import           Control.Lens (_1, over)
+import           Lens.Micro (_1, over)
 import           Data.Coerce (coerce)
 import           Data.Hashable
 import qualified Data.List as List (foldl')
