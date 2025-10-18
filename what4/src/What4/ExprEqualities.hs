@@ -22,6 +22,12 @@ import qualified What4.Interface as WI
 import qualified What4.Equalities as Eqs
 import qualified What4.Utils.AbstractDomains as WA
 
+-- Note [Inline]: Several functions in this module are parametric on `f`, which
+-- is generally instantiated to `Expr` and `x`, which is often instantiated to
+-- a specific `BaseType`. We really want these functions to be inlined until
+-- they can actually be specialized for those types to avoid `case`-splits on
+-- the `BaseType`.
+
 newtype ExprEqualities f
   = ExprEqualities { _getEqualities :: Eqs.Equalities f }
   deriving (Eq, Hashable)
@@ -57,7 +63,7 @@ definitelyEqual x y
  | Just x' <- WI.asConcrete x
  , Just y' <- WI.asConcrete y = x' == y'
  | otherwise = False
-{-# INLINE definitelyEqual #-}
+{-# INLINE definitelyEqual #-}  -- See Note [Inline]
 
 definitelyNotEqual ::
   EqF f =>
@@ -75,7 +81,7 @@ definitelyNotEqual x y
  , let ay = WA.getAbsValue y
  , WA.withAbstractable t (not (WA.avOverlap t ax ay)) = True
  | otherwise = False
-{-# INLINE definitelyNotEqual #-}
+{-# INLINE definitelyNotEqual #-}  -- See Note [Inline]
 
 equal ::
   EqF f =>
@@ -93,6 +99,7 @@ equal (ExprEqualities e) x y
    if definitelyNotEqual x root || definitelyNotEqual y root
    then ResFalse
    else Equalities (ExprEqualities e')
+{-# INLINABLE equal #-}  -- See Note [Inline]
  -- TODO: Check for incompatibilities with inequalities? Would be O(n)
 
 notEqual ::
@@ -108,6 +115,7 @@ notEqual (ExprEqualities e) x y
  | definitelyNotEqual x y = ResTrue
  | otherwise = Equalities (ExprEqualities (Eqs.notEqual e x y))
  -- TODO: Check for incompatibilities with inequalities? Would be O(n)
+{-# INLINABLE notEqual #-}  -- See Note [Inline]
 
 traverseExprEqualities ::
   Applicative m =>
