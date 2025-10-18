@@ -303,7 +303,7 @@ data Find u ann a
       findKey :: Key u
       -- | The possibly-modified union-find
     , findUnionFind :: UnionFind u ann a
-      -- | The value of the root note and its annotation
+      -- | The value of the root node and its annotation
     , findValue_ :: Annotated (Sized ann) a
     }
 
@@ -351,7 +351,7 @@ insertRoot ::
   Annotated (Sized ann) a ->
   UnionFind u ann a
 insertRoot u k root = u { uf = insertKeyMap k (Root root) (uf u) }
-
+  
 -- Helper, not exported
 insertBranch ::
   UnionFind u ann a ->
@@ -391,15 +391,19 @@ unionByRoots ::
   UnionFind u ann a ->
   (Key u, Annotated (Sized ann) a) ->
   (Key u, Annotated (Sized ann) a) ->
-  UnionFind u ann a
+  (UnionFind u ann a, Find u ann a)
 unionByRoots u (k1, r1) (k2, r2) =
   let a1 = annAnn r1 in
   let a2 = annAnn r2 in
   -- Union by size: The smaller points to the bigger, the bigger points to
   -- itself with a modified annotation.
   if sizedSize a1 < sizedSize a2
-  then insertBranch (insertRoot u k2 (addAnn a1 r2)) k1 k2
-  else insertBranch (insertRoot u k1 (addAnn a2 r1)) k2 k1
+  then
+    let u' = insertBranch (insertRoot u k2 (addAnn a1 r2)) k1 k2 in
+    (u', Find k2 u' r2)
+  else
+    let u' = insertBranch (insertRoot u k1 (addAnn a2 r1)) k2 k1 in
+    ( u', Find k1 u' r1)
 
 -- | Make two existing values equal by key
 unionByKey ::
@@ -408,7 +412,7 @@ unionByKey ::
   UnionFind u ann a ->
   Key u ->
   Key u ->
-  UnionFind u ann a
+  (UnionFind u ann a, Find u ann a)
 unionByKey u k1 k2 =
   case findByKey u k1 of
     Find { findKey = k1', findUnionFind = u', findValue_ = r1 } ->
@@ -423,7 +427,7 @@ unionByValue ::
   UnionFind u ann a ->
   Annotated ann a ->
   Annotated ann a ->
-  UnionFind u ann a
+  (UnionFind u ann a, Find u ann a)
 unionByValue u annd1 annd2 =
   case insert u (annVal annd1) (annAnn annd1) of
     Find { findKey = k1, findValue_ = r1, findUnionFind = u' } ->

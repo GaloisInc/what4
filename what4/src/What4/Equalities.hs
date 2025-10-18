@@ -1,10 +1,12 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 module What4.Equalities
   ( Equalities
   , empty
+  , Find(..)
   , fromEqual
   , equal
   , notEqual
@@ -15,13 +17,14 @@ module What4.Equalities
   , basis
   , toBasis
   , and
-  , andNot
   ) where
 
+import Data.Kind (Type)
 import Data.Parameterized.Classes
 import Data.Parameterized.Some (Some(Some))
 import Prelude hiding (and)
 import qualified What4.UnionFindF as UF
+import qualified What4.UnionFind as BaseUF
 import Unsafe.Coerce (unsafeCoerce)
 
 data Equalities f
@@ -47,14 +50,27 @@ empty =
     UF.SomeUnionFind uf ->
       Equalities (UF.mapAnn (const UF.emptyKeySet) uf)
 
--- | @'fromEqual' == 'equal' 'empty'@
+-- | @'fromEqual' x y == 'fst' ('equal' 'empty' x y)@
 fromEqual ::
   EqF f =>
   OrdF f =>
   f x ->
   f x ->
   Equalities f
-fromEqual = equal empty
+fromEqual x y = fst (equal empty x y)
+
+-- TODO? Add inequality keys? Would require type-level name for Equalities.
+type Find :: (k -> Type) -> k -> Type
+data Find f x
+  = Find
+    { -- | The value of the root node
+      findValue :: f x
+    }
+
+fromFind ::
+  UF.Find u ann f x ->
+  Find f x
+fromFind f = Find (BaseUF.annVal (UF.findValue f))
 
 equal ::
   EqF f =>
@@ -62,12 +78,12 @@ equal ::
   Equalities f ->
   f x ->
   f x ->
-  Equalities f
+  (Equalities f, Find f x)
 equal (Equalities u) x y =
   let fx = UF.insert u x UF.emptyKeySet in
   let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
-  Equalities
-    (UF.unionByKey (UF.findUnionFind fy) (UF.findKey fx) (UF.findKey fy))
+  let (u', f) = UF.unionByKey (UF.findUnionFind fy) (UF.findKey fx) (UF.findKey fy) in
+  (Equalities u', fromFind f)
 
 notEqual ::
   EqF f =>
@@ -81,15 +97,15 @@ notEqual (Equalities u) x y =
   --
   -- TODO: Should probably store it in the *lesser root*
   case compareF x y of
-    GTF -> 
+    GTF ->
       let fx = UF.insert u x UF.emptyKeySet in
       let fy = UF.insert (UF.findUnionFind fx) y (UF.singletonKeySet (UF.findKey fx)) in
       Equalities (UF.findUnionFind fy)
-    LTF -> 
+    LTF ->
       let fy = UF.insert u y UF.emptyKeySet in
       let fx = UF.insert (UF.findUnionFind fy) x (UF.singletonKeySet (UF.findKey fy)) in
       Equalities (UF.findUnionFind fx)
-    EQF -> error "don't do that"
+    EQF -> error "Equalities.notEqual: don't do that"
 
 traverseEqualities ::
   Applicative m =>
@@ -103,7 +119,7 @@ traverseEqualities f (Equalities u) = Equalities <$> UF.traverseUnionFind f u
 data Equation f = forall x. Equation { eqLhs :: f x, eqRhs :: f x }
 data Inequation f = forall x. Inequation { neqLhs :: f x, neqRhs :: f x }
 
-data Basis f 
+data Basis f
   = Basis
   { basisEquations :: [Equation f]
   , basisInequations :: [Inequation f]
@@ -132,7 +148,7 @@ inequations u root ineqKeys = foldr mkIneq (u, []) (UF.keySetToList ineqKeys)
 
 -- | Enough (in)equalities to generate all of the rest
 basis :: (EqF f, OrdF f) => Equalities f -> (Equalities f, Basis f)
-basis (Equalities u) = 
+basis (Equalities u) =
   let (u', eqs) = UF.basis u in
   let (u'', b) = foldr go (u', emptyBasis) eqs in
   (Equalities u'', b)
@@ -153,11 +169,5 @@ toBasis = snd . basis
 and :: (EqF f, OrdF f) => Equalities f -> Equalities f -> Equalities f
 and x y =
   let b = toBasis y
-      x' = foldr (\(Equation lhs rhs) es -> equal es lhs rhs) x (basisEquations b)
+      x' = foldr (\(Equation lhs rhs) es -> fst (equal es lhs rhs)) x (basisEquations b)
   in foldr (\(Inequation lhs rhs) es -> notEqual es lhs rhs) x' (basisInequations b)
-
-andNot :: (EqF f, OrdF f) => Equalities f -> Equalities f -> Equalities f
-andNot x y =
-  let b = toBasis y
-      x' = foldr (\(Equation lhs rhs) es -> notEqual es lhs rhs) x (basisEquations b)
-  in foldr (\(Inequation lhs rhs) es -> equal es lhs rhs) x' (basisInequations b)
