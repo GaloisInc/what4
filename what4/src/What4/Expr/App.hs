@@ -80,6 +80,7 @@ import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
 import qualified What4.Equalities as Eqs
+import qualified What4.ExprEqualities as ExEqs
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import           What4.Expr.BoolMap (BoolMap, Polarity(..), Wrap(..))
 import qualified What4.Expr.BoolMap as BM
@@ -180,7 +181,7 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     !(e tp) ->
     App e tp
 
-  BaseEq :: !(Eqs.Equalities e) -> App e BaseBoolType
+  BaseEq :: !(ExEqs.ExprEqualities e) -> App e BaseBoolType
 
   ------------------------------------------------------------------------
   -- Boolean operations
@@ -790,8 +791,8 @@ traverseApp =
     [ ( ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
       , [|UnaryBV.instantiate|]
       )
-    , ( ConType [t|Eqs.Equalities|] `TypeApp` AnyType
-      , [| Eqs.traverseEqualities |]
+    , ( ConType [t|ExEqs.ExprEqualities|] `TypeApp` AnyType
+      , [| ExEqs.traverseExprEqualities |]
       )
     , ( ConType [t|Ctx.Assignment BaseTypeRepr|] `TypeApp` AnyType
       , [|(\_ -> pure) |]
@@ -2095,7 +2096,7 @@ reduceApp sym unary a0 = do
   case a0 of
     BaseIte _ _ c x y -> baseTypeIte sym c x y
     BaseEq e -> do
-      let b = Eqs.toBasis e
+      let b = ExEqs.toBasis e
       eqs <-
         foldM
           (\p (Eqs.Equation lhs rhs) -> andPred sym p =<< isEq sym lhs rhs)

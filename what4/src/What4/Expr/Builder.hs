@@ -237,7 +237,7 @@ import qualified LibBF as BF
 import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
-import qualified What4.Equalities as Eqs
+import qualified What4.ExprEqualities as ExEqs
 import           What4.FloatMode
 import           What4.Interface
 import           What4.InterpretedFloatingPoint
@@ -1579,6 +1579,17 @@ conjPred sym cm =
         Negative -> notPred sym x
     _ -> sbMakeExpr sym $ ConjPred cm
 
+eq ::
+  ExprBuilder t st fs ->
+  Expr t s ->
+  Expr t s ->
+  IO (BoolExpr t)
+eq sym x y =
+  case ExEqs.fromEqual x y of
+    ExEqs.ResTrue -> pure (truePred sym)
+    ExEqs.ResFalse -> pure (falsePred sym)
+    ExEqs.Equalities eqs -> sbMakeExpr sym (BaseEq eqs)
+
 bvUnary :: (1 <= w) => ExprBuilder t st fs -> UnaryBV (BoolExpr t) w -> IO (BVExpr t w)
 bvUnary sym u
   -- BGS: We probably don't need to re-truncate the result, but
@@ -1768,9 +1779,6 @@ semiRingEq ::
   Expr t (SR.SemiRingBase sr) ->
   IO (Expr t BaseBoolType)
 semiRingEq sym sr rec x y
-  -- Check for syntactic equality.
-  | x == y = return (truePred sym)
-
     -- Push some equalities under if/then/else
   | SemiRingLiteral _ _ _ <- x
   , Just (BaseIte _ _ c a b) <- asApp y
@@ -1787,10 +1795,9 @@ semiRingEq sym sr rec x y
       (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
       _ -> do xr <- semiRingSum sym x'
               yr <- semiRingSum sym y'
-              sbMakeExpr sym (BaseEq (Eqs.fromEqual xr yr))
+              eq sym xr yr
 
-  | otherwise =
-    sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+  | otherwise = eq sym x y
 
 semiRingAdd ::
   forall t st fs sr.
@@ -2100,7 +2107,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         (Just True, _)     -> return y
         (_, Just False)    -> notPred sym x
         (_, Just True)     -> return x
-        _ -> sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+        _ -> eq sym x y
 
   xorPred sym x y = notPred sym =<< eqPred sym x y
 
@@ -2121,7 +2128,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
      | Just (BaseEq as) <- asApp a
      , Just (BaseEq bs) <- asApp b
-     = sbMakeExpr sym (BaseEq (Eqs.and as bs))
+     = sbMakeExpr sym (BaseEq (ExEqs.and as bs))
 
      | tryAndAbsorption a b
      = return b
@@ -2782,7 +2789,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
           _ -> do xr <- semiRingSum sym x'
                   yr <- semiRingSum sym y'
-                  sbMakeExpr sym (BaseEq (Eqs.fromEqual xr yr))
+                  eq sym xr yr
 
     | otherwise = do
         ut <- CFG.getOpt (sbUnaryThreshold sym)
@@ -2791,7 +2798,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
            , Just uy <- asUnaryBV sym y
            -> UnaryBV.eq sym ux uy
            | otherwise
-           -> sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+           -> eq sym x y
 
   bvSlt sym x y
     | Just xc <- asBV x
@@ -3258,7 +3265,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     , Just y' <- asString y
     = return $! backendPred sym (isJust (testEquality x' y'))
   stringEq sym x y
-    = sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+    = eq sym x y
 
   stringIte _sym c x y
     | Just c' <- asConstantPred c
@@ -3497,7 +3504,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | x == y =
       return $! truePred sym
     | otherwise =
-      sbMakeExpr sym $! BaseEq (Eqs.fromEqual x y)
+      eq sym x y
 
   arrayTrueOnEntries sym f a
     | Just True <- exprAbsValue a =
@@ -3814,7 +3821,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     pure . backendPred sym $! (BF.bfCompare x y == EQ)
   floatEq sym x y
     | x == y = return $! truePred sym
-    | otherwise = sbMakeExpr sym (BaseEq (Eqs.fromEqual x y))
+    | otherwise = eq sym x y
 
   floatNe sym x y = notPred sym =<< floatEq sym x y
 
