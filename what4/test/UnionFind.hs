@@ -6,6 +6,7 @@
 
 module UnionFind (tests) where
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Test.Tasty qualified as TT
@@ -20,26 +21,83 @@ import Test.Tasty.HUnit qualified as TTHU
 tests :: TT.TestTree
 tests =
   TT.testGroup "UnionFind"
-  [ TTH.testProperty "propSame" propSame
+  [ TTH.testProperty "propSameBool" propSameBool
+  , TTH.testProperty "propSameRel" propSameRel
+
+  -- Properties
+  , TTH.testProperty "propReflexive" propReflexive
+  , TTH.testProperty "propSymmetric" propSymmetric
+  , TTH.testProperty "propTransitive" propTransitive
 
   -- Concrete test cases that have failed in the past
-  , TTHU.testCase "concrete test 1" $ do
-      testCase (Query Empty (Elem 0) (Elem 0))
+  , TTHU.testCase "(query empty 0 0)" $
+      diffTest (Query Empty (Elem 0) (Elem 0))
+  , TTHU.testCase "(query (union (union empty 0 1) 0 1) 0 1)" $ do
+      let e0 = Elem 0
+      let e1 = Elem 1
+      diffTest (Query (Union (Union Empty e0 e1) e0 e1) e0 e1)
   ]
   where
-    testCase :: Op Int Bool -> TTHU.Assertion
-    testCase op = do
+    diffTest :: Op Int Bool -> TTHU.Assertion
+    diffTest op = do
       let s = opSet op
       let u = opUf op
       s TTHU.@=? u
 
-propSame :: H.Property
-propSame =
+-- Differential testing vs. a simpler model
+propSameBool :: H.Property
+propSameBool =
   H.property $ do
     op <- H.forAll (genBool (Gen.int (Range.linear 0 32)))
     let s = opSet op
     let u = opUf op
     s H.=== u
+
+-- Differential testing vs. a simpler model
+propSameRel :: H.Property
+propSameRel =
+  H.property $ do
+    op <- H.forAll (genEqRel (Gen.int (Range.linear 0 32)))
+    let s = opSet op
+    UF.SomeUnionFind u <- pure (opUf op)
+    -- This isn't as fine-grained as it could theoretically be, because
+    -- `fromBasis` performs reflexive-symmetric-transitive closure. However,
+    -- it's still actually caught bugs and prints out a nice representation of
+    -- the differences between the relations.
+    s H.=== fromBasis (snd (UF.basis u))
+
+propReflexive :: H.Property
+propReflexive =
+  H.property $ do
+    let genElem = Gen.int (Range.linear 0 32)
+    op <- H.forAll (genEqRel genElem)
+    UF.SomeUnionFind u <- pure (opUf op)
+    x <- H.forAll genElem
+    let u' = UF.findUnionFind (UF.insert u x ())
+    True H.=== UF.equal u' x x
+
+propSymmetric :: H.Property
+propSymmetric =
+  H.property $ do
+    let genElem = Gen.int (Range.linear 0 32)
+    op <- H.forAll (genEqRel genElem)
+    UF.SomeUnionFind u <- pure (opUf op)
+    x <- H.forAll genElem
+    y <- H.forAll genElem
+    UF.equal u x y H.=== UF.equal u y x
+
+propTransitive :: H.Property
+propTransitive =
+  H.property $ do
+    let genElem = Gen.int (Range.linear 0 32)
+    op <- H.forAll (genEqRel genElem)
+    UF.SomeUnionFind u <- pure (opUf op)
+    x <- H.forAll genElem
+    y <- H.forAll genElem
+    z <- H.forAll genElem
+    if UF.equal u x y && UF.equal u y z
+      then True H.=== UF.equal u x z
+      else pure ()
 
 ---------------------------------------------------------------------
 -- Op
@@ -108,12 +166,18 @@ genBool genA =
   <*> (Elem <$> genA)
 
 genEqRel :: H.Gen a -> H.Gen (Op a (EqRel a))
-genEqRel _genA =
+genEqRel genA =
   Gen.recursive
     Gen.choice
     [ pure Empty
     ]
-    [ -- TODO
+    [ Insert
+      <$> genEqRel genA
+      <*> (Elem <$> genA)
+    , Union
+      <$> genEqRel genA
+      <*> (Elem <$> genA)
+      <*> (Elem <$> genA)
     ]
 
 ---------------------------------------------------------------------
@@ -121,9 +185,13 @@ genEqRel _genA =
 
 -- | Simple, unoptimized model of an equivalence relation
 newtype SetEqRel a = SetEqRel (Set (a, a))
+  deriving (Eq, Show)
 
 empty :: SetEqRel a
 empty = SetEqRel Set.empty
+
+fromBasis :: Ord a => [(UF.Annotated ann a, a)] -> SetEqRel a
+fromBasis = foldr (\(UF.Annotated _ root, v) s -> union s root v) empty
 
 insert ::
   Ord a =>
@@ -138,8 +206,15 @@ union ::
   a ->
   a ->
   SetEqRel a
-union (SetEqRel eq) l r = SetEqRel (closure (Set.insert (l, r) eq))
+union (SetEqRel eq) l r =
+  SetEqRel (go (Set.insert (l, r) eq))
   where
+    go s =
+      let s' = closure s in
+      if s == s'
+      then s'
+      else go s'
+
     closure :: Ord a => Set (a, a) -> Set (a, a)
     closure e =
       let le = Set.toList e in
@@ -174,7 +249,10 @@ opSet =
     Empty -> empty
     Elem a -> a
     Insert rel e -> insert (opSet rel) (opSet e)
-    Union r x y -> union (opSet r) (opSet x) (opSet y)
+    Union r x y ->
+      let x' = opSet x in
+      let y' = opSet y in
+      union (insert (insert (opSet r) x') y') x' y'
     Query r x y -> query (opSet r) (opSet x) (opSet y)
 
 opUf :: Ord a => Op a t -> AsUnionFind t
@@ -194,9 +272,4 @@ opUf =
           UF.SomeUnionFind (fst (UF.unionByValue u' x' y'))
     Query u x y ->
       case opUf u of
-        UF.SomeUnionFind u' ->
-          case (UF.findByValue u' (opUf x), UF.findByValue u' (opUf y)) of
-            (Nothing, Nothing) -> True
-            (Just _, Nothing) -> False
-            (Nothing, Just _) -> False
-            (Just fx, Just fy) -> UF.findKey fx == UF.findKey fy
+        UF.SomeUnionFind u' -> UF.equal u' (opUf x) (opUf y)
