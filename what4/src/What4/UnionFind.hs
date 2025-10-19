@@ -36,6 +36,7 @@ module What4.UnionFind
   , findValue
   , findByKey
   , findByValue
+  , equal
   , basis
     -- ** Modifications
   , insert
@@ -77,7 +78,7 @@ data UnionFindName
 -- | Keys are tagged with @u@, the type-level name of the union-find.
 type Key :: UnionFindName -> Type
 newtype Key u = Key { keyValue :: Int }
-  deriving Eq
+  deriving (Eq, Show)
 
 ---------------------------------------------------------------------
 -- KeySet
@@ -176,6 +177,7 @@ data UnionFind u ann a
       -- TODO: Benchmark using a 'Seq' here
     , uf :: KeyMap u (Branch u ann a)
     }
+  deriving Show  -- for debugging only
 -- This could probably be made faster by using a dynamic ST-array for 'uf' (a
 -- la Rust @Vec@), and having keys be indices into that array. Perhaps 'Branch'
 -- could be @UNPACK@ed (i.e., represented as an unboxed sum) into such an array
@@ -203,7 +205,7 @@ data Sized ann
     { sizedSize :: {-# UNPACK #-} !(Sum Int)
     , sizedAnn :: ann
     }
-  deriving Functor
+  deriving (Functor, Show)
 
 instance Eq a => Eq (Sized a) where
   (==) = liftEq (==)
@@ -226,7 +228,7 @@ type Branch :: UnionFindName -> Type -> Type -> Type
 data Branch u ann a
   = Root (Annotated (Sized ann) a)
   | Branch {-# UNPACK #-} !(Key u)
-  deriving Functor
+  deriving (Functor, Show)
 
 instance (Eq ann, Eq a) => Eq (Branch u ann a) where
   (==) = liftEq2 (==) (==)
@@ -256,7 +258,7 @@ data Annotated ann a
     { annAnn :: ann
     , annVal :: a
     }
-  deriving Functor
+  deriving (Functor, Show)
 
 instance (Eq ann, Eq a) => Eq (Annotated ann a) where
   (==) = liftEq2 (==) (==)
@@ -306,6 +308,7 @@ data Find u ann a
       -- | The value of the root node and its annotation
     , findValue_ :: Annotated (Sized ann) a
     }
+  deriving Show  -- for debugging only
 
 findValue :: Find u ann a -> Annotated ann a
 findValue = first sizedAnn . findValue_
@@ -326,11 +329,23 @@ findByKey u k =
         Nothing -> error ("findByKey: Bad key in `Branch`: " ++ show (keyValue k))
         Just parent ->
           -- Path compression
-          let u' = u { uf = insertKeyMap k parent (uf u) } in
+          let u' = u { uf = insertKeyMap k' parent (uf u) } in
           findByKey u' k'
 
 findByValue :: Ord a => UnionFind u ann a -> a -> Maybe (Find u ann a)
 findByValue u val = findByKey u <$> Map.lookup val (keys u)
+
+-- | Are these two values equal in the union find?
+equal ::
+  Ord a =>
+  UnionFind u ann a ->
+  a ->
+  a ->
+  Bool
+equal u x y =
+  case (findByValue u y, findByValue u x) of
+    (Just fx, Just fy) -> findKey fx == findKey fy
+    _ -> False
 
 -- | Return a set of equations that is sufficient to generate the rest via
 -- reflexive-symmetric-transitive closure.
@@ -340,9 +355,7 @@ basis u = foldr (uncurry go) (u, []) (Map.toList (keys u))
     go val key (u', eqs) =
       let f = findByKey u' key in
       let root = unsize (findValue_ f) in
-      if val == annVal root
-      then (findUnionFind f, eqs)  -- don't include reflexive equations
-      else (findUnionFind f, (root, val) : eqs)
+      (findUnionFind f, (root, val) : eqs)
 
 -- Helper, not exported
 insertRoot ::
@@ -393,17 +406,20 @@ unionByRoots ::
   (Key u, Annotated (Sized ann) a) ->
   (UnionFind u ann a, Find u ann a)
 unionByRoots u (k1, r1) (k2, r2) =
-  let a1 = annAnn r1 in
-  let a2 = annAnn r2 in
-  -- Union by size: The smaller points to the bigger, the bigger points to
-  -- itself with a modified annotation.
-  if sizedSize a1 < sizedSize a2
-  then
-    let u' = insertBranch (insertRoot u k2 (addAnn a1 r2)) k1 k2 in
-    (u', Find k2 u' r2)
+  if k1 == k2
+  then (u, Find k1 u r1)
   else
-    let u' = insertBranch (insertRoot u k1 (addAnn a2 r1)) k2 k1 in
-    ( u', Find k1 u' r1)
+    let a1 = annAnn r1 in
+    let a2 = annAnn r2 in
+    -- Union by size: The smaller points to the bigger, the bigger points to
+    -- itself with a modified annotation.
+    if sizedSize a1 < sizedSize a2
+    then
+      let u' = insertBranch (insertRoot u k2 (addAnn a1 r2)) k1 k2 in
+      (u', Find k2 u' r2)
+    else
+      let u' = insertBranch (insertRoot u k1 (addAnn a2 r1)) k2 k1 in
+      (u', Find k1 u' r1)
 
 -- | Make two existing values equal by key
 unionByKey ::
@@ -417,8 +433,10 @@ unionByKey u k1 k2 =
   case findByKey u k1 of
     Find { findKey = k1', findUnionFind = u', findValue_ = r1 } ->
       case findByKey u' k2 of
-        Find { findKey = k2', findUnionFind = u'', findValue_ = r2 } ->
-          unionByRoots u'' (k1', r1) (k2', r2)
+        f2@(Find { findKey = k2', findUnionFind = u'', findValue_ = r2 }) ->
+          if k1 == k2
+          then (u'', f2)
+          else unionByRoots u'' (k1', r1) (k2', r2)
 
 -- | Make two values equal, inserting them if not present
 unionByValue ::
@@ -432,8 +450,10 @@ unionByValue u annd1 annd2 =
   case insert u (annVal annd1) (annAnn annd1) of
     Find { findKey = k1, findValue_ = r1, findUnionFind = u' } ->
       case insert u' (annVal annd2) (annAnn annd2) of
-        Find { findKey = k2, findValue_ = r2, findUnionFind = u'' } ->
-          unionByRoots u'' (k1, r1) (k2, r2)
+        f2@(Find { findKey = k2, findValue_ = r2, findUnionFind = u'' }) ->
+          if k1 == k2
+          then (u'', f2)
+          else unionByRoots u'' (k1, r1) (k2, r2)
 
 mapBranchAnn ::
   Ord a =>
