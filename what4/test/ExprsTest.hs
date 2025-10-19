@@ -34,6 +34,7 @@ import           What4.Expr
 import           What4.Interface
 
 import Bool (boolTests)
+import qualified UnionFind (tests)
 
 type IteExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
@@ -388,4 +389,5 @@ main = defaultMain $ testGroup "What4 Expressions"
     (fromConcreteString <$> s) === Just ""
   , testInjectiveConversions
   , boolTests
+  , UnionFind.tests
   ]
