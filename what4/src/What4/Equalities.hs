@@ -114,7 +114,7 @@ notEqual ::
   f x ->
   f x ->
   Maybe (Equalities f)
-  -- TODO: Ensure `find`s aren't equal
+  -- TODO: Store the inequality in both roots
 notEqual (Equalities u) x y =
   -- Store the inequality in the root of the lesser
   --
@@ -199,6 +199,7 @@ basis (Equalities u) =
       ( u''
       , b
         { basisEquations = Equation lhs rhs : basisEquations b
+          -- TODO: probably merge with ineqs from b?
         , basisInequations = ineqs
         }
       )
