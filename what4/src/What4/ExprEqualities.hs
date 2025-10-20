@@ -3,6 +3,7 @@
 -- TODO: When to consider abstract domains?
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
@@ -93,12 +94,13 @@ module What4.ExprEqualities
   , notEqual
   , traverseExprEqualities
   , union
+  , and
   ) where
 
 import Data.Coerce (coerce)
 import Data.Kind (Type)
 import Data.Parameterized.Classes
-import Prelude
+import Prelude hiding (and)
 import qualified What4.Interface as WI
 import qualified What4.Equalities as Eqs
 import qualified What4.Utils.AbstractDomains as WA
@@ -290,3 +292,21 @@ union l r =
       ResFalse -> ResFalse
       ResTrue -> foldr addIneq (Equalities l) (Eqs.basisInequations br)
       l' -> foldr addIneq l' (Eqs.basisInequations br)
+
+and ::
+  EqF (WI.SymExpr sym) =>
+  OrdF (WI.SymExpr sym) =>
+  WI.IsExpr (WI.SymExpr sym) =>
+  WI.IsExprBuilder sym =>
+  sym ->
+  ExprEqualities (WI.SymExpr sym) ->
+  -- | This should /not/ be 'ExprEqualities', use 'union' for that.
+  WI.SymExpr sym WI.BaseBoolType ->
+  Result (WI.SymExpr sym)
+and sym e b =
+  -- TODO: b shouldn't be @NotPred@... needs asNegatedPred?
+  case equal e b (WI.truePred sym) of
+    ResFalse -> ResFalse
+    ResTrue -> ResTrue
+    Equalities e' ->
+      notEqual e' (WI.falsePred sym) (WI.truePred sym)
