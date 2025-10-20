@@ -9,6 +9,7 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TupleSections #-}
 
+-- | See "What4.ExprEqualities".
 module What4.UnionFind
   ( -- * 'UnionFindName'
     UnionFindName

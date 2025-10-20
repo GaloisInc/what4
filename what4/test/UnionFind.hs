@@ -6,7 +6,6 @@
 
 module UnionFind (tests) where
 
-import Control.Monad.IO.Class (liftIO)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Test.Tasty qualified as TT
