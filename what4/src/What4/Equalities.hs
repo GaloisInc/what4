@@ -85,8 +85,8 @@ checkEqual ::
   Equalities f ->
   f x ->
   f x ->
-  Bool  -- TODO: return the updated union-find
-checkEqual (Equalities e) = UF.equal e
+  Maybe (Find f x)
+checkEqual (Equalities e) x y = fromFind <$> UF.equal e x y
 {-# INLINE checkEqual #-}
 
 -- | Are these two values not equal in the union find?

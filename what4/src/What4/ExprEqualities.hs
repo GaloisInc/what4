@@ -167,8 +167,11 @@ checkEqual ::
   ExprEqualities f ->
   f x ->
   f x ->
-  Bool  -- TODO: return the updated union-find
-checkEqual (ExprEqualities e) = Eqs.checkEqual e
+  (Bool, ExprEqualities f)
+checkEqual e0@(ExprEqualities e) x y =
+  case Eqs.checkEqual e x y of
+    Nothing -> (False, e0)
+    Just f -> (True, ExprEqualities (Eqs.findEqualities f))
 {-# INLINE checkEqual #-}
 
 -- | Are these two values inequal in the union find?
