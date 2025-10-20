@@ -45,7 +45,7 @@ propEqSymmetric =
       E.Equalities e -> do
         x <- H.forAll genElem
         y <- H.forAll genElem
-        E.checkEqual e x y H.=== E.checkEqual e y x
+        fst (E.checkEqual e x y) H.=== fst (E.checkEqual e y x)
 
 -- | @x = y@ and @y = z@ imply @x = z@
 propEqTransitive :: H.Property
@@ -61,8 +61,10 @@ propEqTransitive =
         x <- H.forAll genElem
         y <- H.forAll genElem
         z <- H.forAll genElem
-        if E.checkEqual e x y && E.checkEqual e y z
-          then True H.=== E.checkEqual e x z
+        let (exy, e') = E.checkEqual e x y
+        let (eyz, e'') = E.checkEqual e' y z
+        if exy && eyz
+          then True H.=== fst (E.checkEqual e'' x z)
           else pure ()
 
 -- | It is not the case that @x /= x@
@@ -218,4 +220,4 @@ opEqs sym =
       case opEqs sym r of
         E.ResTrue -> False
         E.ResFalse -> False
-        E.Equalities s -> E.checkEqual s x' y'
+        E.Equalities s -> fst (E.checkEqual s x' y')

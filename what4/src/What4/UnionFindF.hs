@@ -192,11 +192,13 @@ equal ::
   UnionFind u ann f ->
   f x ->
   f x ->
-  Bool  -- TODO: return the updated union-find
-equal u x y =
-  case (findByValue u y, findByValue u x) of
-    (Just fx, Just fy) -> findKey fx == findKey fy
-    _ -> False
+  Maybe (Find u ann f x)
+equal u x y = do
+  fx <- findByValue u x
+  fy <- findByValue (findUnionFind fx) y
+  if findKey fx == findKey fy
+    then Just fy
+    else Nothing
 
 data Equation ann f
   = forall x. Equation { eqLhs :: UF.Annotated ann (f x), eqRhs :: f x }

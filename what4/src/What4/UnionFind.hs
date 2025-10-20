@@ -1,3 +1,5 @@
+-- TODO: Invariant checker, integrated into PBTs
+
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GADTs #-}
@@ -299,6 +301,11 @@ empty :: SomeUnionFind ann a
 empty = SomeUnionFind (UnionFind Map.empty emptyKeyMap)
 -- TODO: with*
 
+-- | The result of a @find@-like operation (e.g., 'findByKey', 'findByValue').
+--
+-- Most operations on a 'UnionFind' may modify the underlying structure via
+-- path compression, so even "query-like" operations often return 'Find', which
+-- includes the updated 'UnionFind'.
 type Find :: UnionFindName -> Type -> Type -> Type
 data Find u ann a
   = Find
@@ -342,11 +349,13 @@ equal ::
   UnionFind u ann a ->
   a ->
   a ->
-  Bool
-equal u x y =
-  case (findByValue u y, findByValue u x) of
-    (Just fx, Just fy) -> findKey fx == findKey fy
-    _ -> False
+  Maybe (Find u ann a)
+equal u x y = do
+  fx <- findByValue u x
+  fy <- findByValue (findUnionFind fx) y
+  if findKey fx == findKey fy
+    then Just fy
+    else Nothing
 
 -- | Return a set of equations that is sufficient to generate the rest via
 -- reflexive-symmetric-transitive closure.

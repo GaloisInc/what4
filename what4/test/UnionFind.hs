@@ -6,6 +6,7 @@
 
 module UnionFind (tests) where
 
+import Data.Maybe qualified as Maybe
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Test.Tasty qualified as TT
@@ -73,7 +74,7 @@ propReflexive =
     UF.SomeUnionFind u <- pure (opUf op)
     x <- H.forAll genElem
     let u' = UF.findUnionFind (UF.insert u x ())
-    True H.=== UF.equal u' x x
+    True H.=== Maybe.isJust (UF.equal u' x x)
 
 propSymmetric :: H.Property
 propSymmetric =
@@ -83,7 +84,7 @@ propSymmetric =
     UF.SomeUnionFind u <- pure (opUf op)
     x <- H.forAll genElem
     y <- H.forAll genElem
-    UF.equal u x y H.=== UF.equal u y x
+    Maybe.isJust (UF.equal u x y) H.=== Maybe.isJust (UF.equal u y x)
 
 propTransitive :: H.Property
 propTransitive =
@@ -94,9 +95,13 @@ propTransitive =
     x <- H.forAll genElem
     y <- H.forAll genElem
     z <- H.forAll genElem
-    if UF.equal u x y && UF.equal u y z
-      then True H.=== UF.equal u x z
-      else pure ()
+    case UF.equal u x y of
+      Nothing -> pure ()
+      Just fxy ->
+        case UF.equal (UF.findUnionFind fxy) y z of
+          Nothing -> pure ()
+          Just fyz ->
+            True H.=== Maybe.isJust (UF.equal (UF.findUnionFind fyz) x z)
 
 ---------------------------------------------------------------------
 -- Op
@@ -271,4 +276,4 @@ opUf =
           UF.SomeUnionFind (fst (UF.unionByValue u' x' y'))
     Query u x y ->
       case opUf u of
-        UF.SomeUnionFind u' -> UF.equal u' (opUf x) (opUf y)
+        UF.SomeUnionFind u' -> Maybe.isJust (UF.equal u' (opUf x) (opUf y))
