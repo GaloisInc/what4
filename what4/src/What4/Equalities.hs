@@ -5,14 +5,16 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 
+-- | See "What4.ExprEqualities".
 module What4.Equalities
   ( Equalities
-  , empty
   , Find(..)
+    -- ** Construction
+  , empty
   , fromEqual
-  , equal
-  , notEqual
-  , traverseEqualities
+    -- ** Queries
+  , checkEqual
+  , checkNotEqual
   , Equation(..)
   , Inequation(..)
   , ppEquation
@@ -21,7 +23,11 @@ module What4.Equalities
   , basis
   , toBasis
   , ppBasisEqs
+    -- ** Modifications
+  , equal
+  , notEqual
   , and
+  , traverseEqualities
   ) where
 
 import Control.Monad (foldM)
@@ -69,79 +75,36 @@ fromEqual ::
   f x ->
   f x ->
   Equalities f
-fromEqual x y = fst (Maybe.fromJust (equal empty x y))
+fromEqual x y = findEqualities (Maybe.fromJust (equal empty x y))
 -- TODO: comment on fromJust
 
--- TODO? Add inequality keys? Would require type-level name for Equalities.
-type Find :: (k -> Type) -> k -> Type
-data Find f x
-  = Find
-    { -- | The value of the root node
-      findValue :: f x
-    }
-
-fromFind ::
-  UF.Find u ann f x ->
-  Find f x
-fromFind f = Find (BaseUF.annVal (UF.findValue f))
-
-equal ::
+-- | Are these two values equal in the union find?
+checkEqual ::
   EqF f =>
   OrdF f =>
   Equalities f ->
   f x ->
   f x ->
-  Maybe (Equalities f, Find f x)
-equal (Equalities u) x y =
+  Bool  -- TODO: return the updated union-find
+checkEqual (Equalities e) = UF.equal e
+{-# INLINE checkEqual #-}
+
+-- | Are these two values not equal in the union find?
+checkNotEqual ::
+  EqF f =>
+  OrdF f =>
+  Equalities f ->
+  f x ->
+  f x ->
+  Bool  -- TODO: return the updated union-find
+checkNotEqual (Equalities u) x y =
   let fx = UF.insert u x UF.emptyKeySet in
   let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
-  let u' = UF.findUnionFind fy in
   let kx = UF.findKey fx in
   let ky = UF.findKey fy in
   let notEqXKeys = BaseUF.annAnn (UF.findValue fx) in
   let notEqYKeys = BaseUF.annAnn (UF.findValue fy) in
-  if | kx == ky -> Just (Equalities u', fromFind fx)
-     | UF.memberKeySet kx notEqYKeys -> Nothing
-     | UF.memberKeySet ky notEqXKeys -> Nothing
-     | otherwise ->
-        let (u'', f) = UF.unionByKey u' kx ky in
-        Just (Equalities u'', fromFind f)
-
-notEqual ::
-  EqF f =>
-  OrdF f =>
-  Equalities f ->
-  f x ->
-  f x ->
-  Maybe (Equalities f)
-  -- TODO: Store the inequality in both roots
-notEqual (Equalities u) x y =
-  -- Store the inequality in the root of the lesser
-  --
-  -- TODO: Should probably store it in the *lesser root*
-  case compareF x y of
-    EQF -> Nothing
-    GTF ->
-      let fx = UF.insert u x UF.emptyKeySet in
-      let fy = UF.insert (UF.findUnionFind fx) y (UF.singletonKeySet (UF.findKey fx)) in
-      if UF.findKey fx == UF.findKey fy
-      then Nothing
-      else Just (Equalities (UF.findUnionFind fy))
-    LTF ->
-      let fy = UF.insert u y UF.emptyKeySet in
-      let fx = UF.insert (UF.findUnionFind fy) x (UF.singletonKeySet (UF.findKey fy)) in
-      if UF.findKey fx == UF.findKey fy
-      then Nothing
-      else Just (Equalities (UF.findUnionFind fx))
-
-traverseEqualities ::
-  Applicative m =>
-  EqF g =>
-  OrdF g =>
-  (forall x. f x -> m (g x)) ->
-  Equalities f ->
-  m (Equalities g)
-traverseEqualities f (Equalities u) = Equalities <$> UF.traverseUnionFind f u
+  UF.memberKeySet kx notEqYKeys || UF.memberKeySet ky notEqXKeys
 
 data Equation f = forall x. Equation { eqLhs :: f x, eqRhs :: f x }
 data Inequation f = forall x. Inequation { neqLhs :: f x, neqRhs :: f x }
@@ -212,6 +175,74 @@ ppBasisEqs :: (EqF f, OrdF f, ShowF f) => Basis f -> [PP.Doc ann]
 ppBasisEqs b =
   map PP.pretty (basisEquations b) ++ map PP.pretty (basisInequations b)
 
+-- TODO? Add inequality keys? Would require type-level name for Equalities.
+type Find :: (k -> Type) -> k -> Type
+data Find f x
+  = Find
+    { findEqualities :: Equalities f
+      -- | The value of the root node
+    , findValue :: f x
+    }
+
+fromFind ::
+  UF.Find u (UF.KeySet u) f x ->
+  Find f x
+fromFind f =
+  Find
+  { findEqualities = Equalities (UF.findUnionFind f)
+  , findValue = BaseUF.annVal (UF.findValue f)
+  }
+
+equal ::  -- TODO: reuse checkNotEqual
+  EqF f =>
+  OrdF f =>
+  Equalities f ->
+  f x ->
+  f x ->
+  Maybe (Find f x)
+equal (Equalities u) x y =
+  let fx = UF.insert u x UF.emptyKeySet in
+  let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
+  let u' = UF.findUnionFind fy in
+  let kx = UF.findKey fx in
+  let ky = UF.findKey fy in
+  let notEqXKeys = BaseUF.annAnn (UF.findValue fx) in
+  let notEqYKeys = BaseUF.annAnn (UF.findValue fy) in
+  if | kx == ky -> Just (fromFind fy)
+     | UF.memberKeySet kx notEqYKeys -> Nothing
+     | UF.memberKeySet ky notEqXKeys -> Nothing
+     | otherwise ->
+        let (_, f) = UF.unionByKey u' kx ky in
+        Just (fromFind f)
+
+notEqual ::
+  EqF f =>
+  OrdF f =>
+  Equalities f ->
+  f x ->
+  f x ->
+  Maybe (Equalities f)
+  -- TODO: Store the inequality in both roots
+notEqual (Equalities u) x y =
+  -- Store the inequality in the root of the lesser
+  --
+  -- TODO: Should probably store it in the *lesser root*
+  case compareF x y of
+    EQF -> Nothing
+    GTF ->
+      let fx = UF.insert u x UF.emptyKeySet in
+      let fy = UF.insert (UF.findUnionFind fx) y (UF.singletonKeySet (UF.findKey fx)) in
+      if UF.findKey fx == UF.findKey fy
+      then Nothing
+      else Just (Equalities (UF.findUnionFind fy))
+    LTF ->
+      let fy = UF.insert u y UF.emptyKeySet in
+      let fx = UF.insert (UF.findUnionFind fy) x (UF.singletonKeySet (UF.findKey fy)) in
+      if UF.findKey fx == UF.findKey fy
+      then Nothing
+      else Just (Equalities (UF.findUnionFind fx))
+
+>>>>>>> dca035a0 ([skip ci] Docs and tests for `ExprEqualities`)
 and ::
   (EqF f, OrdF f) =>
   Equalities f ->
@@ -219,5 +250,14 @@ and ::
   Maybe (Equalities f)
 and x y = do
   let b = toBasis y
-  x' <- foldM (\es (Equation lhs rhs) -> fmap fst (equal es lhs rhs)) x (basisEquations b)
+  x' <- foldM (\es (Equation lhs rhs) -> fmap findEqualities (equal es lhs rhs)) x (basisEquations b)
   foldM (\es (Inequation lhs rhs) -> notEqual es lhs rhs) x' (basisInequations b)
+
+traverseEqualities ::
+  Applicative m =>
+  EqF g =>
+  OrdF g =>
+  (forall x. f x -> m (g x)) ->
+  Equalities f ->
+  m (Equalities g)
+traverseEqualities f (Equalities u) = Equalities <$> UF.traverseUnionFind f u

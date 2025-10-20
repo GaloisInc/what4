@@ -146,6 +146,7 @@ library
     What4.Concrete
     What4.Concretize
     What4.Config
+    What4.ExprEqualities
     What4.FunctionName
     What4.IndexLit
     What4.Interface
@@ -241,7 +242,6 @@ library
     Test.Verification
 
   other-modules:
-    What4.ExprEqualities
     What4.Equalities
     What4.UnionFindF
 
@@ -379,6 +379,7 @@ test-suite exprs_tests
 
   other-modules:
     Bool
+    ExprEqualities
     GenWhat4Expr
     UnionFind
 

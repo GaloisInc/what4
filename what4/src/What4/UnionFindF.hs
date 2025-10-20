@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 
+-- | See "What4.ExprEqualities".
 module What4.UnionFindF
   ( -- * 'Key'
     Key
@@ -32,6 +33,7 @@ module What4.UnionFindF
   , findValue
   , findByKey
   , findByValue
+  , equal
   , Equation(..)
   , basis
     -- ** Modifications
@@ -183,6 +185,19 @@ findByValue ::
   Maybe (Find u ann f x)
 findByValue (UnionFind u) v = unsafeCoerceFind <$> UF.findByValue u (toAny v)
 
+-- | Are these two values equal in the union find?
+equal ::
+  EqF f =>
+  OrdF f =>
+  UnionFind u ann f ->
+  f x ->
+  f x ->
+  Bool  -- TODO: return the updated union-find
+equal u x y =
+  case (findByValue u y, findByValue u x) of
+    (Just fx, Just fy) -> findKey fx == findKey fy
+    _ -> False
+
 data Equation ann f
   = forall x. Equation { eqLhs :: UF.Annotated ann (f x), eqRhs :: f x }
 
@@ -218,7 +233,7 @@ unionByKey ::
   UnionFind u ann f ->
   Key u x ->
   Key u x ->
-  (UnionFind u ann f, Find u ann f x)
+  (UnionFind u ann f, Find u ann f x)  -- TODO: just return find
 unionByKey (UnionFind u) (Key k1) (Key k2) =
   let (u', r) = UF.unionByKey u k1 k2 in
   (UnionFind u', unsafeCoerceFind r)
@@ -231,7 +246,7 @@ unionByValue ::
   UnionFind u ann f ->
   UF.Annotated ann (f x) ->
   UF.Annotated ann (f x) ->
-  (UnionFind u ann f, Find u ann f x)
+  (UnionFind u ann f, Find u ann f x)  -- TODO: just return find
 unionByValue (UnionFind u) v1 v2 =
   let (u', r) = UF.unionByValue u (toAny <$> v1) (toAny <$> v2) in
   (UnionFind u', unsafeCoerceFind r)
