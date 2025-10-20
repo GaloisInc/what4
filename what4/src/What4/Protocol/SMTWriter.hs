@@ -150,6 +150,7 @@ import qualified System.IO.Streams as Streams
 import           What4.BaseTypes
 import qualified What4.Config as CFG
 import qualified What4.Equalities as Eqs
+import qualified What4.ExprEqualities as ExprEqs
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
@@ -2065,7 +2066,7 @@ appSMTExpr ae = do
   case appExprApp ae of
 
     BaseEq e -> do
-      let b = Eqs.toBasis e
+      let b = ExprEqs.toBasis e
       eqs <-
         forM (Eqs.basisEquations b) $ \(Eqs.Equation x y) -> do
            xe <- mkExpr x

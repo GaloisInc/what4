@@ -242,7 +242,6 @@ notEqual (Equalities u) x y =
       then Nothing
       else Just (Equalities (UF.findUnionFind fx))
 
->>>>>>> dca035a0 ([skip ci] Docs and tests for `ExprEqualities`)
 and ::
   (EqF f, OrdF f) =>
   Equalities f ->

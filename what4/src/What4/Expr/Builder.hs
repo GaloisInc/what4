@@ -237,7 +237,7 @@ import qualified LibBF as BF
 import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
-import qualified What4.Equalities as Eqs
+import qualified What4.ExprEqualities as ExEqs
 import           What4.FloatMode
 import           What4.Interface
 import           What4.InterpretedFloatingPoint
@@ -2140,9 +2140,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
      | Just (BaseEq as) <- asApp a
      , Just (BaseEq bs) <- asApp b
-     = case Eqs.and as bs of
-         Nothing -> pure (falsePred sym)
-         Just cs -> sbMakeExpr sym (BaseEq cs)
+     = case ExEqs.union as bs of
+         ExEqs.ResFalse -> pure (falsePred sym)
+         ExEqs.ResTrue -> pure (truePred sym)
+         ExEqs.Equalities cs -> sbMakeExpr sym (BaseEq cs)
 
      | tryAndAbsorption a b
      = return b
@@ -4725,4 +4726,7 @@ baseEq ::
   IO (Expr t BaseBoolType)
 baseEq sym x y =
   Ex.assert (isNothing (checkEq x y)) $
-    sbMakeExpr sym (BaseEq (Eqs.fromEqual (min x y) (max x y)))
+    case ExEqs.fromEqual (min x y) (max x y) of
+      ExEqs.ResTrue -> error "TODO: impossible"
+      ExEqs.ResFalse -> error "TODO: impossible"
+      ExEqs.Equalities eqs -> sbMakeExpr sym (BaseEq eqs)

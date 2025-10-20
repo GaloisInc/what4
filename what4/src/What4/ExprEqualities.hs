@@ -1,10 +1,12 @@
 -- TODO: When adding `p == True`, look for `~ p == True`, etc.
 -- TODO: Helpers for conjunction
+-- TODO: When to consider abstract domains?
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- | 'ExprEqualities' efficiently stores conjunctions of (dis)equalities.
 --
@@ -34,8 +36,6 @@
 -- * Associativity of @and@
 -- * Idempotence of @and@: @x = y and x = y --> x = y@
 -- * Collapse: @x = y and x /= y --> false@
---
--- TODO: Property-based tests for these!
 --
 -- All but the last rule can be thought of as being applied /eagerly/ and
 -- /losslessly/, i.e., as if they were applied to fixpoint after every operation
@@ -86,17 +86,19 @@ module What4.ExprEqualities
   , fromEqual
     -- ** Queries
   , checkEqual
+  , checkNotEqual
   , toBasis
     -- ** Modifications
   , equal
   , notEqual
   , traverseExprEqualities
-  , and
+  , union
   ) where
 
 import Data.Coerce (coerce)
+import Data.Kind (Type)
 import Data.Parameterized.Classes
-import Prelude hiding (and)
+import Prelude
 import qualified What4.Interface as WI
 import qualified What4.Equalities as Eqs
 import qualified What4.Utils.AbstractDomains as WA
@@ -116,10 +118,12 @@ import qualified What4.Utils.AbstractDomains as WA
 -- * It should not contain @not x = true@ nor @not x = false@. TODO helpers
 -- * It should not contain "trivial" (dis)equalities as determined by
 --   'definitelyEqual' and 'definitelyNotEqual'.
+type ExprEqualities :: (WI.BaseType -> Type) -> Type
 newtype ExprEqualities f
   = ExprEqualities { _getEqualities :: Eqs.Equalities f }
   deriving (Eq, Hashable)
 
+type Result :: (WI.BaseType -> Type) -> Type
 data Result f
   = ResTrue
   | ResFalse
@@ -138,8 +142,23 @@ fromEqual ::
   Result f
 fromEqual x y
   | definitelyEqual x y = ResTrue
+  | definitelyNotEqual x y = ResFalse
   | otherwise = equal empty x y
 {-# INLINE fromEqual #-}
+
+-- | @'fromNotEqual' == 'notEqual' 'empty'@
+fromNotEqual ::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  f x ->
+  f x ->
+  Result f
+fromNotEqual x y
+  | definitelyEqual x y = ResFalse
+  | definitelyNotEqual x y = ResTrue
+  | otherwise = notEqual empty x y
+{-# INLINE fromNotEqual #-}
 
 -- | Are these two values equal in the union find?
 checkEqual ::
@@ -152,16 +171,15 @@ checkEqual ::
 checkEqual (ExprEqualities e) = Eqs.checkEqual e
 {-# INLINE checkEqual #-}
 
--- TODO
--- -- | Are these two values inequal in the union find?
--- checkNotEqual ::
---   EqF f =>
---   OrdF f =>
---   ExprEqualities f ->
---   f x ->
---   f x ->
---   Bool
--- checkNotEqual (ExprEqualities e) = _
+-- | Are these two values inequal in the union find?
+checkNotEqual ::
+  EqF f =>
+  OrdF f =>
+  ExprEqualities f ->
+  f x ->
+  f x ->
+  Bool
+checkNotEqual (ExprEqualities e) = Eqs.checkNotEqual e
 
 toBasis :: (EqF f, OrdF f) => ExprEqualities f -> Eqs.Basis f
 toBasis = coerce Eqs.toBasis
@@ -245,7 +263,27 @@ traverseExprEqualities ::
 traverseExprEqualities f (ExprEqualities e) =
   ExprEqualities <$> Eqs.traverseEqualities f e
 
-and :: (EqF f, OrdF f) => ExprEqualities f -> ExprEqualities f -> Maybe (ExprEqualities f)
-and = coerce Eqs.and
-{-# INLINE and #-}
--- TODO: Make an `and` that uses `Result`
+union ::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  ExprEqualities f ->
+  ExprEqualities f ->
+  Result f
+union l r =
+  let br = toBasis r
+      addEq (Eqs.Equation lhs rhs) mbE =
+        case mbE of
+          ResFalse -> ResFalse
+          ResTrue -> fromEqual lhs rhs
+          Equalities e -> equal e lhs rhs
+      addIneq (Eqs.Inequation lhs rhs) mbE =
+        case mbE of
+          ResFalse -> ResFalse
+          ResTrue -> fromNotEqual lhs rhs
+          Equalities e -> notEqual e lhs rhs
+  in
+    case foldr addEq (Equalities l) (Eqs.basisEquations br) of
+      ResFalse -> ResFalse
+      ResTrue -> foldr addIneq (Equalities l) (Eqs.basisInequations br)
+      l' -> foldr addIneq l' (Eqs.basisInequations br)

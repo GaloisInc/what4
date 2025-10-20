@@ -26,12 +26,15 @@ import What4.Interface qualified as WI
 tests :: TT.TestTree
 tests =
   TT.testGroup "ExprEqualities"
-  [ TTH.testProperty "propSymmetric" propSymmetric
-  , TTH.testProperty "propTransitive" propTransitive
+  [ TTH.testProperty "propEqSymmetric" propEqSymmetric
+  , TTH.testProperty "propEqTransitive" propEqTransitive
+  , TTH.testProperty "propNeqIrreflexive" propNeqIrreflexive
+  , TTH.testProperty "propNeqSymmetric" propNeqSymmetric
   ]
 
-propSymmetric :: H.Property
-propSymmetric =
+-- | @x = y@ if and only if @y = x@
+propEqSymmetric :: H.Property
+propEqSymmetric =
   H.property $ do
     sym <- liftIO mkSym
     genElem <- liftIO (mkGenElem sym)
@@ -44,8 +47,9 @@ propSymmetric =
         y <- H.forAll genElem
         E.checkEqual e x y H.=== E.checkEqual e y x
 
-propTransitive :: H.Property
-propTransitive =
+-- | @x = y@ and @y = z@ imply @x = z@
+propEqTransitive :: H.Property
+propEqTransitive =
   H.property $ do
     sym <- liftIO mkSym
     genElem <- liftIO (mkGenElem sym)
@@ -60,6 +64,35 @@ propTransitive =
         if E.checkEqual e x y && E.checkEqual e y z
           then True H.=== E.checkEqual e x z
           else pure ()
+
+-- | It is not the case that @x /= x@
+propNeqIrreflexive :: H.Property
+propNeqIrreflexive =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    op <- H.forAll (genEqs (Just sym) genElem)
+    case opEqs sym op of
+      E.ResTrue -> pure ()
+      E.ResFalse -> pure ()
+      E.Equalities e -> do
+        x <- H.forAll genElem
+        False H.=== E.checkNotEqual e x x
+
+-- | @x /= y@ if and only if @y /= x@
+propNeqSymmetric :: H.Property
+propNeqSymmetric =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    op <- H.forAll (genEqs (Just sym) genElem)
+    case opEqs sym op of
+      E.ResTrue -> pure ()
+      E.ResFalse -> pure ()
+      E.Equalities e -> do
+        x <- H.forAll genElem
+        y <- H.forAll genElem
+        E.checkNotEqual e x y H.=== E.checkNotEqual e y x
 
 ---------------------------------------------------------------------
 -- Helpers
@@ -90,11 +123,10 @@ type family AsEqualities sym t where
   AsEqualities sym (Elem a) = WI.SymExpr sym a
   AsEqualities sym a = a
 
--- | An interaction with the 'SymSequence' API
+-- | An interaction with the 'ExprEqualities' API
 data Op sym a t where
   Empty :: Op sym a (Eqs a)
   Elem :: WI.SymExpr sym a -> Op sym a (Elem a)
-  -- Insert :: Op sym a (Eqs a) -> Op sym a (Elem a) -> Op sym a (Eqs a)
   Union ::
     Op sym a (Eqs a) ->
     Op sym a (Elem a) ->
@@ -126,7 +158,6 @@ instance ShowF (WI.SymExpr sym) => Show (Op sym a t) where
     \case
       Empty -> "empty"
       Elem a -> showF a
-      -- Insert r e -> fun2 "insert" r e
       Union r x y -> fun3 "union" r x y
       Query r x y -> fun3 "query" r x y
 
@@ -154,11 +185,7 @@ genEqs proxy genA =
     Gen.choice
     [ pure Empty
     ]
-    [
-      -- Insert
-      -- <$> genEqs genA
-      -- <*> (Elem <$> genA)
-      Union
+    [ Union
       <$> genEqs proxy genA
       <*> (Elem <$> genA)
       <*> (Elem <$> genA)
@@ -178,7 +205,6 @@ opEqs sym =
   \case
     Empty -> E.Equalities E.empty
     Elem a -> a
-    -- Insert u e -> _
     Union r x y ->
       let x' = opEqs sym x in
       let y' = opEqs sym y in
