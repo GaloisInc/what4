@@ -2088,8 +2088,8 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     = sbMakeExpr sym (NotPred x)
 
   eqPred sym x y
-    | x == y
-    = return (truePred sym)
+    | Just b <- checkEq x y
+    = return $ backendPred sym b
 
     | Just (NotPred x') <- asApp x
     = xorPred sym x' y
@@ -2217,8 +2217,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   intIte sym c x y = semiRingIte sym SR.SemiRingIntegerRepr c x y
 
   intEq sym x y
-      -- Use range check
-    | Just b <- rangeCheckEq (exprAbsValue x) (exprAbsValue y)
+    | Just b <- checkEq x y
     = return $ backendPred sym b
 
       -- Reduce to bitvector equality, when possible
@@ -2752,14 +2751,12 @@ instance IsExprBuilder (ExprBuilder t st fs) where
                   mkIte sym c x y)
 
   bvEq sym x y
-    | x == y = return $! truePred sym
+    | Just b <- checkEq x y
+    = return $ backendPred sym b
 
     | Just (BVFill _ px) <- asApp x
     , Just (BVFill _ py) <- asApp y =
       eqPred sym px py
-
-    | Just b <- BVD.eq (exprAbsValue x) (exprAbsValue y) = do
-      return $! backendPred sym b
 
     -- Push some equalities under if/then/else
     | SemiRingLiteral _ _ _ <- x
@@ -3252,12 +3249,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     do l <- curProgramLoc sym
        return $! StringExpr s l
 
-  stringEq sym x y
-    | Just x' <- asString x
-    , Just y' <- asString y
-    = return $! backendPred sym (isJust (testEquality x' y'))
-  stringEq sym x y
-    = sbMakeExpr sym $ BaseEq (BaseStringRepr (stringInfo x)) x y
+  stringEq = mkEq
 
   stringIte _sym c x y
     | Just c' <- asConstantPred c
@@ -3492,11 +3484,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
        | otherwise -> mkIte sym p x y
 
-  arrayEq sym x y
-    | x == y =
-      return $! truePred sym
-    | otherwise =
-      sbMakeExpr sym $! BaseEq (exprType x) x y
+  arrayEq = mkEq
 
   arrayTrueOnEntries sym f a
     | Just True <- exprAbsValue a =
@@ -3634,8 +3622,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   realZero = sbZero
 
   realEq sym x y
-      -- Use range check
-    | Just b <- ravCheckEq (exprAbsValue x) (exprAbsValue y)
+    | Just b <- checkEq x y
     = return $ backendPred sym b
 
       -- Reduce to integer equality, when possible
@@ -4682,3 +4669,38 @@ mkFreshUninterpFnApp sym str_fn_name args ret_type = do
   let arg_types = fmapFC exprType args
   fn <- freshTotalUninterpFn sym fn_name arg_types ret_type
   applySymFn sym fn args
+
+-- | Check if two symbolic values are known to be equal (@Just True@) or known
+-- to be unequal (@Just False@).
+checkEq ::
+  Abstractable x =>
+  Expr t x ->
+  Expr t x ->
+  Maybe Bool
+checkEq x y
+  | x == y = Just True
+
+  | Just x' <- asConcrete x
+  , Just y' <- asConcrete y = Just (x' == y')
+
+  | otherwise
+  = avCheckEq (exprType x) (exprAbsValue x) (exprAbsValue y)
+-- This function is inlined into contexts where the type is known, hence it will
+-- be specialized.
+{-# INLINE checkEq #-}
+
+mkEq ::
+  Abstractable x =>
+  ExprBuilder t st fs ->
+  Expr t x ->
+  Expr t x ->
+  IO (Expr t BaseBoolType)
+mkEq sym x y
+  | Just b <- checkEq x y
+  = return $ backendPred sym b
+
+  | otherwise
+  = sbMakeExpr sym $ BaseEq (exprType x) x y
+-- This function is inlined into contexts where the type is known, hence it will
+-- be specialized.
+{-# INLINE mkEq #-}
