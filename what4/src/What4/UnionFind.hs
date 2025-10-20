@@ -6,6 +6,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -45,9 +46,11 @@ module What4.UnionFind
   , unionByValue
   , mapAnn
   , traverseUnionFind
+    -- ** Monad
   ) where
 
 import Control.Lens.Indexed qualified as Ixd
+import Control.Monad.State qualified as State
 import Data.Bifunctor (Bifunctor(bimap), first)
 import Data.Coerce (coerce)
 import Data.Functor.Classes (Eq1(liftEq), Eq2(liftEq2))
@@ -479,3 +482,58 @@ traverseUnionFind f u =
   UnionFind 
     <$> fmap Map.fromList (traverse (\(k, v) -> (,v) <$> f k) (Map.toList (keys u)))
     <*> traverse (traverse f) (uf u)
+
+---------------------------------------------------------------------
+-- Monad
+
+newtype MonadUf u ann v a
+  = MonadUf { runMonadUf :: State.State (UnionFind u ann v) a }
+  deriving (Applicative, Functor, Monad)
+
+deriving instance State.MonadState (UnionFind u ann v) (MonadUf u ann v)
+
+evalMonadUf ::
+  UnionFind u ann v ->
+  MonadUf u ann v a ->
+  a
+evalMonadUf u action = State.evalState (runMonadUf action) u
+
+putFind :: Find u ann v -> MonadUf u ann v ()
+putFind = State.put . findUnionFind
+{-# INLINE putFind #-}
+
+mFindByKey ::
+  Ord v =>
+  Key u ->
+  MonadUf u ann v (Key u, Annotated ann v)
+mFindByKey k = do
+  u <- State.get
+  let f = findByKey u k
+  putFind f
+  pure (findKey f, findValue f)
+{-# INLINE mFindByKey #-}
+
+mFindByValue ::
+  Ord v =>
+  v ->
+  MonadUf u ann v (Maybe (Key u, Annotated ann v))
+mFindByValue v = do
+  u <- State.get
+  case findByValue u v of
+    Nothing -> pure Nothing
+    Just f -> do
+      putFind f
+      pure (Just (findKey f, findValue f))
+{-# INLINE mFindByValue #-}
+
+-- liftFind :: 
+--   (UnionFind u ann v -> Find u ann v) ->
+--   MonadUf u ann v a
+
+-- withUf ::
+--   UnionFind u ann v ->
+--   MonadUf u ann v (Find u ann v) ->
+--   Find u ann v
+-- withUf uf (MonadUf action) = _
+  
+
