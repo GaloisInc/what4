@@ -1782,6 +1782,8 @@ semiRingLe sym osr rec x y
  where sr = SR.orderedSemiRing osr
 
 
+-- Note: requires that the equality is not trivially reducible, and asserts as
+-- much (by calling 'baseEq').
 semiRingEq ::
   Abstractable (SR.SemiRingBase sr) =>
   ExprBuilder t st fs ->
