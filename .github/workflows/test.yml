@@ -150,6 +150,7 @@ jobs:
           echo "  extra-lib-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib)/lib" >> ../cabal.project.local
           echo "  extra-include-dirs: $(nix eval --raw ${GHC_NIXPKGS}#zlib.dev)/include" >> ../cabal.project.local
           cp ../cabal.project.local ./
+          cat ../cabal.project.ci >> ../cabal.project.local
           cat ../cabal.project.local
 
       - name: Build

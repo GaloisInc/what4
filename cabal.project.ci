@@ -1,0 +1,3 @@
+-- See Note [Asserts] in what4
+package what4
+  ghc-options: -fno-ignore-asserts
