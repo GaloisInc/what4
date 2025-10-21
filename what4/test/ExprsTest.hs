@@ -32,6 +32,7 @@ import           Test.Tasty.Hedgehog.Alt
 import           What4.Concrete
 import           What4.Expr
 import           What4.Interface
+import           What4.Internal (assertionsEnabled)
 
 import Bool (boolTests)
 
@@ -377,8 +378,11 @@ testIntegerToBV = testGroup "integerToBV"
 
 main :: IO ()
 main = defaultMain $ testGroup "What4 Expressions"
-  [
-    testIntDivModProps
+   [ -- See Note [Asserts] in what4
+     testCase "assertions enabled" $ do
+       assertsEnabled <- assertionsEnabled
+       assertBool "assertions should be enabled" assertsEnabled
+  , testIntDivModProps
   , testBvIsNeg
   , testInt
   , testProperty "stringEmpty" $ property $ do

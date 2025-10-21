@@ -149,6 +149,7 @@ library
     What4.FunctionName
     What4.IndexLit
     What4.Interface
+    What4.Internal
     What4.InterpretedFloatingPoint
     What4.FloatMode
     What4.LabeledPred
