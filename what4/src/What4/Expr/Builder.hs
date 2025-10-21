@@ -1664,31 +1664,47 @@ semiRingIte ::
   Expr t (SR.SemiRingBase sr) ->
   IO (Expr t (SR.SemiRingBase sr))
 semiRingIte sym sr c x y
-    -- evaluate as constants
-  | Just True  <- asConstantPred c = return x
-  | Just False <- asConstantPred c = return y
-
-    -- reduce negations
-  | Just (NotPred c') <- asApp c
+  | Just (IteNot c') <- reduceIte c x y
   = semiRingIte sym sr c' y x
-
-    -- remove the ite if the then and else cases are the same
-  | x == y = return x
+  | Just (IteReduced e) <- reduceIte c x y
+  = return e
 
     -- Try to extract common sum information.
   | (z, x',y') <- WSum.extractCommon (asWeightedSum sr x) (asWeightedSum sr y)
   , not (WSum.isZero sr z) = do
     xr <- semiRingSum sym x'
     yr <- semiRingSum sym y'
-    let sz = 1 + iteSize xr + iteSize yr
-    r <- sbMakeExpr sym (BaseIte (SR.semiRingBase sr) sz c xr yr)
+    r <- baseIte sym c xr yr
     semiRingSum sym $! WSum.addVar sr z r
 
     -- final fallback, create the ite term
-  | otherwise =
-      let sz = 1 + iteSize x + iteSize y in
-      sbMakeExpr sym (BaseIte (SR.semiRingBase sr) sz c x y)
+  | otherwise
+  = baseIte sym c x y
 
+data ReduceIteResult t bt
+  = -- | We had @ite (not p)@, so reverse the branches and try again
+    IteNot (Expr t BaseBoolType)
+  | IteReduced (Expr t bt)
+
+-- | Perform common rewrites on @ite@ expressions
+reduceIte ::
+  Expr t BaseBoolType ->
+  Expr t bt ->
+  Expr t bt ->
+  Maybe (ReduceIteResult t bt)
+reduceIte c x y
+  | Just b <- asConstantPred c
+  = if b then Just (IteReduced x) else Just (IteReduced y)
+
+  -- remove the ite if the then and else cases are the same
+  | x == y
+  = Just (IteReduced x)
+
+  | Just (NotPred c') <- asApp c
+  = Just (IteNot c')
+
+  | otherwise =
+    Nothing
 
 mkIte ::
   ExprBuilder t st fs ->
@@ -1696,21 +1712,25 @@ mkIte ::
   Expr t bt ->
   Expr t bt ->
   IO (Expr t bt)
-mkIte sym c x y
-    -- evaluate as constants
-  | Just True  <- asConstantPred c = return x
-  | Just False <- asConstantPred c = return y
+mkIte sym c x y =
+  case reduceIte c x y of
+    Just (IteNot c') -> baseIte sym c' y x
+    Just (IteReduced e) -> pure e
+    Nothing -> baseIte sym c x y
 
-    -- reduce negations
-  | Just (NotPred c') <- asApp c
-  = mkIte sym c' y x
-
-    -- remove the ite if the then and else cases are the same
-  | x == y = return x
-
-  | otherwise =
-      let sz = 1 + iteSize x + iteSize y in
-      sbMakeExpr sym (BaseIte (exprType x) sz c x y)
+-- | Construct 'BaseIte'.
+--
+-- 'Ex.assert's that the if-then-else is not trivially reducible.
+baseIte ::
+  ExprBuilder t st fs ->
+  Expr t BaseBoolType ->
+  Expr t x ->
+  Expr t x ->
+  IO (Expr t x)
+baseIte sym c x y =
+  Ex.assert (isNothing (reduceIte c x y)) $ do
+    let sz = 1 + iteSize x + iteSize y
+    sbMakeExpr sym $ BaseIte (exprType x) sz c x y
 
 semiRingLe ::
   ExprBuilder t st fs ->
@@ -2165,23 +2185,14 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      = notPred sym =<< conjPred sym (BM.ConjMap (BM.fromVars [asNegAtom a, asNegAtom b]))
 
   itePred sb c x y
+    | Just (IteNot c') <- reduceIte c x y = itePred sb c' y x
+    | Just (IteReduced e) <- reduceIte c x y = return e
+
       -- ite c c y = c || y
     | c == x = orPred sb c y
 
       -- ite c x c = c && x
     | c == y = andPred sb c x
-
-      -- ite c x x = x
-    | x == y = return x
-
-      -- ite 1 x y = x
-    | Just True  <- asConstantPred c = return x
-
-      -- ite 0 x y = y
-    | Just False <- asConstantPred c = return y
-
-      -- ite !c x y = ite c y x
-    | Just (NotPred c') <- asApp c = itePred sb c' y x
 
       -- ite c 1 y = c || y
     | Just True  <- asConstantPred x = orPred sb c y
@@ -2196,9 +2207,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just False <- asConstantPred y = andPred sb c x
 
       -- Default case
-    | otherwise =
-        let sz = 1 + iteSize x + iteSize y in
-        sbMakeExpr sb $ BaseIte BaseBoolRepr sz c x y
+    | otherwise = baseIte sb c x y
 
   ----------------------------------------------------------------------
   -- Integer operations.
@@ -2710,6 +2719,9 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | otherwise = sbMakeExpr sym $ BVFill w p
 
   bvIte sym c x y
+    | Just (IteNot c') <- reduceIte c x y = bvIte sym c' y x
+    | Just (IteReduced e) <- reduceIte c x y = return e
+
     | Just (BVFill w px) <- asApp x
     , Just (BVFill _w py) <- asApp y =
       do z <- itePred sym c px py
@@ -2745,7 +2757,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
                 Just (Some flv) ->
                   semiRingIte sym (SR.SemiRingBVRepr flv (bvWidth x)) c x y
                 Nothing ->
-                  mkIte sym c x y)
+                  baseIte sym c x y)
 
   bvEq sym x y
     | Just b <- checkEq x y
@@ -3231,11 +3243,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         BaseStructRepr flds ->
           sbMakeExpr sym $ StructField s i (flds Ctx.! i)
 
-  structIte sym p x y
-    | Just True  <- asConstantPred p = return x
-    | Just False <- asConstantPred p = return y
-    | x == y                         = return x
-    | otherwise                      = mkIte sym p x y
+  structIte = mkIte
 
   --------------------------------------------------------------------
   -- String operations
@@ -3248,16 +3256,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
 
   stringEq = mkEq
 
-  stringIte _sym c x y
-    | Just c' <- asConstantPred c
-    = if c' then return x else return y
-  stringIte _sym _c x y
-    | Just x' <- asString x
-    , Just y' <- asString y
-    , isJust (testEquality x' y')
-    = return x
-  stringIte sym c x y
-    = mkIte sym c x y
+  stringIte = mkIte
 
   stringIndexOf sym x y k
     | Just x' <- asString x
@@ -3458,28 +3457,31 @@ instance IsExprBuilder (ExprBuilder t st fs) where
      else
       sbMakeExpr sym $ ArrayMap idx_tps baseRepr new_map def_map
 
-  arrayIte sym p x y = do
-    pmo <- CFG.getOpt (sbPushMuxOps sym)
-    if   -- Extract all concrete updates out.
-       | not pmo
-       , ArrayMapView mx x' <- viewArrayMap x
-       , ArrayMapView my y' <- viewArrayMap y
-       , not (AUM.null mx) || not (AUM.null my) -> do
-         case exprType x of
-           BaseArrayRepr idxRepr bRepr -> do
-             let both_fn _ u v = baseTypeIte sym p u v
-                 left_fn idx u = do
-                   v <- sbConcreteLookup sym y' (Just idx) =<< symbolicIndices sym idx
-                   both_fn idx u v
-                 right_fn idx v = do
-                   u <- sbConcreteLookup sym x' (Just idx) =<< symbolicIndices sym idx
-                   both_fn idx u v
-             mz <- AUM.mergeM bRepr both_fn left_fn right_fn mx my
-             z' <- arrayIte sym p x' y'
+  arrayIte sym p x y
+    | Just (IteNot p') <- reduceIte p x y = arrayIte sym p' y x
+    | Just (IteReduced e) <- reduceIte p x y = return e
+    | otherwise = do
+        pmo <- CFG.getOpt (sbPushMuxOps sym)
+        if   -- Extract all concrete updates out.
+           | not pmo
+           , ArrayMapView mx x' <- viewArrayMap x
+           , ArrayMapView my y' <- viewArrayMap y
+           , not (AUM.null mx) || not (AUM.null my) -> do
+             case exprType x of
+               BaseArrayRepr idxRepr bRepr -> do
+                 let both_fn _ u v = baseTypeIte sym p u v
+                     left_fn idx u = do
+                       v <- sbConcreteLookup sym y' (Just idx) =<< symbolicIndices sym idx
+                       both_fn idx u v
+                     right_fn idx v = do
+                       u <- sbConcreteLookup sym x' (Just idx) =<< symbolicIndices sym idx
+                       both_fn idx u v
+                 mz <- AUM.mergeM bRepr both_fn left_fn right_fn mx my
+                 z' <- arrayIte sym p x' y'
 
-             sbMakeExpr sym $ ArrayMap idxRepr bRepr mz z'
+                 sbMakeExpr sym $ ArrayMap idxRepr bRepr mz z'
 
-       | otherwise -> mkIte sym p x y
+           | otherwise -> baseIte sym p x y
 
   arrayEq = mkEq
 
