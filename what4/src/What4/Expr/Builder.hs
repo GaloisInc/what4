@@ -1763,6 +1763,7 @@ semiRingLe sym osr rec x y
 
 
 semiRingEq ::
+  Abstractable (SR.SemiRingBase sr) =>
   ExprBuilder t st fs ->
   SR.SemiRingRepr sr ->
   (Expr t (SR.SemiRingBase sr) -> Expr t (SR.SemiRingBase sr) -> IO (Expr t BaseBoolType))
@@ -1771,9 +1772,6 @@ semiRingEq ::
   Expr t (SR.SemiRingBase sr) ->
   IO (Expr t BaseBoolType)
 semiRingEq sym sr rec x y
-  -- Check for syntactic equality.
-  | x == y = return (truePred sym)
-
     -- Push some equalities under if/then/else
   | SemiRingLiteral _ _ _ <- x
   , Just (BaseIte _ _ c a b) <- asApp y
@@ -1790,10 +1788,9 @@ semiRingEq sym sr rec x y
       (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
       _ -> do xr <- semiRingSum sym x'
               yr <- semiRingSum sym y'
-              sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min xr yr) (max xr yr)
+              baseEq sym xr yr
 
-  | otherwise =
-    sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min x y) (max x y)
+  | otherwise = baseEq sym x y
 
 semiRingAdd ::
   forall t st fs sr.
@@ -2103,7 +2100,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
         (Just True, _)     -> return y
         (_, Just False)    -> notPred sym x
         (_, Just True)     -> return x
-        _ -> sbMakeExpr sym $ BaseEq BaseBoolRepr (min x y) (max x y)
+        _ -> baseEq sym x y
 
   xorPred sym x y = notPred sym =<< eqPred sym x y
 
@@ -2778,7 +2775,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
           (Just a, Just b) -> return $! backendPred sym (SR.eq sr a b)
           _ -> do xr <- semiRingSum sym x'
                   yr <- semiRingSum sym y'
-                  sbMakeExpr sym $ BaseEq (SR.semiRingBase sr) (min xr yr) (max xr yr)
+                  baseEq sym xr yr
 
     | otherwise = do
         ut <- CFG.getOpt (sbUnaryThreshold sym)
@@ -2787,7 +2784,7 @@ instance IsExprBuilder (ExprBuilder t st fs) where
            , Just uy <- asUnaryBV sym y
            -> UnaryBV.eq sym ux uy
            | otherwise
-           -> sbMakeExpr sym $ BaseEq (BaseBVRepr (bvWidth x)) (min x y) (max x y)
+           -> baseEq sym x y
 
   bvSlt sym x y
     | Just xc <- asBV x
@@ -4704,3 +4701,21 @@ mkEq sym x y
 -- This function is inlined into contexts where the type is known, hence it will
 -- be specialized.
 {-# INLINE mkEq #-}
+
+-- | Construct 'BaseEq'.
+--
+-- Sorts the operands so that the lesser is the left hand side of the equality.
+-- This helps normalize equality expressions so that rewrites such as @x = y
+-- and x = y ==> true@ are more easily applied without worrying about symmetry
+-- of equality.
+--
+-- 'Ex.assert's that the two values are not easily known to be (dis)equal.
+baseEq ::
+  Abstractable x =>
+  ExprBuilder t st fs ->
+  Expr t x ->
+  Expr t x ->
+  IO (Expr t BaseBoolType)
+baseEq sym x y =
+  Ex.assert (isNothing (checkEq x y)) $
+    sbMakeExpr sym $ BaseEq (exprType x) (min x y) (max x y)
