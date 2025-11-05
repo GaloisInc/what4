@@ -1,4 +1,4 @@
-# next (TBA)
+# 1.7.1 (November 2025)
 
 * Add `asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)`
 * Add `What4.Concretize`, a module for concretizing symbolic values using models
