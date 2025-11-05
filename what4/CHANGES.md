@@ -1,3 +1,5 @@
+# next
+
 # 1.7.1 (November 2025)
 
 * Add `asGround :: IsExpr e => e tp -> Maybe (GroundValue tp)`
