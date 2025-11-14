@@ -1599,8 +1599,15 @@ bvIntTerm :: forall v w
           -> v
           -> v
 bvIntTerm w x = sumExpr digits
- where -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
-       -- bvIntTerm's type signature.
+ where -- Note that the `1 <= w` constraint in `bvIntTerm`'s type signature is
+       -- a slightly stronger assumption that what is needed here. This
+       -- definition would also work if `w == 0`, since `[1..natValue w]` would
+       -- evaluate to an empty list, producing no digits (as expected). Since
+       -- nearly every bitvector-related operation in what4 assumes `1 <= w`,
+       -- we include the constraint here as well for consistency.
+       --
+       -- Contrast this with the definition of `digits` in `sbvIntTerm`, where
+       -- the `1 <= w` assumption in crucial.
        digits :: [v]
        digits = (\i -> digit (i-1)) <$> [1..natValue w]
 
@@ -1611,8 +1618,10 @@ bvIntTerm w x = sumExpr digits
 
 -- @sbvIntTerm w x@ builds an integer term that has the same value as the
 -- signed integer value of the bitvector @x@. This is done by explicitly
--- decomposing the positional notation of the bitvector into a sum of powers of
--- 2, plus an offset to ensure that the number is signed appropriately.
+-- decomposing the positional notation of the bitvector's @w-1@ least
+-- significant bits into a sum of powers of 2, plus an offset (based on whether
+-- the most significant bit is set or not) to ensure that the number is signed
+-- appropriately.
 sbvIntTerm :: forall v w
             . (SupportTermOps v, 1 <= w)
            => NatRepr w
@@ -1626,8 +1635,18 @@ sbvIntTerm w x = sumExpr (signedOffset : digits)
                           (fromInteger (negate (2^(widthVal w - 1))))
                           0
 
+       -- Note that unlike the corresponding `digits` value in `bvIntTerm`,
+       -- this `digits` value only takes the @w-1@ least significant bits of
+       -- `x` into consideration, as the most significant bit is used to
+       -- compute `signedOffset` instead.
+       --
+       -- NB: If `w == 1`, then `[1..(natValue w - 1)]` will evaluate to an
+       -- empty list, producing no digits (as expected).
+       --
+       -- Precondition: 1 <= w. This is upheld by the `1 <= w` constraint in
+       -- sbvIntTerm's type signature.
        digits :: [v]
-       digits = (\i -> digit (i-1)) <$> [1..natValue w]
+       digits = (\i -> digit (i-1)) <$> [1..(natValue w - 1)]
 
        digit :: SupportTermOps v => Natural -> v
        digit d = ite (bvTestBit w d x)
