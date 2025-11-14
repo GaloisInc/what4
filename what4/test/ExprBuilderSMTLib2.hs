@@ -1114,6 +1114,40 @@ issue315Test sym solver = do
 
       _ -> fail "expected satisfible model"
 
+-- | A regression test for #329.
+issue329Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue329Test sym solver = do
+    -- This test shows that the following proposition (written in Cryptol) is
+    -- falsifiable when `x == 2`:
+    --
+    --   \(x : [2]) -> x == 2 ==> ((toSignedInteger x - 1) == -1)
+    let w = knownNat @2
+    x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w)
+    bvTwo <- bvLit sym w (BV.mkBV w 2)
+    xEqBvTwo <- bvEq sym x bvTwo
+    notXEqBvTwo <- notPred sym xEqBvTwo
+    xsi <- sbvToInteger sym x
+    intOne <- intLit sym 1
+    intNegOne <- intLit sym (-1)
+    xsiDec <- intSub sym xsi intOne
+    xsiDecEqIntNegOne <- intEq sym xsiDec intNegOne
+    p <- orPred sym notXEqBvTwo xsiDecEqIntNegOne
+
+    -- Check if `p` is not valid for all `x` by checking if its negation
+    -- (`notP`) is satisfiable. If `notP` is satisfiable, then we have found a
+    -- counterexample to `p`.
+    notP <- notPred sym p
+    checkSatisfiableWithModel solver "test" notP $ \case
+      Sat fn ->
+        do xEval <- groundEval fn x
+           (xEval == BV.mkBV w 2) @? "result other than 2"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1277,6 +1311,7 @@ main = do
 
         , testCase "Z3 #182 test case" $ withOnlineZ3 issue182Test
         , testCase "Z3 #315 test case" $ withOnlineZ3 issue315Test
+        , testCase "Z3 #329 test case" $ withOnlineZ3 issue329Test
 
         , arrayCopyTest
         , arraySetTest
@@ -1328,6 +1363,7 @@ main = do
 
         , cvcTestCase "#182 test case" $ withCVC issue182Test
         , cvcTestCase "#315 test case" $ withCVC issue315Test
+        , cvcTestCase "#329 test case" $ withCVC issue329Test
         ]
   let cvc4Tests = cvcTests CVC4
   let cvc5Tests = cvcTests CVC5
@@ -1342,6 +1378,7 @@ main = do
         , testCase "Yices rounding" $ withYices roundingTest
         , testCase "Yices #182 test case" $ withYices issue182Test
         , testCase "Yices #315 test case" $ withYices issue315Test
+        , testCase "Yices #329 test case" $ withYices issue329Test
         ]
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))
