@@ -1,4 +1,4 @@
-# next
+# 1.7.2 (November 2025)
 
 * Fix a regression in `what4-1.7.1` in which `sbvToInteger` could compute
   incorrect results for symbolic bitvectors.
