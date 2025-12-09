@@ -1166,7 +1166,8 @@ declareTypes conn = \case
   ComplexToArrayTypeMap  -> return ()
   PrimArrayTypeMap args ret ->
     do traverseFC_ (declareTypes conn) args
-       declareStructDatatype conn args
+       when (supportedFeatures conn `hasProblemFeature` useStructs) $
+         declareStructDatatype conn args
        declareTypes conn ret
   FnArrayTypeMap args ret ->
     do traverseFC_ (declareTypes conn) args

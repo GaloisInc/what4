@@ -52,6 +52,7 @@ import           What4.Protocol.Online
 import           What4.Protocol.SMTLib2
 import           What4.SatResult
 import           What4.Solver.Adapter
+import qualified What4.Solver.Bitwuzla as Bitwuzla
 import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.CVC5 as CVC5
 import qualified What4.Solver.Z3 as Z3
@@ -137,6 +138,18 @@ withCVC5 action = withSym FloatRealRepr $ \sym -> do
   bracket
     (do h <- if debugOutputFiles then Just <$> openFile "cvc5.out" WriteMode else return Nothing
         s <- startSolverProcess (defaultFeatures CVC5.CVC5) h sym
+        return (h,s))
+    (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
+    (\(_,s) -> action sym s)
+
+withBitwuzla
+  :: (forall t . SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t (Writer Bitwuzla.Bitwuzla) -> IO a)
+  -> IO a
+withBitwuzla action = withSym FloatRealRepr $ \sym -> do
+  extendConfig Bitwuzla.bitwuzlaOptions (getConfiguration sym)
+  bracket
+    (do h <- if debugOutputFiles then Just <$> openFile "bitwuzla.out" WriteMode else return Nothing
+        s <- startSolverProcess (defaultFeatures Bitwuzla.Bitwuzla) h sym
         return (h,s))
     (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
     (\(_,s) -> action sym s)
@@ -1260,7 +1273,7 @@ testResolveSymBV searchStrat =
 main :: IO ()
 main = do
   testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-  let solverNames = SolverName <$> [ "cvc4", "cvc5", "yices", "z3" ]
+  let solverNames = SolverName <$> [ "bitwuzla", "cvc4", "cvc5", "yices", "z3" ]
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
@@ -1380,6 +1393,9 @@ main = do
         , testCase "Yices #315 test case" $ withYices issue315Test
         , testCase "Yices #329 test case" $ withYices issue329Test
         ]
+  let bitwuzlaTests =
+        [ testCase "Bitwuzla multidim array" $ withBitwuzla multidimArrayTest
+        ]
   let skipIfNotPresent nm = if SolverName nm `elem` (fst <$> solvers) then id
                             else fmap (ignoreTestBecause (nm <> " not present"))
   defaultMain $ testGroup "Tests" $
@@ -1399,6 +1415,7 @@ main = do
     , testUnsafeSetAbstractValue1
     , testUnsafeSetAbstractValue2
     ]
+    <> (skipIfNotPresent "bitwuzla" bitwuzlaTests)
     <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "cvc5" cvc5Tests)
     <> (skipIfNotPresent "yices" yicesTests)
