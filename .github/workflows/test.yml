@@ -80,7 +80,7 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_WHAT4 }}'
 
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         name: Restore cabal store cache
         id: cache
         env:
@@ -188,7 +188,7 @@ jobs:
           cd what4
           $NS -c cabal haddock what4
 
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         name: Save cabal store cache
         if: always()
         with:
