@@ -19,7 +19,7 @@ module What4.Expr.Allocator
 , cacheOptDesc
 ) where
 
-import           Control.Lens ( (&) )
+import           Lens.Micro ( (&) )
 import           Control.Monad.ST (stToIO)
 import           Data.IORef
 

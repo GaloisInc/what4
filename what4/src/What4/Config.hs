@@ -173,8 +173,7 @@ module What4.Config
 import           Control.Applicative ( Const(..), (<|>) )
 import           Control.Concurrent.MVar
 import qualified Control.Concurrent.ReadWriteVar as RWV
-import           Control.Lens ((&))
-import qualified Control.Lens.Combinators as LC
+import           Lens.Micro ((&))
 import           Control.Monad (foldM, when)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
@@ -318,8 +317,11 @@ data OptionSetting (tp :: BaseType) =
 
 instance Show (OptionSetting tp) where
   show = (<> " option setting") .
-         LC.cons '\'' . flip LC.snoc '\'' .
+         cons '\'' . flip snoc '\'' .
          show . optionSettingName
+    where
+      cons x l = x : l
+      snoc l x = reverse (cons x (reverse l))
 instance ShowF OptionSetting
 
 -- | An option defines some metadata about how a configuration option behaves.
