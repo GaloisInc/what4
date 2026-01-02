@@ -42,6 +42,7 @@ quantTheory :: NonceApp t (Expr t) tp -> AppTheory
 quantTheory a0 =
   case a0 of
     Annotation tpr _ _ -> typeTheory tpr
+    Opaque tpr _ -> typeTheory tpr
     Forall{} -> QuantifierTheory
     Exists{} -> QuantifierTheory
     ArrayFromFn{}   -> FnTheory

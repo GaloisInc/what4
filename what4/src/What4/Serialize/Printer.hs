@@ -438,6 +438,7 @@ convertExpr initialExpr = do
             W4.MapOverArrays {} -> error "MapOverArrays NonceAppExpr not yet supported"
             W4.ArrayTrueOnEntries {} -> error "ArrayTrueOnEntries NonceAppExpr not yet supported"
             W4.Annotation {} -> error "Annotation NonceAppExpr not yet supported"
+            W4.Opaque {} -> error "Opaque NonceAppExpr not yet supported"
         go (W4.BoundVarExpr var) = convertBoundVarExpr var
 
 -- | Serialize bound variables as the s-expression identifier `name_nonce`. This allows us to

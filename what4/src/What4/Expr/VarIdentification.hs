@@ -379,6 +379,8 @@ recurseNonceAppVars scope ea0 = do
   case a0 of
     Annotation _ _ x ->
       recordExprVars scope x
+    Opaque _ x ->
+      recordExprVars scope x
     Forall v x ->
       addBothVar scope ea0 ForallBound v x
     Exists v x ->

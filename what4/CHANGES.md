@@ -23,6 +23,9 @@
   wrapper around `BoolMap` that makes clear that the `BoolMap` in question
   represents a conjunction (as `BoolMap`s may also represent disjunctions).
   See the Haddocks on `ConjMap` for more details.
+* Add `opacify`, `clarify` to `IsExprBuilder`, for preserving abstract values.
+  These should be used instead of `annotateTerm` for that purpose.
+* Modify `annotateTerm` to not annotate `{Nonce,}AppExpr`s.
 
 # 1.6.3 (Feb 2025)
 
