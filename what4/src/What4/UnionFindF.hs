@@ -21,8 +21,10 @@ module What4.UnionFindF
   , memberKeySet
   , unionKeySet
   , keySetToList
+  , eqKeySets
     -- * 'UnionFindF'
   , UnionFind
+  , ufLiftEq2
   , SomeUnionFind(..)
   , empty
     -- ** Queries
@@ -76,21 +78,30 @@ newtype KeySet u = KeySet { getKeySet :: UF.KeySet u }
 
 emptyKeySet :: KeySet u
 emptyKeySet = KeySet UF.emptyKeySet
+{-# INLINE emptyKeySet #-}
 
 singletonKeySet :: Key u x -> KeySet u
 singletonKeySet = coerce UF.singletonKeySet
+{-# INLINE singletonKeySet #-}
 
 insertKeySet :: Key u x -> KeySet u -> KeySet u
 insertKeySet = coerce UF.insertKeySet
+{-# INLINE insertKeySet #-}
 
 memberKeySet :: Key u x -> KeySet u -> Bool
 memberKeySet = coerce UF.memberKeySet
+{-# INLINE memberKeySet #-}
 
 unionKeySet :: KeySet u -> KeySet u -> KeySet u
 unionKeySet = coerce UF.unionKeySet
+{-# INLINE unionKeySet #-}
 
 keySetToList :: KeySet u -> [Some (Key u)]
 keySetToList = map (Some . Key) . UF.keySetToList . getKeySet
+
+eqKeySets :: KeySet u -> KeySet u' -> Bool
+eqKeySets = coerce UF.eqKeySets
+{-# INLINE eqKeySets #-}
 
 ---------------------------------------------------------------------
 -- AnyF (internal details)
@@ -135,8 +146,16 @@ newtype UnionFind u ann f
     { _getUnionFind :: UF.UnionFind u ann (AnyF f) }
 
 instance (Eq ann, TestEquality f) => Eq (UnionFind u ann f) where
-  UnionFind uf == UnionFind uf' =
-    UF.ufLiftEq2 (==) (\(AnyF f) (AnyF f') -> isJust (testEquality f f')) uf uf'
+  (==) = ufLiftEq2 (==) (\x y -> isJust (testEquality x y))
+
+ufLiftEq2 ::
+  (ann -> ann' -> Bool) ->
+  (forall x. f x -> f x -> Bool) ->
+  UnionFind u ann f ->
+  UnionFind u' ann' f ->
+  Bool
+ufLiftEq2 eqAnn eqVal (UnionFind uf) (UnionFind uf') =
+  UF.ufLiftEq2 eqAnn (\(AnyF f) (AnyF f') -> eqVal f f') uf uf'
 
 data SomeUnionFind ann f = forall u. SomeUnionFind (UnionFind u ann f)
 

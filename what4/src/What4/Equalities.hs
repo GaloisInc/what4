@@ -12,6 +12,7 @@ module What4.Equalities
     -- ** Construction
   , empty
   , fromEqual
+  , fromNotEqual
     -- ** Queries
   , checkEqual
   , checkNotEqual
@@ -38,7 +39,7 @@ import Data.Kind (Type)
 import Data.Maybe qualified as Maybe
 import Data.Parameterized.Classes
 import Data.Parameterized.Some (Some(Some))
-import Prelude hiding (and)
+import Prelude hiding (and, not)
 import Prettyprinter qualified as PP
 import What4.UnionFindF qualified as UF
 import What4.UnionFind qualified as BaseUF
@@ -53,10 +54,8 @@ data Equalities f
     { _getEqualities :: UF.UnionFind u (UF.KeySet u) f }
 
 instance TestEquality f => Eq (Equalities f) where
-  -- Let's just ignore that pesky type variable...
-  --
-  -- TODO: Make a unsafe helper function upstream
-  Equalities u == Equalities u' = u == (unsafeCoerce u')
+  Equalities u == Equalities u' =
+    UF.ufLiftEq2 UF.eqKeySets (\x y -> isJust (testEquality x y)) u u'
 
 instance (HashableF f, TestEquality f) => Hashable (Equalities f) where
   hashWithSalt = error "TODO"
@@ -80,6 +79,15 @@ fromEqual ::
   Equalities f
 fromEqual x y = findEqualities (Maybe.fromJust (equal empty x y))
 -- TODO: comment on fromJust
+
+-- | @'fromNotEqual' x y == 'notEqual' 'empty' x y@
+fromNotEqual ::
+  EqF f =>
+  OrdF f =>
+  f x ->
+  f x ->
+  Maybe (Equalities f)
+fromNotEqual = notEqual empty
 
 -- | Are these two values equal in the union find?
 checkEqual ::
@@ -274,9 +282,16 @@ traverseEqualities ::
 traverseEqualities f (Equalities u) = Equalities <$> UF.traverseUnionFind f u
 
 -- | Attempt to negate a singleton 'Equalities'
--- not ::
---   (EqF f, OrdF f) =>
---   Equalities f ->
---   Maybe (Equalities f)
--- not (Equalities u) =
---   _
+not ::
+  (EqF f, OrdF f) =>
+  Equalities f ->
+  Maybe (Equalities f)
+not u =
+  case toBasis u of
+    -- not (x = y) iff x != y
+    Basis [Equation lhs rhs] [] -> fromNotEqual lhs rhs
+    -- not (x != y) iff x = y
+    -- TODO: this won't fire bc bases have too many elements
+    Basis [] [Inequation lhs rhs] -> Just (fromEqual lhs rhs)
+    _ -> Nothing
+

@@ -26,6 +26,7 @@ module What4.UnionFind
   , memberKeySet
   , unionKeySet
   , keySetToList
+  , eqKeySets
     -- * 'UnionFind'
   , UnionFind
   , SomeUnionFind(..)
@@ -65,6 +66,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum(Sum))
 import Data.Traversable (foldMapDefault)
+import Unsafe.Coerce (unsafeCoerce)
 
 ---------------------------------------------------------------------
 -- UnionFindName
@@ -113,6 +115,9 @@ unionKeySet = coerce IntSet.union
 
 keySetToList :: KeySet u -> [Key u]
 keySetToList = coerce IntSet.toList
+
+eqKeySets :: KeySet u -> KeySet u' -> Bool
+eqKeySets (KeySet k) (KeySet k') = k == k'
 
 ---------------------------------------------------------------------
 -- KeyMap
@@ -192,15 +197,21 @@ data UnionFind u ann a
 -- improve the asymptotics of 'Equalities', which always starts by looking up a
 -- value from 'keys'.
 
+-- | Not exported
+unsafeCoerceName :: UnionFind u ann a -> UnionFind u' ann a
+unsafeCoerceName = unsafeCoerce
+{-# INLINE unsafeCoerceName #-}
+
 ufLiftEq2 ::
-  (ann -> ann -> Bool) ->
+  (ann -> ann' -> Bool) ->
   (a -> a -> Bool) ->
   UnionFind u ann a ->
-  UnionFind u ann a ->
+  UnionFind u' ann' a ->
   Bool
 ufLiftEq2 eqAnn eqVal u u' =
-  liftEq2 eqVal (==) (ufKeys u) (ufKeys u') &&
-    liftEq (liftEq2 eqAnn eqVal) (uf u) (uf u')
+  let u'' = unsafeCoerceName u' in
+  liftEq2 eqVal (==) (ufKeys u) (ufKeys u'') &&
+    liftEq (liftEq2 eqAnn eqVal) (uf u) (uf u'')
 
 instance (Eq ann, Eq a) => Eq (UnionFind u ann a) where
   (==) = ufLiftEq2 (==) (==)

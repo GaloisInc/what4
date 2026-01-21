@@ -4,6 +4,7 @@
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RankNTypes #-}
@@ -104,6 +105,7 @@ module What4.ExprEqualities
   , traverseExprEqualities
   , union
   , and
+  , not_
   ) where
 
 import Control.Exception qualified as Ex
@@ -443,3 +445,12 @@ and sym e b =
     ResTrue -> ResTrue
     Equalities e' ->
       notEqual e' (WI.falsePred sym) (WI.truePred sym)
+
+-- | Attempt to negate a singleton 'ExprEqualities'
+not_ ::
+  EqF f =>
+  OrdF f =>
+  ExprEqualities f ->
+  Maybe (ExprEqualities f)
+not_ = coerce Eqs.not
+{-# INLINE not_ #-}
