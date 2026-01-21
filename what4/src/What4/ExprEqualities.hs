@@ -5,6 +5,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -101,9 +102,9 @@ import Data.Coerce (coerce)
 import Data.Kind (Type)
 import Data.Parameterized.Classes
 import Prelude hiding (and)
-import qualified What4.Interface as WI
-import qualified What4.Equalities as Eqs
-import qualified What4.Utils.AbstractDomains as WA
+import What4.Interface qualified as WI
+import What4.Equalities qualified as Eqs
+import What4.Utils.AbstractDomains qualified as WA
 
 -- Note [Inline]: Several functions in this module are parametric on `f`, which
 -- is generally instantiated to `Expr` and `x`, which is often instantiated to

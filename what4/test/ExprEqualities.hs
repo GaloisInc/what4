@@ -9,7 +9,7 @@
 
 module ExprEqualities (tests) where
 
-import Control.Monad (forM)
+import Control.Monad qualified as Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Parameterized.Classes (EqF, OrdF, ShowF(showF))
 import Data.Parameterized.Nonce (GlobalNonceGenerator, globalNonceGenerator)
@@ -26,11 +26,36 @@ import What4.Interface qualified as WI
 tests :: TT.TestTree
 tests =
   TT.testGroup "ExprEqualities"
-  [ TTH.testProperty "propEqSymmetric" propEqSymmetric
+  [ TTH.testProperty "propEqNeq" propEqNeq
+  , TTH.testProperty "propEqSymmetric" propEqSymmetric
   , TTH.testProperty "propEqTransitive" propEqTransitive
   , TTH.testProperty "propNeqIrreflexive" propNeqIrreflexive
   , TTH.testProperty "propNeqSymmetric" propNeqSymmetric
+  , TTH.testProperty "propEqNeqUnion" propEqNeqUnion
   ]
+
+-- | @x = y@ implies @not (x != y)@, and vice-versa 
+propEqNeq :: H.Property
+propEqNeq =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    op <- H.forAll (genEqs (Just sym) genElem)
+    case opEqs sym op of
+      E.ResTrue -> pure ()
+      E.ResFalse -> pure ()
+      E.Equalities e -> do
+        x <- H.forAll genElem
+        y <- H.forAll genElem
+        let eqNeq =
+              if fst (E.checkEqual e x y)
+              then not (E.checkNotEqual e x y)
+              else True
+        let neqEq =
+              if E.checkNotEqual e x y
+              then not (fst (E.checkEqual e x y))
+              else True
+        H.assert (eqNeq && neqEq)
 
 -- | @x = y@ if and only if @y = x@
 propEqSymmetric :: H.Property
@@ -96,6 +121,28 @@ propNeqSymmetric =
         y <- H.forAll genElem
         E.checkNotEqual e x y H.=== E.checkNotEqual e y x
 
+-- | if @x = y@ in @u@ then @x = y@ in @u /\ v@, and same with @!=@.
+propEqNeqUnion :: H.Property
+propEqNeqUnion =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    u <- H.forAll (genEqs (Just sym) genElem)
+    v <- H.forAll (genEqs (Just sym) genElem)
+    case (opEqs sym u, opEqs sym v) of
+      (E.Equalities u', E.Equalities v') -> do
+        x <- H.forAll genElem
+        y <- H.forAll genElem
+        Monad.when (fst (E.checkEqual u' x y)) $
+          case E.union u' v' of
+            E.Equalities e -> H.assert (fst (E.checkEqual e x y))
+            _ -> pure ()
+        Monad.when (E.checkNotEqual u' x y) $
+          case E.union u' v' of
+            E.Equalities e -> H.assert (E.checkNotEqual e x y)
+            _ -> pure ()
+      _ -> pure ()
+
 ---------------------------------------------------------------------
 -- Helpers
 
@@ -109,7 +156,7 @@ mkGenElem ::
 mkGenElem sym = do
   let consts = [WI.truePred sym, WI.falsePred sym]
   vars <-
-    forM [(0 :: Int)..20] $ \i -> do
+    Monad.forM [(0 :: Int)..20] $ \i -> do
       let nm = WI.safeSymbol ("b" ++ show i)
       WI.freshConstant sym nm WI.BaseBoolRepr
   pure $ Gen.choice (map pure (consts ++ vars))
