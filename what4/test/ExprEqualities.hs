@@ -26,14 +26,19 @@ import What4.Interface qualified as WI
 tests :: TT.TestTree
 tests =
   TT.testGroup "ExprEqualities"
-  [ TTH.testProperty "propOk" propOk
-  , TTH.testProperty "propEqNeq" propEqNeq
-  , TTH.testProperty "propEqSymmetric" propEqSymmetric
-  , TTH.testProperty "propEqTransitive" propEqTransitive
-  , TTH.testProperty "propNeqIrreflexive" propNeqIrreflexive
-  , TTH.testProperty "propNeqSymmetric" propNeqSymmetric
-  , TTH.testProperty "propEqNeqUnion" propEqNeqUnion
+  [ testProperty "propOk" propOk
+  , testProperty "propEqNeq" propEqNeq
+  , testProperty "propEqSymmetric" propEqSymmetric
+  , testProperty "propEqTransitive" propEqTransitive
+  , testProperty "propNeqIrreflexive" propNeqIrreflexive
+  , testProperty "propNeqSymmetric" propNeqSymmetric
+  , testProperty "propEqNeqUnion" propEqNeqUnion
+  , testProperty "propUnionEmpty" propUnionEmpty
+  , testProperty "propUnionSymmetric" propUnionSymmetric
   ]
+  where
+  testProperty nm prop =
+    TTH.testProperty nm (H.withShrinks 4024 (H.withTests 4096 prop))
 
 -- | Check 'E.ok'
 propOk :: H.Property
@@ -64,15 +69,16 @@ propEqNeq =
       E.Equalities e -> do
         x <- H.forAll genElem
         y <- H.forAll genElem
-        let eqNeq =
-              if fst (E.checkEqual e x y)
-              then not (E.checkNotEqual e x y)
-              else True
-        let neqEq =
-              if E.checkNotEqual e x y
-              then not (fst (E.checkEqual e x y))
-              else True
-        H.assert (eqNeq && neqEq)
+        Monad.when (x /= y) $ do
+          let eqNeq =
+                if fst (E.checkEqual e x y)
+                then not (E.checkNotEqual e x y)
+                else True
+          let neqEq =
+                if E.checkNotEqual e x y
+                then not (fst (E.checkEqual e x y))
+                else True
+          H.assert (eqNeq && neqEq)
 
 -- | @x = y@ if and only if @y = x@
 propEqSymmetric :: H.Property
@@ -87,7 +93,8 @@ propEqSymmetric =
       E.Equalities e -> do
         x <- H.forAll genElem
         y <- H.forAll genElem
-        fst (E.checkEqual e x y) H.=== fst (E.checkEqual e y x)
+        let eq u v = fst (E.checkEqualPermissive e u v)
+        eq x y H.=== eq y x
 
 -- | @x = y@ and @y = z@ imply @x = z@
 propEqTransitive :: H.Property
@@ -103,10 +110,10 @@ propEqTransitive =
         x <- H.forAll genElem
         y <- H.forAll genElem
         z <- H.forAll genElem
-        let (exy, e') = E.checkEqual e x y
-        let (eyz, e'') = E.checkEqual e' y z
+        let (exy, e') = E.checkEqualPermissive e x y
+        let (eyz, e'') = E.checkEqualPermissive e' y z
         if exy && eyz
-          then True H.=== fst (E.checkEqual e'' x z)
+          then True H.=== fst (E.checkEqualPermissive e'' x z)
           else pure ()
 
 -- | It is not the case that @x /= x@
@@ -121,7 +128,7 @@ propNeqIrreflexive =
       E.ResFalse -> pure ()
       E.Equalities e -> do
         x <- H.forAll genElem
-        False H.=== E.checkNotEqual e x x
+        False H.=== E.checkNotEqualPermissive e x x
 
 -- | @x /= y@ if and only if @y /= x@
 propNeqSymmetric :: H.Property
@@ -136,7 +143,8 @@ propNeqSymmetric =
       E.Equalities e -> do
         x <- H.forAll genElem
         y <- H.forAll genElem
-        E.checkNotEqual e x y H.=== E.checkNotEqual e y x
+        Monad.when (x /= y) $
+          E.checkNotEqual e x y H.=== E.checkNotEqual e y x
 
 -- | if @x = y@ in @u@ then @x = y@ in @u /\ v@, and same with @!=@.
 propEqNeqUnion :: H.Property
@@ -150,14 +158,84 @@ propEqNeqUnion =
       (E.Equalities u', E.Equalities v') -> do
         x <- H.forAll genElem
         y <- H.forAll genElem
-        Monad.when (fst (E.checkEqual u' x y)) $
+        Monad.when (x /= y) $
           case E.union u' v' of
-            E.Equalities e -> H.assert (fst (E.checkEqual e x y))
-            _ -> pure ()
-        Monad.when (E.checkNotEqual u' x y) $
-          case E.union u' v' of
-            E.Equalities e -> H.assert (E.checkNotEqual e x y)
-            _ -> pure ()
+            E.ResTrue -> pure ()
+            E.ResFalse -> pure ()
+            E.Equalities e -> do
+              let debug = do
+                    liftIO $ print "~~~~~~~~~~~"
+                    liftIO $ putStrLn $ "u  = " ++ show u
+                    liftIO $ putStrLn $ "v  = " ++ show v
+                    liftIO $ putStrLn $ "u' = " ++ show u'
+                    liftIO $ putStrLn $ "v' = " ++ show v'
+                    liftIO $ putStrLn $ "e  = " ++ show e
+                    liftIO $ putStrLn $ "x  = " ++ show x
+                    liftIO $ putStrLn $ "y  = " ++ show y
+              let uxy = fst (E.checkEqual u' x y)
+              let vxy = fst (E.checkEqual v' x y)
+              let exy = fst (E.checkEqual e x y)
+              let nuxy = E.checkNotEqual u' x y
+              let nvxy = E.checkNotEqual v' x y
+              let nexy = E.checkNotEqual e x y
+              Monad.when uxy $ do
+                Monad.unless exy debug
+                H.assert exy
+              Monad.when vxy $ do
+                Monad.unless exy debug
+                H.assert exy
+              Monad.when nuxy $ do
+                Monad.unless nexy debug
+                H.assert nexy
+              Monad.when nvxy $ do
+                Monad.unless nexy debug
+                H.assert nexy
+      _ -> pure ()
+
+-- | @x = y@ in @u@ iff @x = y@ in @u /\ empty@.
+propUnionEmpty :: H.Property
+propUnionEmpty =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    u <- H.forAll (genEqs (Just sym) genElem)
+    case opEqs sym u of
+      E.ResTrue -> pure ()
+      E.ResFalse -> pure ()
+      E.Equalities u' ->
+        case E.union u' E.empty of
+          E.ResTrue -> H.failure
+          E.ResFalse -> pure ()
+          E.Equalities u'' -> do
+            x <- H.forAll genElem
+            y <- H.forAll genElem
+            Monad.when (x /= y) $
+              E.checkEqual u' x y H.=== E.checkEqual u'' x y
+
+-- | @x = y@ in @u /\ v@ iff @x = y@ in @v /\ u@, and same for @!=@.
+propUnionSymmetric :: H.Property
+propUnionSymmetric =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    u <- H.forAll (genEqs (Just sym) genElem)
+    v <- H.forAll (genEqs (Just sym) genElem)
+    case (opEqs sym u, opEqs sym v) of
+      (E.Equalities u', E.Equalities v') ->
+        case (E.union u' v', E.union v' u') of
+          (E.ResTrue, E.ResTrue) -> pure ()
+          (E.ResTrue, _) -> H.failure
+          (E.ResFalse, E.ResFalse) -> pure ()
+          -- it's OK if collapsing or not depends on order
+          (E.ResFalse, _) -> pure ()
+          (_, E.ResFalse) -> pure ()
+          (E.Equalities e, E.Equalities e') -> do
+            x <- H.forAll genElem
+            y <- H.forAll genElem
+            Monad.when (x /= y) $ do
+              fst (E.checkEqual e x y) H.=== fst (E.checkEqual e' x y)
+              E.checkNotEqual e x y H.=== E.checkNotEqual e' x y
+          (E.Equalities _, _) -> H.failure
       _ -> pure ()
 
 ---------------------------------------------------------------------
@@ -194,6 +272,11 @@ data Op sym a t where
   -- TODO: make inequal
   Empty :: Op sym a (Eqs a)
   Elem :: WI.SymExpr sym a -> Op sym a (Elem a)
+  Neq ::
+    Op sym a (Eqs a) ->
+    Op sym a (Elem a) ->
+    Op sym a (Elem a) ->
+    Op sym a (Eqs a)
   Union ::
     Op sym a (Eqs a) ->
     Op sym a (Elem a) ->
@@ -225,6 +308,7 @@ instance ShowF (WI.SymExpr sym) => Show (Op sym a t) where
     \case
       Empty -> "empty"
       Elem a -> showF a
+      Neq r x y -> fun3 "neq" r x y
       Union r x y -> fun3 "union" r x y
       Query r x y -> fun3 "query" r x y
 
@@ -272,6 +356,13 @@ opEqs sym =
   \case
     Empty -> E.Equalities E.empty
     Elem a -> a
+    Neq r x y ->
+      let x' = opEqs sym x in
+      let y' = opEqs sym y in
+      case opEqs sym r of
+        E.ResTrue -> E.fromNotEqualChecked x' y'
+        E.ResFalse -> E.ResFalse
+        E.Equalities s -> E.notEqualChecked s x' y'
     Union r x y ->
       let x' = opEqs sym x in
       let y' = opEqs sym y in
