@@ -4727,6 +4727,6 @@ baseEq ::
 baseEq sym x y =
   Ex.assert (isNothing (checkEq x y)) $
     case ExEqs.fromEqual (min x y) (max x y) of
-      ExEqs.ResTrue -> error "TODO: impossible"
-      ExEqs.ResFalse -> error "TODO: impossible"
+      ExEqs.ResTrue -> pure (truePred sym)
+      ExEqs.ResFalse -> pure (falsePred sym)
       ExEqs.Equalities eqs -> sbMakeExpr sym (BaseEq eqs)

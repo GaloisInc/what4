@@ -26,13 +26,30 @@ import What4.Interface qualified as WI
 tests :: TT.TestTree
 tests =
   TT.testGroup "ExprEqualities"
-  [ TTH.testProperty "propEqNeq" propEqNeq
+  [ TTH.testProperty "propOk" propOk
+  , TTH.testProperty "propEqNeq" propEqNeq
   , TTH.testProperty "propEqSymmetric" propEqSymmetric
   , TTH.testProperty "propEqTransitive" propEqTransitive
   , TTH.testProperty "propNeqIrreflexive" propNeqIrreflexive
   , TTH.testProperty "propNeqSymmetric" propNeqSymmetric
   , TTH.testProperty "propEqNeqUnion" propEqNeqUnion
   ]
+
+-- | Check 'E.ok'
+propOk :: H.Property
+propOk =
+  H.property $ do
+    sym <- liftIO mkSym
+    genElem <- liftIO (mkGenElem sym)
+    op <- H.forAll (genEqs (Just sym) genElem)
+    case opEqs sym op of
+      E.ResTrue -> pure ()
+      E.ResFalse -> pure ()
+      E.Equalities e -> do
+        -- For debugging:
+        -- liftIO $ print "~~~~~~~~~~~"
+        -- liftIO $ print e
+        H.assert (E.ok e)
 
 -- | @x = y@ implies @not (x != y)@, and vice-versa 
 propEqNeq :: H.Property
@@ -174,6 +191,7 @@ type family AsEqualities sym t where
 
 -- | An interaction with the 'ExprEqualities' API
 data Op sym a t where
+  -- TODO: make inequal
   Empty :: Op sym a (Eqs a)
   Elem :: WI.SymExpr sym a -> Op sym a (Elem a)
   Union ::
@@ -258,9 +276,9 @@ opEqs sym =
       let x' = opEqs sym x in
       let y' = opEqs sym y in
       case opEqs sym r of
-        E.ResTrue -> E.fromEqual x' y'
+        E.ResTrue -> E.fromEqualChecked x' y'
         E.ResFalse -> E.ResFalse
-        E.Equalities s -> E.equal s x' y'
+        E.Equalities s -> E.equalChecked s x' y'
     Query r x y ->
       let x' = opEqs sym x in
       let y' = opEqs sym y in

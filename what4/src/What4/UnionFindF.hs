@@ -36,6 +36,7 @@ module What4.UnionFindF
   , equal
   , Equation(..)
   , basis
+  , hasTrivialEqs
     -- ** Modifications
   , insert
   , unionByKey
@@ -217,6 +218,11 @@ basis (UnionFind u) =
     mkEq (UF.Annotated ann root) val =
       -- see invariant on 'UnionFind'
       Equation (UF.Annotated ann (unsafeFromAny root)) (unsafeFromAny val)
+
+-- | Does this 'UnionFind' have any "trivial" equations?
+hasTrivialEqs :: (EqF f, OrdF f) => UnionFind u ann f -> Bool
+hasTrivialEqs u = any trivial (snd (basis u))
+  where trivial (Equation lhs rhs) = eqF (UF.annVal lhs) rhs
 
 insert ::
   EqF f =>

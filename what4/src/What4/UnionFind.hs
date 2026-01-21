@@ -31,6 +31,8 @@ module What4.UnionFind
   , SomeUnionFind(..)
   , empty
   , ufLiftEq2
+  , keys
+  , elems
     -- ** Queries
   , Annotated(..)
   , Find
@@ -41,6 +43,7 @@ module What4.UnionFind
   , findByValue
   , equal
   , basis
+  , hasTrivialEqs
     -- ** Modifications
   , insert
   , unionByKey
@@ -176,7 +179,7 @@ data UnionFind u ann a
     -- 2. Every value in 'keys' is a key in 'uf'.
     -- 3. Every key in a 'Branch' in 'uf' is also a key of 'uf'.
     -- 4. Every @'Key' u@ that escapes this module is a key of @'keys' u@.
-    { keys :: Map a (Key u)
+    { ufKeys :: Map a (Key u)
       -- TODO: Benchmark using a 'Seq' here
     , uf :: KeyMap u (Branch u ann a)
     }
@@ -196,11 +199,22 @@ ufLiftEq2 ::
   UnionFind u ann a ->
   Bool
 ufLiftEq2 eqAnn eqVal u u' =
-  liftEq2 eqVal (==) (keys u) (keys u') &&
+  liftEq2 eqVal (==) (ufKeys u) (ufKeys u') &&
     liftEq (liftEq2 eqAnn eqVal) (uf u) (uf u')
 
 instance (Eq ann, Eq a) => Eq (UnionFind u ann a) where
   (==) = ufLiftEq2 (==) (==)
+
+instance Foldable (UnionFind u ann) where
+  foldMap f = foldMap f . elems
+
+-- | Keys of the 'UnionFind'
+keys :: UnionFind u ann a -> [Key u]
+keys = Map.elems . ufKeys
+
+-- | Elements of the 'UnionFind'
+elems :: UnionFind u ann a -> [a]
+elems = Map.keys . ufKeys
 
 -- For union by size
 data Sized ann
@@ -292,7 +306,7 @@ unsize (Annotated (Sized _ ann) a) = Annotated ann a
 
 -- | Not exported
 nextKey :: UnionFind u ann a -> Key u
-nextKey u = Key (Map.size (keys u))
+nextKey u = Key (Map.size (ufKeys u))
 
 -- | A 'UnionFind' with a fresh type-level name @u@.
 data SomeUnionFind ann a = forall u. SomeUnionFind (UnionFind u ann a)
@@ -341,7 +355,7 @@ findByKey u k =
           findByKey u' k'
 
 findByValue :: Ord a => UnionFind u ann a -> a -> Maybe (Find u ann a)
-findByValue u val = findByKey u <$> Map.lookup val (keys u)
+findByValue u val = findByKey u <$> Map.lookup val (ufKeys u)
 
 -- | Are these two values equal in the union find?
 equal ::
@@ -360,12 +374,17 @@ equal u x y = do
 -- | Return a set of equations that is sufficient to generate the rest via
 -- reflexive-symmetric-transitive closure.
 basis :: Ord a => UnionFind u ann a -> (UnionFind u ann a, [(Annotated ann a, a)])
-basis u = foldr (uncurry go) (u, []) (Map.toList (keys u))
+basis u = foldr (uncurry go) (u, []) (Map.toList (ufKeys u))
   where
     go val key (u', eqs) =
       let f = findByKey u' key in
       let root = unsize (findValue_ f) in
       (findUnionFind f, (root, val) : eqs)
+
+-- | Does this 'UnionFind' have any "trivial" equations?
+hasTrivialEqs :: Ord a => UnionFind u ann a -> Bool
+hasTrivialEqs = any trivial . snd . basis
+  where trivial (root, val) = annVal root == val
 
 -- Helper, not exported
 insertRoot ::
@@ -399,7 +418,7 @@ insert u val ann =
       f { findUnionFind = insertRoot u' k (addAnn (size0 ann) v) }
     Nothing ->
       let k = nextKey u in
-      let u' = u { keys = Map.insert val k (keys u) } in
+      let u' = u { ufKeys = Map.insert val k (ufKeys u) } in
       let root = Annotated (size1 ann) val in
       Find
       { findKey = k
@@ -478,6 +497,7 @@ mapBranchAnn f =
 mapAnn :: Ord a => (ann -> ann') -> UnionFind u ann a -> UnionFind u ann' a
 mapAnn f u = u { uf = fmap (mapBranchAnn f) (uf u) }
 
+-- | 'traverse', specialized to 'UnionFind'
 traverseUnionFind ::
   Applicative f =>
   Ord b =>
@@ -486,5 +506,5 @@ traverseUnionFind ::
   f (UnionFind u ann b)
 traverseUnionFind f u =
   UnionFind 
-    <$> fmap Map.fromList (traverse (\(k, v) -> (,v) <$> f k) (Map.toList (keys u)))
+    <$> fmap Map.fromList (traverse (\(k, v) -> (,v) <$> f k) (Map.toList (ufKeys u)))
     <*> traverse (traverse f) (uf u)

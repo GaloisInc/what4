@@ -22,12 +22,15 @@ module What4.Equalities
   , Basis(..)
   , basis
   , toBasis
+  , hasTrivialEqs
+  , hasInconsistentIneqs
   , ppBasisEqs
     -- ** Modifications
   , equal
   , notEqual
   , and
   , traverseEqualities
+  , not
   ) where
 
 import Control.Monad (foldM)
@@ -171,6 +174,15 @@ toBasis :: (EqF f, OrdF f) => Equalities f -> Basis f
 toBasis = snd . basis
 {-# INLINE toBasis #-}
 
+-- TODO: Equations aren't trivial if they have inequalities
+hasTrivialEqs :: (EqF f, OrdF f) => Equalities f -> Bool
+hasTrivialEqs (Equalities u) = UF.hasTrivialEqs u
+{-# INLINE hasTrivialEqs #-}
+
+hasInconsistentIneqs :: (EqF f, OrdF f) => Equalities f -> Bool
+hasInconsistentIneqs = any inconsistent . basisInequations . toBasis
+  where inconsistent (Inequation lhs rhs) = eqF lhs rhs
+
 ppBasisEqs :: (EqF f, OrdF f, ShowF f) => Basis f -> [PP.Doc ann]
 ppBasisEqs b =
   map PP.pretty (basisEquations b) ++ map PP.pretty (basisInequations b)
@@ -260,3 +272,11 @@ traverseEqualities ::
   Equalities f ->
   m (Equalities g)
 traverseEqualities f (Equalities u) = Equalities <$> UF.traverseUnionFind f u
+
+-- | Attempt to negate a singleton 'Equalities'
+-- not ::
+--   (EqF f, OrdF f) =>
+--   Equalities f ->
+--   Maybe (Equalities f)
+-- not (Equalities u) =
+--   _

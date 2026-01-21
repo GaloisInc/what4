@@ -85,12 +85,18 @@ module What4.ExprEqualities
   , Result(..)
     -- ** Construction
   , empty
+  , fromEqualChecked
+  , fromNotEqualChecked
   , fromEqual
+  , fromNotEqual
     -- ** Queries
   , checkEqual
   , checkNotEqual
   , toBasis
+  , ok
     -- ** Modifications
+  , equalChecked
+  , notEqualChecked
   , equal
   , notEqual
   , traverseExprEqualities
@@ -98,10 +104,12 @@ module What4.ExprEqualities
   , and
   ) where
 
+import Control.Exception qualified as Ex
 import Data.Coerce (coerce)
 import Data.Kind (Type)
 import Data.Parameterized.Classes
 import Prelude hiding (and)
+import Prettyprinter qualified as PP
 import What4.Interface qualified as WI
 import What4.Equalities qualified as Eqs
 import What4.Utils.AbstractDomains qualified as WA
@@ -123,8 +131,16 @@ import What4.Utils.AbstractDomains qualified as WA
 --   'definitelyEqual' and 'definitelyNotEqual'.
 type ExprEqualities :: (WI.BaseType -> Type) -> Type
 newtype ExprEqualities f
-  = ExprEqualities { _getEqualities :: Eqs.Equalities f }
+  = ExprEqualities { getExprEqualities :: Eqs.Equalities f }
   deriving (Eq, Hashable)
+
+instance (EqF f, OrdF f, ShowF f) => PP.Pretty (ExprEqualities f) where
+  pretty = PP.pretty . getExprEqualities
+  {-# INLINE pretty #-}
+
+instance (EqF f, OrdF f, ShowF f) => Show (ExprEqualities f) where
+  show = show . PP.pretty
+  {-# INLINE show #-}
 
 type Result :: (WI.BaseType -> Type) -> Type
 data Result f
@@ -135,7 +151,37 @@ data Result f
 empty :: (EqF f, OrdF f) => ExprEqualities f
 empty = ExprEqualities Eqs.empty
 
+-- | @'fromEqualChecked' == 'equalChecked' 'empty'@
+fromEqualChecked ::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  f x ->
+  f x ->
+  Result f
+fromEqualChecked x y
+  | definitelyEqual x y = ResTrue
+  | definitelyNotEqual x y = ResFalse
+  | otherwise = equalChecked empty x y
+{-# INLINE fromEqualChecked #-}
+
+-- | @'fromNotEqualChecked' == 'notEqualChecked' 'empty'@
+fromNotEqualChecked ::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  f x ->
+  f x ->
+  Result f
+fromNotEqualChecked x y
+  | definitelyEqual x y = ResFalse
+  | definitelyNotEqual x y = ResTrue
+  | otherwise = notEqual empty x y
+{-# INLINE fromNotEqualChecked #-}
+
 -- | @'fromEqual' == 'equal' 'empty'@
+--
+-- 'Ex.assert's that inputs are not definitely equal nor definitely not equal.
 fromEqual ::
   EqF f =>
   OrdF f =>
@@ -143,13 +189,15 @@ fromEqual ::
   f x ->
   f x ->
   Result f
-fromEqual x y
-  | definitelyEqual x y = ResTrue
-  | definitelyNotEqual x y = ResFalse
-  | otherwise = equal empty x y
+fromEqual x y =
+  Ex.assert (not (definitelyEqual x y)) $
+    Ex.assert (not (definitelyNotEqual x y)) $
+      equal empty x y
 {-# INLINE fromEqual #-}
 
 -- | @'fromNotEqual' == 'notEqual' 'empty'@
+--
+-- 'Ex.assert's that inputs are not definitely equal nor definitely not equal.
 fromNotEqual ::
   EqF f =>
   OrdF f =>
@@ -157,10 +205,10 @@ fromNotEqual ::
   f x ->
   f x ->
   Result f
-fromNotEqual x y
-  | definitelyEqual x y = ResFalse
-  | definitelyNotEqual x y = ResTrue
-  | otherwise = notEqual empty x y
+fromNotEqual x y =
+  Ex.assert (not (definitelyEqual x y)) $
+    Ex.assert (not (definitelyNotEqual x y)) $
+      notEqual empty x y
 {-# INLINE fromNotEqual #-}
 
 -- | Are these two values equal in the union find?
@@ -190,6 +238,9 @@ checkNotEqual (ExprEqualities e) = Eqs.checkNotEqual e
 toBasis :: (EqF f, OrdF f) => ExprEqualities f -> Eqs.Basis f
 toBasis = coerce Eqs.toBasis
 {-# INLINE toBasis #-}
+
+ok :: (EqF f, OrdF f) => ExprEqualities f -> Bool
+ok (ExprEqualities e) = not (Eqs.hasInconsistentIneqs e)
 
 definitelyEqual ::
   EqF f =>
@@ -223,7 +274,7 @@ definitelyNotEqual x y
  | otherwise = False
 {-# INLINE definitelyNotEqual #-}  -- See Note [Inline]
 
-equal ::
+equalChecked ::
   EqF f =>
   OrdF f =>
   WI.IsExpr f =>
@@ -231,17 +282,63 @@ equal ::
   f x ->
   f x ->
   Result f
-equal (ExprEqualities e) x y
- | definitelyNotEqual x y = ResFalse  -- TODO: Make this an assert
+equalChecked (ExprEqualities e) x y
+ | definitelyEqual x y = ResTrue
+ | definitelyNotEqual x y = ResFalse
  | Just f <- Eqs.equal e x y =
    let root = Eqs.findValue f in
    if definitelyNotEqual x root || definitelyNotEqual y root
    then ResFalse
    else Equalities (ExprEqualities (Eqs.findEqualities f))
  | otherwise = ResFalse
+{-# INLINABLE equalChecked #-}  -- See Note [Inline]
+ -- TODO: Check for incompatibilities with inequalities?
+
+notEqualChecked ::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  ExprEqualities f ->
+  f x ->
+  f x ->
+  Result f
+notEqualChecked (ExprEqualities e) x y
+  | definitelyEqual x y = ResFalse
+  | definitelyNotEqual x y = ResTrue
+  | otherwise =
+      case Eqs.notEqual e x y of
+        Nothing -> ResFalse
+        Just e' -> Equalities (ExprEqualities e')
+ -- TODO: Check for incompatibilities with inequalities?
+{-# INLINABLE notEqualChecked #-}  -- See Note [Inline]
+
+-- | State that two terms are equal.
+--
+-- 'Ex.assert's that inputs are not definitely equal nor definitely not equal.
+equal::
+  EqF f =>
+  OrdF f =>
+  WI.IsExpr f =>
+  ExprEqualities f ->
+  f x ->
+  f x ->
+  Result f
+equal (ExprEqualities e) x y =
+  Ex.assert (not (definitelyEqual x y)) $
+    Ex.assert (not (definitelyNotEqual x y)) $
+      case Eqs.equal e x y of
+        Nothing -> ResFalse
+        Just f ->
+          let root = Eqs.findValue f in
+          if definitelyNotEqual x root || definitelyNotEqual y root
+          then ResFalse
+          else Equalities (ExprEqualities (Eqs.findEqualities f))
 {-# INLINABLE equal #-}  -- See Note [Inline]
  -- TODO: Check for incompatibilities with inequalities?
 
+-- | State that two terms are not equal.
+--
+-- 'Ex.assert's that inputs are not definitely equal nor definitely not equal.
 notEqual ::
   EqF f =>
   OrdF f =>
@@ -250,9 +347,9 @@ notEqual ::
   f x ->
   f x ->
   Result f
-notEqual (ExprEqualities e) x y
-  | definitelyEqual x y = ResFalse  -- TODO: Make this an assert
-  | otherwise =
+notEqual (ExprEqualities e) x y =
+  Ex.assert (not (definitelyEqual x y)) $
+    Ex.assert (not (definitelyNotEqual x y)) $
       case Eqs.notEqual e x y of
         Nothing -> ResFalse
         Just e' -> Equalities (ExprEqualities e')
@@ -281,12 +378,12 @@ union l r =
       addEq (Eqs.Equation lhs rhs) mbE =
         case mbE of
           ResFalse -> ResFalse
-          ResTrue -> fromEqual lhs rhs
+          ResTrue -> fromEqualChecked lhs rhs
           Equalities e -> equal e lhs rhs
       addIneq (Eqs.Inequation lhs rhs) mbE =
         case mbE of
           ResFalse -> ResFalse
-          ResTrue -> fromNotEqual lhs rhs
+          ResTrue -> fromNotEqualChecked lhs rhs
           Equalities e -> notEqual e lhs rhs
   in
     case foldr addEq (Equalities l) (Eqs.basisEquations br) of
