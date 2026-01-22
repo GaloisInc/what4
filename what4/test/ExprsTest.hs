@@ -35,6 +35,7 @@ import           What4.Interface
 import           What4.Internal (assertionsEnabled)
 
 import Bool (boolTests)
+import qualified Equalities (tests)
 import qualified ExprEqualities (tests)
 import qualified UnionFind (tests)
 
@@ -394,6 +395,7 @@ main = defaultMain $ testGroup "What4 Expressions"
     (fromConcreteString <$> s) === Just ""
   , testInjectiveConversions
   , boolTests
+  , Equalities.tests
   , ExprEqualities.tests
   , UnionFind.tests
   ]

@@ -8,6 +8,7 @@
 -- | See "What4.ExprEqualities".
 module What4.Equalities
   ( Equalities
+  , dump
   , Find(..)
     -- ** Construction
   , empty
@@ -53,6 +54,14 @@ data Equalities f
     -- requires values of the same type @f x@.
     { _getEqualities :: UF.UnionFind u (UF.KeySet u) f }
 
+-- TODO contrast with Pretty
+dump :: ShowF f => Equalities f -> PP.Doc ann
+dump (Equalities u) = PP.pretty u
+
+instance ShowF f => Show (Equalities f) where
+  show (Equalities u) = show u
+  {-# INLINE show #-}
+
 instance TestEquality f => Eq (Equalities f) where
   Equalities u == Equalities u' =
     UF.ufLiftEq2 UF.eqKeySets (\x y -> isJust (testEquality x y)) u u'
@@ -61,8 +70,7 @@ instance (HashableF f, TestEquality f) => Hashable (Equalities f) where
   hashWithSalt = error "TODO"
 
 instance (EqF f, OrdF f, ShowF f) => PP.Pretty (Equalities f) where
-  pretty =
-    PP.concatWith (\x y -> PP.hsep [x, PP.pretty "∧", y]) . ppBasisEqs . toBasis
+  pretty = PP.pretty . toBasis
 
 empty :: (EqF f, OrdF f) => Equalities f
 empty =
@@ -110,7 +118,8 @@ checkNotEqual ::
   Bool  -- TODO: return the updated union-find
 checkNotEqual (Equalities u) x y =
   let fx = UF.insert u x UF.emptyKeySet in
-  let fy = UF.insert (UF.findUnionFind fx) y UF.emptyKeySet in
+  let u' = UF.findUnionFind fx in
+  let fy = UF.insert u' y UF.emptyKeySet in
   let kx = UF.findKey fx in
   let ky = UF.findKey fy in
   let notEqXKeys = BaseUF.annAnn (UF.findValue fx) in
@@ -139,6 +148,14 @@ data Basis f
   { basisEquations :: [Equation f]
   , basisInequations :: [Inequation f]
   }
+
+instance ShowF f => PP.Pretty (Basis f) where
+  pretty =
+    PP.concatWith (\x y -> PP.hsep [x, PP.pretty "∧", y]) . ppBasisEqs
+
+-- | Only for testing
+instance ShowF f => Show (Basis f) where
+  show = show . PP.pretty
 
 -- | Not exported
 emptyBasis :: Basis f
@@ -173,14 +190,18 @@ basis (Equalities u) =
       ( u''
       , b
         { basisEquations = Equation lhs rhs : basisEquations b
-          -- TODO: probably merge with ineqs from b?
-        , basisInequations = ineqs
+        -- TODO: use seq
+        , basisInequations = ineqs ++ basisInequations b
         }
       )
 
 toBasis :: (EqF f, OrdF f) => Equalities f -> Basis f
 toBasis = snd . basis
 {-# INLINE toBasis #-}
+
+-- TODO
+-- fromBasis :: (EqF f, OrdF f) => Equalities f -> Basis f
+-- fromBasis = _
 
 -- TODO: Equations aren't trivial if they have inequalities
 hasTrivialEqs :: (EqF f, OrdF f) => Equalities f -> Bool
@@ -191,7 +212,7 @@ hasInconsistentIneqs :: (EqF f, OrdF f) => Equalities f -> Bool
 hasInconsistentIneqs = any inconsistent . basisInequations . toBasis
   where inconsistent (Inequation lhs rhs) = eqF lhs rhs
 
-ppBasisEqs :: (EqF f, OrdF f, ShowF f) => Basis f -> [PP.Doc ann]
+ppBasisEqs :: ShowF f => Basis f -> [PP.Doc ann]
 ppBasisEqs b =
   map PP.pretty (basisEquations b) ++ map PP.pretty (basisInequations b)
 

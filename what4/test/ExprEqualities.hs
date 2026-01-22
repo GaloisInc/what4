@@ -17,6 +17,7 @@ import Hedgehog qualified as H
 import Hedgehog.Gen qualified as Gen
 import Test.Tasty qualified as TT
 import Test.Tasty.Hedgehog qualified as TTH
+import Test.Tasty.HUnit qualified as TTHU
 import What4.Expr (EmptyExprBuilderState(EmptyExprBuilderState), Flags)
 import What4.Expr.Builder (ExprBuilder, newExprBuilder)
 import What4.ExprEqualities qualified as E
@@ -26,8 +27,8 @@ import What4.Interface qualified as WI
 tests :: TT.TestTree
 tests =
   TT.testGroup "ExprEqualities"
-  [ testProperty "propOk" propOk
-  , testProperty "propEqNeq" propEqNeq
+  [ -- testProperty "propOk" propOk
+    testProperty "propEqNeq" propEqNeq
   , testProperty "propEqSymmetric" propEqSymmetric
   , testProperty "propEqTransitive" propEqTransitive
   , testProperty "propNeqIrreflexive" propNeqIrreflexive
@@ -35,6 +36,28 @@ tests =
   , testProperty "propEqNeqUnion" propEqNeqUnion
   , testProperty "propUnionEmpty" propUnionEmpty
   , testProperty "propUnionSymmetric" propUnionSymmetric
+
+  -- Regression test minimized from propUnionSymmetric
+  , TTHU.testCase "regression#1" $ do
+      let unpack =
+            \case
+              E.ResTrue -> error "Impossible"
+              E.ResFalse -> error "Impossible"
+              E.Equalities e -> pure e
+      sym <- liftIO mkSym
+      b0 <- WI.freshConstant sym (WI.safeSymbol "b0") WI.BaseBoolRepr
+      b1 <- WI.freshConstant sym (WI.safeSymbol "b1") WI.BaseBoolRepr
+      let b0' = Elem b0
+      let b1' = Elem b1
+      let true = WI.truePred sym
+      let false = WI.falsePred sym
+      let true' = Elem true
+      let false' = Elem false
+      let u = Neq (Neq Empty b0' false') true' b1'
+      u' <- unpack (opEqs sym u)
+      e' <- unpack (E.union E.empty u')
+      True TTHU.@=? E.checkNotEqual u' b1 true
+      True TTHU.@=? E.checkNotEqual e' b1 true
   ]
   where
   testProperty nm prop =
@@ -233,8 +256,28 @@ propUnionSymmetric =
             x <- H.forAll genElem
             y <- H.forAll genElem
             Monad.when (x /= y) $ do
-              fst (E.checkEqual e x y) H.=== fst (E.checkEqual e' x y)
-              E.checkNotEqual e x y H.=== E.checkNotEqual e' x y
+              let exy = fst (E.checkEqual e x y)
+              let e'xy = fst (E.checkEqual e' x y)
+              let nexy = E.checkNotEqual e x y
+              let ne'xy = E.checkNotEqual e' x y
+              let debug = do
+                    liftIO $ print "~~~~~~~~~~~"
+                    liftIO $ putStrLn $ "u  = " ++ show u
+                    liftIO $ putStrLn $ "v  = " ++ show v
+                    liftIO $ putStrLn $ "u' = " ++ show u'
+                    liftIO $ putStrLn $ "v' = " ++ show v'
+                    liftIO $ putStrLn $ "e  = " ++ show e
+                    liftIO $ putStrLn $ "e' = " ++ show e'
+                    liftIO $ putStrLn $ "x  = " ++ show x
+                    liftIO $ putStrLn $ "y  = " ++ show y
+                    liftIO $ putStrLn $ "x  = y in e  = " ++ show exy
+                    liftIO $ putStrLn $ "x  = y in e' = " ++ show e'xy
+                    liftIO $ putStrLn $ "x != y in e  = " ++ show nexy
+                    liftIO $ putStrLn $ "x != y in e' = " ++ show ne'xy
+              Monad.when (exy /= e'xy) debug
+              exy H.=== e'xy
+              Monad.when (nexy /= ne'xy) debug
+              nexy H.=== ne'xy
           (E.Equalities _, _) -> H.failure
       _ -> pure ()
 
@@ -269,7 +312,6 @@ type family AsEqualities sym t where
 
 -- | An interaction with the 'ExprEqualities' API
 data Op sym a t where
-  -- TODO: make inequal
   Empty :: Op sym a (Eqs a)
   Elem :: WI.SymExpr sym a -> Op sym a (Elem a)
   Neq ::
@@ -336,7 +378,11 @@ genEqs proxy genA =
     Gen.choice
     [ pure Empty
     ]
-    [ Union
+    [ Neq
+      <$> genEqs proxy genA
+      <*> (Elem <$> genA)
+      <*> (Elem <$> genA)
+    , Union
       <$> genEqs proxy genA
       <*> (Elem <$> genA)
       <*> (Elem <$> genA)

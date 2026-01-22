@@ -146,6 +146,7 @@ library
     What4.Concrete
     What4.Concretize
     What4.Config
+    What4.Equalities
     What4.ExprEqualities
     What4.FunctionName
     What4.IndexLit
@@ -242,7 +243,6 @@ library
     Test.Verification
 
   other-modules:
-    What4.Equalities
     What4.UnionFindF
 
   if impl(ghc >= 8.6)
@@ -379,6 +379,7 @@ test-suite exprs_tests
 
   other-modules:
     Bool
+    Equalities
     ExprEqualities
     GenWhat4Expr
     UnionFind

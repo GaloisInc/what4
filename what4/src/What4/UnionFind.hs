@@ -66,6 +66,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum(Sum))
 import Data.Traversable (foldMapDefault)
+import Prettyprinter qualified as PP
 import Unsafe.Coerce (unsafeCoerce)
 
 ---------------------------------------------------------------------
@@ -88,6 +89,9 @@ type Key :: UnionFindName -> Type
 newtype Key u = Key { keyValue :: Int }
   deriving (Eq, Show)
 
+instance PP.Pretty (Key u) where
+  pretty = PP.viaShow . keyValue
+
 ---------------------------------------------------------------------
 -- KeySet
 
@@ -95,8 +99,11 @@ newtype Key u = Key { keyValue :: Int }
 --
 -- Just a @newtype@ around 'IntSet', so should be quite fast.
 type KeySet :: UnionFindName -> Type
-newtype KeySet u = KeySet { _getKeySet :: IntSet }
+newtype KeySet u = KeySet { getKeySet :: IntSet }
   deriving (Eq, Ord, Semigroup, Show)
+
+instance PP.Pretty (KeySet u) where
+  pretty = PP.list . map PP.pretty . IntSet.toList . getKeySet
 
 emptyKeySet :: KeySet u
 emptyKeySet = KeySet IntSet.empty
@@ -197,6 +204,26 @@ data UnionFind u ann a
 -- improve the asymptotics of 'Equalities', which always starts by looking up a
 -- value from 'keys'.
 
+instance (PP.Pretty ann, PP.Pretty a) => PP.Pretty (UnionFind u ann a) where
+  pretty u =
+    PP.align $
+      PP.vcat $
+        [ PP.align $
+            PP.nest 2 $
+              PP.vcat $
+                (PP.pretty "Keys:" :) $
+                  map
+                  (\(v, k) -> PP.hsep [PP.pretty v, PP.pretty "->", PP.pretty k])
+                  (Map.toList (ufKeys u))
+        , PP.align $
+            PP.nest 2 $
+              PP.vcat $
+                (PP.pretty "Union-find:" :) $
+                  map
+                  (\(k, b) -> PP.hsep [PP.pretty k, PP.pretty "->", PP.pretty b])
+                  (IntMap.toList (getKeyMap (uf u)))
+        ]
+
 -- | Not exported
 unsafeCoerceName :: UnionFind u ann a -> UnionFind u' ann a
 unsafeCoerceName = unsafeCoerce
@@ -245,6 +272,10 @@ instance Eq1 Sized where
 instance Semigroup ann => Semigroup (Sized ann) where
   Sized sz0 ann0 <> Sized sz1 ann1 = Sized (sz0 + sz1) (ann0 <> ann1)
 
+instance PP.Pretty ann => PP.Pretty (Sized ann) where
+  pretty (Sized (Sum sz) ann) =
+    PP.hcat [PP.pretty ann, PP.pretty "#", PP.pretty sz]
+
 size0 :: ann -> Sized ann
 size0 = Sized (Sum 0)
 
@@ -281,6 +312,12 @@ instance Traversable (Branch u ann) where
       Branch k -> pure (Branch k)
       Root r -> Root <$> traverse f r
 
+instance (PP.Pretty ann, PP.Pretty a) => PP.Pretty (Branch u ann a) where
+  pretty =
+    \case
+      Root r -> PP.pretty r
+      Branch k -> PP.pretty k
+
 data Annotated ann a
   = Annotated
     { annAnn :: ann
@@ -306,6 +343,10 @@ instance Traversable (Annotated ann) where
 
 instance Bifunctor Annotated where
   bimap f g (Annotated ann val) = Annotated (f ann) (g val)
+
+instance (PP.Pretty ann, PP.Pretty a) => PP.Pretty (Annotated ann a) where
+  pretty (Annotated ann val) =
+    PP.hcat [PP.pretty val, PP.pretty "@", PP.pretty ann]
 
 -- | Not exported
 addAnn :: Semigroup ann => ann -> Annotated ann a -> Annotated ann a
@@ -346,6 +387,7 @@ data Find u ann a
 findValue :: Find u ann a -> Annotated ann a
 findValue = first sizedAnn . findValue_
 
+-- TODO: Annotations?
 findByKey ::
   Ord a =>
   UnionFind u ann a ->

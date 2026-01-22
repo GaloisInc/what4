@@ -50,20 +50,21 @@ module What4.UnionFindF
 import Data.Coerce (coerce)
 import Data.Kind (Type)
 import Data.Maybe (isJust)
-import Data.Parameterized.Classes (EqF(eqF), OrdF(compareF), toOrdering)
+import Data.Parameterized.Classes (EqF(eqF), OrdF(compareF), toOrdering, ShowF(showF))
+import Data.Parameterized.Some (Some(Some))
 import Data.Type.Equality (TestEquality, testEquality)
 import GHC.Exts (Any)
+import Prettyprinter qualified as PP
 import Unsafe.Coerce (unsafeCoerce)
-import What4.UnionFind qualified as UF
 import What4.UnionFind (UnionFindName)
-import Data.Parameterized.Some (Some (Some))
+import What4.UnionFind qualified as UF
 
 ---------------------------------------------------------------------
 -- Key
 
 -- This does not need an @f@ parameter because it is determined by @u@
 newtype Key u x = Key { getKey :: UF.Key u }
-  deriving Eq
+  deriving (Eq, Show)
 
 keyValue :: Key u x -> Int
 keyValue = UF.keyValue . getKey
@@ -74,7 +75,7 @@ keyValue = UF.keyValue . getKey
 
 type KeySet :: UnionFindName -> Type
 newtype KeySet u = KeySet { getKeySet :: UF.KeySet u }
-  deriving (Eq, Ord, Semigroup, Show)
+  deriving (Eq, Ord, PP.Pretty, Semigroup, Show)
 
 emptyKeySet :: KeySet u
 emptyKeySet = KeySet UF.emptyKeySet
@@ -116,6 +117,14 @@ unsafeFromAny :: AnyF f -> f x
 unsafeFromAny = unsafeCoerce
 {-# INLINE unsafeFromAny #-}
 
+instance ShowF f => Show (AnyF f) where
+  show = showF . unsafeFromAny
+  {-# INLINE show #-}
+
+instance ShowF f => PP.Pretty (AnyF f) where
+  pretty = PP.viaShow
+  {-# INLINE pretty #-}
+
 instance EqF f => Eq (AnyF f) where
   AnyF f == AnyF g = eqF f g
   {-# INLINE (==) #-}
@@ -144,6 +153,7 @@ newtype UnionFind u ann f
     --   {keys,values} to match, thus upholding the invariant when the classes
     --   are merged.
     { _getUnionFind :: UF.UnionFind u ann (AnyF f) }
+  deriving (PP.Pretty, Show)
 
 instance (Eq ann, TestEquality f) => Eq (UnionFind u ann f) where
   (==) = ufLiftEq2 (==) (\x y -> isJust (testEquality x y))

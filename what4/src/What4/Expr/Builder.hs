@@ -2100,6 +2100,10 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     | Just (NotPred x') <- asApp x
     = return x'
 
+    | Just (BaseEq eqs) <- asApp x
+    , Just eqs' <- ExEqs.not_ eqs
+    = sbMakeExpr sym (BaseEq eqs')
+
     | otherwise
     = sbMakeExpr sym (NotPred x)
 

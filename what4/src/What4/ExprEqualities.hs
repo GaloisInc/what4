@@ -83,6 +83,7 @@
 -- specifically with instances of 'WI.IsExpr'.
 module What4.ExprEqualities
   ( ExprEqualities
+  , dump
   , Result(..)
     -- ** Construction
   , empty
@@ -104,7 +105,7 @@ module What4.ExprEqualities
   , notEqual
   , traverseExprEqualities
   , union
-  , and
+  , _and
   , not_
   ) where
 
@@ -138,12 +139,16 @@ newtype ExprEqualities f
   = ExprEqualities { getExprEqualities :: Eqs.Equalities f }
   deriving (Eq, Hashable)
 
+-- TODO contrast with Pretty
+dump :: ShowF f => ExprEqualities f -> PP.Doc ann
+dump = Eqs.dump . getExprEqualities
+
 instance (EqF f, OrdF f, ShowF f) => PP.Pretty (ExprEqualities f) where
   pretty = PP.pretty . getExprEqualities
   {-# INLINE pretty #-}
 
 instance (EqF f, OrdF f, ShowF f) => Show (ExprEqualities f) where
-  show = show . PP.pretty
+  show = show . getExprEqualities
   {-# INLINE show #-}
 
 type Result :: (WI.BaseType -> Type) -> Type
@@ -319,17 +324,11 @@ equalChecked ::
   f x ->
   f x ->
   Result f
-equalChecked orig@(ExprEqualities e) x y
- | definitelyEqual x y = Equalities orig
+equalChecked e x y
+ | definitelyEqual x y = Equalities e
  | definitelyNotEqual x y = ResFalse
- | Just f <- Eqs.equal e x y =
-   let root = Eqs.findValue f in
-   if definitelyNotEqual x root || definitelyNotEqual y root
-   then ResFalse
-   else Equalities (ExprEqualities (Eqs.findEqualities f))
- | otherwise = ResFalse
+ | otherwise = equal e x y
 {-# INLINABLE equalChecked #-}  -- See Note [Inline]
- -- TODO: Check for incompatibilities with inequalities?
 
 notEqualChecked ::
   EqF f =>
@@ -339,20 +338,16 @@ notEqualChecked ::
   f x ->
   f x ->
   Result f
-notEqualChecked (ExprEqualities e) x y
+notEqualChecked e x y
   | definitelyEqual x y = ResFalse
-  | definitelyNotEqual x y = ResTrue
-  | otherwise =
-      case Eqs.notEqual e x y of
-        Nothing -> ResFalse
-        Just e' -> Equalities (ExprEqualities e')
- -- TODO: Check for incompatibilities with inequalities?
+  | definitelyNotEqual x y = Equalities e
+  | otherwise = notEqual e x y
 {-# INLINABLE notEqualChecked #-}  -- See Note [Inline]
 
 -- | State that two terms are equal.
 --
 -- 'Ex.assert's that inputs are not definitely equal nor definitely not equal.
-equal::
+equal ::
   EqF f =>
   OrdF f =>
   WI.IsExpr f =>
@@ -428,7 +423,7 @@ union l r =
       ResTrue -> foldr addIneq (Equalities l) (Eqs.basisInequations br)
       l' -> foldr addIneq l' (Eqs.basisInequations br)
 
-and ::
+_and ::
   EqF (WI.SymExpr sym) =>
   OrdF (WI.SymExpr sym) =>
   WI.IsExpr (WI.SymExpr sym) =>
@@ -438,7 +433,7 @@ and ::
   -- | This should /not/ be 'ExprEqualities', use 'union' for that.
   WI.SymExpr sym WI.BaseBoolType ->
   Result (WI.SymExpr sym)
-and sym e b =
+_and sym e b =
   -- TODO: b shouldn't be @NotPred@... needs asNegatedPred?
   case equal e b (WI.truePred sym) of
     ResFalse -> ResFalse
