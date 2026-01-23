@@ -2661,6 +2661,8 @@ bvSplitVector sym n w x =
     bvSelect' _ i (MkSymBV' y) =
       fmap MkSymBV' $ bvSelect @_ @i @w sym i w y
 
+{-# DEPRECATED sciLit "See #338" #-}
+
 -- | Implement LLVM's "bswap" intrinsic
 --
 -- See <https://llvm.org/docs/LangRef.html#llvm-bswap-intrinsics
