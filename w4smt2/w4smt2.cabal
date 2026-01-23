@@ -1,0 +1,143 @@
+Cabal-version: 2.4
+Name:          w4smt2
+Version:       0.1.0.0
+Author:        Galois Inc.
+Maintainer:    langston@galois.com
+License:       BSD-3-Clause
+Build-type:    Simple
+Synopsis:      A simple SMT solver built on What4's ExprBuilder
+
+common bldflags
+  default-language: Haskell2010
+
+  -- These warnings are a bit opinionated, in contrast to those below.
+  ghc-options:
+    -Wmissing-export-lists
+    -Werror=missing-import-lists
+    -Wprepositive-qualified-module
+
+  ghc-options:
+    -Wall
+    -Werror=ambiguous-fields
+    -Werror=badly-staged-types
+    -Werror=compat-unqualified-imports
+    -Werror=data-kinds-tc
+    -Werror=deferred-type-errors
+    -Werror=deprecated-flags
+    -Werror=deprecations
+    -Werror=deriving-defaults
+    -Werror=dodgy-foreign-imports
+    -Werror=duplicate-exports
+    -Werror=empty-enumerations
+    -Werror=identities
+    -Werror=inaccessible-code
+    -Werror=incomplete-export-warnings
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-selectors
+    -Werror=incomplete-record-updates
+    -Werror=incomplete-uni-patterns
+    -Werror=inconsistent-flags
+    -Werror=inline-rule-shadowing
+    -Werror=misplaced-pragmas
+    -Werror=missed-extra-shared-lib
+    -Werror=missing-exported-signatures
+    -Werror=missing-fields
+    -Werror=missing-home-modules
+    -Werror=missing-methods
+    -Werror=operator-whitespace
+    -Werror=operator-whitespace-ext-conflict
+    -Werror=overflowed-literals
+    -Werror=overlapping-patterns
+    -Werror=partial-fields
+    -Werror=partial-type-signatures
+    -Werror=redundant-bang-patterns
+    -Werror=redundant-record-wildcards
+    -Werror=redundant-strictness-flags
+    -Werror=simplifiable-class-constraints
+    -Werror=star-binder
+    -Werror=star-is-type
+    -Werror=tabs
+    -Werror=type-equality-out-of-scope
+    -Werror=type-equality-requires-operators
+    -Werror=typed-holes
+    -Werror=unrecognised-pragmas
+    -Werror=unrecognised-warning-flags
+    -Werror=unsupported-calling-conventions
+    -Werror=unsupported-llvm-version
+    -Werror=unticked-promoted-constructors
+    -Werror=unused-imports
+    -Werror=unused-record-wildcards
+    -Werror=warnings-deprecations
+    -Werror=wrong-do-bind
+
+  -- TODO(#286): Enable these warnings when supporting these GHC versions.
+  -- -Werror=deprecated-type-abstractions
+  -- -Werror=view-pattern-signatures
+
+library
+  import: bldflags
+  hs-source-dirs: src
+  exposed-modules:
+    W4SMT2
+    W4SMT2.Exec
+    W4SMT2.Parser
+    W4SMT2.Pretty
+    W4SMT2.SExpPat
+  build-depends:
+    base >= 4.10 && < 5,
+    attoparsec,
+    bv-sized,
+    containers,
+    parameterized-utils,
+    prettyprinter,
+    template-haskell,
+    text,
+    what4
+
+executable w4smt2
+  import: bldflags
+  hs-source-dirs: app
+  main-is: Main.hs
+  build-depends: base, w4smt2
+
+executable w4smt2-bench
+  import: bldflags
+  hs-source-dirs: bench
+  main-is: Main.hs
+  other-modules:
+    Benchmark.Config
+    Benchmark.Discovery
+    Benchmark.Output
+    Benchmark.Runner
+  ghc-options: -threaded -rtsopts -O2
+  build-depends:
+    ansi-terminal >= 1.0,
+    base >= 4.10 && < 5,
+    containers,
+    directory,
+    filepath,
+    optparse-applicative >= 0.16,
+    process >= 1.2,
+    text,
+    time >= 1.8,
+    w4smt2
+
+test-suite w4smt2-tests
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Z3Verification
+  build-depends:
+    base >= 4.10 && < 5,
+    directory,
+    filepath,
+    parameterized-utils,
+    process,
+    tasty,
+    tasty-golden,
+    tasty-hunit,
+    text,
+    w4smt2,
+    what4

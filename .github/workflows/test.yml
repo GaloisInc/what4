@@ -156,8 +156,10 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          cd what4
-          $NS -c cabal build
+          $NS -c cabal build pkg:what4
+          if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
+            $NS -c cabal build pkg:w4smt2
+          fi
 
       - name: Test
         shell: bash
@@ -171,6 +173,11 @@ jobs:
           echo STP version $(nix run github:GaloisInc/flakes#stp.v${{ matrix.stp }} -- --version | head -n1)
           echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version | head -n1)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version | head -n1)
+          if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
+            test_pkgs="pkg:what4 pkg:w4smt2"
+          else
+            test_pkgs="pkg:what4"
+          fi
           $NS \
             github:GaloisInc/flakes#abc.v${{ matrix.abc }} \
             github:GaloisInc/flakes#bitwuzla.v${{ matrix.bitwuzla }} \
@@ -180,7 +187,7 @@ jobs:
             github:GaloisInc/flakes#stp.v${{ matrix.stp }} \
             github:GaloisInc/flakes#yices.v${{ matrix.yices }} \
             github:GaloisInc/flakes#z3.v${{ matrix.z3 }} \
-            -c cabal test
+            -c cabal test $test_pkgs
 
       - name: Documentation
         shell: bash
@@ -218,3 +225,4 @@ jobs:
           (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
           (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
           (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd w4smt2;    with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
