@@ -18,7 +18,7 @@ common dependencies
     , containers           ^>=0.6
     , io-streams
     , lens
-    , parameterized-utils  >=2.0  && <2.2
+    , parameterized-utils  >=2.0  && <2.3
     , text
       -- what4 lives in the same repo and this package isn't released
       -- separately; no version bound is needed.
