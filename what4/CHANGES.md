@@ -1,4 +1,4 @@
-# next (TBA)
+# 1.7.3 -- 2026-01-26
 
 * Fix a bug in which `what4`'s Bitwuzla adapter would generate invalid code
   involving SMT arrays.
