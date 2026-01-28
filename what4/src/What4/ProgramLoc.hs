@@ -33,7 +33,7 @@ module What4.ProgramLoc
   ) where
 
 import           Control.DeepSeq
-import           Control.Lens
+import           Lens.Micro
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Word

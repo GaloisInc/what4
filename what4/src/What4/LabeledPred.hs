@@ -28,8 +28,10 @@ module What4.LabeledPred
   , partitionLabeledPreds
   ) where
 
-import Control.Lens
+import Lens.Micro
+import Lens.Micro.Extras (view)
 import Data.Bifunctor.TH (deriveBifunctor, deriveBifoldable, deriveBitraversable)
+import Data.Functor.Identity (Identity(..))
 import Data.Data (Data)
 import Data.Coerce (coerce)
 import Data.Data (Typeable)
