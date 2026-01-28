@@ -14,3 +14,8 @@ optional-packages:
   dependencies/abcBridge/
   dependencies/aig/
   dependencies/blt/
+
+-- See https://github.com/kquick/kvitable/issues/7
+allow-newer: kvitable:base
+-- See https://github.com/GaloisInc/lumberjack/issues/9
+allow-newer: lumberjack:base
