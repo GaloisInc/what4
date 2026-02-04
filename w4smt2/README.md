@@ -18,6 +18,13 @@ maintain or improve:
 - *completeness*, i.e., the same or fewer SMT problems are marked as `unknown`
 - *performance*, i.e., SMT problems can be processed in less time
 
+w4smt2 allows What4 developers to take advantage of the considerable tooling
+that has been developed for SMT solvers:
+
+- [Fuzzers](https://smtfuzz.github.io/) and test-case generators
+- [Test-case reducers](https://github.com/ddsmt/ddSMT)
+- [Benchmark suites](https://github.com/SMT-COMP/smt-comp)
+
 As a developer-facing tool, our engineering standards for w4smt2 are lower than
 for What4 itself. In particular, we are much more focused on its *extrinsic*
 aspects (e.g., what SMT-Lib constructs it supports) than its *intrinsic* aspects
