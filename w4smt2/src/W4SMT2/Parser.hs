@@ -51,6 +51,7 @@ import What4.Protocol.SExp qualified as SExp
 
 import W4SMT2.Pretty qualified as Pretty
 import W4SMT2.SExpPat (sexp)
+import W4SMT2.SomeExpr (SomeExpr(SomeExpr))
 
 -- | Variable name
 newtype VarName = VarName { unVarName :: Text }
@@ -103,15 +104,15 @@ parseType sexp' = case sexp' of
 parseLetBindings ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   SExp.SExp ->
-  IO [(VarName, Some (WI.SymExpr sym))]
+  IO [(VarName, SomeExpr sym)]
 parseLetBindings sym vars (SExp.SApp bindingPairs) = do
   forM bindingPairs $ \case
     [sexp|(#varName #exprSExp)|]
       | SExp.SAtom name <- varName -> do
-          Some expr <- parseExpr sym vars Map.empty exprSExp
-          return (VarName name, Some expr)
+          SomeExpr expr <- parseExpr sym vars Map.empty exprSExp
+          return (VarName name, SomeExpr expr)
     other -> Pretty.userErr $ "invalid let binding:" <+> PP.pretty (Pretty.ppSExp other)
 parseLetBindings _ _ other =
   Pretty.userErr $ "let bindings must be a list:" <+> PP.pretty (Pretty.ppSExp other)
@@ -139,15 +140,15 @@ applyFunction ::
   forall sym.
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   Map FnName (WI.SomeSymFn sym) ->
   WI.SomeSymFn sym ->
   [SExp.SExp] ->
-  IO (Some (WI.SymExpr sym))
+  IO (SomeExpr sym)
 applyFunction sym vars fns (WI.SomeSymFn fn) argSexps = do
   args <- buildArgs (WI.fnArgTypes fn) (reverse argSexps)
   result <- WI.applySymFn sym fn args
-  return (Some result)
+  return (SomeExpr result)
   where
     buildArgs ::
       forall ctx.
@@ -158,7 +159,7 @@ applyFunction sym vars fns (WI.SomeSymFn fn) argSexps = do
       Ctx.Empty [] -> return Ctx.Empty
       (restTps :> tp) (argSexp : rest) -> do
         restArgs <- buildArgs restTps rest
-        Some arg <- parseExpr sym vars fns argSexp
+        SomeExpr arg <- parseExpr sym vars fns argSexp
         case WBT.testEquality (WI.exprType arg) tp of
           Just WBT.Refl ->
             return (restArgs :> arg)
@@ -172,10 +173,10 @@ applyFunction sym vars fns (WI.SomeSymFn fn) argSexps = do
 parseAtom ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   Map FnName (WI.SomeSymFn sym) ->
   Text ->
-  IO (Maybe (Some (WI.SymExpr sym)))
+  IO (Maybe (SomeExpr sym))
 parseAtom sym vars fns name = do
   case Map.lookup (VarName name) vars of
     Just var -> return (Just var)
@@ -184,7 +185,7 @@ parseAtom sym vars fns name = do
         case WI.fnArgTypes fn of
           Ctx.Empty -> do
             result <- WI.applySymFn sym fn Ctx.Empty
-            return (Just (Some result))
+            return (Just (SomeExpr result))
           _ -> return Nothing
       Nothing -> parseAtomLiteral sym name
 
@@ -192,7 +193,7 @@ parseAtomLiteral ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   Text ->
-  IO (Maybe (Some (WI.SymExpr sym)))
+  IO (Maybe (SomeExpr sym))
 parseAtomLiteral sym name = do
   let s = Text.unpack name
   if "#b" `isPrefixOf` s then parseBinaryBV sym s
@@ -203,7 +204,7 @@ parseBinaryBV ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   String ->
-  IO (Maybe (Some (WI.SymExpr sym)))
+  IO (Maybe (SomeExpr sym))
 parseBinaryBV sym s = do
   let bits = drop 2 s
   if not (null bits) && all (`elem` ("01" :: String)) bits then do
@@ -213,7 +214,7 @@ parseBinaryBV sym s = do
       Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
         Just NatRepr.LeqProof -> do
           bv <- WI.bvLit sym w (BV.mkBV w val)
-          return (Just (Some bv))
+          return (Just (SomeExpr bv))
         Nothing -> return Nothing
   else return Nothing
 
@@ -221,7 +222,7 @@ parseHexBV ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   String ->
-  IO (Maybe (Some (WI.SymExpr sym)))
+  IO (Maybe (SomeExpr sym))
 parseHexBV sym s = do
   let hex = drop 2 s
   if not (null hex) && all (`elem` ("0123456789abcdefABCDEF" :: String)) hex then do
@@ -231,7 +232,7 @@ parseHexBV sym s = do
       Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
         Just NatRepr.LeqProof -> do
           bv <- WI.bvLit sym w (BV.mkBV w val)
-          return (Just (Some bv))
+          return (Just (SomeExpr bv))
         Nothing -> return Nothing
   else return Nothing
 
@@ -239,25 +240,25 @@ parseIntegerLiteral ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   String ->
-  IO (Maybe (Some (WI.SymExpr sym)))
+  IO (Maybe (SomeExpr sym))
 parseIntegerLiteral sym s = do
   case reads s of
     [(n, "")] -> do
       intVal <- WI.intLit sym n
-      return (Just (Some intVal))
+      return (Just (SomeExpr intVal))
     _ -> return Nothing
 
 -- | Parse an expression s-expression
 parseExpr ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   Map FnName (WI.SomeSymFn sym) ->
   SExp.SExp ->
-  IO (Some (WI.SymExpr sym))
+  IO (SomeExpr sym)
 parseExpr sym vars fns = \case
-  [sexp|true|] -> return $ Some (WI.truePred sym)
-  [sexp|false|] -> return $ Some (WI.falsePred sym)
+  [sexp|true|] -> return $ SomeExpr (WI.truePred sym)
+  [sexp|false|] -> return $ SomeExpr (WI.falsePred sym)
 
   SExp.SAtom atom -> do
     result <- parseAtom sym vars fns atom
@@ -270,7 +271,7 @@ parseExpr sym vars fns = \case
     , Some w <- NatRepr.mkNatRepr (fromIntegral size)
     , Just NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) w
     -> do bv <- WI.bvLit sym w (BV.mkBV w val)
-          pure (Some bv)
+          pure (SomeExpr bv)
 
   [sexp|(#fnNameSexp ...argSexps)|]
     | SExp.SAtom fnName <- fnNameSexp
@@ -278,47 +279,47 @@ parseExpr sym vars fns = \case
         applyFunction sym vars fns fnDef argSexps
 
   [sexp|(= #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars fns e1
-    Some e2' <- parseExpr sym vars fns e2
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
     case WBT.testEquality (WI.exprType e1') (WI.exprType e2') of
-      Just WBT.Refl -> Some <$> WI.isEq sym e1' e2'
+      Just WBT.Refl -> SomeExpr <$> WI.isEq sym e1' e2'
       Nothing -> Pretty.userErr $
         "type mismatch in =:" <+> PP.viaShow (WI.exprType e1') <+> "vs" <+> PP.viaShow (WI.exprType e2')
 
   [sexp|(distinct #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars fns e1
-    Some e2' <- parseExpr sym vars fns e2
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
     case WBT.testEquality (WI.exprType e1') (WI.exprType e2') of
       Just WBT.Refl -> do
         eq <- WI.isEq sym e1' e2'
-        Some <$> WI.notPred sym eq
+        SomeExpr <$> WI.notPred sym eq
       Nothing -> Pretty.userErr "type mismatch in distinct"
 
   [sexp|(not #e)|] -> do
-    Some e' <- parseExpr sym vars fns e
+    SomeExpr e' <- parseExpr sym vars fns e
     case WBT.testEquality (WI.exprType e') WBT.BaseBoolRepr of
-      Just WBT.Refl -> Some <$> WI.notPred sym e'
+      Just WBT.Refl -> SomeExpr <$> WI.notPred sym e'
       Nothing -> Pretty.userErr "not requires Bool"
 
   [sexp|(and ...args)|] -> do
     preds <- mapM (parseBoolExpr sym vars fns) args
-    Some <$> Monad.foldM (WI.andPred sym) (WI.truePred sym) preds
+    SomeExpr <$> Monad.foldM (WI.andPred sym) (WI.truePred sym) preds
 
   [sexp|(or ...args)|] -> do
     preds <- mapM (parseBoolExpr sym vars fns) args
-    Some <$> Monad.foldM (WI.orPred sym) (WI.falsePred sym) preds
+    SomeExpr <$> Monad.foldM (WI.orPred sym) (WI.falsePred sym) preds
 
   [sexp|(=> #e1 #e2)|] -> do
     p1 <- parseBoolExpr sym vars fns e1
     p2 <- parseBoolExpr sym vars fns e2
-    Some <$> WI.impliesPred sym p1 p2
+    SomeExpr <$> WI.impliesPred sym p1 p2
 
   [sexp|(ite #condExpr #eThen #eElse)|] -> do
     cond <- parseBoolExpr sym vars fns condExpr
-    Some eThen' <- parseExpr sym vars fns eThen
-    Some eElse' <- parseExpr sym vars fns eElse
+    SomeExpr eThen' <- parseExpr sym vars fns eThen
+    SomeExpr eElse' <- parseExpr sym vars fns eElse
     case WBT.testEquality (WI.exprType eThen') (WI.exprType eElse') of
-      Just WBT.Refl -> Some <$> WI.baseTypeIte sym cond eThen' eElse'
+      Just WBT.Refl -> SomeExpr <$> WI.baseTypeIte sym cond eThen' eElse'
       Nothing -> Pretty.userErr $
         "ite requires same types for then and else:" <+> PP.viaShow (WI.exprType eThen') <+> "vs" <+> PP.viaShow (WI.exprType eElse')
 
@@ -331,13 +332,13 @@ parseExpr sym vars fns = \case
     , Some resultW <- NatRepr.mkNatRepr resultNat
     , Just NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) resultW
     -> do
-      Some bv <- parseExpr sym vars fns bvExpr
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
       case WI.exprType bv of
         WBT.BaseBVRepr w ->
           case NatRepr.testLeq (lowIdx `NatRepr.addNat` resultW) w of
             Just NatRepr.LeqProof -> do
               selected <- WI.bvSelect sym lowIdx resultW bv
-              return (Some selected)
+              return (SomeExpr selected)
             _ -> Pretty.userErr "extract indices out of range"
         _ -> Pretty.userErr "extract requires a bitvector argument"
 
@@ -346,14 +347,14 @@ parseExpr sym vars fns = \case
     , Some extendW <- NatRepr.mkNatRepr extendNat
     , Just oneLeqExtend@NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) extendW
     -> do
-      Some bv <- parseExpr sym vars fns bvExpr
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
       case WI.exprType bv of
         WBT.BaseBVRepr w -> do
           let resultW = w `NatRepr.addNat` extendW
           let wLeqW = NatRepr.leqRefl w
           NatRepr.LeqProof <- return (NatRepr.leqAdd2 wLeqW oneLeqExtend)
           extended <- WI.bvZext sym resultW bv
-          return (Some extended)
+          return (SomeExpr extended)
         _ -> Pretty.userErr "zero_extend requires a bitvector argument"
 
   [sexp|((#_ sign_extend $n) #bvExpr)|]
@@ -361,39 +362,39 @@ parseExpr sym vars fns = \case
     , Some extendW <- NatRepr.mkNatRepr extendNat
     , Just oneLeqExtend@NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) extendW
     -> do
-      Some bv <- parseExpr sym vars fns bvExpr
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
       case WI.exprType bv of
         WBT.BaseBVRepr w -> do
           let resultW = w `NatRepr.addNat` extendW
           let wLeqW = NatRepr.leqRefl w
           NatRepr.LeqProof <- return (NatRepr.leqAdd2 wLeqW oneLeqExtend)
           extended <- WI.bvSext sym resultW bv
-          return (Some extended)
+          return (SomeExpr extended)
         _ -> Pretty.userErr "sign_extend requires a bitvector argument"
 
   [sexp|(concat #e1 #e2)|] -> do
-    Some bv1 <- parseExpr sym vars fns e1
-    Some bv2 <- parseExpr sym vars fns e2
+    SomeExpr bv1 <- parseExpr sym vars fns e1
+    SomeExpr bv2 <- parseExpr sym vars fns e2
     case (WI.exprType bv1, WI.exprType bv2) of
       (WBT.BaseBVRepr _w1, WBT.BaseBVRepr _w2) ->
-        Some <$> WI.bvConcat sym bv1 bv2
+        SomeExpr <$> WI.bvConcat sym bv1 bv2
       _ -> Pretty.userErr "concat requires bitvector arguments"
 
   [sexp|(bvnot #e)|] -> do
-    Some bv <- parseExpr sym vars fns e
+    SomeExpr bv <- parseExpr sym vars fns e
     case WI.exprType bv of
-      WBT.BaseBVRepr _ -> Some <$> WI.bvNotBits sym bv
+      WBT.BaseBVRepr _ -> SomeExpr <$> WI.bvNotBits sym bv
       _ -> Pretty.userErr "bvnot requires a bitvector argument"
 
   [sexp|(bvneg #e)|] -> do
-    Some bv <- parseExpr sym vars fns e
+    SomeExpr bv <- parseExpr sym vars fns e
     case WI.exprType bv of
-      WBT.BaseBVRepr _ -> Some <$> WI.bvNeg sym bv
+      WBT.BaseBVRepr _ -> SomeExpr <$> WI.bvNeg sym bv
       _ -> Pretty.userErr "bvneg requires a bitvector argument"
 
   [sexp|(bv#opName #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars fns e1
-    Some e2' <- parseExpr sym vars fns e2
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseBVRepr w1, WBT.BaseBVRepr w2)
         | Just WBT.Refl <- WBT.testEquality w1 w2 ->
@@ -411,12 +412,12 @@ parseExpr sym vars fns = \case
 parseBoolExpr ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   Map FnName (WI.SomeSymFn sym) ->
   SExp.SExp ->
   IO (WI.Pred sym)
 parseBoolExpr sym vars fns sexp' = do
-  Some e <- parseExpr sym vars fns sexp'
+  SomeExpr e <- parseExpr sym vars fns sexp'
   case WBT.testEquality (WI.exprType e) WBT.BaseBoolRepr of
     Just WBT.Refl -> return e
     Nothing -> Pretty.userErr $ "expected Bool, got" <+> PP.viaShow (WI.exprType e)
@@ -428,29 +429,29 @@ parseBVOp ::
   String ->
   WI.SymBV sym w ->
   WI.SymBV sym w ->
-  IO (Some (WI.SymExpr sym))
+  IO (SomeExpr sym)
 parseBVOp sym op e1 e2 = case op of
-  "add" -> Some <$> WI.bvAdd sym e1 e2
-  "sub" -> Some <$> WI.bvSub sym e1 e2
-  "mul" -> Some <$> WI.bvMul sym e1 e2
-  "udiv" -> Some <$> WI.bvUdiv sym e1 e2
-  "sdiv" -> Some <$> WI.bvSdiv sym e1 e2
-  "urem" -> Some <$> WI.bvUrem sym e1 e2
-  "srem" -> Some <$> WI.bvSrem sym e1 e2
-  "and" -> Some <$> WI.bvAndBits sym e1 e2
-  "or" -> Some <$> WI.bvOrBits sym e1 e2
-  "xor" -> Some <$> WI.bvXorBits sym e1 e2
-  "shl" -> Some <$> WI.bvShl sym e1 e2
-  "lshr" -> Some <$> WI.bvLshr sym e1 e2
-  "ashr" -> Some <$> WI.bvAshr sym e1 e2
-  "ult" -> Some <$> WI.bvUlt sym e1 e2
-  "slt" -> Some <$> WI.bvSlt sym e1 e2
-  "ule" -> Some <$> WI.bvUle sym e1 e2
-  "sle" -> Some <$> WI.bvSle sym e1 e2
-  "ugt" -> Some <$> WI.bvUgt sym e1 e2
-  "sgt" -> Some <$> WI.bvSgt sym e1 e2
-  "uge" -> Some <$> WI.bvUge sym e1 e2
-  "sge" -> Some <$> WI.bvSge sym e1 e2
+  "add" -> SomeExpr <$> WI.bvAdd sym e1 e2
+  "sub" -> SomeExpr <$> WI.bvSub sym e1 e2
+  "mul" -> SomeExpr <$> WI.bvMul sym e1 e2
+  "udiv" -> SomeExpr <$> WI.bvUdiv sym e1 e2
+  "sdiv" -> SomeExpr <$> WI.bvSdiv sym e1 e2
+  "urem" -> SomeExpr <$> WI.bvUrem sym e1 e2
+  "srem" -> SomeExpr <$> WI.bvSrem sym e1 e2
+  "and" -> SomeExpr <$> WI.bvAndBits sym e1 e2
+  "or" -> SomeExpr <$> WI.bvOrBits sym e1 e2
+  "xor" -> SomeExpr <$> WI.bvXorBits sym e1 e2
+  "shl" -> SomeExpr <$> WI.bvShl sym e1 e2
+  "lshr" -> SomeExpr <$> WI.bvLshr sym e1 e2
+  "ashr" -> SomeExpr <$> WI.bvAshr sym e1 e2
+  "ult" -> SomeExpr <$> WI.bvUlt sym e1 e2
+  "slt" -> SomeExpr <$> WI.bvSlt sym e1 e2
+  "ule" -> SomeExpr <$> WI.bvUle sym e1 e2
+  "sle" -> SomeExpr <$> WI.bvSle sym e1 e2
+  "ugt" -> SomeExpr <$> WI.bvUgt sym e1 e2
+  "sgt" -> SomeExpr <$> WI.bvSgt sym e1 e2
+  "uge" -> SomeExpr <$> WI.bvUge sym e1 e2
+  "sge" -> SomeExpr <$> WI.bvSge sym e1 e2
   _ -> Pretty.unsupported $ PP.pretty ("bitvector operation: bv" ++ op)
 
 -- | Convert a binary string to an integer (e.g., "101" -> 5)

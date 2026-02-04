@@ -34,9 +34,10 @@ import W4SMT2.Parser (VarName(VarName), FnName(FnName, unFnName), ParamName(unPa
 import W4SMT2.Parser qualified as Parser
 import W4SMT2.Pretty qualified as Pretty
 import W4SMT2.SExpPat (sexp)
+import W4SMT2.SomeExpr (SomeExpr(SomeExpr))
 
 data SolverState sym = SolverState
-  { ssVars :: Map VarName (Some (WI.SymExpr sym))
+  { ssVars :: Map VarName (SomeExpr sym)
   , ssFuns :: Map FnName (WI.SomeSymFn sym)
   , ssAsserts :: [WI.Pred sym]
   }
@@ -52,7 +53,7 @@ buildDefinedFn ::
   [(ParamName, Some WBT.BaseTypeRepr)] ->
   Some WBT.BaseTypeRepr ->
   SExp.SExp ->
-  Map VarName (Some (WI.SymExpr sym)) ->
+  Map VarName (SomeExpr sym) ->
   Map FnName (WI.SomeSymFn sym) ->
   IO (WI.SomeSymFn sym)
 buildDefinedFn sym fnName params (Some retType) body vars fns =
@@ -61,12 +62,12 @@ buildDefinedFn sym fnName params (Some retType) body vars fns =
     buildParams ::
       forall ctx.
       Ctx.Assignment (WI.BoundVar sym) ctx ->
-      Map VarName (Some (WI.SymExpr sym)) ->
+      Map VarName (SomeExpr sym) ->
       [(ParamName, Some WBT.BaseTypeRepr)] ->
       IO (WI.SomeSymFn sym)
     buildParams builtParams extendedVars = \case
       [] -> do
-        Some bodyExpr <- Parser.parseExpr sym extendedVars fns body
+        SomeExpr bodyExpr <- Parser.parseExpr sym extendedVars fns body
         let bodyType = WI.exprType bodyExpr
         case WBT.testEquality bodyType retType of
           Just WBT.Refl -> do
@@ -86,7 +87,8 @@ buildDefinedFn sym fnName params (Some retType) body vars fns =
         let nm = WI.safeSymbol (Text.unpack (unParamName paramName))
         boundVar <- WI.freshBoundVar sym nm paramType
         let varExpr = WI.varExpr sym boundVar
-        let newVars = Map.insert (VarName (unParamName paramName)) (Some varExpr) extendedVars
+        let varNm = VarName (unParamName paramName)
+        let newVars = Map.insert varNm (SomeExpr varExpr) extendedVars
         buildParams (builtParams :> boundVar) newVars rest
 
 -- | Execute commands and return the result of check-sat
@@ -116,13 +118,13 @@ execCommand sym state = \case
     | SExp.SAtom name <- nameSexp -> do
         Some tp <- Parser.parseType typeSexp
         var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
-        return $ Right state { ssVars = Map.insert (VarName name) (Some var) (ssVars state) }
+        return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
 
   [sexp|(declare-fun #nameSexp () #typeSexp)|]
     | SExp.SAtom name <- nameSexp -> do
         Some tp <- Parser.parseType typeSexp
         var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
-        return $ Right state { ssVars = Map.insert (VarName name) (Some var) (ssVars state) }
+        return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
 
   [sexp|(define-fun #nameSexp #paramsSexp #retTypeSexp #body)|]
     | SExp.SAtom name <- nameSexp -> do
@@ -132,7 +134,7 @@ execCommand sym state = \case
         return $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
 
   [sexp|(assert #exprSexp)|] -> do
-    Some expr <- Parser.parseExpr sym (ssVars state) (ssFuns state) exprSexp
+    SomeExpr expr <- Parser.parseExpr sym (ssVars state) (ssFuns state) exprSexp
     case WBT.testEquality (WI.exprType expr) WBT.BaseBoolRepr of
       Just WBT.Refl -> return $ Right state { ssAsserts = expr : ssAsserts state }
       Nothing -> Pretty.userErr $

@@ -83,6 +83,7 @@ library
     W4SMT2.Parser
     W4SMT2.Pretty
     W4SMT2.SExpPat
+    W4SMT2.SomeExpr
   build-depends:
     base >= 4.10 && < 5,
     attoparsec,
