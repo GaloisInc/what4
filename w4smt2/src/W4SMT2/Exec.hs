@@ -91,6 +91,30 @@ buildDefinedFn sym fnName params (Some retType) body vars fns =
         let newVars = Map.insert varNm (SomeExpr varExpr) extendedVars
         buildParams (builtParams :> boundVar) newVars rest
 
+buildUninterpFn ::
+  forall sym.
+  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
+  sym ->
+  FnName ->
+  [Some WBT.BaseTypeRepr] ->
+  Some WBT.BaseTypeRepr ->
+  IO (WI.SomeSymFn sym)
+buildUninterpFn sym fnName paramTypes (Some retType) =
+  buildParams Ctx.Empty paramTypes
+  where
+    buildParams ::
+      forall ctx.
+      Ctx.Assignment WBT.BaseTypeRepr ctx ->
+      [Some WBT.BaseTypeRepr] ->
+      IO (WI.SomeSymFn sym)
+    buildParams builtParams = \case
+      [] -> do
+        let nm = WI.safeSymbol (Text.unpack (unFnName fnName))
+        fn <- WI.freshTotalUninterpFn sym nm builtParams retType
+        return (WI.SomeSymFn fn)
+      (Some paramType) : rest ->
+        buildParams (builtParams :> paramType) rest
+
 -- | Execute commands and return the result of check-sat
 execCommands ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
@@ -120,11 +144,20 @@ execCommand sym state = \case
         var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
         return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
 
-  [sexp|(declare-fun #nameSexp () #typeSexp)|]
+  [sexp|(declare-fun #nameSexp #paramsSexp #typeSexp)|]
     | SExp.SAtom name <- nameSexp -> do
-        Some tp <- Parser.parseType typeSexp
-        var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
-        return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
+        params <- Parser.parseDeclareFunParams paramsSexp
+        case params of
+          [] -> do
+            -- Zero-arity: treat as constant
+            Some tp <- Parser.parseType typeSexp
+            var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
+            return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
+          _ -> do
+            -- Non-zero arity: create uninterpreted function
+            retType <- Parser.parseType typeSexp
+            fn <- buildUninterpFn sym (FnName name) params retType
+            return $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
 
   [sexp|(define-fun #nameSexp #paramsSexp #retTypeSexp #body)|]
     | SExp.SAtom name <- nameSexp -> do

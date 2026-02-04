@@ -22,6 +22,7 @@ module W4SMT2.Parser
   , parseExpr
   , parseBoolExpr
   , parseDefunParams
+  , parseDeclareFunParams
   ) where
 
 import Control.Applicative ((<|>))
@@ -134,6 +135,18 @@ parseDefunParams = \case
   other ->
     Pretty.userErr $
       "define-fun parameters must be a list:" <+> PP.pretty (Pretty.ppSExp other)
+
+-- | Parse declare-fun parameter types (types only, no names)
+parseDeclareFunParams ::
+  (?logStderr :: Text -> IO ()) =>
+  SExp.SExp ->
+  IO [Some WBT.BaseTypeRepr]
+parseDeclareFunParams = \case
+  SExp.SApp typeList ->
+    forM typeList parseType
+  other ->
+    Pretty.userErr $
+      "declare-fun parameters must be a list of types:" <+> PP.pretty (Pretty.ppSExp other)
 
 -- | Apply a function with dynamic argument list and type checking
 applyFunction ::

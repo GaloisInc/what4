@@ -1,0 +1,5 @@
+(set-logic QF_UFLIA)
+(declare-fun uninterp (Int) Int)
+(define-fun double ((x Int)) Int (* x 2))
+(assert (= (uninterp (double 3)) 12))
+(check-sat)
