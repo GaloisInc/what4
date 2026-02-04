@@ -24,12 +24,12 @@ import System.Process qualified as Proc
 
 -- | Result for a single file
 data FileResult
-  = FileSat !Double
-  | FileUnsat !Double
-  | FileUnknown !Double
-  | FileUnsupported !Double
-  | FileError !String !Double
-  | FileTimeout !Double
+  = FileSat !Double !(Maybe Double)
+  | FileUnsat !Double !(Maybe Double)
+  | FileUnknown !Double !(Maybe Double)
+  | FileUnsupported !Double !(Maybe Double)
+  | FileError !String !Double !(Maybe Double)
+  | FileTimeout !Double !(Maybe Double)
   deriving (Show, Eq)
 
 data ProcessType
@@ -114,9 +114,12 @@ checkAndCollect config rp = do
     then do
       Proc.terminateProcess (rpHandle rp)
       _ <- Proc.waitForProcess (rpHandle rp)
+      let timeoutResult = case rpProcessType rp of
+            Z3VerifyProcess origResult -> origResult
+            W4SMT2Process -> FileTimeout (Conf.cfgTimeout config) Nothing
       return $ Finished $ CompletedResult
         { crFilePath = rpFilePath rp
-        , crResult = FileTimeout (Conf.cfgTimeout config)
+        , crResult = timeoutResult
         }
     else do
       maybeExit <- Proc.getProcessExitCode (rpHandle rp)
@@ -141,42 +144,42 @@ checkAndCollect config rp = do
 
             Z3VerifyProcess originalResult -> do
               let z3Result = Text.strip $ Text.toLower stdout
-              let finalResult = verifyZ3Output originalResult z3Result
+              let finalResult = verifyZ3Output originalResult z3Result elapsed
               return $ Finished $ CompletedResult
                 { crFilePath = rpFilePath rp
                 , crResult = finalResult
                 }
   where
     needsVerification = \case
-      FileSat _ -> True
-      FileUnsat _ -> True
+      FileSat _ _ -> True
+      FileUnsat _ _ -> True
       _ -> False
 
-    verifyZ3Output originalResult z3Result =
+    verifyZ3Output originalResult z3Result z3Time =
       case originalResult of
-        FileSat elapsed ->
+        FileSat w4Time _ ->
           if z3Result == "sat"
-            then originalResult
-            else FileError ("Z3 disagreement: w4smt2 said sat but Z3 said " ++ Text.unpack z3Result) elapsed
-        FileUnsat elapsed ->
+            then FileSat w4Time (Just z3Time)
+            else FileError ("Z3 disagreement: w4smt2 said sat but Z3 said " ++ Text.unpack z3Result) w4Time (Just z3Time)
+        FileUnsat w4Time _ ->
           if z3Result == "unsat"
-            then originalResult
-            else FileError ("Z3 disagreement: w4smt2 said unsat but Z3 said " ++ Text.unpack z3Result) elapsed
+            then FileUnsat w4Time (Just z3Time)
+            else FileError ("Z3 disagreement: w4smt2 said unsat but Z3 said " ++ Text.unpack z3Result) w4Time (Just z3Time)
         _ -> originalResult
 
 -- | Parse the result from w4smt2 output
 parseResult :: ExitCode -> Text -> Text -> Double -> FileResult
 parseResult exitCode stdout _stderr elapsed =
   case exitCode of
-    ExitFailure 2 -> FileUnsupported elapsed
-    ExitFailure _ -> FileError "Non-zero exit code" elapsed
+    ExitFailure 2 -> FileUnsupported elapsed Nothing
+    ExitFailure _ -> FileError "Non-zero exit code" elapsed Nothing
     ExitSuccess ->
       let output = Text.strip $ Text.toLower stdout
       in case output of
-           "sat" -> FileSat elapsed
-           "unsat" -> FileUnsat elapsed
-           "unknown" -> FileUnknown elapsed
-           _ -> FileError ("Could not parse output: " ++ Text.unpack output) elapsed
+           "sat" -> FileSat elapsed Nothing
+           "unsat" -> FileUnsat elapsed Nothing
+           "unknown" -> FileUnknown elapsed Nothing
+           _ -> FileError ("Could not parse output: " ++ Text.unpack output) elapsed Nothing
 
 -- | Run benchmark on all files
 runBenchmark :: Conf.Config -> [FilePath] -> (CompletedResult -> IO ()) -> IO [FileResult]
