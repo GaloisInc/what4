@@ -1,20 +1,27 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module W4SMT2.Parser
-  ( parseSExps
+  ( VarName(..)
+  , FnName(..)
+  , ParamName(..)
+  , parseSExps
   , parseType
   , parseExpr
   , parseBoolExpr
+  , parseDefunParams
   ) where
 
 import Control.Applicative ((<|>))
@@ -25,7 +32,10 @@ import Data.BitVector.Sized qualified as BV
 import Data.List (isPrefixOf)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.String (IsString)
 import Numeric.Natural (Natural)
+import Data.Parameterized.Context qualified as Ctx
+import Data.Parameterized.Context (pattern (:>))
 import Data.Parameterized.NatRepr qualified as NatRepr
 import Data.Parameterized.Some (Some(Some))
 import GHC.TypeLits (type (<=))
@@ -42,6 +52,18 @@ import What4.Protocol.SExp qualified as SExp
 import W4SMT2.Pretty qualified as Pretty
 import W4SMT2.SExpPat (sexp)
 
+-- | Variable name
+newtype VarName = VarName { unVarName :: Text }
+  deriving (Eq, Ord, Show, IsString)
+
+-- | Function name
+newtype FnName = FnName { unFnName :: Text }
+  deriving (Eq, Ord, Show, IsString)
+
+-- | Parameter name
+newtype ParamName = ParamName { unParamName :: Text }
+  deriving (Eq, Ord, Show, IsString)
+
 -- | Parse multiple S-expressions from text
 parseSExps :: (?logStderr :: Text -> IO ()) => Text -> IO [SExp.SExp]
 parseSExps input =
@@ -53,13 +75,11 @@ parseSExps input =
   where
     parser = skipSpaceAndComments *> A.many' (SExp.parseSExp readString <* skipSpaceAndComments) <* A.endOfInput
 
-    -- Skip whitespace and comments (lines starting with ;)
     skipSpaceAndComments :: A.Parser ()
     skipSpaceAndComments = A.skipWhile (\c -> c `elem` (" \t\n\r" :: String)) <* A.skipMany comment
       where
         comment = A.char ';' *> A.skipWhile (/= '\n') *> (A.char '\n' >> pure () <|> pure ())
 
-    -- Simple string literal parser
     readString :: A.Parser Text
     readString = do
       _ <- A.char '"'
@@ -80,34 +100,93 @@ parseType sexp' = case sexp' of
   _ -> Pretty.unsupported $ "type:" <+> PP.pretty (Pretty.ppSExp sexp')
 
 -- | Parse let bindings
--- Takes a list of (var expr) pairs and returns (Text, Some (WI.SymExpr sym)) pairs
--- Strips leading ?, _, or $ from variable names (if present)
 parseLetBindings ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map Text (Some (WI.SymExpr sym)) ->
+  Map VarName (Some (WI.SymExpr sym)) ->
   SExp.SExp ->
-  IO [(Text, Some (WI.SymExpr sym))]
+  IO [(VarName, Some (WI.SymExpr sym))]
 parseLetBindings sym vars (SExp.SApp bindingPairs) = do
   forM bindingPairs $ \case
     [sexp|(#varName #exprSExp)|]
       | SExp.SAtom name <- varName -> do
-          Some expr <- parseExpr sym vars exprSExp
-          return (name, Some expr)
+          Some expr <- parseExpr sym vars Map.empty exprSExp
+          return (VarName name, Some expr)
     other -> Pretty.userErr $ "invalid let binding:" <+> PP.pretty (Pretty.ppSExp other)
 parseLetBindings _ _ other =
   Pretty.userErr $ "let bindings must be a list:" <+> PP.pretty (Pretty.ppSExp other)
 
+-- | Parse define-fun parameter list
+parseDefunParams ::
+  (?logStderr :: Text -> IO ()) =>
+  SExp.SExp ->
+  IO [(ParamName, Some WBT.BaseTypeRepr)]
+parseDefunParams = \case
+  SExp.SApp params ->
+    forM params $ \case
+      [sexp|(#nameSexp #typeSexp)|]
+        | SExp.SAtom name <- nameSexp -> do
+            tp <- parseType typeSexp
+            return (ParamName name, tp)
+      other -> Pretty.userErr $
+        "invalid define-fun parameter:" <+> PP.pretty (Pretty.ppSExp other)
+  other ->
+    Pretty.userErr $
+      "define-fun parameters must be a list:" <+> PP.pretty (Pretty.ppSExp other)
+
+-- | Apply a function with dynamic argument list and type checking
+applyFunction ::
+  forall sym.
+  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
+  sym ->
+  Map VarName (Some (WI.SymExpr sym)) ->
+  Map FnName (WI.SomeSymFn sym) ->
+  WI.SomeSymFn sym ->
+  [SExp.SExp] ->
+  IO (Some (WI.SymExpr sym))
+applyFunction sym vars fns (WI.SomeSymFn fn) argSexps = do
+  args <- buildArgs (WI.fnArgTypes fn) (reverse argSexps)
+  result <- WI.applySymFn sym fn args
+  return (Some result)
+  where
+    buildArgs ::
+      forall ctx.
+      Ctx.Assignment WBT.BaseTypeRepr ctx ->
+      [SExp.SExp] ->
+      IO (Ctx.Assignment (WI.SymExpr sym) ctx)
+    buildArgs = \cases
+      Ctx.Empty [] -> return Ctx.Empty
+      (restTps :> tp) (argSexp : rest) -> do
+        restArgs <- buildArgs restTps rest
+        Some arg <- parseExpr sym vars fns argSexp
+        case WBT.testEquality (WI.exprType arg) tp of
+          Just WBT.Refl ->
+            return (restArgs :> arg)
+          Nothing ->
+            Pretty.userErr $
+              "function argument type mismatch: expected" <+> PP.viaShow tp
+              <+> "but got" <+> PP.viaShow (WI.exprType arg)
+      _ _ ->
+        Pretty.userErr "function arity mismatch"
+
 parseAtom ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map Text (Some (WI.SymExpr sym)) ->
+  Map VarName (Some (WI.SymExpr sym)) ->
+  Map FnName (WI.SomeSymFn sym) ->
   Text ->
   IO (Maybe (Some (WI.SymExpr sym)))
-parseAtom sym vars name = do
-  case Map.lookup name vars of
+parseAtom sym vars fns name = do
+  case Map.lookup (VarName name) vars of
     Just var -> return (Just var)
-    Nothing -> parseAtomLiteral sym name
+    Nothing -> case Map.lookup (FnName name) fns of
+      Just (WI.SomeSymFn fn) ->
+        case WI.fnArgTypes fn of
+          Ctx.Empty -> do
+            result <- WI.applySymFn sym fn Ctx.Empty
+            return (Just (Some result))
+          _ -> return Nothing
+      Nothing -> parseAtomLiteral sym name
 
 parseAtomLiteral ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
@@ -172,15 +251,16 @@ parseIntegerLiteral sym s = do
 parseExpr ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map Text (Some (WI.SymExpr sym)) ->
+  Map VarName (Some (WI.SymExpr sym)) ->
+  Map FnName (WI.SomeSymFn sym) ->
   SExp.SExp ->
   IO (Some (WI.SymExpr sym))
-parseExpr sym vars = \case
+parseExpr sym vars fns = \case
   [sexp|true|] -> return $ Some (WI.truePred sym)
   [sexp|false|] -> return $ Some (WI.falsePred sym)
 
   SExp.SAtom atom -> do
-    result <- parseAtom sym vars atom
+    result <- parseAtom sym vars fns atom
     case result of
       Just val -> return val
       Nothing -> Pretty.userErr $ "unknown atom:" <+> PP.pretty (Pretty.ppSExp (SExp.SAtom atom))
@@ -192,17 +272,22 @@ parseExpr sym vars = \case
     -> do bv <- WI.bvLit sym w (BV.mkBV w val)
           pure (Some bv)
 
+  [sexp|(#fnNameSexp ...argSexps)|]
+    | SExp.SAtom fnName <- fnNameSexp
+    , Just fnDef <- Map.lookup (FnName fnName) fns ->
+        applyFunction sym vars fns fnDef argSexps
+
   [sexp|(= #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars e1
-    Some e2' <- parseExpr sym vars e2
+    Some e1' <- parseExpr sym vars fns e1
+    Some e2' <- parseExpr sym vars fns e2
     case WBT.testEquality (WI.exprType e1') (WI.exprType e2') of
       Just WBT.Refl -> Some <$> WI.isEq sym e1' e2'
       Nothing -> Pretty.userErr $
         "type mismatch in =:" <+> PP.viaShow (WI.exprType e1') <+> "vs" <+> PP.viaShow (WI.exprType e2')
 
   [sexp|(distinct #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars e1
-    Some e2' <- parseExpr sym vars e2
+    Some e1' <- parseExpr sym vars fns e1
+    Some e2' <- parseExpr sym vars fns e2
     case WBT.testEquality (WI.exprType e1') (WI.exprType e2') of
       Just WBT.Refl -> do
         eq <- WI.isEq sym e1' e2'
@@ -210,28 +295,28 @@ parseExpr sym vars = \case
       Nothing -> Pretty.userErr "type mismatch in distinct"
 
   [sexp|(not #e)|] -> do
-    Some e' <- parseExpr sym vars e
+    Some e' <- parseExpr sym vars fns e
     case WBT.testEquality (WI.exprType e') WBT.BaseBoolRepr of
       Just WBT.Refl -> Some <$> WI.notPred sym e'
       Nothing -> Pretty.userErr "not requires Bool"
 
   [sexp|(and ...args)|] -> do
-    preds <- mapM (parseBoolExpr sym vars) args
+    preds <- mapM (parseBoolExpr sym vars fns) args
     Some <$> Monad.foldM (WI.andPred sym) (WI.truePred sym) preds
 
   [sexp|(or ...args)|] -> do
-    preds <- mapM (parseBoolExpr sym vars) args
+    preds <- mapM (parseBoolExpr sym vars fns) args
     Some <$> Monad.foldM (WI.orPred sym) (WI.falsePred sym) preds
 
   [sexp|(=> #e1 #e2)|] -> do
-    p1 <- parseBoolExpr sym vars e1
-    p2 <- parseBoolExpr sym vars e2
+    p1 <- parseBoolExpr sym vars fns e1
+    p2 <- parseBoolExpr sym vars fns e2
     Some <$> WI.impliesPred sym p1 p2
 
   [sexp|(ite #condExpr #eThen #eElse)|] -> do
-    cond <- parseBoolExpr sym vars condExpr
-    Some eThen' <- parseExpr sym vars eThen
-    Some eElse' <- parseExpr sym vars eElse
+    cond <- parseBoolExpr sym vars fns condExpr
+    Some eThen' <- parseExpr sym vars fns eThen
+    Some eElse' <- parseExpr sym vars fns eElse
     case WBT.testEquality (WI.exprType eThen') (WI.exprType eElse') of
       Just WBT.Refl -> Some <$> WI.baseTypeIte sym cond eThen' eElse'
       Nothing -> Pretty.userErr $
@@ -246,7 +331,7 @@ parseExpr sym vars = \case
     , Some resultW <- NatRepr.mkNatRepr resultNat
     , Just NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) resultW
     -> do
-      Some bv <- parseExpr sym vars bvExpr
+      Some bv <- parseExpr sym vars fns bvExpr
       case WI.exprType bv of
         WBT.BaseBVRepr w ->
           case NatRepr.testLeq (lowIdx `NatRepr.addNat` resultW) w of
@@ -257,28 +342,28 @@ parseExpr sym vars = \case
         _ -> Pretty.userErr "extract requires a bitvector argument"
 
   [sexp|(concat #e1 #e2)|] -> do
-    Some bv1 <- parseExpr sym vars e1
-    Some bv2 <- parseExpr sym vars e2
+    Some bv1 <- parseExpr sym vars fns e1
+    Some bv2 <- parseExpr sym vars fns e2
     case (WI.exprType bv1, WI.exprType bv2) of
       (WBT.BaseBVRepr _w1, WBT.BaseBVRepr _w2) ->
         Some <$> WI.bvConcat sym bv1 bv2
       _ -> Pretty.userErr "concat requires bitvector arguments"
 
   [sexp|(bvnot #e)|] -> do
-    Some bv <- parseExpr sym vars e
+    Some bv <- parseExpr sym vars fns e
     case WI.exprType bv of
       WBT.BaseBVRepr _ -> Some <$> WI.bvNotBits sym bv
       _ -> Pretty.userErr "bvnot requires a bitvector argument"
 
   [sexp|(bvneg #e)|] -> do
-    Some bv <- parseExpr sym vars e
+    Some bv <- parseExpr sym vars fns e
     case WI.exprType bv of
       WBT.BaseBVRepr _ -> Some <$> WI.bvNeg sym bv
       _ -> Pretty.userErr "bvneg requires a bitvector argument"
 
   [sexp|(bv#opName #e1 #e2)|] -> do
-    Some e1' <- parseExpr sym vars e1
-    Some e2' <- parseExpr sym vars e2
+    Some e1' <- parseExpr sym vars fns e1
+    Some e2' <- parseExpr sym vars fns e2
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseBVRepr w1, WBT.BaseBVRepr w2)
         | Just WBT.Refl <- WBT.testEquality w1 w2 ->
@@ -288,7 +373,7 @@ parseExpr sym vars = \case
   [sexp|(let #bindingsList #body)|] -> do
     bindings <- parseLetBindings sym vars bindingsList
     let extendedVars = Map.union (Map.fromList bindings) vars
-    parseExpr sym extendedVars body
+    parseExpr sym extendedVars fns body
 
   other -> Pretty.unsupported $ "expression:" <+> PP.pretty (Pretty.ppSExp other)
 
@@ -296,11 +381,12 @@ parseExpr sym vars = \case
 parseBoolExpr ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  Map Text (Some (WI.SymExpr sym)) ->
+  Map VarName (Some (WI.SymExpr sym)) ->
+  Map FnName (WI.SomeSymFn sym) ->
   SExp.SExp ->
   IO (WI.Pred sym)
-parseBoolExpr sym vars sexp' = do
-  Some e <- parseExpr sym vars sexp'
+parseBoolExpr sym vars fns sexp' = do
+  Some e <- parseExpr sym vars fns sexp'
   case WBT.testEquality (WI.exprType e) WBT.BaseBoolRepr of
     Just WBT.Refl -> return e
     Nothing -> Pretty.userErr $ "expected Bool, got" <+> PP.viaShow (WI.exprType e)
