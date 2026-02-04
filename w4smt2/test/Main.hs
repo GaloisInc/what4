@@ -29,12 +29,14 @@ import Z3Verification (mkZ3VerificationTests)
 main :: IO ()
 main = do
   goldenTests <- discoverTests "test/golden" mkSolverTest
+  simplTests <- discoverTests "test/simpl" mkSolverTest
   uxTests <- discoverTests "test/ux" mkUxTest
   qfBvTests <- discoverTests "test/qf-bv" mkSolverTest
   z3Tests <- mkZ3VerificationTests
   defaultMain $
     testGroup "w4smt2" $
     [ testGroup "golden" goldenTests
+    , testGroup "simplification" simplTests
     , testGroup "ux" uxTests
     , testGroup "qf-bv" qfBvTests
     , testGroup "z3-verification" z3Tests

@@ -1,0 +1,1 @@
+user error: define-fun body type mismatch: expected BaseBoolRepr but got BaseIntegerRepr

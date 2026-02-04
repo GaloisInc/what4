@@ -37,10 +37,13 @@ information.
 w4smt2 has three main kinds of tests under `test/`:
 
 - `golden/`: Hand-written SMT-Lib files that test the support for various
-  SMT-Lib constructs, or test What4's simplifcations.
+  SMT-Lib constructs.
 - `qf-bv/`: Unmodified tests from the `QF_BV` (quantifier-free theory of
   bitvectors) section of the [2025 SMT-LIB Benchmarks] (under the Creative
   Commons Attribution 4.0 International License).
+- `simpl/`: Hand-written SMT-Lib files that test What4's simplifications. These
+  are generally intended to have a `sat` or `unsat` result, an `unknown` is
+  likely a bug indicating insufficient simplification.
 - `ux/`: Test the User eXperience (i.e., log output) of w4smt
 
 The results of w4smt2 on the `golden/` and `qf-bv/` tests are compared against
