@@ -33,6 +33,7 @@ import Data.BitVector.Sized qualified as BV
 import Data.List (isPrefixOf)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Ratio ((%))
 import Data.String (IsString)
 import Numeric.Natural (Natural)
 import Data.Parameterized.Context qualified as Ctx
@@ -211,7 +212,11 @@ parseAtomLiteral sym name = do
   let s = Text.unpack name
   if "#b" `isPrefixOf` s then parseBinaryBV sym s
   else if "#x" `isPrefixOf` s then parseHexBV sym s
-  else parseIntegerLiteral sym s
+  else do
+    intResult <- parseIntegerLiteral sym s
+    case intResult of
+      Just val -> return (Just val)
+      Nothing -> parseRealLiteral sym s
 
 parseBinaryBV ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
@@ -261,6 +266,18 @@ parseIntegerLiteral sym s = do
       return (Just (SomeExpr intVal))
     _ -> return Nothing
 
+parseRealLiteral ::
+  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
+  sym ->
+  String ->
+  IO (Maybe (SomeExpr sym))
+parseRealLiteral sym s = do
+  case reads s of
+    [(n, "")] | '.' `elem` s -> do
+      realVal <- WI.realLit sym (toRational (n :: Double))
+      return (Just (SomeExpr realVal))
+    _ -> return Nothing
+
 -- | Parse an expression s-expression
 parseExpr ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
@@ -296,8 +313,15 @@ parseExpr sym vars fns = \case
     SomeExpr e2' <- parseExpr sym vars fns e2
     case WBT.testEquality (WI.exprType e1') (WI.exprType e2') of
       Just WBT.Refl -> SomeExpr <$> WI.isEq sym e1' e2'
-      Nothing -> Pretty.userErr $
-        "type mismatch in =:" <+> PP.viaShow (WI.exprType e1') <+> "vs" <+> PP.viaShow (WI.exprType e2')
+      Nothing -> case (WI.exprType e1', WI.exprType e2') of
+        (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+          r2 <- WI.integerToReal sym e2'
+          SomeExpr <$> WI.isEq sym e1' r2
+        (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+          r1 <- WI.integerToReal sym e1'
+          SomeExpr <$> WI.isEq sym r1 e2'
+        _ -> Pretty.userErr $
+          "type mismatch in =:" <+> PP.viaShow (WI.exprType e1') <+> "vs" <+> PP.viaShow (WI.exprType e2')
 
   [sexp|(distinct #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -306,7 +330,16 @@ parseExpr sym vars fns = \case
       Just WBT.Refl -> do
         eq <- WI.isEq sym e1' e2'
         SomeExpr <$> WI.notPred sym eq
-      Nothing -> Pretty.userErr "type mismatch in distinct"
+      Nothing -> case (WI.exprType e1', WI.exprType e2') of
+        (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+          r2 <- WI.integerToReal sym e2'
+          eq <- WI.isEq sym e1' r2
+          SomeExpr <$> WI.notPred sym eq
+        (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+          r1 <- WI.integerToReal sym e1'
+          eq <- WI.isEq sym r1 e2'
+          SomeExpr <$> WI.notPred sym eq
+        _ -> Pretty.userErr "type mismatch in distinct"
 
   [sexp|(not #e)|] -> do
     SomeExpr e' <- parseExpr sym vars fns e
@@ -333,8 +366,15 @@ parseExpr sym vars fns = \case
     SomeExpr eElse' <- parseExpr sym vars fns eElse
     case WBT.testEquality (WI.exprType eThen') (WI.exprType eElse') of
       Just WBT.Refl -> SomeExpr <$> WI.baseTypeIte sym cond eThen' eElse'
-      Nothing -> Pretty.userErr $
-        "ite requires same types for then and else:" <+> PP.viaShow (WI.exprType eThen') <+> "vs" <+> PP.viaShow (WI.exprType eElse')
+      Nothing -> case (WI.exprType eThen', WI.exprType eElse') of
+        (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+          rElse <- WI.integerToReal sym eElse'
+          SomeExpr <$> WI.baseTypeIte sym cond eThen' rElse
+        (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+          rThen <- WI.integerToReal sym eThen'
+          SomeExpr <$> WI.baseTypeIte sym cond rThen eElse'
+        _ -> Pretty.userErr $
+          "ite requires same types for then and else:" <+> PP.viaShow (WI.exprType eThen') <+> "vs" <+> PP.viaShow (WI.exprType eElse')
 
   [sexp|((#_ extract $high $low) #bvExpr)|]
     | let resultWidth = high - low + 1
@@ -419,53 +459,109 @@ parseExpr sym vars fns = \case
     let extendedVars = Map.union (Map.fromList bindings) vars
     parseExpr sym extendedVars fns body
 
+  [sexp|(/ #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) -> do
+        case (WI.asInteger e1', WI.asInteger e2') of
+          (Just n, Just d) | d /= 0 -> do
+            realVal <- WI.realLit sym (n % d)
+            return (SomeExpr realVal)
+          _ -> do
+            r1 <- WI.integerToReal sym e1'
+            r2 <- WI.integerToReal sym e2'
+            SomeExpr <$> WI.realDiv sym r1 r2
+      (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+        SomeExpr <$> WI.realDiv sym e1' e2'
+      _ -> Pretty.userErr "/ requires numeric arguments"
+
   [sexp|(+ ...args)|] -> do
     case args of
-      [] -> do
-        -- Zero-argument addition: return 0
-        SomeExpr <$> WI.intLit sym 0
+      [] -> SomeExpr <$> WI.intLit sym 0
       [e1] -> parseExpr sym vars fns e1
       _ -> do
-        -- N-ary addition: fold over arguments
-        exprs <- forM args $ \arg -> do
-          SomeExpr e <- parseExpr sym vars fns arg
-          case WI.exprType e of
-            WBT.BaseIntegerRepr -> return e
-            _ -> Pretty.userErr "+ requires integer arguments"
-        zero <- WI.intLit sym 0
-        SomeExpr <$> Monad.foldM (WI.intAdd sym) zero exprs
+        exprs <- forM args $ \arg -> parseExpr sym vars fns arg
+        case exprs of
+          [] -> SomeExpr <$> WI.intLit sym 0
+          (SomeExpr _ : _) ->
+            -- Check if any argument is Real
+            let hasReal = any (\(SomeExpr e) -> case WI.exprType e of
+                  WBT.BaseRealRepr -> True
+                  _ -> False) exprs
+            in if hasReal then do
+              -- Convert all to Real and add
+              allReals <- forM exprs $ \(SomeExpr e) ->
+                case WI.exprType e of
+                  WBT.BaseRealRepr -> return e
+                  WBT.BaseIntegerRepr -> WI.integerToReal sym e
+                  _ -> Pretty.userErr "+ requires integer or real arguments"
+              zero <- WI.realLit sym 0
+              result <- Monad.foldM (WI.realAdd sym) zero allReals
+              return (SomeExpr result)
+            else do
+              -- All integers
+              allInts <- forM exprs $ \(SomeExpr e) ->
+                case WI.exprType e of
+                  WBT.BaseIntegerRepr -> return e
+                  _ -> Pretty.userErr "+ requires integer or real arguments"
+              zero <- WI.intLit sym 0
+              result <- Monad.foldM (WI.intAdd sym) zero allInts
+              return (SomeExpr result)
 
   [sexp|(- #e1 ...rest)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
     case rest of
-      [] -> do  -- Unary negation
-        SomeExpr e' <- parseExpr sym vars fns e1
-        case WI.exprType e' of
-          WBT.BaseIntegerRepr -> SomeExpr <$> WI.intNeg sym e'
-          _ -> Pretty.userErr "unary - requires integer argument"
-      [e2] -> do  -- Binary subtraction
-        SomeExpr e1' <- parseExpr sym vars fns e1
+      [] -> do
+        case WI.exprType e1' of
+          WBT.BaseIntegerRepr -> SomeExpr <$> WI.intNeg sym e1'
+          WBT.BaseRealRepr -> SomeExpr <$> WI.realNeg sym e1'
+          _ -> Pretty.userErr "unary - requires integer or real argument"
+      [e2] -> do
         SomeExpr e2' <- parseExpr sym vars fns e2
         case (WI.exprType e1', WI.exprType e2') of
           (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
             SomeExpr <$> WI.intSub sym e1' e2'
-          _ -> Pretty.userErr "- requires integer arguments"
+          (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+            SomeExpr <$> WI.realSub sym e1' e2'
+          (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+            r2 <- WI.integerToReal sym e2'
+            SomeExpr <$> WI.realSub sym e1' r2
+          (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+            r1 <- WI.integerToReal sym e1'
+            SomeExpr <$> WI.realSub sym r1 e2'
+          _ -> Pretty.userErr "- requires integer or real arguments"
       _ -> Pretty.userErr "- expects 1 or 2 arguments"
 
   [sexp|(* ...args)|] -> do
     case args of
-      [] -> do
-        -- Zero-argument multiplication: return 1
-        SomeExpr <$> WI.intLit sym 1
+      [] -> SomeExpr <$> WI.intLit sym 1
       [e1] -> parseExpr sym vars fns e1
       _ -> do
-        -- N-ary multiplication: fold over arguments
-        exprs <- forM args $ \arg -> do
-          SomeExpr e <- parseExpr sym vars fns arg
-          case WI.exprType e of
-            WBT.BaseIntegerRepr -> return e
-            _ -> Pretty.userErr "* requires integer arguments"
-        one <- WI.intLit sym 1
-        SomeExpr <$> Monad.foldM (WI.intMul sym) one exprs
+        exprs <- forM args $ \arg -> parseExpr sym vars fns arg
+        case exprs of
+          [] -> SomeExpr <$> WI.intLit sym 1
+          (SomeExpr _ : _) ->
+            let hasReal = any (\(SomeExpr e) -> case WI.exprType e of
+                  WBT.BaseRealRepr -> True
+                  _ -> False) exprs
+            in if hasReal then do
+              allReals <- forM exprs $ \(SomeExpr e) ->
+                case WI.exprType e of
+                  WBT.BaseRealRepr -> return e
+                  WBT.BaseIntegerRepr -> WI.integerToReal sym e
+                  _ -> Pretty.userErr "* requires integer or real arguments"
+              one <- WI.realLit sym 1
+              result <- Monad.foldM (WI.realMul sym) one allReals
+              return (SomeExpr result)
+            else do
+              allInts <- forM exprs $ \(SomeExpr e) ->
+                case WI.exprType e of
+                  WBT.BaseIntegerRepr -> return e
+                  _ -> Pretty.userErr "* requires integer or real arguments"
+              one <- WI.intLit sym 1
+              result <- Monad.foldM (WI.intMul sym) one allInts
+              return (SomeExpr result)
 
   [sexp|(div #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -487,7 +583,8 @@ parseExpr sym vars fns = \case
     SomeExpr e' <- parseExpr sym vars fns e
     case WI.exprType e' of
       WBT.BaseIntegerRepr -> SomeExpr <$> WI.intAbs sym e'
-      _ -> Pretty.userErr "abs requires integer argument"
+      WBT.BaseRealRepr -> SomeExpr <$> WI.realAbs sym e'
+      _ -> Pretty.userErr "abs requires integer or real argument"
 
   [sexp|(< #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -495,7 +592,15 @@ parseExpr sym vars fns = \case
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
         SomeExpr <$> WI.intLt sym e1' e2'
-      _ -> Pretty.userErr "< requires integer arguments"
+      (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+        SomeExpr <$> WI.realLt sym e1' e2'
+      (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+        r2 <- WI.integerToReal sym e2'
+        SomeExpr <$> WI.realLt sym e1' r2
+      (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+        r1 <- WI.integerToReal sym e1'
+        SomeExpr <$> WI.realLt sym r1 e2'
+      _ -> Pretty.userErr "< requires integer or real arguments"
 
   [sexp|(<= #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -503,7 +608,15 @@ parseExpr sym vars fns = \case
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
         SomeExpr <$> WI.intLe sym e1' e2'
-      _ -> Pretty.userErr "<= requires integer arguments"
+      (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+        SomeExpr <$> WI.realLe sym e1' e2'
+      (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+        r2 <- WI.integerToReal sym e2'
+        SomeExpr <$> WI.realLe sym e1' r2
+      (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+        r1 <- WI.integerToReal sym e1'
+        SomeExpr <$> WI.realLe sym r1 e2'
+      _ -> Pretty.userErr "<= requires integer or real arguments"
 
   [sexp|(> #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -511,7 +624,15 @@ parseExpr sym vars fns = \case
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
         SomeExpr <$> WI.intLt sym e2' e1'
-      _ -> Pretty.userErr "> requires integer arguments"
+      (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+        SomeExpr <$> WI.realLt sym e2' e1'
+      (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+        r2 <- WI.integerToReal sym e2'
+        SomeExpr <$> WI.realLt sym r2 e1'
+      (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+        r1 <- WI.integerToReal sym e1'
+        SomeExpr <$> WI.realLt sym e2' r1
+      _ -> Pretty.userErr "> requires integer or real arguments"
 
   [sexp|(>= #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
@@ -519,7 +640,15 @@ parseExpr sym vars fns = \case
     case (WI.exprType e1', WI.exprType e2') of
       (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
         SomeExpr <$> WI.intLe sym e2' e1'
-      _ -> Pretty.userErr ">= requires integer arguments"
+      (WBT.BaseRealRepr, WBT.BaseRealRepr) ->
+        SomeExpr <$> WI.realLe sym e2' e1'
+      (WBT.BaseRealRepr, WBT.BaseIntegerRepr) -> do
+        r2 <- WI.integerToReal sym e2'
+        SomeExpr <$> WI.realLe sym r2 e1'
+      (WBT.BaseIntegerRepr, WBT.BaseRealRepr) -> do
+        r1 <- WI.integerToReal sym e1'
+        SomeExpr <$> WI.realLe sym e2' r1
+      _ -> Pretty.userErr ">= requires integer or real arguments"
 
   other -> Pretty.unsupported $ "expression:" <+> PP.pretty (Pretty.ppSExp other)
 
