@@ -419,13 +419,21 @@ parseExpr sym vars fns = \case
     let extendedVars = Map.union (Map.fromList bindings) vars
     parseExpr sym extendedVars fns body
 
-  [sexp|(+ #e1 #e2)|] -> do
-    SomeExpr e1' <- parseExpr sym vars fns e1
-    SomeExpr e2' <- parseExpr sym vars fns e2
-    case (WI.exprType e1', WI.exprType e2') of
-      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
-        SomeExpr <$> WI.intAdd sym e1' e2'
-      _ -> Pretty.userErr "+ requires integer arguments"
+  [sexp|(+ ...args)|] -> do
+    case args of
+      [] -> do
+        -- Zero-argument addition: return 0
+        SomeExpr <$> WI.intLit sym 0
+      [e1] -> parseExpr sym vars fns e1
+      _ -> do
+        -- N-ary addition: fold over arguments
+        exprs <- forM args $ \arg -> do
+          SomeExpr e <- parseExpr sym vars fns arg
+          case WI.exprType e of
+            WBT.BaseIntegerRepr -> return e
+            _ -> Pretty.userErr "+ requires integer arguments"
+        zero <- WI.intLit sym 0
+        SomeExpr <$> Monad.foldM (WI.intAdd sym) zero exprs
 
   [sexp|(- #e1 ...rest)|] -> do
     case rest of
@@ -443,13 +451,21 @@ parseExpr sym vars fns = \case
           _ -> Pretty.userErr "- requires integer arguments"
       _ -> Pretty.userErr "- expects 1 or 2 arguments"
 
-  [sexp|(* #e1 #e2)|] -> do
-    SomeExpr e1' <- parseExpr sym vars fns e1
-    SomeExpr e2' <- parseExpr sym vars fns e2
-    case (WI.exprType e1', WI.exprType e2') of
-      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
-        SomeExpr <$> WI.intMul sym e1' e2'
-      _ -> Pretty.userErr "* requires integer arguments"
+  [sexp|(* ...args)|] -> do
+    case args of
+      [] -> do
+        -- Zero-argument multiplication: return 1
+        SomeExpr <$> WI.intLit sym 1
+      [e1] -> parseExpr sym vars fns e1
+      _ -> do
+        -- N-ary multiplication: fold over arguments
+        exprs <- forM args $ \arg -> do
+          SomeExpr e <- parseExpr sym vars fns arg
+          case WI.exprType e of
+            WBT.BaseIntegerRepr -> return e
+            _ -> Pretty.userErr "* requires integer arguments"
+        one <- WI.intLit sym 1
+        SomeExpr <$> Monad.foldM (WI.intMul sym) one exprs
 
   [sexp|(div #e1 #e2)|] -> do
     SomeExpr e1' <- parseExpr sym vars fns e1
