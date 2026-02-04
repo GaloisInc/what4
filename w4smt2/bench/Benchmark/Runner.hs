@@ -140,8 +140,8 @@ checkAndCollect config rp = do
                     }
 
             Z3VerifyProcess originalResult -> do
-              let z3Output = Text.words $ Text.toLower stdout
-              let finalResult = verifyZ3Output originalResult z3Output
+              let z3Result = Text.strip $ Text.toLower stdout
+              let finalResult = verifyZ3Output originalResult z3Result
               return $ Finished $ CompletedResult
                 { crFilePath = rpFilePath rp
                 , crResult = finalResult
@@ -152,16 +152,16 @@ checkAndCollect config rp = do
       FileUnsat _ -> True
       _ -> False
 
-    verifyZ3Output originalResult z3Output =
+    verifyZ3Output originalResult z3Result =
       case originalResult of
         FileSat elapsed ->
-          if "sat" `elem` z3Output
+          if z3Result == "sat"
             then originalResult
-            else FileError ("Z3 disagreement: w4smt2 said sat but Z3 said " ++ Text.unpack (Text.unwords z3Output)) elapsed
+            else FileError ("Z3 disagreement: w4smt2 said sat but Z3 said " ++ Text.unpack z3Result) elapsed
         FileUnsat elapsed ->
-          if "unsat" `elem` z3Output
+          if z3Result == "unsat"
             then originalResult
-            else FileError ("Z3 disagreement: w4smt2 said unsat but Z3 said " ++ Text.unpack (Text.unwords z3Output)) elapsed
+            else FileError ("Z3 disagreement: w4smt2 said unsat but Z3 said " ++ Text.unpack z3Result) elapsed
         _ -> originalResult
 
 -- | Parse the result from w4smt2 output
@@ -171,14 +171,12 @@ parseResult exitCode stdout _stderr elapsed =
     ExitFailure 2 -> FileUnsupported elapsed
     ExitFailure _ -> FileError "Non-zero exit code" elapsed
     ExitSuccess ->
-      let output = Text.words $ Text.toLower stdout
-      in if "sat" `elem` output
-         then FileSat elapsed
-         else if "unsat" `elem` output
-              then FileUnsat elapsed
-              else if "unknown" `elem` output
-                   then FileUnknown elapsed
-                   else FileError "Could not parse output" elapsed
+      let output = Text.strip $ Text.toLower stdout
+      in case output of
+           "sat" -> FileSat elapsed
+           "unsat" -> FileUnsat elapsed
+           "unknown" -> FileUnknown elapsed
+           _ -> FileError ("Could not parse output: " ++ Text.unpack output) elapsed
 
 -- | Run benchmark on all files
 runBenchmark :: Conf.Config -> [FilePath] -> (CompletedResult -> IO ()) -> IO [FileResult]
