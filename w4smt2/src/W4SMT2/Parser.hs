@@ -341,6 +341,36 @@ parseExpr sym vars fns = \case
             _ -> Pretty.userErr "extract indices out of range"
         _ -> Pretty.userErr "extract requires a bitvector argument"
 
+  [sexp|((#_ zero_extend $n) #bvExpr)|]
+    | let extendNat = fromIntegral @Integer @Natural n
+    , Some extendW <- NatRepr.mkNatRepr extendNat
+    , Just oneLeqExtend@NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) extendW
+    -> do
+      Some bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          let resultW = w `NatRepr.addNat` extendW
+          let wLeqW = NatRepr.leqRefl w
+          NatRepr.LeqProof <- return (NatRepr.leqAdd2 wLeqW oneLeqExtend)
+          extended <- WI.bvZext sym resultW bv
+          return (Some extended)
+        _ -> Pretty.userErr "zero_extend requires a bitvector argument"
+
+  [sexp|((#_ sign_extend $n) #bvExpr)|]
+    | let extendNat = fromIntegral @Integer @Natural n
+    , Some extendW <- NatRepr.mkNatRepr extendNat
+    , Just oneLeqExtend@NatRepr.LeqProof <- NatRepr.testLeq (NatRepr.knownNat @1) extendW
+    -> do
+      Some bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          let resultW = w `NatRepr.addNat` extendW
+          let wLeqW = NatRepr.leqRefl w
+          NatRepr.LeqProof <- return (NatRepr.leqAdd2 wLeqW oneLeqExtend)
+          extended <- WI.bvSext sym resultW bv
+          return (Some extended)
+        _ -> Pretty.userErr "sign_extend requires a bitvector argument"
+
   [sexp|(concat #e1 #e2)|] -> do
     Some bv1 <- parseExpr sym vars fns e1
     Some bv2 <- parseExpr sym vars fns e2

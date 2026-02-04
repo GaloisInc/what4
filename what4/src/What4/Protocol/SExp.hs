@@ -58,10 +58,17 @@ isTokenChar :: Char -> Bool
 isTokenChar '(' = False
 isTokenChar ')' = False
 isTokenChar '"' = False
+isTokenChar '|' = False  -- Reserved for quoted symbols
 isTokenChar c = not (isSpace c)
 
 readToken :: Parser Text
-readToken = takeWhile1 isTokenChar
+readToken = quotedSymbol <|> takeWhile1 isTokenChar
+  where
+    quotedSymbol = do
+      _ <- char '|'
+      content <- takeWhile (/= '|')
+      _ <- char '|'
+      return content
 
 -- | Parses an SExp.  If the input is a string (recognized by the
 -- 'readString' argument), return that as an 'SString'; if the input

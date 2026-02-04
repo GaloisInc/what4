@@ -53,8 +53,9 @@ buildDefinedFn ::
   Some WBT.BaseTypeRepr ->
   SExp.SExp ->
   Map VarName (Some (WI.SymExpr sym)) ->
+  Map FnName (WI.SomeSymFn sym) ->
   IO (WI.SomeSymFn sym)
-buildDefinedFn sym fnName params (Some retType) body vars =
+buildDefinedFn sym fnName params (Some retType) body vars fns =
   buildParams Ctx.Empty vars params
   where
     buildParams ::
@@ -65,7 +66,7 @@ buildDefinedFn sym fnName params (Some retType) body vars =
       IO (WI.SomeSymFn sym)
     buildParams builtParams extendedVars = \case
       [] -> do
-        Some bodyExpr <- Parser.parseExpr sym extendedVars Map.empty body
+        Some bodyExpr <- Parser.parseExpr sym extendedVars fns body
         let bodyType = WI.exprType bodyExpr
         case WBT.testEquality bodyType retType of
           Just WBT.Refl -> do
@@ -127,7 +128,7 @@ execCommand sym state = \case
     | SExp.SAtom name <- nameSexp -> do
         params <- Parser.parseDefunParams paramsSexp
         retType <- Parser.parseType retTypeSexp
-        fn <- buildDefinedFn sym (FnName name) params retType body (ssVars state)
+        fn <- buildDefinedFn sym (FnName name) params retType body (ssVars state) (ssFuns state)
         return $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
 
   [sexp|(assert #exprSexp)|] -> do
