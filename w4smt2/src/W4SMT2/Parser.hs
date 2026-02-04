@@ -406,6 +406,92 @@ parseExpr sym vars fns = \case
     let extendedVars = Map.union (Map.fromList bindings) vars
     parseExpr sym extendedVars fns body
 
+  [sexp|(+ #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intAdd sym e1' e2'
+      _ -> Pretty.userErr "+ requires integer arguments"
+
+  [sexp|(- #e1 ...rest)|] -> do
+    case rest of
+      [] -> do  -- Unary negation
+        SomeExpr e' <- parseExpr sym vars fns e1
+        case WI.exprType e' of
+          WBT.BaseIntegerRepr -> SomeExpr <$> WI.intNeg sym e'
+          _ -> Pretty.userErr "unary - requires integer argument"
+      [e2] -> do  -- Binary subtraction
+        SomeExpr e1' <- parseExpr sym vars fns e1
+        SomeExpr e2' <- parseExpr sym vars fns e2
+        case (WI.exprType e1', WI.exprType e2') of
+          (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+            SomeExpr <$> WI.intSub sym e1' e2'
+          _ -> Pretty.userErr "- requires integer arguments"
+      _ -> Pretty.userErr "- expects 1 or 2 arguments"
+
+  [sexp|(* #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intMul sym e1' e2'
+      _ -> Pretty.userErr "* requires integer arguments"
+
+  [sexp|(div #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intDiv sym e1' e2'
+      _ -> Pretty.userErr "div requires integer arguments"
+
+  [sexp|(mod #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intMod sym e1' e2'
+      _ -> Pretty.userErr "mod requires integer arguments"
+
+  [sexp|(abs #e)|] -> do
+    SomeExpr e' <- parseExpr sym vars fns e
+    case WI.exprType e' of
+      WBT.BaseIntegerRepr -> SomeExpr <$> WI.intAbs sym e'
+      _ -> Pretty.userErr "abs requires integer argument"
+
+  [sexp|(< #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intLt sym e1' e2'
+      _ -> Pretty.userErr "< requires integer arguments"
+
+  [sexp|(<= #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intLe sym e1' e2'
+      _ -> Pretty.userErr "<= requires integer arguments"
+
+  [sexp|(> #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intLt sym e2' e1'
+      _ -> Pretty.userErr "> requires integer arguments"
+
+  [sexp|(>= #e1 #e2)|] -> do
+    SomeExpr e1' <- parseExpr sym vars fns e1
+    SomeExpr e2' <- parseExpr sym vars fns e2
+    case (WI.exprType e1', WI.exprType e2') of
+      (WBT.BaseIntegerRepr, WBT.BaseIntegerRepr) ->
+        SomeExpr <$> WI.intLe sym e2' e1'
+      _ -> Pretty.userErr ">= requires integer arguments"
+
   other -> Pretty.unsupported $ "expression:" <+> PP.pretty (Pretty.ppSExp other)
 
 -- | Parse an expression that must be Bool

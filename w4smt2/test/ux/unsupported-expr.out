@@ -1,1 +1,1 @@
-unsupported: expression: (+ x 1)
+user error: assert requires Bool expression, got BaseIntegerRepr
