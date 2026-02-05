@@ -14,6 +14,7 @@ semiring products.
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE PolyKinds #-}
@@ -69,6 +70,7 @@ module What4.Expr.WeightedSum
   , prodContains
   ) where
 
+import qualified Control.Exception as Ex
 import           Control.Lens
 import           Control.Monad (unless)
 import qualified Data.BitVector.Sized as BV
@@ -153,6 +155,25 @@ fromSRAbsValue v =
     SRAbsRealAdd x -> x
     SRAbsBVAdd   x -> BVD.BVDArith x
     SRAbsBVXor   x -> BVD.fromXorDomain x
+
+-- | Returns 'Just' when the abstract value is a singleton.
+asCoeff ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Maybe (SR.Coefficient sr)
+asCoeff =
+  \case
+    SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
+    SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
+    SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+
+varIsConst ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Bool
+varIsConst sr = isJust . asCoeff sr
 
 --------------------------------------------------------------------------------
 
@@ -247,12 +268,21 @@ singletonProdMap ::
   ProdMap f sr
 singletonProdMap sr occ t = AM.singleton (WrapF t) (mkProdNote sr occ t) occ
 
+-- | Returns a 'SumMap' together with the sum of all 'SR.Cofficient'-only terms.
 fromListSumMap ::
   Tm f =>
   SR.SemiRingRepr sr ->
-  [(f (SR.SemiRingBase sr), SR.Coefficient sr)] -> SumMap f sr
-fromListSumMap _ [] = AM.empty
-fromListSumMap sr ((t, c) : xs) = insertSumMap sr c t (fromListSumMap sr xs)
+  [(f (SR.SemiRingBase sr), SR.Coefficient sr)] ->
+  (SumMap f sr, SR.Coefficient sr)
+fromListSumMap sr = foldr go (AM.empty, SR.zero sr)
+  where
+  go (t, c) (m, acc) =
+    if SR.eq sr (SR.zero sr) c
+    then (m, acc)
+    else
+      case asCoeff sr t of
+        Just c' -> (m, SR.add sr (SR.mul sr c c') acc)
+        Nothing -> (insertSumMap sr c t m, acc)
 
 toListSumMap :: SumMap f sr -> [(f (SR.SemiRingBase sr), SR.Coefficient sr)]
 toListSumMap am = [ (t, c) | (WrapF t, c) <- AM.toList am ]
@@ -261,9 +291,15 @@ toListSumMap am = [ (t, c) | (WrapF t, c) <- AM.toList am ]
 --   an affine operation on the underlying expressions.
 data WeightedSum (f :: BaseType -> Type) (sr :: SR.SemiRing)
    = WeightedSum { _sumMap     :: !(SumMap f sr)
+                   -- ^ Map from terms to their coefficients
+                   --
+                   -- INVARIANT: The terms in the map should not be constant
+                   -- (i.e., according to 'varIsConst') and the coefficients
+                   -- should not be 'SR.zero'. This is not a safety invariant,
+                   -- but helps ensure normalized terms.
                  , _sumOffset  :: !(SR.Coefficient sr)
                  , sumRepr     :: !(SR.SemiRingRepr sr)
-                     -- ^ Runtime representation of the semiring for this sum.
+                   -- ^ Runtime representation of the semiring for this sum.
                  }
 
 -- | A product of semiring values.
@@ -318,17 +354,23 @@ instance OrdF f => TestEquality (WeightedSum f) where
 instance OrdF f => Eq (WeightedSum f sr) where
   x == y = isJust (testEquality x y)
 
-
 -- | Created a weighted sum directly from a map and constant.
 --
--- Note. When calling this, one should ensure map values equal to '0'
--- have been removed.
+-- When calling this, one should ensure values with coefficients equal to
+-- @'SR.zero'@ have been removed and none of the terms of the map satisfy
+-- 'varIsConst'. See INVARIANT on '_sumMap'.
 unfilteredSum ::
+  AD.HasAbsValue f =>
   SR.SemiRingRepr sr ->
   SumMap f sr ->
   SR.Coefficient sr ->
   WeightedSum f sr
-unfilteredSum sr m c = WeightedSum m c sr
+unfilteredSum sr m c =
+  Ex.assert (all (uncurry notConst) (toListSumMap m)) $
+    WeightedSum m c sr
+  where
+  notConst v coeff =
+    not (varIsConst sr v) && not (SR.eq sr (SR.zero sr) coeff)
 
 -- | Retrieve the mapping from terms to coefficients.
 sumMap :: Lens' (WeightedSum f sr) (SumMap f sr)
@@ -397,6 +439,19 @@ asVar w
 constant :: Tm f => SR.SemiRingRepr sr -> SR.Coefficient sr -> WeightedSum f sr
 constant sr c = unfilteredSum sr AM.empty c
 
+-- | Create a sum from a single affine variable (@st + c@).
+affineVar ::
+  Tm f =>
+  SR.SemiRingRepr sr ->
+  SR.Coefficient sr ->
+  f (SR.SemiRingBase sr) ->
+  SR.Coefficient sr ->
+  WeightedSum f sr
+affineVar sr s t c
+  | SR.eq sr (SR.zero sr) s = constant sr c
+  | Just s' <- asCoeff sr t = constant sr (SR.add sr (SR.mul sr s s') c)
+  | otherwise = unfilteredSum sr (singletonSumMap sr s t) c
+
 -- | Traverse the expressions in a weighted sum.
 traverseVars :: forall k j m sr.
   (Applicative m, Tm k) =>
@@ -437,13 +492,11 @@ traverseProdVars f pd =
 
 -- | This returns a variable times a constant.
 scaledVar :: Tm f => SR.SemiRingRepr sr -> SR.Coefficient sr -> f (SR.SemiRingBase sr) -> WeightedSum f sr
-scaledVar sr s t
-  | SR.eq sr (SR.zero sr) s = unfilteredSum sr AM.empty (SR.zero sr)
-  | otherwise = unfilteredSum sr (singletonSumMap sr s t) (SR.zero sr)
+scaledVar sr s t = affineVar sr s t (SR.zero sr)
 
 -- | Create a weighted sum corresponding to the given variable.
 var :: Tm f => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> WeightedSum f sr
-var sr t = unfilteredSum sr (singletonSumMap sr (SR.one sr) t) (SR.zero sr)
+var sr t = scaledVar sr (SR.one sr) t
 
 -- | Add two sums, collecting terms as necessary and deleting terms whose
 --   coefficients sum to 0.
@@ -489,9 +542,9 @@ scale sr c wsum
   | otherwise = unfilteredSum sr m' (SR.mul sr c (wsum^.sumOffset))
   where
     m' = AM.mapMaybeWithKey f (wsum^.sumMap)
-    f (WrapF t) _ x
-      | SR.eq sr (SR.zero sr) cx = Nothing
-      | otherwise = Just (mkNote sr cx t, cx)
+    f (WrapF t) _ x =
+      Ex.assert (not (SR.eq sr (SR.zero sr) cx)) $  -- enforced by INVARIANT
+        Just (mkNote sr cx t, cx)
       where cx = SR.mul sr c x
 
 -- | Produce a weighted sum from a list of terms and an offset.
@@ -501,7 +554,9 @@ fromTerms ::
   [(f (SR.SemiRingBase sr), SR.Coefficient sr)] ->
   SR.Coefficient sr ->
   WeightedSum f sr
-fromTerms sr tms offset = unfilteredSum sr (fromListSumMap sr tms) offset
+fromTerms sr tms offset =
+  let (m, offset') = fromListSumMap sr tms in
+  unfilteredSum sr m (SR.add sr offset offset')
 
 -- | Apply update functions to the terms and coefficients of a weighted sum.
 transformSum :: (Applicative m, Tm g) =>
