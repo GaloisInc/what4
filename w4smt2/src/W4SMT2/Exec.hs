@@ -120,24 +120,26 @@ execCommands ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   SolverState sym ->
+  Maybe (sym -> [WI.Pred sym] -> IO (WSR.SatResult () ())) ->
   [SExp.SExp] ->
   IO (WSR.SatResult () ())
-execCommands sym state = \case
+execCommands sym state maybeSolverCallback = \case
   [] -> return WSR.Unknown
   (cmd:rest) -> do
-    result <- execCommand sym state cmd
+    result <- execCommand sym state maybeSolverCallback cmd
     case result of
       Left satResult -> return satResult
-      Right newState -> execCommands sym newState rest
+      Right newState -> execCommands sym newState maybeSolverCallback rest
 
 -- | Execute a single command
 execCommand ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   SolverState sym ->
+  Maybe (sym -> [WI.Pred sym] -> IO (WSR.SatResult () ())) ->
   SExp.SExp ->
   IO (Either (WSR.SatResult () ()) (SolverState sym))
-execCommand sym state = \case
+execCommand sym state maybeSolverCallback = \case
   [sexp|(declare-const #nameSexp #typeSexp)|]
     | SExp.SAtom name <- nameSexp -> do
         Some tp <- Parser.parseType typeSexp
@@ -174,8 +176,11 @@ execCommand sym state = \case
         "assert requires Bool expression, got" <+> PP.viaShow (WI.exprType expr)
 
   [sexp|(check-sat)|] -> do
-    result <- checkSat sym (ssAsserts state)
-    return $ Left result
+    internalResult <- checkSat sym (ssAsserts state)
+    finalResult <- case (internalResult, maybeSolverCallback) of
+      (WSR.Unknown, Just callback) -> callback sym (ssAsserts state)
+      _ -> return internalResult
+    return $ Left finalResult
 
   [sexp|(exit)|] -> return $ Left WSR.Unknown
 

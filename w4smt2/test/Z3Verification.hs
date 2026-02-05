@@ -17,7 +17,7 @@ import What4.Expr (newExprBuilder, EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.FloatMode (FloatModeRepr(FloatUninterpretedRepr))
 import What4.SatResult (SatResult(Sat, Unsat, Unknown))
 
-import W4SMT2 (solve)
+import W4SMT2.Solve (solve)
 
 mkZ3VerificationTests :: IO [TestTree]
 mkZ3VerificationTests = do
