@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Benchmark.Output
   ( Stats(..)
+  , SolverStats(..)
   , computeStats
   , isTerminal
   , updateProgressLine
@@ -10,11 +11,31 @@ module Benchmark.Output
   , printSummary
   ) where
 
-import Benchmark.Runner (FileResult(FileError, FileSat, FileTimeout, FileUnknown, FileUnsat, FileUnsupported))
+import Benchmark.Config (Solver)
+import Benchmark.Runner (FileResult(FileError, FileSat, FileTimeout, FileUnknown, FileUnsat, FileUnsupported), WorkItem, wiFile, wiSolver)
+import Control.Monad (when)
+import Data.List (sort)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Text (Text)
+import Data.Text qualified as Text
 import System.Console.ANSI (hClearLine, hCursorBackward)
 import System.Console.ANSI qualified as ANSI
 import System.IO (Handle, hIsTerminalDevice, hPutStr, hPutStrLn, stderr)
 import Text.Printf (printf)
+
+-- | Per-solver statistics
+data SolverStats = SolverStats
+  { ssAvgTime :: !Double
+  , ssStdDevTime :: !Double
+  , ssMedianTime :: !Double
+  , ssTotalTime :: !Double
+  , ssUnknown :: !Int
+  , ssUnsupported :: !Int
+  , ssTimeouts :: !Int
+  , ssErrors :: !Int
+  , ssTimes :: ![Double]
+  } deriving (Show)
 
 -- | Statistics accumulator
 data Stats = Stats
@@ -25,52 +46,110 @@ data Stats = Stats
   , statsUnsupported :: !Int
   , statsErrors :: !Int
   , statsTimes :: ![Double]
-  , statsZ3Times :: ![Double]
+  , statsPerSolver :: !(Map Solver SolverStats)
+  , statsDisagreements :: ![Text]
   } deriving (Show)
 
--- | Compute statistics from a list of file results
-computeStats :: [FileResult] -> Stats
-computeStats results = foldl addResult emptyStats results
+-- | Compute statistics from a map of work items to results
+computeStats :: Map WorkItem FileResult -> Stats
+computeStats resultsMap =
+  let results = Map.toList resultsMap
+      -- Group results by file
+      byFile = Map.fromListWith (++) [(wiFile wi, [(wiSolver wi, res)]) | (wi, res) <- results]
+
+      -- Check for disagreements
+      disagreements = concatMap checkFileAgreement (Map.toList byFile)
+
+      -- Compute overall stats
+      overallStats = foldl addResult emptyStats (Map.elems resultsMap)
+
+      -- Compute per-solver stats
+      bySolver = Map.fromListWith (++) [(wiSolver wi, [res]) | (wi, res) <- results]
+      perSolverStats = Map.map computeSolverStats bySolver
+  in overallStats
+       { statsPerSolver = perSolverStats
+       , statsDisagreements = disagreements
+       }
   where
-    emptyStats = Stats 0 0 0 0 0 0 [] []
+    emptyStats = Stats 0 0 0 0 0 0 [] Map.empty []
 
     addResult s = \case
-      FileSat t mz3 ->
+      FileSat t ->
         s { statsTotal = statsTotal s + 1
           , statsSat = statsSat s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
-      FileUnsat t mz3 ->
+      FileUnsat t ->
         s { statsTotal = statsTotal s + 1
           , statsUnsat = statsUnsat s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
-      FileUnknown t mz3 ->
+      FileUnknown t ->
         s { statsTotal = statsTotal s + 1
           , statsUnknown = statsUnknown s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
-      FileUnsupported t mz3 ->
+      FileUnsupported t ->
         s { statsTotal = statsTotal s + 1
           , statsUnsupported = statsUnsupported s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
-      FileError _ t mz3 ->
+      FileError _ t ->
         s { statsTotal = statsTotal s + 1
           , statsErrors = statsErrors s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
-      FileTimeout t mz3 ->
+      FileTimeout t ->
         s { statsTotal = statsTotal s + 1
           , statsErrors = statsErrors s + 1
           , statsTimes = t : statsTimes s
-          , statsZ3Times = maybe (statsZ3Times s) (: statsZ3Times s) mz3
           }
+
+    checkFileAgreement :: (FilePath, [(Solver, FileResult)]) -> [Text]
+    checkFileAgreement (file, solverResults) =
+      let concreteResults = [(solver, resultType res) | (solver, res) <- solverResults, isConcreteResult res]
+          uniqueResults = Map.fromListWith (++) [(rtype, [solver]) | (solver, rtype) <- concreteResults]
+      in if Map.size uniqueResults > 1
+         then [Text.pack $ "Disagreement on " ++ file ++ ": " ++ show (Map.toList uniqueResults)]
+         else []
+
+    isConcreteResult = \case
+      FileSat _ -> True
+      FileUnsat _ -> True
+      _ -> False
+
+    resultType = \case
+      FileSat _ -> "sat"
+      FileUnsat _ -> "unsat"
+      _ -> "other"
+
+    computeSolverStats :: [FileResult] -> SolverStats
+    computeSolverStats solverResults =
+      let times = map getTime solverResults
+          sortedTimes = sort times
+          count = length times
+          total = sum times
+          avg = if count > 0 then total / fromIntegral count else 0
+          variance = if count > 0
+                     then sum [(t - avg) ^ (2 :: Int) | t <- times] / fromIntegral count
+                     else 0
+          stddev = sqrt variance
+          median = if count > 0
+                   then sortedTimes !! (count `div` 2)
+                   else 0
+          unknowns = length [() | FileUnknown _ <- solverResults]
+          unsupported = length [() | FileUnsupported _ <- solverResults]
+          timeouts = length [() | FileTimeout _ <- solverResults]
+          errors = length [() | FileError _ _ <- solverResults]
+      in SolverStats avg stddev median total unknowns unsupported timeouts errors times
+
+    getTime = \case
+      FileSat t -> t
+      FileUnsat t -> t
+      FileUnknown t -> t
+      FileUnsupported t -> t
+      FileError _ t -> t
+      FileTimeout t -> t
 
 -- | Check if stderr is a terminal
 isTerminal :: IO Bool
@@ -125,69 +204,90 @@ clearProgressLine = do
   hClearLine stderr
 
 -- | Log a file result
-logFileResult :: Maybe Handle -> Int -> Int -> FilePath -> FileResult -> IO ()
-logFileResult maybeLogHandle current total filepath result = do
+logFileResult :: Maybe Handle -> Int -> Int -> FilePath -> Solver -> FileResult -> IO ()
+logFileResult maybeLogHandle current total filepath solver result = do
   let prefix = printf "[%d/%d] " current total
+  let solverName = show solver
   let msg = case result of
-        FileSat t mz3 ->
-          prefix ++ filepath ++ ": sat in " ++ formatTime t ++ formatZ3Time mz3
-        FileUnsat t mz3 ->
-          prefix ++ filepath ++ ": unsat in " ++ formatTime t ++ formatZ3Time mz3
-        FileUnknown t mz3 ->
-          prefix ++ filepath ++ ": unknown in " ++ formatTime t ++ formatZ3Time mz3
-        FileUnsupported t mz3 ->
-          prefix ++ filepath ++ ": unsupported in " ++ formatTime t ++ formatZ3Time mz3
-        FileTimeout t mz3 ->
-          prefix ++ "TIMEOUT: " ++ filepath ++ " (>" ++ formatTime t ++ ")" ++ formatZ3Time mz3
-        FileError errorMsg t mz3 ->
-          prefix ++ "ERROR: " ++ filepath ++ " - " ++ errorMsg ++ " in " ++ formatTime t ++ formatZ3Time mz3
+        FileSat t ->
+          prefix ++ solverName ++ " " ++ filepath ++ ": sat in " ++ formatTime t
+        FileUnsat t ->
+          prefix ++ solverName ++ " " ++ filepath ++ ": unsat in " ++ formatTime t
+        FileUnknown t ->
+          prefix ++ solverName ++ " " ++ filepath ++ ": unknown in " ++ formatTime t
+        FileUnsupported t ->
+          prefix ++ solverName ++ " " ++ filepath ++ ": unsupported in " ++ formatTime t
+        FileTimeout t ->
+          prefix ++ solverName ++ " TIMEOUT: " ++ filepath ++ " (>" ++ formatTime t ++ ")"
+        FileError errorMsg t ->
+          prefix ++ solverName ++ " ERROR: " ++ filepath ++ " - " ++ errorMsg ++ " in " ++ formatTime t
 
   let stderrMsg = case result of
-        FileTimeout _ _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
-        FileError _ _ _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
+        FileTimeout _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
+        FileError _ _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
         _ -> msg
 
   hPutStrLn stderr stderrMsg
   case maybeLogHandle of
     Just logHandle -> hPutStrLn logHandle msg
     Nothing -> return ()
-  where
-    formatZ3Time Nothing = ""
-    formatZ3Time (Just z3t) = " (Z3: " ++ formatTime z3t ++ ")"
 
 -- | Print final summary
 printSummary :: Stats -> Double -> IO ()
 printSummary stats totalTime = do
   hPutStrLn stderr ""
   hPutStrLn stderr "========================================="
-  hPutStrLn stderr "Summary:"
-  hPutStrLn stderr $ "  Total files: " ++ show (statsTotal stats)
+  hPutStrLn stderr ""
+
+  -- Overall statistics
+  hPutStrLn stderr "Overall Statistics:"
   hPutStrLn stderr $ "  Sat: " ++ show (statsSat stats)
   hPutStrLn stderr $ "  Unsat: " ++ show (statsUnsat stats)
   hPutStrLn stderr $ "  Unknown: " ++ show (statsUnknown stats)
   hPutStrLn stderr $ "  Unsupported: " ++ show (statsUnsupported stats)
   hPutStrLn stderr $ "  Errors: " ++ show (statsErrors stats)
+  hPutStrLn stderr ""
 
-  let times = statsTimes stats
-  if not (null times)
+  -- Per-solver statistics
+  if not (Map.null (statsPerSolver stats))
     then do
-      let avg = sum times / fromIntegral (length times)
-      let variance = sum [(t - avg) ^ (2 :: Int) | t <- times] / fromIntegral (length times)
-      let stddev = sqrt variance
-      hPutStrLn stderr $ "  Average time: " ++ formatTime avg
-      hPutStrLn stderr $ "  Std dev: " ++ formatTime stddev
+      hPutStrLn stderr "Per-Solver Statistics:"
+      hPutStrLn stderr ""
+      mapM_ printSolverStats (Map.toList (statsPerSolver stats))
     else return ()
 
-  let z3Times = statsZ3Times stats
-  if not (null z3Times)
+  -- Disagreements
+  if not (null (statsDisagreements stats))
     then do
-      let z3Avg = sum z3Times / fromIntegral (length z3Times)
-      hPutStrLn stderr $ "  Z3 avg verification time: " ++ formatTime z3Avg
-      hPutStrLn stderr $ "  Z3 verifications: " ++ show (length z3Times)
-    else return ()
+      hPutStrLn stderr $ colorize ANSI.Red "Disagreements:"
+      mapM_ (\d -> hPutStrLn stderr $ "  " ++ Text.unpack d) (statsDisagreements stats)
+      hPutStrLn stderr ""
+    else do
+      hPutStrLn stderr $ colorize ANSI.Green "Disagreements: None"
+      hPutStrLn stderr ""
 
-  hPutStrLn stderr $ "  Total time: " ++ formatDuration totalTime
+  hPutStrLn stderr $ "Total time: " ++ formatDuration totalTime
   hPutStrLn stderr "========================================="
+
+  where
+    printSolverStats :: (Solver, SolverStats) -> IO ()
+    printSolverStats (solver, ss) = do
+      hPutStrLn stderr $ show solver ++ ":"
+      if not (null (ssTimes ss))
+        then do
+          hPutStrLn stderr $ "  Average time: " ++ formatTime (ssAvgTime ss) ++ " ± " ++ formatTime (ssStdDevTime ss)
+          hPutStrLn stderr $ "  Median time: " ++ formatTime (ssMedianTime ss)
+          hPutStrLn stderr $ "  Total time: " ++ formatTime (ssTotalTime ss)
+        else return ()
+      when (ssUnknown ss > 0) $
+        hPutStrLn stderr $ "  Unknown: " ++ show (ssUnknown ss)
+      when (ssUnsupported ss > 0) $
+        hPutStrLn stderr $ "  Unsupported: " ++ show (ssUnsupported ss)
+      when (ssTimeouts ss > 0) $
+        hPutStrLn stderr $ "  Timeouts: " ++ show (ssTimeouts ss)
+      when (ssErrors ss > 0) $
+        hPutStrLn stderr $ "  Errors: " ++ show (ssErrors ss)
+      hPutStrLn stderr ""
 
 -- | Format time in seconds
 formatTime :: Double -> String
