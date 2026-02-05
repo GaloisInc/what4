@@ -1,0 +1,5 @@
+(define-fun myand ((x Bool) (y Bool)) Bool (and x y))
+(declare-const a Bool)
+(declare-const b Bool)
+(assert (myand a b))
+(check-sat)

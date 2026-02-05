@@ -1,0 +1,5 @@
+(declare-const x (_ BitVec 8))
+(declare-const y (_ BitVec 8))
+(define-fun f ((z (_ BitVec 8))) (_ BitVec 8) (bvadd (bvadd z x) y))
+(assert (= (f #x00) (bvadd x y)))
+(check-sat)

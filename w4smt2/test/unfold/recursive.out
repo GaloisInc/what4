@@ -1,0 +1,3 @@
+(define-fun fact ((n Int)) Int (ite (<= n 0) 1 (* n (fact (- n 1)))))
+(assert (= (fact 5) 120))
+(check-sat)

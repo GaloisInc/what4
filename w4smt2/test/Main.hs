@@ -24,6 +24,9 @@ import What4.FloatMode (FloatModeRepr(FloatUninterpretedRepr))
 import What4.SatResult (SatResult(Sat, Unsat, Unknown))
 
 import W4SMT2 (solve)
+import W4SMT2.Parser qualified as Parser
+import W4SMT2.Pretty qualified as Pretty
+import W4SMT2.Unfold qualified as Unfold
 import Z3Verification (mkZ3VerificationTests)
 
 main :: IO ()
@@ -32,6 +35,7 @@ main = do
   simplTests <- discoverTests "test/simpl" mkSolverTest
   uxTests <- discoverTests "test/ux" mkUxTest
   qfBvTests <- discoverTests "test/qf-bv" mkSolverTest
+  unfoldTests <- discoverTests "test/unfold" mkUnfoldTest
   z3Tests <- mkZ3VerificationTests
   defaultMain $
     testGroup "w4smt2" $
@@ -39,6 +43,7 @@ main = do
     , testGroup "simplification" simplTests
     , testGroup "ux" uxTests
     , testGroup "qf-bv" qfBvTests
+    , testGroup "unfold" unfoldTests
     , testGroup "z3-verification" z3Tests
     ]
 
@@ -81,3 +86,16 @@ mkUxTest dir file = do
     actualStderr <- readIORef stderrRef
     goldenStderr <- TIO.readFile goldenPath
     actualStderr @?= goldenStderr
+
+mkUnfoldTest :: FilePath -> FilePath -> IO TestTree
+mkUnfoldTest dir file = do
+  let name = dropExtension file
+      inputPath = dir </> file
+      goldenPath = dir </> name ++ ".out"
+  return $ goldenVsString name goldenPath $ do
+    let ?logStderr = \_ -> return ()
+    input <- TIO.readFile inputPath
+    sexps <- Parser.parseSExps input
+    unfolded <- Unfold.unfoldDefineFuns sexps
+    let output = TL.unlines (map (TL.fromStrict . Pretty.ppSExp) unfolded)
+    return (TLE.encodeUtf8 output)

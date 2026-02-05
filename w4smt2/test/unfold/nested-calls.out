@@ -1,0 +1,2 @@
+(assert (= (let ((x (let ((x 3)) (* x 2)))) (* x 2)) 12))
+(check-sat)

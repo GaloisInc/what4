@@ -84,6 +84,7 @@ library
     W4SMT2.Pretty
     W4SMT2.SExpPat
     W4SMT2.SomeExpr
+    W4SMT2.Unfold
   build-depends:
     base >= 4.10 && < 5,
     attoparsec,
@@ -100,6 +101,17 @@ executable w4smt2
   hs-source-dirs: app
   main-is: Main.hs
   build-depends: base, w4smt2
+
+executable undefine-fun
+  import: bldflags
+  hs-source-dirs: app
+  main-is: UndefineMain.hs
+  build-depends:
+    base,
+    filepath,
+    text,
+    w4smt2,
+    what4
 
 executable w4smt2-bench
   import: bldflags

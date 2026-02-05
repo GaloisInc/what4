@@ -1,0 +1,4 @@
+(declare-const x Int)
+(declare-const y Int)
+(assert (= (let ((n x)) (+ n 1)) y))
+(check-sat)
