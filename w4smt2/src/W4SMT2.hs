@@ -13,7 +13,6 @@ import Data.Text.IO qualified as Text.IO
 import System.Environment qualified as Env
 import System.Exit qualified as Exit
 import System.IO qualified as IO
-import System.Posix.Signals qualified as Signals
 
 import What4.Expr qualified as WE
 import What4.FloatMode qualified as WFM
@@ -45,18 +44,6 @@ parseArgs = do
 
 main :: IO ()
 main = do
-  -- Install signal handler for SIGTERM to ensure clean shutdown.
-  --
-  -- When SIGTERM is received (e.g., from the w4smt2-bench timeout mechanismg),
-  -- the handler calls exitWith which triggers Haskell's exception unwinding
-  -- mechanism. This allows the What4 library's bracket-style functions (withZ3,
-  -- withCVC5, withBitwuzla, etc.) to run their cleanup code, which properly
-  -- terminates any running solver subprocesses. Without this handler, solver
-  -- processes would be orphaned when w4smt2 is terminated.
-  --
-  -- Exit code 143 is the standard convention for SIGTERM (128 + 15).
-  _ <- Signals.installHandler Signals.sigTERM (Signals.Catch handleSignal) Nothing
-
   (maybeSolver, maybeFilePath) <- parseArgs
   input <- case maybeFilePath of
     Nothing -> Text.IO.getContents
@@ -76,6 +63,3 @@ main = do
       WSR.Sat () -> putStrLn "sat"
       WSR.Unsat () -> putStrLn "unsat"
       WSR.Unknown -> putStrLn "unknown"
-
-  where
-    handleSignal = Exit.exitWith (Exit.ExitFailure 143)
