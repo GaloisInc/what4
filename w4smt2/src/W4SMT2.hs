@@ -18,6 +18,7 @@ import What4.Expr qualified as WE
 import What4.FloatMode qualified as WFM
 import What4.SatResult qualified as WSR
 
+import W4SMT2.Exec (ExecutionResult(erResults))
 import W4SMT2.Solve qualified as Solve
 
 validSolvers :: [String]
@@ -48,18 +49,21 @@ main = do
   input <- case maybeFilePath of
     Nothing -> Text.IO.getContents
     Just path -> Text.IO.readFile path
-  maybeResult <- let ?logStderr = Text.IO.hPutStrLn IO.stderr
-                     ?writeStdout = Text.IO.putStrLn
-                 in Nonce.withIONonceGenerator $ \gen -> do
+  maybeExecResult <- let ?logStderr = Text.IO.hPutStrLn IO.stderr
+                     in Nonce.withIONonceGenerator $ \gen -> do
       sym <- WE.newExprBuilder WFM.FloatUninterpretedRepr WE.EmptyExprBuilderState gen
       case maybeSolver of
         Nothing -> Just <$> Solve.solve sym input
         Just solverName -> Solve.solveWithSolver solverName sym input
-  case maybeResult of
+  case maybeExecResult of
     Nothing -> do
       IO.hPutStrLn IO.stderr "Error: Unknown solver"
       Exit.exitFailure
-    Just result -> case result of
+    Just execResult -> do
+      -- Output all results
+      mapM_ outputResult (erResults execResult)
+  where
+    outputResult result = case result of
       WSR.Sat () -> putStrLn "sat"
       WSR.Unsat () -> putStrLn "unsat"
       WSR.Unknown -> putStrLn "unknown"

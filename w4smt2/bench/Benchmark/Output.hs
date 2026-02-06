@@ -9,12 +9,14 @@ module Benchmark.Output
   , clearProgressLine
   , logFileResult
   , printSummary
+  , colorize
   ) where
 
 import Benchmark.Config (Solver)
-import Benchmark.Runner (FileResult(FileError, FileSat, FileTimeout, FileUnknown, FileUnsat, FileUnsupported), WorkItem, wiFile, wiSolver)
+import Benchmark.Runner qualified as Runner
+import Benchmark.Runner (WorkItem, wiFile, wiSolver)
 import Control.Monad (when)
-import Data.List (sort)
+import Data.List (nub, sort)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -56,7 +58,7 @@ data Stats = Stats
   } deriving (Show)
 
 -- | Compute statistics from a map of work items to results
-computeStats :: Map WorkItem FileResult -> Stats
+computeStats :: Map WorkItem Runner.FileResult -> Stats
 computeStats resultsMap =
   let results = Map.toList resultsMap
       -- Group results by file
@@ -79,56 +81,77 @@ computeStats resultsMap =
     emptyStats = Stats 0 0 0 0 0 0 [] Map.empty []
 
     addResult s = \case
-      FileSat t ->
-        s { statsTotal = statsTotal s + 1
-          , statsSat = statsSat s + 1
-          , statsTimes = t : statsTimes s
-          }
-      FileUnsat t ->
-        s { statsTotal = statsTotal s + 1
-          , statsUnsat = statsUnsat s + 1
-          , statsTimes = t : statsTimes s
-          }
-      FileUnknown t ->
-        s { statsTotal = statsTotal s + 1
-          , statsUnknown = statsUnknown s + 1
-          , statsTimes = t : statsTimes s
-          }
-      FileUnsupported _ ->
+      Runner.FileResults results t ->
+        let satCount = length [() | Runner.ResSat <- results]
+            unsatCount = length [() | Runner.ResUnsat <- results]
+            unknownCount = length [() | Runner.ResUnknown <- results]
+        in s { statsTotal = statsTotal s + 1
+             , statsSat = statsSat s + satCount
+             , statsUnsat = statsUnsat s + unsatCount
+             , statsUnknown = statsUnknown s + unknownCount
+             , statsTimes = t : statsTimes s
+             }
+      Runner.FileUnsupported _ ->
         s { statsTotal = statsTotal s + 1
           , statsUnsupported = statsUnsupported s + 1
           -- Don't include unsupported in time averages
           }
-      FileError _ t ->
+      Runner.FileError _ t ->
         s { statsTotal = statsTotal s + 1
           , statsErrors = statsErrors s + 1
           , statsTimes = t : statsTimes s
           }
-      FileTimeout t ->
+      Runner.FileTimeout t ->
         s { statsTotal = statsTotal s + 1
           , statsErrors = statsErrors s + 1
           , statsTimes = t : statsTimes s
           }
 
-    checkFileAgreement :: (FilePath, [(Solver, FileResult)]) -> [Text]
+    checkFileAgreement :: (FilePath, [(Solver, Runner.FileResult)]) -> [Text]
     checkFileAgreement (file, solverResults) =
-      let concreteResults = [(solver, resultType res) | (solver, res) <- solverResults, isConcreteResult res]
-          uniqueResults = Map.fromListWith (++) [(rtype, [solver]) | (solver, rtype) <- concreteResults]
-      in if Map.size uniqueResults > 1
-         then [Text.pack $ "Disagreement on " ++ file ++ ": " ++ show (Map.toList uniqueResults)]
-         else []
+      let concreteResults = [(solver, getResults res) | (solver, res) <- solverResults, isConcreteResult res]
+          -- Find pairs of solvers that disagree
+          disagreements = [(s1, s2) | (s1, r1) <- concreteResults, (s2, r2) <- concreteResults, s1 < s2, resultsDisagree r1 r2]
+      in if null disagreements
+         then []
+         else
+           let allDisagreingSolvers = nub $ sort $ concatMap (\(s1, s2) -> [s1, s2]) disagreements
+               hasMulti = any hasMultiple [res | (_, res) <- solverResults, isConcreteResult res]
+               formatDisagreement = if hasMulti
+                 then "Disagreement on " ++ file ++ " between: " ++ unwords (map show allDisagreingSolvers)
+                 else
+                   -- Single result case: show which solvers had which results
+                   let groupedBySolver = [(s, r) | (s, r) <- concreteResults, s `elem` allDisagreingSolvers]
+                   in "Disagreement on " ++ file ++ ": " ++ show groupedBySolver
+           in [Text.pack formatDisagreement]
 
     isConcreteResult = \case
-      FileSat _ -> True
-      FileUnsat _ -> True
+      Runner.FileResults _ _ -> True
       _ -> False
 
-    resultType = \case
-      FileSat _ -> "sat"
-      FileUnsat _ -> "unsat"
-      _ -> "other"
+    hasMultiple = \case
+      Runner.FileResults results _ -> length results > 1
+      _ -> False
 
-    computeSolverStats :: [FileResult] -> SolverStats
+    getResults = \case
+      Runner.FileResults results _ -> results
+      _ -> []
+
+    -- Two result sequences disagree if:
+    -- 1. They have different lengths, OR
+    -- 2. At any position where both have concrete results, those results differ.
+    --    Unknown matches any result.
+    resultsDisagree :: [Runner.Result] -> [Runner.Result] -> Bool
+    resultsDisagree r1 r2
+      | length r1 /= length r2 = True
+      | otherwise = or $ zipWith disagreeAtPosition r1 r2
+
+    disagreeAtPosition :: Runner.Result -> Runner.Result -> Bool
+    disagreeAtPosition Runner.ResUnknown _ = False  -- Unknown matches anything
+    disagreeAtPosition _ Runner.ResUnknown = False  -- Unknown matches anything
+    disagreeAtPosition a b = a /= b  -- Concrete results must match
+
+    computeSolverStats :: [Runner.FileResult] -> SolverStats
     computeSolverStats solverResults =
       let -- All times (excluding unsupported)
           times = [t | r <- solverResults, Just t <- [getTime r]]
@@ -157,26 +180,30 @@ computeStats resultsMap =
                          then sortedSolvedTimes !! (solvedCount `div` 2)
                          else 0
 
-          unknowns = length [() | FileUnknown _ <- solverResults]
-          unsupported = length [() | FileUnsupported _ <- solverResults]
-          timeouts = length [() | FileTimeout _ <- solverResults]
-          errors = length [() | FileError _ _ <- solverResults]
+          unknowns = sum [length [() | Runner.ResUnknown <- rs] | Runner.FileResults rs _ <- solverResults]
+          unsupported = length [() | Runner.FileUnsupported _ <- solverResults]
+          timeouts = length [() | Runner.FileTimeout _ <- solverResults]
+          errors = length [() | Runner.FileError _ _ <- solverResults]
       in SolverStats avg stddev median total solvedAvg solvedStddev solvedMedian solvedCount unknowns unsupported timeouts errors times
 
     -- Get time for all problems (excludes unsupported)
     getTime = \case
-      FileSat t -> Just t
-      FileUnsat t -> Just t
-      FileUnknown t -> Just t
-      FileUnsupported _ -> Nothing
-      FileError _ t -> Just t
-      FileTimeout t -> Just t
+      Runner.FileResults _ t -> Just t
+      Runner.FileUnsupported _ -> Nothing
+      Runner.FileError _ t -> Just t
+      Runner.FileTimeout t -> Just t
 
     -- Get time for solved problems only (sat/unsat)
     getSolvedTime = \case
-      FileSat t -> Just t
-      FileUnsat t -> Just t
+      Runner.FileResults results t
+        | any isSolved results -> Just t
+        | otherwise -> Nothing
       _ -> Nothing
+
+    isSolved = \case
+      Runner.ResSat -> True
+      Runner.ResUnsat -> True
+      Runner.ResUnknown -> False
 
 -- | Check if stderr is a terminal
 isTerminal :: IO Bool
@@ -231,27 +258,27 @@ clearProgressLine = do
   hClearLine stderr
 
 -- | Log a file result
-logFileResult :: Maybe Handle -> Int -> Int -> FilePath -> Solver -> FileResult -> IO ()
+logFileResult :: Maybe Handle -> Int -> Int -> FilePath -> Solver -> Runner.FileResult -> IO ()
 logFileResult maybeLogHandle current total filepath solver result = do
   let prefix = printf "[%d/%d] " current total
   let solverName = show solver
   let msg = case result of
-        FileSat t ->
-          prefix ++ solverName ++ " " ++ filepath ++ ": sat in " ++ formatTime t
-        FileUnsat t ->
-          prefix ++ solverName ++ " " ++ filepath ++ ": unsat in " ++ formatTime t
-        FileUnknown t ->
-          prefix ++ solverName ++ " " ++ filepath ++ ": unknown in " ++ formatTime t
-        FileUnsupported t ->
+        Runner.FileResults results t ->
+          let resultStr = case results of
+                [] -> "no results"
+                [r] -> Text.unpack $ Runner.formatResult r
+                _ -> "<multiple>"
+          in prefix ++ solverName ++ " " ++ filepath ++ ": " ++ resultStr ++ " in " ++ formatTime t
+        Runner.FileUnsupported t ->
           prefix ++ solverName ++ " " ++ filepath ++ ": unsupported in " ++ formatTime t
-        FileTimeout t ->
+        Runner.FileTimeout t ->
           prefix ++ solverName ++ " TIMEOUT: " ++ filepath ++ " (>" ++ formatTime t ++ ")"
-        FileError errorMsg t ->
+        Runner.FileError errorMsg t ->
           prefix ++ solverName ++ " ERROR: " ++ filepath ++ " - " ++ errorMsg ++ " in " ++ formatTime t
 
   let stderrMsg = case result of
-        FileTimeout _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
-        FileError _ _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
+        Runner.FileTimeout _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
+        Runner.FileError _ _ -> prefix ++ colorize ANSI.Red (drop (length prefix) msg)
         _ -> msg
 
   hPutStrLn stderr stderrMsg

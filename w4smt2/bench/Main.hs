@@ -4,6 +4,7 @@ module Main (main) where
 import Benchmark.Config qualified as Conf
 import Benchmark.CSV qualified as CSV
 import Benchmark.Discovery qualified as Discovery
+import Benchmark.Output (colorize)
 import Benchmark.Output qualified as Output
 import Benchmark.Runner (CompletedResult(crResult, crWorkItem), WorkItem(WorkItem), wiFile, wiSolver)
 import Benchmark.Runner qualified as Runner
@@ -159,9 +160,3 @@ main = do
       when isTerm Output.clearProgressLine
       hPutStrLn stderr ""
       hPutStrLn stderr $ colorize ANSI.Yellow "Interrupted! Cleaning up..."
-
-    colorize :: ANSI.Color -> String -> String
-    colorize color text =
-      ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Vivid color]
-      ++ text
-      ++ ANSI.setSGRCode [ANSI.Reset]

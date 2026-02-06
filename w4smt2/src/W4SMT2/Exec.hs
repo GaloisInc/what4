@@ -6,12 +6,15 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module W4SMT2.Exec
   ( SolverState(..)
   , initState
   , execCommands
   , execCommand
+  , ExecutionResult(..)
   ) where
 
 import Control.Monad qualified as Monad
@@ -40,10 +43,24 @@ data SolverState sym = SolverState
   { ssVars :: Map VarName (SomeExpr sym)
   , ssFuns :: Map FnName (WI.SomeSymFn sym)
   , ssAsserts :: [WI.Pred sym]
+  , ssStack :: [StackFrame sym]  -- Stack for push/pop
   }
 
+-- | A stack frame for push/pop
+data StackFrame sym = StackFrame
+  { sfVars :: Map VarName (SomeExpr sym)
+  , sfFuns :: Map FnName (WI.SomeSymFn sym)
+  , sfAsserts :: [WI.Pred sym]
+  }
+
+-- | Result of executing commands (may contain multiple check-sat results)
+newtype ExecutionResult = ExecutionResult
+  { erResults :: [WSR.SatResult () ()]  -- All check-sat results in order
+  }
+  deriving (Show)
+
 initState :: SolverState sym
-initState = SolverState Map.empty Map.empty []
+initState = SolverState Map.empty Map.empty [] []
 
 buildDefinedFn ::
   forall sym.
@@ -115,36 +132,43 @@ buildUninterpFn sym fnName paramTypes (Some retType) =
       (Some paramType) : rest ->
         buildParams (builtParams :> paramType) rest
 
--- | Execute commands and return the result of check-sat
+-- | Execute commands and return all check-sat results
 execCommands ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   SolverState sym ->
   Maybe (sym -> [WI.Pred sym] -> IO (WSR.SatResult () ())) ->
   [SExp.SExp] ->
-  IO (WSR.SatResult () ())
-execCommands sym state maybeSolverCallback = \case
-  [] -> return WSR.Unknown
-  (cmd:rest) -> do
-    result <- execCommand sym state maybeSolverCallback cmd
-    case result of
-      Left satResult -> return satResult
-      Right newState -> execCommands sym newState maybeSolverCallback rest
+  IO ExecutionResult
+execCommands sym state maybeSolverCallback = loop state []
+  where
+    loop _ results [] = return $ ExecutionResult (reverse results)
+    loop st results (cmd:rest) = do
+      maybeResult <- execCommand sym st maybeSolverCallback cmd
+      case maybeResult of
+        Nothing -> return $ ExecutionResult (reverse results)  -- exit encountered, stop
+        Just (Left satResult) ->
+          -- Accumulate this check-sat result
+          loop st (satResult : results) rest
+        Just (Right newState) -> loop newState results rest
 
 -- | Execute a single command
+-- Returns Nothing if exit was encountered (stop processing)
+-- Returns Just (Left result) if check-sat was encountered (output result and continue)
+-- Returns Just (Right newState) if other command was executed (continue)
 execCommand ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   SolverState sym ->
   Maybe (sym -> [WI.Pred sym] -> IO (WSR.SatResult () ())) ->
   SExp.SExp ->
-  IO (Either (WSR.SatResult () ()) (SolverState sym))
+  IO (Maybe (Either (WSR.SatResult () ()) (SolverState sym)))
 execCommand sym state maybeSolverCallback = \case
   [sexp|(declare-const #nameSexp #typeSexp)|]
     | SExp.SAtom name <- nameSexp -> do
         Some tp <- Parser.parseType typeSexp
         var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
-        return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
+        return $ Just $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
 
   [sexp|(declare-fun #nameSexp #paramsSexp #typeSexp)|]
     | SExp.SAtom name <- nameSexp -> do
@@ -154,39 +178,75 @@ execCommand sym state maybeSolverCallback = \case
             -- Zero-arity: treat as constant
             Some tp <- Parser.parseType typeSexp
             var <- WI.freshConstant sym (WI.safeSymbol (Text.unpack name)) tp
-            return $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
+            return $ Just $ Right state { ssVars = Map.insert (VarName name) (SomeExpr var) (ssVars state) }
           _ -> do
             -- Non-zero arity: create uninterpreted function
             retType <- Parser.parseType typeSexp
             fn <- buildUninterpFn sym (FnName name) params retType
-            return $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
+            return $ Just $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
 
   [sexp|(define-fun #nameSexp #paramsSexp #retTypeSexp #body)|]
     | SExp.SAtom name <- nameSexp -> do
         params <- Parser.parseDefunParams paramsSexp
         retType <- Parser.parseType retTypeSexp
         fn <- buildDefinedFn sym (FnName name) params retType body (ssVars state) (ssFuns state)
-        return $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
+        return $ Just $ Right state { ssFuns = Map.insert (FnName name) fn (ssFuns state) }
 
   [sexp|(assert #exprSexp)|] -> do
     SomeExpr expr <- Parser.parseExpr sym (ssVars state) (ssFuns state) exprSexp
     case WBT.testEquality (WI.exprType expr) WBT.BaseBoolRepr of
-      Just WBT.Refl -> return $ Right state { ssAsserts = expr : ssAsserts state }
+      Just WBT.Refl -> return $ Just $ Right state { ssAsserts = expr : ssAsserts state }
       Nothing -> Pretty.userErr $
         "assert requires Bool expression, got" <+> PP.viaShow (WI.exprType expr)
+
+  [sexp|(push $n)|] -> do
+    let numLevels = fromIntegral @Integer @Int n
+    if numLevels <= 0
+      then Pretty.userErr "push requires a positive integer"
+      else do
+        -- Create a stack frame capturing the current state
+        let frame = StackFrame
+              { sfVars = ssVars state
+              , sfFuns = ssFuns state
+              , sfAsserts = ssAsserts state
+              }
+        -- Push the same frame N times (each push saves the current state)
+        -- This is correct because between multiple push(N) calls with N>1,
+        -- the state doesn't change, so saving it N times is equivalent
+        let newStack = replicate numLevels frame ++ ssStack state
+        return $ Just $ Right state { ssStack = newStack }
+
+  [sexp|(pop $n)|] -> do
+    let numLevels = fromIntegral @Integer @Int n
+    if numLevels <= 0
+      then Pretty.userErr "pop requires a positive integer"
+      else if numLevels > length (ssStack state)
+        then Pretty.userErr $ "cannot pop" <+> PP.viaShow numLevels <+> "levels (only" <+> PP.viaShow (length (ssStack state)) <+> "available)"
+        else do
+          let (framesToPop, newStack) = splitAt numLevels (ssStack state)
+          case framesToPop of
+            [] -> Pretty.userErr "internal error: no frames to pop"
+            (topFrame : _) -> return $ Just $ Right state
+              { ssVars = sfVars topFrame
+              , ssFuns = sfFuns topFrame
+              , ssAsserts = sfAsserts topFrame
+              , ssStack = newStack
+              }
 
   [sexp|(check-sat)|] -> do
     internalResult <- checkSat sym (ssAsserts state)
     finalResult <- case (internalResult, maybeSolverCallback) of
       (WSR.Unknown, Just callback) -> callback sym (ssAsserts state)
       _ -> return internalResult
-    return $ Left finalResult
+    return $ Just $ Left finalResult
 
-  [sexp|(exit)|] -> return $ Left WSR.Unknown
+  [sexp|(exit)|] ->
+    -- Stop processing commands
+    return Nothing
 
   -- Ignored commands (no-ops)
-  [sexp|(set-info ..._)|] -> return $ Right state
-  [sexp|(set-logic ..._)|] -> return $ Right state
+  [sexp|(set-info ..._)|] -> return $ Just $ Right state
+  [sexp|(set-logic ..._)|] -> return $ Just $ Right state
 
   -- Unsupported commands
   SExp.SApp (SExp.SAtom cmd : _)
@@ -197,7 +257,7 @@ execCommand sym state maybeSolverCallback = \case
 
 unsupportedCommands :: [Text]
 unsupportedCommands =
-  ["push", "pop", "get-model", "get-value", "echo", "set-option"]
+  ["get-model", "get-value", "echo", "set-option"]
 
 -- | Check satisfiability by examining if assertions simplify to constants
 checkSat :: WI.IsSymExprBuilder sym => sym -> [WI.Pred sym] -> IO (WSR.SatResult () ())

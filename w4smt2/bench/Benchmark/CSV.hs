@@ -42,12 +42,18 @@ readResults csvPath = do
 
     parseResult :: Text -> Double -> Runner.FileResult
     parseResult result time = case result of
-      "sat" -> Runner.FileSat time
-      "unsat" -> Runner.FileUnsat time
-      "unknown" -> Runner.FileUnknown time
       "unsupported" -> Runner.FileUnsupported time
       "timeout" -> Runner.FileTimeout time
-      _ -> Runner.FileError (Text.unpack result) time
+      _ | "error:" `Text.isPrefixOf` result ->
+          let msg = Text.unpack $ Text.drop 7 result
+          in Runner.FileError msg time
+      _ ->
+          -- Parse as list of results separated by semicolons
+          let parts = Text.splitOn ";" result
+              singleResults = [ r | p <- parts, Just r <- [Runner.parseResult (Text.strip $ Text.toLower p)] ]
+          in if null singleResults
+             then Runner.FileError ("Could not parse result: " ++ Text.unpack result) time
+             else Runner.FileResults singleResults time
 
 -- | Write CSV header
 writeHeader :: FilePath -> IO ()
@@ -68,9 +74,9 @@ formatResultLine wi fr =
   let file = Runner.wiFile wi
       solver = show (Runner.wiSolver wi)
       (result, time) = case fr of
-        Runner.FileSat t -> ("sat", t)
-        Runner.FileUnsat t -> ("unsat", t)
-        Runner.FileUnknown t -> ("unknown", t)
+        Runner.FileResults results t ->
+          let resultStr = Text.unpack $ Text.intercalate ";" $ map Runner.formatResult results
+          in (resultStr, t)
         Runner.FileUnsupported t -> ("unsupported", t)
         Runner.FileTimeout t -> ("timeout", t)
         Runner.FileError msg t -> ("error: " ++ msg, t)

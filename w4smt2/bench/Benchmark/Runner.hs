@@ -4,6 +4,9 @@
 module Benchmark.Runner
   ( CompletedResult(..)
   , FileResult(..)
+  , Result(..)
+  , parseResult
+  , formatResult
   , RunningProcess(..)
   , WorkItem(..)
   , buildW4SMT2
@@ -30,11 +33,31 @@ data WorkItem = WorkItem
   , wiSolver :: !Conf.Solver
   } deriving (Eq, Ord, Show)
 
--- | Result for a single file
+-- | Single check-sat result
+data Result
+  = ResSat
+  | ResUnsat
+  | ResUnknown
+  deriving (Show, Eq, Ord)
+
+-- | Parse a single result line
+parseResult :: Text -> Maybe Result
+parseResult = \case
+  "sat" -> Just ResSat
+  "unsat" -> Just ResUnsat
+  "unknown" -> Just ResUnknown
+  _ -> Nothing
+
+-- | Format a single result
+formatResult :: Result -> Text
+formatResult = \case
+  ResSat -> "sat"
+  ResUnsat -> "unsat"
+  ResUnknown -> "unknown"
+
+-- | Result for a single file (may contain multiple check-sat results for incremental)
 data FileResult
-  = FileSat !Double
-  | FileUnsat !Double
-  | FileUnknown !Double
+  = FileResults ![Result] !Double  -- List of results (one per check-sat), total time
   | FileUnsupported !Double
   | FileError !String !Double
   | FileTimeout !Double
@@ -101,7 +124,7 @@ checkAndCollect config rp = do
     Just exitCode -> do
       stdout <- Text.hGetContents (rpStdoutHandle rp)
       stderr <- Text.hGetContents (rpStderrHandle rp)
-      let result = parseResult exitCode stdout stderr elapsed
+      let result = parseSolverOutput exitCode stdout stderr elapsed
       return $ Finished $ CompletedResult
         { crWorkItem = rpWorkItem rp
         , crResult = result
@@ -119,18 +142,17 @@ checkAndCollect config rp = do
         else return StillRunning
 
 -- | Parse the result from solver output
-parseResult :: ExitCode -> Text -> Text -> Double -> FileResult
-parseResult exitCode stdout _stderr elapsed =
+parseSolverOutput :: ExitCode -> Text -> Text -> Double -> FileResult
+parseSolverOutput exitCode stdout _stderr elapsed =
   case exitCode of
     ExitFailure 2 -> FileUnsupported elapsed
     ExitFailure _ -> FileError "Non-zero exit code" elapsed
     ExitSuccess ->
-      let output = Text.strip $ Text.toLower stdout
-      in case output of
-           "sat" -> FileSat elapsed
-           "unsat" -> FileUnsat elapsed
-           "unknown" -> FileUnknown elapsed
-           _ -> FileError ("Could not parse output: " ++ Text.unpack output) elapsed
+      let outputLines = Text.lines stdout
+          results = [ r | line <- outputLines, Just r <- [parseResult (Text.strip $ Text.toLower line)] ]
+      in if null results
+         then FileError ("Could not parse any results from output: " ++ Text.unpack (Text.strip stdout)) elapsed
+         else FileResults results elapsed
 
 -- | Run benchmark on all work items
 runBenchmark :: Conf.Config -> [WorkItem] -> (CompletedResult -> IO ()) -> MVar () -> IO (Map WorkItem FileResult)

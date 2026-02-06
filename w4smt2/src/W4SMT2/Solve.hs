@@ -25,6 +25,7 @@ import What4.Solver.CVC5 qualified as CVC5
 import What4.Solver.Yices qualified as Yices
 import What4.Solver.Z3 qualified as Z3
 
+import W4SMT2.Exec (ExecutionResult)
 import W4SMT2.Exec qualified as Exec
 import W4SMT2.Parser qualified as Parser
 
@@ -33,32 +34,35 @@ solverTimeoutSeconds :: Integer
 solverTimeoutSeconds = 300
 
 -- | Solve an SMT-Lib 2 problem provided as 'Text'.
+-- Returns all check-sat results from the execution
 solve ::
-  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO (), ?writeStdout :: Text -> IO ()) =>
+  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   Text ->
-  IO (WSR.SatResult () ())
+  IO ExecutionResult
 solve sym input = do
   sexps <- Parser.parseSExps input
   Exec.execCommands sym Exec.initState Nothing sexps
 
 -- | Solve an SMT-Lib 2 problem from a file.
+-- Returns all check-sat results from the execution
 solveFile ::
-  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO (), ?writeStdout :: Text -> IO ()) =>
+  (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
   FilePath ->
-  IO (WSR.SatResult () ())
+  IO ExecutionResult
 solveFile sym path = do
   contents <- Text.IO.readFile path
   solve sym contents
 
 -- | Solve an SMT-Lib 2 problem with a specified external solver.
+-- Returns all check-sat results from the execution
 solveWithSolver ::
-  (?logStderr :: Text -> IO (), ?writeStdout :: Text -> IO ()) =>
+  (?logStderr :: Text -> IO ()) =>
   String ->
   WE.ExprBuilder t st fs ->
   Text ->
-  IO (Maybe (WSR.SatResult () ()))
+  IO (Maybe ExecutionResult)
 solveWithSolver solverName sym input = do
   case makeSolverCallback solverName of
     Nothing -> return Nothing
