@@ -135,6 +135,7 @@ executable w4smt2-bench
     process >= 1.2,
     text,
     time >= 1.8,
+    unix,
     w4smt2
 
 test-suite w4smt2-tests

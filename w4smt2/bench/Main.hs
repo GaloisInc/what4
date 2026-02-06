@@ -8,15 +8,16 @@ import Benchmark.Output qualified as Output
 import Benchmark.Runner (CompletedResult(crResult, crWorkItem), WorkItem(WorkItem), wiFile, wiSolver)
 import Benchmark.Runner qualified as Runner
 import Control.Monad (when)
-import Data.IORef (modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Map.Strict qualified as Map
 import Data.Text.IO qualified as Text
-import Data.Time.Clock (diffUTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
 import System.Console.ANSI qualified as ANSI
 import System.Directory (doesFileExist, makeAbsolute)
 import System.Exit (ExitCode(ExitFailure), die, exitWith, exitFailure)
 import System.FilePath (makeRelative)
 import System.IO (BufferMode(LineBuffering), IOMode(WriteMode), hClose, hPutStrLn, hSetBuffering, openFile, stderr)
+import System.Posix.Signals qualified as Signals
 
 main :: IO ()
 main = do
@@ -75,6 +76,9 @@ main = do
   resultsRef <- newIORef existingResults
   startTime <- getCurrentTime
 
+  -- Install SIGINT handler to output summary when interrupted
+  _ <- Signals.installHandler Signals.sigINT (Signals.Catch (handleInterrupt isTerm resultsRef startTime)) Nothing
+
   let totalWorkItems = length allWorkItems
   let alreadyDone = Map.size existingResults
 
@@ -131,6 +135,19 @@ main = do
     else when (Output.statsErrors stats > 0) exitFailure
 
   where
+    handleInterrupt :: Bool -> IORef (Map.Map Runner.WorkItem Runner.FileResult) -> UTCTime -> IO ()
+    handleInterrupt isTerm resultsRef startTime = do
+      when isTerm Output.clearProgressLine
+      hPutStrLn stderr ""
+      hPutStrLn stderr $ colorize ANSI.Yellow "Interrupted! Printing summary of completed work..."
+      hPutStrLn stderr ""
+      results <- readIORef resultsRef
+      endTime <- getCurrentTime
+      let stats = Output.computeStats results
+      let totalTime = realToFrac $ diffUTCTime endTime startTime
+      Output.printSummary stats totalTime
+      exitWith (ExitFailure 130)  -- 130 is standard exit code for SIGINT (128 + 2)
+
     colorize :: ANSI.Color -> String -> String
     colorize color text =
       ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Vivid color]
