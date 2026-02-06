@@ -28,6 +28,10 @@ import What4.Solver.Z3 qualified as Z3
 import W4SMT2.Exec qualified as Exec
 import W4SMT2.Parser qualified as Parser
 
+-- | Solver timeout in seconds.
+solverTimeoutSeconds :: Integer
+solverTimeoutSeconds = 300
+
 -- | Solve an SMT-Lib 2 problem provided as 'Text'.
 solve ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO (), ?writeStdout :: Text -> IO ()) =>
@@ -89,7 +93,7 @@ invokeZ3 sym preds = do
   let cfg = WI.getConfiguration sym
   WCfg.extendConfig Z3.z3Options cfg
   timeoutSetting <- WCfg.getOptionSetting Z3.z3Timeout cfg
-  _ <- WCfg.setOpt timeoutSetting (5000 :: Integer)
+  _ <- WCfg.setOpt timeoutSetting (solverTimeoutSeconds * 1000)
   Z3.withZ3 sym "z3" defaultLogData $ \session -> do
     let writer = SMT2.sessionWriter session
     Monad.forM_ preds $ SMT2.assume writer
@@ -104,7 +108,7 @@ invokeYices sym preds = do
   let cfg = WI.getConfiguration sym
   WCfg.extendConfig Yices.yicesOptions cfg
   timeoutSetting <- WCfg.getOptionSetting Yices.yicesGoalTimeout cfg
-  _ <- WCfg.setOpt timeoutSetting (5 :: Integer)
+  _ <- WCfg.setOpt timeoutSetting solverTimeoutSeconds
   Yices.runYicesInOverride sym defaultLogData preds normalizeSatResult
 
 -- | Invoke CVC5 with timeout configuration.
@@ -116,7 +120,7 @@ invokeCVC5 sym preds = do
   let cfg = WI.getConfiguration sym
   WCfg.extendConfig CVC5.cvc5Options cfg
   timeoutSetting <- WCfg.getOptionSetting CVC5.cvc5Timeout cfg
-  _ <- WCfg.setOpt timeoutSetting (5000 :: Integer)
+  _ <- WCfg.setOpt timeoutSetting (solverTimeoutSeconds * 1000)
   CVC5.withCVC5 sym "cvc5" defaultLogData $ \session -> do
     let writer = SMT2.sessionWriter session
     Monad.forM_ preds $ SMT2.assume writer
@@ -131,7 +135,7 @@ invokeBitwuzla sym preds = do
   let cfg = WI.getConfiguration sym
   WCfg.extendConfig Bitwuzla.bitwuzlaOptions cfg
   timeoutSetting <- WCfg.getOptionSetting Bitwuzla.bitwuzlaTimeout cfg
-  _ <- WCfg.setOpt timeoutSetting (5000 :: Integer)
+  _ <- WCfg.setOpt timeoutSetting (solverTimeoutSeconds * 1000)
   Bitwuzla.withBitwuzla sym "bitwuzla" defaultLogData $ \session -> do
     let writer = SMT2.sessionWriter session
     Monad.forM_ preds $ SMT2.assume writer
