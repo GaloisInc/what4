@@ -79,6 +79,7 @@ startProcess config workItem = do
   (_, Just hout, Just herr, ph) <- Proc.createProcess createProc
     { Proc.std_out = Proc.CreatePipe
     , Proc.std_err = Proc.CreatePipe
+    , Proc.create_group = True  -- Create in new process group for proper cleanup
     }
   return $ RunningProcess
     { rpHandle = ph
@@ -107,7 +108,8 @@ checkAndCollect config rp = do
     Nothing ->
       if elapsed > Conf.cfgTimeout config
         then do
-          Proc.terminateProcess (rpHandle rp)
+          -- Kill entire process group to ensure solver subprocesses are terminated
+          Proc.interruptProcessGroupOf (rpHandle rp)
           _ <- Proc.waitForProcess (rpHandle rp)
           return $ Finished $ CompletedResult
             { crWorkItem = rpWorkItem rp
