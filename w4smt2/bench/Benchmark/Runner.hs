@@ -94,26 +94,26 @@ checkAndCollect config rp = do
   currentTime <- getCurrentTime
   let elapsed = realToFrac $ diffUTCTime currentTime (rpStartTime rp)
 
-  if elapsed > Conf.cfgTimeout config
-    then do
-      Proc.terminateProcess (rpHandle rp)
-      _ <- Proc.waitForProcess (rpHandle rp)
+  maybeExit <- Proc.getProcessExitCode (rpHandle rp)
+  case maybeExit of
+    Just exitCode -> do
+      stdout <- Text.hGetContents (rpStdoutHandle rp)
+      stderr <- Text.hGetContents (rpStderrHandle rp)
+      let result = parseResult exitCode stdout stderr elapsed
       return $ Finished $ CompletedResult
         { crWorkItem = rpWorkItem rp
-        , crResult = FileTimeout (Conf.cfgTimeout config)
+        , crResult = result
         }
-    else do
-      maybeExit <- Proc.getProcessExitCode (rpHandle rp)
-      case maybeExit of
-        Nothing -> return StillRunning
-        Just exitCode -> do
-          stdout <- Text.hGetContents (rpStdoutHandle rp)
-          stderr <- Text.hGetContents (rpStderrHandle rp)
-          let result = parseResult exitCode stdout stderr elapsed
+    Nothing ->
+      if elapsed > Conf.cfgTimeout config
+        then do
+          Proc.terminateProcess (rpHandle rp)
+          _ <- Proc.waitForProcess (rpHandle rp)
           return $ Finished $ CompletedResult
             { crWorkItem = rpWorkItem rp
-            , crResult = result
+            , crResult = FileTimeout elapsed
             }
+        else return StillRunning
 
 -- | Parse the result from solver output
 parseResult :: ExitCode -> Text -> Text -> Double -> FileResult

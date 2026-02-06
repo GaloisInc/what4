@@ -30,6 +30,11 @@ data SolverStats = SolverStats
   , ssStdDevTime :: !Double
   , ssMedianTime :: !Double
   , ssTotalTime :: !Double
+  -- Statistics for solved problems only (sat/unsat)
+  , ssSolvedAvgTime :: !Double
+  , ssSolvedStdDevTime :: !Double
+  , ssSolvedMedianTime :: !Double
+  , ssSolvedCount :: !Int
   , ssUnknown :: !Int
   , ssUnsupported :: !Int
   , ssTimeouts :: !Int
@@ -89,10 +94,10 @@ computeStats resultsMap =
           , statsUnknown = statsUnknown s + 1
           , statsTimes = t : statsTimes s
           }
-      FileUnsupported t ->
+      FileUnsupported _ ->
         s { statsTotal = statsTotal s + 1
           , statsUnsupported = statsUnsupported s + 1
-          , statsTimes = t : statsTimes s
+          -- Don't include unsupported in time averages
           }
       FileError _ t ->
         s { statsTotal = statsTotal s + 1
@@ -125,7 +130,8 @@ computeStats resultsMap =
 
     computeSolverStats :: [FileResult] -> SolverStats
     computeSolverStats solverResults =
-      let times = map getTime solverResults
+      let -- All times (excluding unsupported)
+          times = [t | r <- solverResults, Just t <- [getTime r]]
           sortedTimes = sort times
           count = length times
           total = sum times
@@ -137,19 +143,40 @@ computeStats resultsMap =
           median = if count > 0
                    then sortedTimes !! (count `div` 2)
                    else 0
+
+          -- Solved times (sat/unsat only)
+          solvedTimes = [t | r <- solverResults, Just t <- [getSolvedTime r]]
+          sortedSolvedTimes = sort solvedTimes
+          solvedCount = length solvedTimes
+          solvedAvg = if solvedCount > 0 then sum solvedTimes / fromIntegral solvedCount else 0
+          solvedVariance = if solvedCount > 0
+                           then sum [(t - solvedAvg) ^ (2 :: Int) | t <- solvedTimes] / fromIntegral solvedCount
+                           else 0
+          solvedStddev = sqrt solvedVariance
+          solvedMedian = if solvedCount > 0
+                         then sortedSolvedTimes !! (solvedCount `div` 2)
+                         else 0
+
           unknowns = length [() | FileUnknown _ <- solverResults]
           unsupported = length [() | FileUnsupported _ <- solverResults]
           timeouts = length [() | FileTimeout _ <- solverResults]
           errors = length [() | FileError _ _ <- solverResults]
-      in SolverStats avg stddev median total unknowns unsupported timeouts errors times
+      in SolverStats avg stddev median total solvedAvg solvedStddev solvedMedian solvedCount unknowns unsupported timeouts errors times
 
+    -- Get time for all problems (excludes unsupported)
     getTime = \case
-      FileSat t -> t
-      FileUnsat t -> t
-      FileUnknown t -> t
-      FileUnsupported t -> t
-      FileError _ t -> t
-      FileTimeout t -> t
+      FileSat t -> Just t
+      FileUnsat t -> Just t
+      FileUnknown t -> Just t
+      FileUnsupported _ -> Nothing
+      FileError _ t -> Just t
+      FileTimeout t -> Just t
+
+    -- Get time for solved problems only (sat/unsat)
+    getSolvedTime = \case
+      FileSat t -> Just t
+      FileUnsat t -> Just t
+      _ -> Nothing
 
 -- | Check if stderr is a terminal
 isTerminal :: IO Bool
@@ -275,8 +302,11 @@ printSummary stats totalTime = do
       hPutStrLn stderr $ show solver ++ ":"
       if not (null (ssTimes ss))
         then do
-          hPutStrLn stderr $ "  Average time: " ++ formatTime (ssAvgTime ss) ++ " ± " ++ formatTime (ssStdDevTime ss)
-          hPutStrLn stderr $ "  Median time: " ++ formatTime (ssMedianTime ss)
+          hPutStrLn stderr $ "  Average time (all): " ++ formatTime (ssAvgTime ss) ++ " ± " ++ formatTime (ssStdDevTime ss)
+          hPutStrLn stderr $ "  Median time (all): " ++ formatTime (ssMedianTime ss)
+          when (ssSolvedCount ss > 0) $ do
+            hPutStrLn stderr $ "  Average time (sat/unsat): " ++ formatTime (ssSolvedAvgTime ss) ++ " ± " ++ formatTime (ssSolvedStdDevTime ss)
+            hPutStrLn stderr $ "  Median time (sat/unsat): " ++ formatTime (ssSolvedMedianTime ss)
           hPutStrLn stderr $ "  Total time: " ++ formatTime (ssTotalTime ss)
         else return ()
       when (ssUnknown ss > 0) $
