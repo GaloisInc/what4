@@ -121,6 +121,7 @@ executable w4smt2-bench
   main-is: Main.hs
   other-modules:
     Benchmark.Config
+    Benchmark.CSV
     Benchmark.Discovery
     Benchmark.Output
     Benchmark.Runner

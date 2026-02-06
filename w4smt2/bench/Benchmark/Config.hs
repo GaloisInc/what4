@@ -25,7 +25,8 @@ data Solver
   deriving (Eq, Ord, Show, Read)
 
 data Config = Config
-  { cfgDirectory :: !FilePath
+  { cfgCSVFile :: !FilePath
+  , cfgDirectory :: !FilePath
   , cfgTimeout :: !Double
   , cfgWorkers :: !Int
   , cfgSolvers :: ![Solver]
@@ -48,6 +49,10 @@ parseArgs = do
 configParser :: Opt.Parser Config
 configParser = Config
   Opt.<$> Opt.argument Opt.str
+      ( Opt.metavar "CSV_FILE"
+     <> Opt.help "CSV file to save/resume results"
+      )
+  Opt.<*> Opt.argument Opt.str
       ( Opt.metavar "DIRECTORY"
      <> Opt.help "Directory to search for .smt2 files"
       )
