@@ -95,6 +95,7 @@ library
     prettyprinter,
     template-haskell,
     text,
+    unix,
     what4
 
 executable w4smt2
