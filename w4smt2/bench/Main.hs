@@ -7,11 +7,12 @@ import Benchmark.Discovery qualified as Discovery
 import Benchmark.Output qualified as Output
 import Benchmark.Runner (CompletedResult(crResult, crWorkItem), WorkItem(WorkItem), wiFile, wiSolver)
 import Benchmark.Runner qualified as Runner
+import Control.Concurrent.MVar (MVar, newMVar, tryTakeMVar)
 import Control.Monad (when)
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.Map.Strict qualified as Map
 import Data.Text.IO qualified as Text
-import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
+import Data.Time.Clock (diffUTCTime, getCurrentTime)
 import System.Console.ANSI qualified as ANSI
 import System.Directory (doesFileExist, makeAbsolute)
 import System.Exit (ExitCode(ExitFailure), die, exitWith, exitFailure)
@@ -76,8 +77,11 @@ main = do
   resultsRef <- newIORef existingResults
   startTime <- getCurrentTime
 
-  -- Install SIGINT handler to output summary when interrupted
-  _ <- Signals.installHandler Signals.sigINT (Signals.Catch (handleInterrupt isTerm resultsRef startTime)) Nothing
+  -- Create MVar for signaling interruption
+  interruptedMVar <- newMVar ()
+
+  -- Install SIGINT handler to signal interruption
+  _ <- Signals.installHandler Signals.sigINT (Signals.Catch (handleInterrupt isTerm interruptedMVar)) Nothing
 
   let totalWorkItems = length allWorkItems
   let alreadyDone = Map.size existingResults
@@ -108,18 +112,31 @@ main = do
           let currentlyRunning = min (Conf.cfgWorkers config') remaining
           Output.updateProgressLine currentlyRunning done totalWorkItems partialStats remaining
 
-  _ <- Runner.runBenchmark config' workItems onComplete
+  _ <- Runner.runBenchmark config' workItems onComplete interruptedMVar
 
   endTime <- getCurrentTime
 
   when isTerm Output.clearProgressLine
+
+  -- Check if we were interrupted
+  interrupted <- tryTakeMVar interruptedMVar
 
   -- Get final results including both existing and newly completed
   results <- readIORef resultsRef
   let stats = Output.computeStats results
   let totalTime = realToFrac $ diffUTCTime endTime startTime
 
-  Output.printSummary stats totalTime
+  case interrupted of
+    Nothing -> do
+      -- We were interrupted
+      hPutStrLn stderr ""
+      hPutStrLn stderr $ colorize ANSI.Yellow "Interrupted! Printing summary of completed work..."
+      hPutStrLn stderr ""
+      Output.printSummary stats totalTime
+      exitWith (ExitFailure 130)  -- 130 is standard exit code for SIGINT (128 + 2)
+    Just _ -> do
+      -- Normal completion
+      Output.printSummary stats totalTime
 
   case maybeLogHandle of
     Just logHandle -> hClose logHandle
@@ -135,18 +152,13 @@ main = do
     else when (Output.statsErrors stats > 0) exitFailure
 
   where
-    handleInterrupt :: Bool -> IORef (Map.Map Runner.WorkItem Runner.FileResult) -> UTCTime -> IO ()
-    handleInterrupt isTerm resultsRef startTime = do
+    handleInterrupt :: Bool -> MVar () -> IO ()
+    handleInterrupt isTerm interruptedMVar = do
+      -- Signal interruption by taking the MVar
+      _ <- tryTakeMVar interruptedMVar
       when isTerm Output.clearProgressLine
       hPutStrLn stderr ""
-      hPutStrLn stderr $ colorize ANSI.Yellow "Interrupted! Printing summary of completed work..."
-      hPutStrLn stderr ""
-      results <- readIORef resultsRef
-      endTime <- getCurrentTime
-      let stats = Output.computeStats results
-      let totalTime = realToFrac $ diffUTCTime endTime startTime
-      Output.printSummary stats totalTime
-      exitWith (ExitFailure 130)  -- 130 is standard exit code for SIGINT (128 + 2)
+      hPutStrLn stderr $ colorize ANSI.Yellow "Interrupted! Cleaning up..."
 
     colorize :: ANSI.Color -> String -> String
     colorize color text =

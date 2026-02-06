@@ -12,7 +12,8 @@ module Benchmark.Runner
 
 import Benchmark.Config qualified as Conf
 import Control.Concurrent (threadDelay)
-import Control.Monad (foldM)
+import Control.Concurrent.MVar (MVar, tryReadMVar)
+import Control.Monad (foldM, forM_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -62,7 +63,7 @@ data RunningProcess = RunningProcess
 buildW4SMT2 :: IO FilePath
 buildW4SMT2 = do
   _ <- readCreateProcess (Proc.proc "cabal" ["build", "-O2", "exe:w4smt2"])
-  path <- readCreateProcess (Proc.proc "cabal" ["list-bin", "exe:w4smt2"])
+  path <- readCreateProcess (Proc.proc "cabal" ["list-bin", "-O2", "exe:w4smt2"])
   return $ Text.unpack $ Text.strip path
   where
     readCreateProcess p = do
@@ -132,8 +133,8 @@ parseResult exitCode stdout _stderr elapsed =
            _ -> FileError ("Could not parse output: " ++ Text.unpack output) elapsed
 
 -- | Run benchmark on all work items
-runBenchmark :: Conf.Config -> [WorkItem] -> (CompletedResult -> IO ()) -> IO (Map WorkItem FileResult)
-runBenchmark config workItems onComplete = do
+runBenchmark :: Conf.Config -> [WorkItem] -> (CompletedResult -> IO ()) -> MVar () -> IO (Map WorkItem FileResult)
+runBenchmark config workItems onComplete interruptedMVar = do
   let totalWorkItems = length workItems
   let numWorkers = min (Conf.cfgWorkers config) totalWorkItems
 
@@ -147,23 +148,35 @@ runBenchmark config workItems onComplete = do
       return results
 
     loop totalWorkItems running nextIdx results = do
-      (finishedResults, stillRunning) <- checkProcesses [] [] running
+      -- Check if interrupted
+      interrupted <- tryReadMVar interruptedMVar
+      case interrupted of
+        Nothing -> do
+          -- Interrupted! Kill all running processes
+          forM_ running $ \rp -> do
+            Proc.interruptProcessGroupOf (rpHandle rp)
+            _ <- Proc.waitForProcess (rpHandle rp)
+            return ()
+          return results
+        Just _ -> do
+          -- Not interrupted, continue normally
+          (finishedResults, stillRunning) <- checkProcesses [] [] running
 
-      newResults <- foldM (\acc cr -> do
-        onComplete cr
-        return $ Map.insert (crWorkItem cr) (crResult cr) acc
-        ) results finishedResults
+          newResults <- foldM (\acc cr -> do
+            onComplete cr
+            return $ Map.insert (crWorkItem cr) (crResult cr) acc
+            ) results finishedResults
 
-      let numFinished = length finishedResults
-      let numToStart = min numFinished (totalWorkItems - nextIdx)
-      newProcesses <- mapM (startProcess config) (take numToStart (drop nextIdx workItems))
+          let numFinished = length finishedResults
+          let numToStart = min numFinished (totalWorkItems - nextIdx)
+          newProcesses <- mapM (startProcess config) (take numToStart (drop nextIdx workItems))
 
-      let allRunning = stillRunning ++ newProcesses
-      let nextIdx' = nextIdx + numToStart
+          let allRunning = stillRunning ++ newProcesses
+          let nextIdx' = nextIdx + numToStart
 
-      threadDelay 10000
+          threadDelay 10000
 
-      loop totalWorkItems allRunning nextIdx' newResults
+          loop totalWorkItems allRunning nextIdx' newResults
 
     checkProcesses :: [CompletedResult] -> [RunningProcess] -> [RunningProcess] -> IO ([CompletedResult], [RunningProcess])
     checkProcesses finished stillRunning = \case
