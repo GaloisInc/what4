@@ -427,6 +427,32 @@ parseExpr sym vars fns = \case
           return (SomeExpr extended)
         _ -> Pretty.userErr "sign_extend requires a bitvector argument"
 
+  [sexp|((#_ rotate_left $n) #bvExpr)|]
+    | n >= 0
+    -> do
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          -- Normalize rotation amount modulo width
+          let rotAmt = n `mod` NatRepr.intValue w
+          amtBV <- WI.bvLit sym w (BV.mkBV w rotAmt)
+          rotated <- WI.bvRol sym bv amtBV
+          return (SomeExpr rotated)
+        _ -> Pretty.userErr "rotate_left requires a bitvector argument"
+
+  [sexp|((#_ rotate_right $n) #bvExpr)|]
+    | n >= 0
+    -> do
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          -- Normalize rotation amount modulo width
+          let rotAmt = n `mod` NatRepr.intValue w
+          amtBV <- WI.bvLit sym w (BV.mkBV w rotAmt)
+          rotated <- WI.bvRor sym bv amtBV
+          return (SomeExpr rotated)
+        _ -> Pretty.userErr "rotate_right requires a bitvector argument"
+
   [sexp|(concat #e1 #e2)|] -> do
     SomeExpr bv1 <- parseExpr sym vars fns e1
     SomeExpr bv2 <- parseExpr sym vars fns e2
