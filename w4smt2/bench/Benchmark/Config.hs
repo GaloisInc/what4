@@ -22,6 +22,11 @@ data Solver
   | W4Yices      -- ^ w4smt2 yices
   | W4CVC5       -- ^ w4smt2 cvc5
   | W4Bitwuzla   -- ^ w4smt2 bitwuzla
+  | W2           -- ^ w2smt2 (no external solver)
+  | W2Z3         -- ^ w2smt2 z3 (not yet supported)
+  | W2Yices      -- ^ w2smt2 yices (not yet supported)
+  | W2CVC5       -- ^ w2smt2 cvc5 (not yet supported)
+  | W2Bitwuzla   -- ^ w2smt2 bitwuzla (not yet supported)
   deriving (Eq, Ord, Show, Read)
 
 data Config = Config
@@ -31,6 +36,7 @@ data Config = Config
   , cfgWorkers :: !Int
   , cfgSolvers :: ![Solver]
   , cfgW4SMT2Path :: !FilePath
+  , cfgW2SMT2Path :: !FilePath
   , cfgLogFile :: !(Maybe FilePath)
   , cfgMaxSize :: !(Maybe Integer)
   }
@@ -74,6 +80,7 @@ configParser = Config
       )
   Opt.<*> Opt.many solverOption
   Opt.<*> pure "w4smt2"
+  Opt.<*> pure "w2smt2"
   Opt.<*> Opt.optional (Opt.strOption
       ( Opt.long "log-file"
      <> Opt.metavar "FILE"
@@ -90,7 +97,7 @@ solverOption = Opt.option (Opt.str >>= parseSolver)
   ( Opt.long "solver"
   <> Opt.short 's'
   <> Opt.metavar "SOLVER"
-  <> Opt.help "Solver to run (can be specified multiple times). Valid: z3, yices, cvc5, bitwuzla, w4, w4z3, w4yices, w4cvc5, w4bitwuzla"
+  <> Opt.help "Solver to run (can be specified multiple times). Valid: z3, yices, cvc5, bitwuzla, w4, w4z3, w4yices, w4cvc5, w4bitwuzla, w2, w2z3, w2yices, w2cvc5, w2bitwuzla"
   )
   where
     parseSolver = \case
@@ -103,6 +110,11 @@ solverOption = Opt.option (Opt.str >>= parseSolver)
       "w4yices" -> return W4Yices
       "w4cvc5" -> return W4CVC5
       "w4bitwuzla" -> return W4Bitwuzla
+      "w2" -> return W2
+      "w2z3" -> return W2Z3
+      "w2yices" -> return W2Yices
+      "w2cvc5" -> return W2CVC5
+      "w2bitwuzla" -> return W2Bitwuzla
       s -> Opt.readerError $ "Unknown solver: " ++ s
 
 -- | Get the command to run for a given solver
@@ -117,3 +129,8 @@ solverCommand cfg solver file = case solver of
   W4Yices -> proc (cfgW4SMT2Path cfg) ["yices", file]
   W4CVC5 -> proc (cfgW4SMT2Path cfg) ["cvc5", file]
   W4Bitwuzla -> proc (cfgW4SMT2Path cfg) ["bitwuzla", file]
+  W2 -> proc (cfgW2SMT2Path cfg) [file]
+  W2Z3 -> proc (cfgW2SMT2Path cfg) ["z3", file]
+  W2Yices -> proc (cfgW2SMT2Path cfg) ["yices", file]
+  W2CVC5 -> proc (cfgW2SMT2Path cfg) ["cvc5", file]
+  W2Bitwuzla -> proc (cfgW2SMT2Path cfg) ["bitwuzla", file]

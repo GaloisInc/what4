@@ -1,0 +1,140 @@
+Cabal-version: 2.4
+Name:          who2
+Version:       0.1.0.0
+Author:        Galois Inc.
+Maintainer:    langston@galois.com
+License:       BSD-3-Clause
+Build-type:    Simple
+Synopsis:      A faster, simpler expression builder for use with What4.
+
+common bldflags
+  default-language: Haskell2010
+
+  -- These warnings are a bit opinionated, in contrast to those below.
+  ghc-options:
+    -Wmissing-export-lists
+    -Wmissing-import-lists
+
+  ghc-options:
+    -Wall
+    -Werror=ambiguous-fields
+    -Werror=badly-staged-types
+    -Werror=compat-unqualified-imports
+    -Werror=data-kinds-tc
+    -Werror=deferred-type-errors
+    -Werror=deprecated-flags
+    -Werror=deprecations
+    -Werror=deriving-defaults
+    -Werror=dodgy-foreign-imports
+    -Werror=duplicate-exports
+    -Werror=empty-enumerations
+    -Werror=identities
+    -Werror=inaccessible-code
+    -Werror=incomplete-export-warnings
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-selectors
+    -Werror=incomplete-record-updates
+    -Werror=incomplete-uni-patterns
+    -Werror=inconsistent-flags
+    -Werror=inline-rule-shadowing
+    -Werror=misplaced-pragmas
+    -Werror=missed-extra-shared-lib
+    -Werror=missing-exported-signatures
+    -Werror=missing-fields
+    -Werror=missing-home-modules
+    -Werror=missing-methods
+    -Werror=operator-whitespace
+    -Werror=operator-whitespace-ext-conflict
+    -Werror=overflowed-literals
+    -Werror=overlapping-patterns
+    -Werror=partial-fields
+    -Werror=partial-type-signatures
+    -Werror=redundant-bang-patterns
+    -Werror=redundant-record-wildcards
+    -Werror=redundant-strictness-flags
+    -Werror=simplifiable-class-constraints
+    -Werror=star-binder
+    -Werror=star-is-type
+    -Werror=tabs
+    -Werror=type-equality-out-of-scope
+    -Werror=type-equality-requires-operators
+    -Werror=typed-holes
+    -Werror=unrecognised-pragmas
+    -Werror=unrecognised-warning-flags
+    -Werror=unsupported-calling-conventions
+    -Werror=unsupported-llvm-version
+    -Werror=unticked-promoted-constructors
+    -Werror=unused-imports
+    -Werror=unused-record-wildcards
+    -Werror=warnings-deprecations
+    -Werror=wrong-do-bind
+
+  -- TODO(#286): Enable these warnings when supporting these GHC versions.
+  -- -Werror=deprecated-type-abstractions
+  -- -Werror=view-pattern-signatures
+
+library
+  import: bldflags
+  hs-source-dirs: src
+  exposed-modules:
+    Who2.Builder
+    Who2.Builder.Allocator
+    Who2.Builder.Ops.BV
+    Who2.Builder.Ops.Logic
+    Who2.Expr
+    Who2.Expr.App
+    Who2.Expr.BloomSeq
+    Who2.Expr.BV
+    Who2.Expr.Fn
+    Who2.Expr.Logic
+    Who2.Expr.PolarizedBloomSeq
+    Who2.Expr.Subst
+    Who2.Expr.SymExpr
+    Who2.Expr.SymFn
+    Who2.Expr.Views
+    Who2.Protocol.SMTLib2
+  build-depends:
+    base >= 4.10 && < 5,
+    bv-sized,
+    containers,
+    hashable,
+    parameterized-utils,
+    prettyprinter,
+    text,
+    what4
+
+test-suite who2-tests
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Who2.TestBuilder
+    Who2.ExprBuilderAPI
+    Who2.Functions
+    Who2.Gen
+    Who2.Instances
+    Who2.Properties
+    Who2.Simplification
+    Who2.SMTLib2
+    Who2.TestAnnotations
+  build-depends:
+    base >= 4.10 && < 5,
+    bv-sized,
+    bytestring,
+    containers,
+    directory,
+    filepath,
+    hedgehog >= 1.0.2,
+    parameterized-utils,
+    prettyprinter >= 1.7.0,
+    process,
+    tasty >= 1.2,
+    tasty-golden,
+    tasty-hedgehog >= 1.2,
+    tasty-hunit,
+    text,
+    w4smt2,
+    what4,
+    who2,
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
