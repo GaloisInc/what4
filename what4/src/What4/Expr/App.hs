@@ -1,11 +1,79 @@
 {-|
 Module      : What4.Expr.App
-Copyright   : (c) Galois Inc, 2015-2020
+Copyright   : (c) Galois Inc, 2015-2026
 License     : BSD3
-Maintainer  : jhendrix@galois.com
+Maintainer  : langston@galois.com
 
-This module defines datastructures that encode the basic
-syntax formers used in What4.ExprBuilder.
+This module defines datastructures that encode the syntax of expressions used in
+"What4.Expr.Builder".
+
+As described there, the 'Expr' type makes extensive use of data structures that
+by their very structure (partially) normalize expressions of the given kind.
+Examples include 'WeightedSum', 'SemiRingProduct', 'BVOrSet', and 'BM.ConjMap'.
+
+To understand these normalizing data structures, first consider a \"naive\"
+representation of SMT terms in a tree-like AST. Consider in particular
+conjunction (@AND@). Perhaps the simplest way to represent conjunction would be
+a binary constructor:
+
+> data Expr t tp where
+>   And :: Expr t BaseBoolType ->  Expr t BaseBoolType -> Expr t BaseBoolType
+
+However, this representation makes semantically equivalent terms structurally
+unequal, for example @x and (y and z)@ would be @And x (And y z)@ whereas
+@(x and y) and z@ would be @And (And x y) z@. To solve this problem with
+associativity, we could consider storing a list of conjuncts in @And@:
+
+> data Expr t tp where
+>   And :: [Expr t BaseBoolType] -> Expr t BaseBoolType
+
+Then with a bit of help (e.g., a smart constructor) both expressions would
+become @And [x, y, z]@. While this improved representation normalizes @and@
+expressions with respect to associativity, it ignores several other important
+algebraic properties of @and@:
+
+* Idempotency: @x and x = x@
+* Commutativity: @x and y = y and x@
+* Complementation: @x and ~x = false@
+
+For example, @(x and y) and x@ would be @And [x, y, x]@ whereas @(x and x)
+and y@ would be @And [x, x, y]@. Again, we have semantically equivalent but
+structurally different terms.
+
+We can normalize with respect to idempotency and commutativity by moving to a
+set datastructure:
+
+> data Expr t tp where
+>   And :: Set (Expr t BaseBoolType) -> Expr t BaseBoolType
+
+Both of our problematic expressions would now be represented as @And {x, y}@.
+
+Finally, to normalize with respect to complementation, we can move from a set to
+a map:
+
+> data Polarity = Positive | Negative
+>
+> data Expr t tp where
+>   And :: Map (Expr t BaseBoolType) Polarity -> Expr t BaseBoolType
+
+On insertion, we check if the expression already appears with opposite polarity.
+If so, the entire expression collapses to @false@.
+
+We basically just invented 'BM.ConjMap'. As it turns out, all of the same laws
+hold for @or@, where complements collapse to @true@. Noticing this brings us all
+the way to 'BoolMap' (of which 'BM.ConjMap' is a wrapper).
+
+We could play a similar game with addition and multiplication over
+integers, bitvectors, and reals, which would lead us to 'WeightedSum' and
+'SemiRingProduct'.
+
+What does this normalization buy us? It can keep predicates concrete, obviating
+solver calls. However, notice that the move from lists to sets came with a
+significant trade-off: construction of terms jumped from @O(n)@ to @O(n log
+n)@. This was considered an acceptable trade-off when What4 was created, but
+we do not have comprehensive benchmarks justifying this choice with modern
+SMT solvers. It may be that the overhead of constructing 'Expr's outweighs the
+benefits of normalization.
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}

@@ -1,13 +1,28 @@
 {-|
 Module      : What4.Expr.Builder
 Description : Main definitions of the What4 expression representation
-Copyright   : (c) Galois Inc, 2015-2020
+Copyright   : (c) Galois Inc, 2015-2026
 License     : BSD3
-Maintainer  : jhendrix@galois.com
+Maintainer  : langston@galois.com
 
 This module defines the canonical implementation of the solver interface
 from "What4.Interface". Type @'ExprBuilder' t st@ is
 an instance of the classes 'IsExprBuilder' and 'IsSymExprBuilder'.
+
+'ExprBuilder' tries hard to keep symbolic expressions as simple and concrete as
+possible. It does so using three techniques:
+
+* Local rewrites when expressions are constructed (see the 'IsExprBuilder'
+  instance of 'ExprBuilder'). Such rewrites often result in a partially
+  normalized format for expressions of a given type.
+* Abstract domains (see "What4.Utils.AbstractDomains").
+* Data structures that by their very structure (partially) normalize
+  expressions of the given kind. See "What4.Expr.App" for more details.
+
+Together, these techniques can actually solve a surprising number of SMT
+problems without ever consulting an external solver.
+
+-- * Concurrency
 
 Notes regarding concurrency: The expression builder datatype contains
 a number of mutable storage locations.  These are designed so they

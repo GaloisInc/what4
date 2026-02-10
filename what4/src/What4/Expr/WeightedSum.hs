@@ -5,9 +5,10 @@ Copyright   : (c) Galois Inc, 2015-2020
 License     : BSD3
 Maintainer  : jhendrix@galois.com
 
-Declares a weighted sum type used for representing sums over variables and an offset
-in one of the supported semirings.  This module also implements a representation of
-semiring products.
+Declares a weighted sum type used for representing sums over variables and
+an offset in one of the supported semirings.  This module also implements a
+representation of semiring products. See "What4.Expr.App" for an overview of
+normalizing data structures such as these.
 -}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
