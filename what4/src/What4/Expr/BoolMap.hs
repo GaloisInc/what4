@@ -5,9 +5,10 @@ Copyright   : (c) Galois Inc, 2019-2020
 License     : BSD3
 Maintainer  : rdockins@galois.com
 
-Declares a datatype for representing n-way conjunctions or disjunctions
-in a way that efficiently captures important algebraic
-laws like commutativity, associativity and resolution.
+Declares a datatype for representing n-way conjunctions or disjunctions in
+a way that efficiently captures important algebraic laws like commutativity,
+associativity and resolution. See "What4.Expr.App" for an overview of such
+normalizing data structures generally, with 'BoolMap' as an extended example.
 -}
 
 {-# LANGUAGE DataKinds #-}
