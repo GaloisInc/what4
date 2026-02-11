@@ -28,7 +28,6 @@ import What4.Utils.AbstractDomains (AbstractValue, avTop)
 import qualified What4.ProgramLoc as WPL
 import qualified What4.Utils.BVDomain as BVD
 
-import qualified Who2.Builder.Allocator as BA
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Builder.Ops.Logic as Logic
 import Who2.Expr (Expr)
@@ -54,8 +53,7 @@ import Who2.Expr.SymExpr (SymExpr(SymExpr, getSymExpr))
 -- It strives to keep construction approximately linear.
 data Builder t
   = Builder
-    { bAllocator :: !(BA.ExprAllocator t)
-    , bNonceGen :: !(NonceGenerator IO t)
+    { bNonceGen :: !(NonceGenerator IO t)
     , bTrue :: !(SymExpr t WI.BaseBoolType)
     , bFalse :: !(SymExpr t WI.BaseBoolType)
     }
@@ -63,12 +61,10 @@ data Builder t
 -- | Create a new 'Builder'
 newBuilder :: NonceGenerator IO t -> IO (Builder t)
 newBuilder g = do
-  let allocator = BA.simpleAllocator g
-  trueExpr <- toSymExpr $ BA.riskyAllocExpr allocator (EA.LogicApp EL.TruePred) (Just True)
-  falseExpr <- toSymExpr $ BA.riskyAllocExpr allocator (EA.LogicApp EL.FalsePred) (Just False)
+  trueExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.TruePred) (Just True)
+  falseExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.FalsePred) (Just False)
   return Builder
-    { bAllocator = allocator
-    , bNonceGen = g
+    { bNonceGen = g
     , bTrue = trueExpr
     , bFalse = falseExpr
     }
@@ -79,7 +75,7 @@ alloc ::
   App t (Expr t (App t)) tp ->
   AbstractValue tp ->
   IO (Expr t (App t) tp)
-alloc b = BA.riskyAllocExpr (bAllocator b)
+alloc b = E.mkExpr (bNonceGen b)
 {-# INLINE alloc #-}
 
 toSymExpr :: IO (Expr t (App t) tp) -> IO (SymExpr t tp)

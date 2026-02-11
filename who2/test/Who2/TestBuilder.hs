@@ -12,8 +12,7 @@ module Who2.TestBuilder
   , newTestBuilder
   ) where
 
-import Data.Parameterized.Nonce (NonceGenerator, freshNonce, Nonce)
-import qualified Data.Parameterized.Classes as PC
+import Data.Parameterized.Nonce (NonceGenerator, Nonce)
 import qualified Data.BitVector.Sized as BVS
 
 import What4.BaseTypes (BaseBoolType)
@@ -22,10 +21,9 @@ import qualified What4.Interface as WI
 import qualified What4.Expr as WE
 import What4.Utils.AbstractDomains (AbstractValue, avTop)
 
-import Who2.Expr (Expr(..), HasBaseType(..))
+import Who2.Expr (Expr(..), HasBaseType(..), mkExpr)
 import Who2.Expr.App (App(..))
 import Who2.Expr.SymExpr (SymExpr(..))
-import qualified Who2.Builder.Allocator as BA
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
@@ -34,8 +32,7 @@ import qualified Who2.Expr.PolarizedBloomSeq as PBS
 -- | A naive builder that bypasses all simplifications by always using
 -- "top" (widest possible) abstract values and allocating every expression.
 data TestBuilder t = TestBuilder
-  { tbAllocator :: BA.ExprAllocator t
-  , tbNonceGen :: NonceGenerator IO t
+  { tbNonceGen :: NonceGenerator IO t
   , tbTrue :: SymExpr t BaseBoolType
   , tbFalse :: SymExpr t BaseBoolType
   }
@@ -43,25 +40,13 @@ data TestBuilder t = TestBuilder
 -- | Create a new TestBuilder with naive allocator
 newTestBuilder :: NonceGenerator IO t -> IO (TestBuilder t)
 newTestBuilder gen = do
-  let allocator = naiveAllocator gen
-  trueExpr <- BA.riskyAllocExpr allocator (LogicApp EL.TruePred) (Just True)
-  falseExpr <- BA.riskyAllocExpr allocator (LogicApp EL.FalsePred) (Just False)
+  trueExpr <- mkExpr gen (LogicApp EL.TruePred) (Just True)
+  falseExpr <- mkExpr gen (LogicApp EL.FalsePred) (Just False)
   pure $ TestBuilder
-    { tbAllocator = allocator
-    , tbNonceGen = gen
+    { tbNonceGen = gen
     , tbTrue = SymExpr trueExpr
     , tbFalse = SymExpr falseExpr
     }
-
--- | Naive allocator that always uses "top" abstract values
-naiveAllocator :: NonceGenerator IO t -> BA.ExprAllocator t
-naiveAllocator gen = BA.ExprAllocator
-  { BA.riskyAllocExpr = \app _providedAbsVal -> do
-      n <- freshNonce gen
-      let h = PC.hashWithSaltF 0 app
-          topAbsVal = computeTopAbsVal app
-      pure $! RiskyExpr { eId = n, eApp = app, eHash = h, eAbsVal = topAbsVal }
-  }
 
 -- | Compute "top" (widest possible) abstract value for each type
 computeTopAbsVal :: App t (Expr t (App t)) tp -> AbstractValue tp
@@ -69,7 +54,7 @@ computeTopAbsVal app = avTop (baseType app)
 
 -- | Naive allocator helper
 naiveAlloc :: TestBuilder t -> App t (Expr t (App t)) tp -> IO (Expr t (App t) tp)
-naiveAlloc tb app = BA.riskyAllocExpr (tbAllocator tb) app (computeTopAbsVal app)
+naiveAlloc tb app = mkExpr (tbNonceGen tb) app (computeTopAbsVal app)
 
 -- | Naive allocator that ignores the provided abstract value
 naiveAllocWithAbsVal :: TestBuilder t -> App t (Expr t (App t)) tp -> AbstractValue tp -> IO (Expr t (App t) tp)

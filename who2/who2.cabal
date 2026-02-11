@@ -78,7 +78,6 @@ library
   hs-source-dirs: src
   exposed-modules:
     Who2.Builder
-    Who2.Builder.Allocator
     Who2.Builder.Ops.BV
     Who2.Builder.Ops.Logic
     Who2.Expr
