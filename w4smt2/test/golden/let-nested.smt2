@@ -1,0 +1,5 @@
+(declare-const x (_ BitVec 8))
+(assert (let ((?a #b00000001))
+          (let ((?b #b00000010))
+            (= x (bvadd ?a ?b)))))
+(check-sat)

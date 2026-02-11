@@ -143,8 +143,11 @@ listEqBy f (x : xs) (y : ys)
   | f x y = listEqBy f xs ys
 listEqBy _ _ _ = False
 
-eqBy :: Eq k => (a -> a -> Bool) -> AnnotatedMap k v a -> AnnotatedMap k v a -> Bool
-eqBy f x y = listEqBy (\(kx,ax) (ky,ay) -> kx == ky && f ax ay) (toList x) (toList y)
+eqBy :: (Eq k, Ord k, Semigroup v) => (a -> a -> Bool) -> AnnotatedMap k v a -> AnnotatedMap k v a -> Bool
+eqBy f x y =
+  -- optimization for a common case: sizes not equal
+  size x == size y &&
+    listEqBy (\(kx,ax) (ky,ay) -> kx == ky && f ax ay) (toList x) (toList y)
 
 null :: AnnotatedMap k v a -> Bool
 null (AnnotatedMap ft) = FT.null ft

@@ -1,0 +1,4 @@
+(declare-const a Bool)
+(declare-const b Bool)
+(assert (let ((x a) (y b)) (and x y)))
+(check-sat)

@@ -1,0 +1,5 @@
+(set-logic QF_LRA)
+(declare-const x Real)
+(assert (= x 5.0))
+(assert (= (- x 2.0) 3.0))
+(check-sat)

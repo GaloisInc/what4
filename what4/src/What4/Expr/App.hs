@@ -787,7 +787,13 @@ instance FoldableFC App where
 
 traverseApp :: (Applicative m, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
             => (forall tp. e tp -> m (f tp))
-            -> App e utp -> m ((App f) utp)
+            -> App e utp -> m (App f utp)
+
+-- This is the type at its use in 'evalBoundVars'
+{-# SPECIALIZE traverseApp ::
+  (forall tp. Expr t tp -> IO (Expr t tp))
+  -> App (Expr t) utp -> IO (App (Expr t) utp) #-}
+
 traverseApp =
   $(structuralTraversal [t|App|]
     [ ( ConType [t|UnaryBV|] `TypeApp` AnyType `TypeApp` AnyType
@@ -1740,6 +1746,11 @@ traverseBVOrSet :: (HashableF f, HasAbsValue f, OrdF f, Applicative m) =>
   (BVOrSet e w -> m (BVOrSet f w))
 traverseBVOrSet f (BVOrSet m) =
   foldr bvOrInsert (BVOrSet AM.empty) <$> traverse (f . unWrap . fst) (AM.toList m)
+
+-- This is the type at its use in 'evalBoundVars'
+{-# SPECIALIZE traverseBVOrSet ::
+  (forall tp. Expr t tp -> IO (Expr t tp))
+  -> BVOrSet (Expr t) utp -> IO (BVOrSet (Expr t) utp) #-}
 
 bvOrInsert :: (OrdF e, HashableF e, HasAbsValue e) => e (BaseBVType w) -> BVOrSet e w -> BVOrSet e w
 bvOrInsert e (BVOrSet m) = BVOrSet $ AM.insert (Wrap e) (BVOrNote (mkIncrHash (hashF e)) (getAbsValue e)) () m

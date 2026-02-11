@@ -1,0 +1,5 @@
+(set-logic QF_UFLIA)
+(declare-fun f (Int) Bool)
+(declare-const b Bool)
+(assert (f b))
+(check-sat)

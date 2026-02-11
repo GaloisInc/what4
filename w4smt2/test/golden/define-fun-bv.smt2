@@ -1,0 +1,5 @@
+(declare-const x (_ BitVec 13))
+(define-fun bitsumhelper ((y (_ BitVec 13))) (_ BitVec 13)
+  (bvand y (bvsub y (_ bv1 13))))
+(assert (= x (bitsumhelper x)))
+(check-sat)

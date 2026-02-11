@@ -463,6 +463,14 @@ traverseVars f w =
   traverse (_1 f) (toListSumMap (_sumMap w))
   where sr = sumRepr w
 
+-- This is the type at its use in 'evalBoundVars'
+{-# SPECIALIZE traverseVars :: forall k sr.
+  Tm k =>
+  (k (SR.SemiRingBase sr) -> IO (k (SR.SemiRingBase sr))) ->
+  WeightedSum k sr ->
+  IO (WeightedSum k sr)
+ #-}
+
 -- | Traverse the coefficients in a weighted sum.
 traverseCoeffs :: forall m f sr.
   (Applicative m, Tm f) =>
@@ -489,6 +497,13 @@ traverseProdVars f pd =
   sr = prodRepr pd
   rebuild = List.foldl' (\m (WrapF t, occ) -> AM.insert (WrapF t) (mkProdNote sr occ t) occ m) AM.empty
 
+-- This is the type at its use in 'evalBoundVars'
+{-# SPECIALIZE traverseProdVars :: forall k sr.
+  Tm k =>
+  (k (SR.SemiRingBase sr) -> IO (k (SR.SemiRingBase sr))) ->
+  SemiRingProduct k sr ->
+  IO (SemiRingProduct k sr)
+ #-}
 
 -- | This returns a variable times a constant.
 scaledVar :: Tm f => SR.SemiRingRepr sr -> SR.Coefficient sr -> f (SR.SemiRingBase sr) -> WeightedSum f sr

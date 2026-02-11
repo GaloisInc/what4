@@ -1,0 +1,5 @@
+(declare-const x Int)
+(declare-const y Int)
+(assert (= x (ite true x y)))
+(check-sat)
+(exit)

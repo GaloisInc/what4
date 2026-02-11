@@ -1,0 +1,5 @@
+(declare-const s (_ BitVec 5))
+(declare-const t (_ BitVec 5))
+(assert (= (bvnot (bvand s t)) (bvnot (bvand s t))))
+(assert (= (bvneg s) (bvneg s)))
+(check-sat)

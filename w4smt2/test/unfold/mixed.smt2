@@ -1,0 +1,5 @@
+(declare-const x Int)
+(define-fun add-one ((n Int)) Int (+ n 1))
+(declare-const y Int)
+(assert (= (add-one x) y))
+(check-sat)
