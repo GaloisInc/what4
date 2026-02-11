@@ -17,6 +17,7 @@ import What4.Expr (newExprBuilder, EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.FloatMode (FloatModeRepr(FloatUninterpretedRepr))
 import What4.SatResult (SatResult(Sat, Unsat, Unknown))
 
+import W4SMT2.Exec (erResults)
 import W4SMT2.Solve (solve)
 
 mkZ3VerificationTests :: IO [TestTree]
@@ -49,12 +50,17 @@ mkSingleZ3Test (dir, file) = do
   let name = dropExtension file
       inputPath = dir </> file
   return $ testCase name $ do
-    w4Result <- let ?logStderr = \_ -> return ()
-                    ?writeStdout = \_ -> return ()
-                in withIONonceGenerator $ \gen -> do
+    execResult <- let ?logStderr = \_ -> return () :: IO ()
+                  in withIONonceGenerator $ \gen -> do
       sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
       input <- TIO.readFile inputPath
       solve sym input
+
+    -- Extract the last (or only) result from the execution
+    let w4Result = case erResults execResult of
+          [Sat _] -> Sat ()
+          [Unsat _] -> Unsat ()
+          _ -> Unknown
 
     z3Result <- runZ3OnFile inputPath
 

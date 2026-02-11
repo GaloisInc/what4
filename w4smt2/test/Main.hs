@@ -21,8 +21,9 @@ import Test.Tasty.Golden (goldenVsString)
 import Test.Tasty.HUnit (testCase, (@?=))
 import What4.Expr (newExprBuilder, EmptyExprBuilderState(EmptyExprBuilderState))
 import What4.FloatMode (FloatModeRepr(FloatUninterpretedRepr))
-import What4.SatResult (SatResult(Sat, Unsat, Unknown))
+import What4.SatResult (SatResult(Sat, Unsat))
 
+import W4SMT2.Exec (erResults)
 import W4SMT2.Solve (solve)
 import W4SMT2.Parser qualified as Parser
 import W4SMT2.Pretty qualified as Pretty
@@ -62,11 +63,11 @@ mkSolverTest dir file = do
     let ?logStderr = \_ -> return ()
     sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
     input <- TIO.readFile inputPath
-    result <- solve sym input
-    let output = case result of
-          Sat _ -> "sat\n"
-          Unsat _ -> "unsat\n"
-          Unknown -> "unknown\n"
+    execResult <- solve sym input
+    let output = case erResults execResult of
+          [Sat _] -> "sat\n"
+          [Unsat _] -> "unsat\n"
+          _ -> "unknown\n"
     return (TLE.encodeUtf8 (TL.pack output))
 
 mkUxTest :: FilePath -> FilePath -> IO TestTree
