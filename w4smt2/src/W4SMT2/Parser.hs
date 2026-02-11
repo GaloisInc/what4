@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
+{-# OPTIONS_GHC -Wno-error=overlapping-patterns #-}  -- ghc 9.10.1 bug
+
 module W4SMT2.Parser
   ( VarName(..)
   , FnName(..)

@@ -787,12 +787,12 @@ instance FoldableFC App where
 
 traverseApp :: (Applicative m, OrdF f, Eq (f (BaseBoolType)), HashableF f, HasAbsValue f)
             => (forall tp. e tp -> m (f tp))
-            -> App e utp -> m ((App f) utp)
+            -> App e utp -> m (App f utp)
 
 -- This is the type at its use in 'evalBoundVars'
 {-# SPECIALIZE traverseApp ::
   (forall tp. Expr t tp -> IO (Expr t tp))
-  -> App (Expr t) utp -> IO ((App (Expr t)) utp) #-}
+  -> App (Expr t) utp -> IO (App (Expr t) utp) #-}
 
 traverseApp =
   $(structuralTraversal [t|App|]

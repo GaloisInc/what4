@@ -39,6 +39,12 @@ in parallel over those files. It collects timing information and can optionally
 verify results against Z3. See `cabal run exe:w4smt2-bench -- --help` for more
 information.
 
+## undefine-fun
+
+`undefine-fun` unfolds instances of `define-fun`s in SMT-Lib files. The primary
+users of What4 (Crucible, SAW) do not emit `define-fun`s, so benchmarks without
+them are more relevant to those use-cases.
+
 ## Test suite
 
 w4smt2 has three main kinds of tests under `test/`:

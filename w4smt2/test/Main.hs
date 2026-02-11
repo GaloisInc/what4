@@ -60,7 +60,6 @@ mkSolverTest dir file = do
       goldenPath = dir </> name ++ ".out"
   return $ goldenVsString name goldenPath $ withIONonceGenerator $ \gen -> do
     let ?logStderr = \_ -> return ()
-        ?writeStdout = \_ -> return ()
     sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
     input <- TIO.readFile inputPath
     result <- solve sym input
@@ -79,7 +78,6 @@ mkUxTest dir file = do
     input <- TIO.readFile inputPath
     stderrRef <- newIORef ""
     let ?logStderr = \t -> modifyIORef' stderrRef (<> t <> "\n")
-        ?writeStdout = \_ -> return ()
     _ <- try @SomeException $ withIONonceGenerator $ \gen -> do
       sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
       solve sym input
