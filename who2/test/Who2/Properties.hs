@@ -6,12 +6,14 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Who2.Properties
   ( propSimplificationCorrect
   , propDeepSimplifications
   , propBoolSimplifications
   , propBvArithSimplifications
+  , propSingletonAbstractDomainIffLiteral
   , checkZ3Available
   , interp
   ) where
@@ -22,23 +24,29 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Builder as Builder
 import System.Directory (findExecutable)
-import System.Exit (ExitCode(..))
+import System.Exit (ExitCode(ExitSuccess))
 import System.Process (readProcessWithExitCode)
 
 import Data.Parameterized.Nonce (withIONonceGenerator)
-import Hedgehog (Property, PropertyT, property, forAll, annotate, failure)
+import Hedgehog (Property, PropertyT, property, forAll, annotate, failure, assert)
 import qualified Hedgehog.Gen as Gen
 
 import qualified What4.BaseTypes as BT
 import What4.Interface (IsExprBuilder(..))
 import qualified What4.Interface as WI
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
+import qualified What4.Utils.BVDomain as BVD
 
 import Who2.Builder (newBuilder)
 import qualified Who2.Protocol.SMTLib2 as Who2SMT2
 import Who2.TestBuilder (newTestBuilder)
 import Who2.ExprBuilderAPI (ExprBuilderAPI(..))
+import qualified Who2.Expr.Logic as EL
+import qualified Who2.Expr.BV as EBV
 import Who2.Gen (SomeWidth(SomeWidth), defaultGenConfig, gcMaxDepth, gcBVWidths, genBool, genBVAtWidth)
+import qualified Who2.Expr as E
+import qualified Who2.Expr.App as App
+import qualified Who2.Expr.SymExpr as SE
 
 -- | Interpret an ExprBuilderAPI expression with any IsExprBuilder instance
 interp ::
@@ -240,3 +248,37 @@ propBvArithSimplifications = property $ do
     , EqPred bvExpr1 bvExpr2
     ]
   checkSimplificationPreserved expr
+
+-- | Property: A built expression is a literal if and only if its abstract domain is a singleton
+propSingletonAbstractDomainIffLiteral :: Property
+propSingletonAbstractDomainIffLiteral = property $ do
+  SomeWidth w <- forAll $ Gen.element (gcBVWidths defaultGenConfig)
+  expr <- forAll $ genBVAtWidth defaultGenConfig w
+  (isLit, isSingleton) <- liftIO $ withIONonceGenerator $ \gen -> do
+    builder <- newBuilder gen
+    SE.SymExpr e <- interp builder expr
+    let isLit' = checkExprIsLiteral e
+    let isSingleton' = checkExprSingleton e
+    pure (isLit', isSingleton')
+  assert (isLit == isSingleton)
+  where
+    checkExprIsLiteral ::
+      forall t tp.
+      E.Expr t (App.App t) tp ->
+      Bool
+    checkExprIsLiteral expr =
+      case E.eApp expr of
+        App.LogicApp EL.TruePred -> True
+        App.LogicApp EL.FalsePred -> True
+        App.BVApp (EBV.BVLit _ _) -> True
+        _ -> False
+
+    checkExprSingleton ::
+      forall t tp.
+      E.Expr t (App.App t) tp ->
+      Bool
+    checkExprSingleton expr =
+      case (E.baseType expr, E.eAbsVal expr) of
+        (BT.BaseBoolRepr, Just _) -> True
+        (BT.BaseBVRepr _, BVD.asSingleton -> Just {}) -> True
+        _ -> False
