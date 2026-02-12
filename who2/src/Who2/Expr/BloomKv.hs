@@ -20,7 +20,6 @@ module Who2.Expr.BloomKv
   , values
   , insert
   , merge
-  , mapValues
   , eqBy
   , ordBy
 
@@ -155,11 +154,6 @@ merge combine xs ys
   | P.otherwise = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
   where merged = BloomKv Filt.disabled (kvs xs HS.>< kvs ys)
 {-# INLINE merge #-}
-
--- | Map a function over all values
-mapValues :: (Hashable k, Hashable w) => (v -> w) -> BloomKv k v -> BloomKv k w
-mapValues f (BloomKv flt sq) = BloomKv flt (HS.map (P.fmap f) sq)
-{-# INLINE mapValues #-}
 
 -- | Equality with custom comparisons
 eqBy :: (k -> k -> Bool) -> (v -> v -> Bool) -> BloomKv k v -> BloomKv k v -> Bool

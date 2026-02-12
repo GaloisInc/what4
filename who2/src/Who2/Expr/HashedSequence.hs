@@ -10,7 +10,6 @@ module Who2.Expr.HashedSequence
   , null
   , (|>)
   , (><)
-  , map
   , toSeq
   , toList
   , findIndexR
@@ -183,21 +182,10 @@ infixl 5 |>
 (><) :: HashedSeq a -> HashedSeq a -> HashedSeq a
 (><) (HashedSeq s1 h1) (HashedSeq s2 h2) =
   if enabled
-    then HashedSeq (s1 Seq.>< s2) (combineHashConcat h1 h2 (Seq.length s2))
-    else HashedSeq (s1 Seq.>< s2) 0
+  then HashedSeq (s1 Seq.>< s2) (combineHashConcat h1 h2 (Seq.length s2))
+  else HashedSeq (s1 Seq.>< s2) 0
 
 infixr 5 ><
-
--- | O(n). Map a function over the sequence.
--- The result hash is recomputed (if enabled).
-map :: Hashable b => (a -> b) -> HashedSeq a -> HashedSeq b
-map f (HashedSeq s _) =
-  let newSeq = P.fmap f s
-  in if enabled
-       then HashedSeq newSeq (rehashSeq newSeq)
-       else HashedSeq newSeq 0
-  where
-    rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
 
 -- | O(1). Extract the underlying sequence.
 toSeq :: HashedSeq a -> Seq a
@@ -220,11 +208,12 @@ findIndexR p = Seq.findIndexR p . hsSeq
 adjust' :: Hashable a => (a -> a) -> Int -> HashedSeq a -> HashedSeq a
 adjust' f i hs@(HashedSeq s _) =
   let newSeq = Seq.adjust' f i s
-  in if s == newSeq
+  in if s == newSeq  -- TODO: Just compare the one element
      then hs  -- No change
-     else if enabled
-            then HashedSeq newSeq (rehashSeq newSeq)
-            else HashedSeq newSeq 0
+     else
+      if enabled
+      then HashedSeq newSeq (rehashSeq newSeq)
+      else HashedSeq newSeq 0
   where
     rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
 

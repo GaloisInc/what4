@@ -21,7 +21,6 @@ module Who2.Expr.SemiRing.Sum
   , add
   , addVar
   , addConstant
-  , scale
   , fromTerms
   , toTerms
   , isZero
@@ -174,22 +173,6 @@ addVar ws x =
 addConstant :: SRSum sr f -> SR.Coefficient sr -> SRSum sr f
 addConstant ws c =
   ws { sumOffset = SR.add (sumRepr ws) (sumOffset ws) c }
-
--- | Scale a sum by a coefficient
-scale ::
-  (Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
-  SR.SemiRingRepr sr ->
-  SR.Coefficient sr ->
-  SRSum sr f ->
-  SRSum sr f
-scale sr c ws
-  | SR.eq sr c (SR.zero sr) = constant sr (SR.zero sr)
-  | SR.eq sr c (SR.one sr) = ws
-  | otherwise =
-      SRSum
-        (BKv.mapValues (SR.mul sr c) (sumMap ws))
-        (SR.mul sr c (sumOffset ws))
-        sr
 
 -- | Create a sum from a list of terms and an offset
 fromTerms ::
