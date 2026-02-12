@@ -99,17 +99,17 @@ isEmpty = HS.null . kvs
 
 -- | Convert to list
 toList :: BloomKv k v -> [(k, v)]
-toList = P.fmap (\(Kv k v) -> (k, v)) . HS.toList . kvs
+toList = P.map (\(Kv k v) -> (k, v)) . HS.toList . kvs
 {-# INLINE toList #-}
 
 -- | Extract all keys
 keys :: BloomKv k v -> [k]
-keys = P.fmap kvKey . HS.toList . kvs
+keys = P.map kvKey . HS.toList . kvs
 {-# INLINE keys #-}
 
 -- | Extract all values
 values :: BloomKv k v -> [v]
-values = P.fmap kvValue . HS.toList . kvs
+values = P.map kvValue . HS.toList . kvs
 {-# INLINE values #-}
 
 -- | Insert key-value pair with combine function

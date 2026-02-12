@@ -41,7 +41,7 @@ enabled = P.True
 --   * True:  Polynomial rolling hash (order-sensitive, good distribution)
 --   * False: Simple XOR (order-insensitive, risk of cancellation)
 fancyHash :: Bool
-fancyHash = P.True
+fancyHash = P.False
 {-# INLINE fancyHash #-}
 
 -- | Base for polynomial rolling hash
