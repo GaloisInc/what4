@@ -19,6 +19,7 @@ module Who2.Expr.BV
   ) where
 
 import Data.Kind (Type)
+import Data.Hashable (hashWithSalt)
 
 import qualified Data.BitVector.Sized as BV
 
@@ -28,10 +29,15 @@ import qualified Data.Parameterized.TH.GADT as PTH
 
 import qualified What4.BaseTypes as BT
 
+import qualified What4.SemiRing as SR
+
 import Who2.Expr (Expr, HasBaseType(baseType))
 import qualified Who2.Expr as E
+import qualified Who2.Expr.BloomKv as BKv
 import qualified Who2.Expr.PolarizedBloomSeq as PBS
 import qualified Who2.Expr.Views as EV
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 
 -- | 'Polarizable' wrapper for bitvector expressions used in both 'BVAndBits' and 'BVOrBits'
 newtype BVExprWrapper f w = BVExprWrapper { unBVExprWrapper :: f (BT.BaseBVType w) }
@@ -46,8 +52,7 @@ data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   BVAdd ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(f (BT.BaseBVType w)) ->
-    !(f (BT.BaseBVType w)) ->
+    !(SRS.SRSum (SR.SemiRingBV SR.BVArith w) f) ->
     BVExpr f (BT.BaseBVType w)
 
   BVNeg ::
@@ -66,8 +71,7 @@ data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   BVMul ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(f (BT.BaseBVType w)) ->
-    !(f (BT.BaseBVType w)) ->
+    !(SRP.SRProd (SR.SemiRingBV SR.BVBits w) f) ->
     BVExpr f (BT.BaseBVType w)
 
   BVAndBits ::
@@ -192,10 +196,10 @@ instance HasBaseType (BVExpr f) where
   baseType =
     \case
       BVLit w _ -> BT.BaseBVRepr w
-      BVAdd w _ _ -> BT.BaseBVRepr w
+      BVAdd w _ -> BT.BaseBVRepr w
       BVNeg w _ -> BT.BaseBVRepr w
       BVSub w _ _ -> BT.BaseBVRepr w
-      BVMul w _ _ -> BT.BaseBVRepr w
+      BVMul w _ -> BT.BaseBVRepr w
       BVAndBits w _ -> BT.BaseBVRepr w
       BVOrBits w _ -> BT.BaseBVRepr w
       BVXorBits w _ _ -> BT.BaseBVRepr w
@@ -232,6 +236,8 @@ instance PC.TestEquality f => PC.TestEquality (BVExpr f) where
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
        , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
        , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|\x y -> if PBS.eqBy (\(BVExprWrapper u) (BVExprWrapper v) -> PC.isJust (PC.testEquality u v)) x y then Just PC.Refl else Nothing|])
+       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\x y -> if BKv.eqBy (\u v -> PC.isJust (PC.testEquality u v)) (SR.eq (SRS.sumRepr x)) (SRS.sumMap x) (SRS.sumMap y) && SR.eq (SRS.sumRepr x) (SRS.sumOffset x) (SRS.sumOffset y) then Just PC.Refl else Nothing|])
+       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\x y -> if BKv.eqBy (\u v -> PC.isJust (PC.testEquality u v)) (==) (SRP.prodMap x) (SRP.prodMap y) then Just PC.Refl else Nothing|])
        ]
      )
 
@@ -242,6 +248,8 @@ instance PC.OrdF f => PC.OrdF (BVExpr f) where
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
        , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
        , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|\pbs1 pbs2 -> PC.fromOrdering (PBS.ordBy (\(BVExprWrapper u) (BVExprWrapper v) -> PC.toOrdering (PC.compareF u v)) pbs1 pbs2)|])
+       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\x y -> case SR.sr_compare (SRS.sumRepr x) (SRS.sumOffset x) (SRS.sumOffset y) of { EQ -> PC.fromOrdering (BKv.ordBy (\u v -> PC.toOrdering (PC.compareF u v)) (SR.sr_compare (SRS.sumRepr x)) (SRS.sumMap x) (SRS.sumMap y)); LT -> PC.LTF; GT -> PC.GTF }|])
+       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\x y -> PC.fromOrdering (BKv.ordBy (\u v -> PC.toOrdering (PC.compareF u v)) compare (SRP.prodMap x) (SRP.prodMap y))|])
        ]
      )
 
@@ -251,6 +259,8 @@ instance PC.HashableF f => PC.HashableF (BVExpr f) where
        [t|BVExpr|]
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.hashWithSaltF|])
        , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|\s pbs -> PBS.hashPBSWith (\s' (BVExprWrapper e) -> PC.hashWithSaltF s' e) s pbs|])
+       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\s ws -> let s' = foldl (\s'' (k, v) -> SR.sr_hashWithSalt (SRS.sumRepr ws) (PC.hashWithSaltF s'' k) v) s (BKv.toList (SRS.sumMap ws)) in SR.sr_hashWithSalt (SRS.sumRepr ws) s' (SRS.sumOffset ws)|])
+       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|\s wp -> foldl (\s' (k, v) -> PC.hashWithSaltF (hashWithSalt s' v) k) s (BKv.toList (SRP.prodMap wp))|])
        ]
      )
 

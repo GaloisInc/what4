@@ -40,6 +40,7 @@ import qualified Data.Parameterized.NatRepr as NR
 import qualified Data.Parameterized.Classes as PC
 
 import qualified What4.BaseTypes as BT
+import qualified What4.SemiRing as SR
 import qualified What4.Utils.AbstractDomains as AD
 import qualified What4.Utils.BVDomain as BVD
 
@@ -48,6 +49,8 @@ import Data.Hashable (Hashable)
 
 import Who2.Expr (Expr, HasBaseType)
 import qualified Who2.Expr as E
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.PolarizedBloomSeq as PBS
@@ -90,7 +93,7 @@ bvLit alloc w bv =
 {-# INLINE bvLit #-}
 
 bvAdd ::
-  HasBaseType (f (Expr t f)) =>
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
@@ -103,12 +106,66 @@ bvAdd alloc x y
   -- x + 0 = x
   -- test: bvadd-zero-right
   | isZero y = pure x
+  -- (x_ws) + (y_ws) = merge weighted sums
+  -- test: bvadd-commutative
+  | Just xWs <- EV.asBVAdd x
+  , Just yWs <- EV.asBVAdd y =
+      buildBVAdd alloc x y (SRS.add xWs yWs)
+  -- (x_ws) + c = add constant to weighted sum offset
+  -- test: bvadd-combine-constants
+  | Just xWs <- EV.asBVAdd x
+  , Just (_, c) <- asBVLit y =
+      buildBVAdd alloc x y (SRS.addConstant xWs c)
+  -- c + (y_ws) = add constant to weighted sum offset
+  -- test: bvadd-combine-constants-left
+  | Just (_, c) <- asBVLit x
+  , Just yWs <- EV.asBVAdd y =
+      buildBVAdd alloc x y (SRS.addConstant yWs c)
+  -- (x_ws) + y = add variable to weighted sum
+  | Just xWs <- EV.asBVAdd x =
+      buildBVAdd alloc x y (SRS.addVar xWs y)
+  -- x + (y_ws) = add variable to weighted sum
+  | Just yWs <- EV.asBVAdd y =
+      buildBVAdd alloc x y (SRS.addVar yWs x)
+  -- c1 + c2 = fold constants
+  -- test: bvadd-const-simplify
+  | Just (w, c1) <- asBVLit x
+  , Just (_, c2) <- asBVLit y =
+      bvLit alloc w (BV.add w c1 c2)
+  -- x + c = create weighted sum with offset
+  | Just (_, c) <- asBVLit y =
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+      in buildBVAdd alloc x y (SRS.affineVar sr (BV.one w) x c)
+  -- c + y = create weighted sum with offset
+  | Just (_, c) <- asBVLit x =
+      let w = EBV.width y
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+      in buildBVAdd alloc x y (SRS.affineVar sr (BV.one w) y c)
+  -- x + y = create weighted sum with two variables
   | otherwise =
-      let x' = E.minByHash x y
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+          x' = E.minByHash x y
           y' = E.maxByHash x y
-      in alloc
-           (EBV.BVAdd (EBV.width x) x' y')
-           (BVD.add (E.eAbsVal x) (E.eAbsVal y))
+          ws = SRS.add (SRS.var sr x') (SRS.var sr y')
+      in buildBVAdd alloc x y ws
+  where
+    buildBVAdd ::
+      forall w' t' f'.
+      (HasBaseType (f' (Expr t' f')), Eq (Expr t' f' (BT.BaseBVType w')), Ord (Expr t' f' (BT.BaseBVType w')), Hashable (Expr t' f' (BT.BaseBVType w')), PC.HashableF (Expr t' f'), PC.OrdF (Expr t' f'), EV.HasBVViews f', 1 <= w') =>
+      (forall tp. EBV.BVExpr (Expr t' f') tp -> AD.AbstractValue tp -> IO (Expr t' f' tp)) ->
+      Expr t' f' (BT.BaseBVType w') ->
+      Expr t' f' (BT.BaseBVType w') ->
+      SRS.SRSum (SR.SemiRingBV SR.BVArith w') (Expr t' f') ->
+      IO (Expr t' f' (BT.BaseBVType w'))
+    buildBVAdd alloc x y ws =
+      let w = EBV.width x
+      in case SRS.asConstant ws of
+           Just c -> bvLit alloc w c
+           Nothing -> alloc
+                        (EBV.BVAdd w ws)
+                        (BVD.add (E.eAbsVal x) (E.eAbsVal y))
 {-# INLINE bvAdd #-}
 
 bvNeg ::
@@ -135,7 +192,11 @@ bvNeg alloc x
 
 bvSub ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
+  , Ord (f (Expr t f) (BT.BaseBVType w))
+  , Hashable (Expr t f (BT.BaseBVType w))
   , HasBaseType (f (Expr t f))
+  , PC.HashableF (Expr t f)
+  , PC.OrdF (Expr t f)
   , EV.HasBVViews f
   ) =>
   1 <= w =>
@@ -162,7 +223,7 @@ bvSub alloc x y
 {-# INLINE bvSub #-}
 
 bvMul ::
-  HasBaseType (f (Expr t f)) =>
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), EV.HasBVViews f) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
@@ -181,17 +242,57 @@ bvMul alloc x y
   -- x * 1 = x
   -- test: bvmul-one-right
   | isOne y = pure x
-  -- Constant folding
+  -- (x_prod) * (y_prod) = merge products
+  -- test: bvmul-exponent-combine
+  | Just xProd <- EV.asBVMul x
+  , Just yProd <- EV.asBVMul y =
+      buildBVMul alloc x y (SRP.mul xProd yProd)
+  -- (x_prod) * c = scale product coefficient
+  -- test: bvmul-scale-right
+  | Just xProd <- EV.asBVMul x
+  , Just (_, c) <- asBVLit y =
+      buildBVMul alloc x y (SRP.scale xProd c)
+  -- c * (y_prod) = scale product coefficient
+  -- test: bvmul-scale-left
+  | Just (_, c) <- asBVLit x
+  , Just yProd <- EV.asBVMul y =
+      buildBVMul alloc x y (SRP.scale yProd c)
+  -- (x_prod) * y = multiply product by variable
+  | Just xProd <- EV.asBVMul x =
+      buildBVMul alloc x y (SRP.mulVar xProd y)
+  -- x * (y_prod) = multiply product by variable
+  | Just yProd <- EV.asBVMul y =
+      buildBVMul alloc x y (SRP.mulVar yProd x)
+  -- c1 * c2 = fold constants
   -- test: bvmul-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.mul wx bvx bvy)
+  -- x * y = create product
+  -- test: bvmul-commutative
   | otherwise =
-      let x' = E.minByHash x y
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVBitsRepr w
+          x' = E.minByHash x y
           y' = E.maxByHash x y
-      in alloc
-           (EBV.BVMul (EBV.width x) x' y')
-           (BVD.mul (E.eAbsVal x) (E.eAbsVal y))
+          wp = SRP.mul (SRP.var sr x') (SRP.var sr y')
+      in buildBVMul alloc x y wp
+  where
+    buildBVMul ::
+      forall w' t' f'.
+      (HasBaseType (f' (Expr t' f')), 1 <= w') =>
+      (forall tp. EBV.BVExpr (Expr t' f') tp -> AD.AbstractValue tp -> IO (Expr t' f' tp)) ->
+      Expr t' f' (BT.BaseBVType w') ->
+      Expr t' f' (BT.BaseBVType w') ->
+      SRP.SRProd (SR.SemiRingBV SR.BVBits w') (Expr t' f') ->
+      IO (Expr t' f' (BT.BaseBVType w'))
+    buildBVMul alloc x y wp =
+      let w = EBV.width x
+      in case SRP.asConstant wp of
+           Just c -> bvLit alloc w c
+           Nothing -> alloc
+                        (EBV.BVMul w wp)
+                        (BVD.mul (E.eAbsVal x) (E.eAbsVal y))
 {-# INLINE bvMul #-}
 
 bvAndBits ::

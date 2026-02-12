@@ -10,9 +10,12 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.NatRepr (type (<=), NatRepr)
 
 import qualified What4.BaseTypes as BT
+import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr as E
 import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 
 -- | Typeclass for inspecting logical structure of expressions.
 -- This allows us to implement rewrites without creating import cycles.
@@ -39,6 +42,12 @@ class HasBVViews f where
 
   -- | View: is this BVNeg? Returns the argument if so.
   asBVNeg :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (E.Expr t f (BT.BaseBVType w))
+
+  -- | View: is this BVAdd? Returns the weighted sum.
+  asBVAdd :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (SRS.SRSum (SR.SemiRingBV SR.BVArith w) (E.Expr t f))
+
+  -- | View: is this BVMul? Returns the product.
+  asBVMul :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (SRP.SRProd (SR.SemiRingBV SR.BVBits w) (E.Expr t f))
 
   -- | View: is this BVAndBits? Returns the polarized bloom sequence.
   asBVAndBits :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PBS.PolarizedBloomSeq (E.Expr t f (BT.BaseBVType w)))

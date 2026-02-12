@@ -24,61 +24,15 @@ module Who2.Expr.BloomSeq
   , ordBy
 
   , -- * Configuration
-    enabled
-  , threshold
+    threshold
   ) where
 
-import Data.Word (Word64)
-import Data.Bits (testBit, setBit, complement, (.&.), (.|.))
-import Data.Hashable (Hashable(hash, hashWithSalt))
+import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Sequence as Seq
 import Data.Sequence (Seq((:|>)))
 import qualified Data.Foldable as F
-
----------------------------------------------------------------------
-
--- | Configuration: is bloom filtering enabled?
-enabled :: Bool
-enabled = True
-{-# INLINE enabled #-}
-
----------------------------------------------------------------------
-
--- | A 64-bit bloom filter for fast negative membership tests
-newtype Filter a = Filter { getFilter :: Word64 }
-  deriving (Eq, Ord, Show)
-
--- | Disabled filter (all 1 bits) - used when filter is turned off
-disabledFilter :: Filter a
-disabledFilter = Filter (complement 0)
-{-# INLINE disabledFilter #-}
-
--- | Empty filter (all 0 bits if enabled, disabled if not)
-emptyFilter :: Filter a
-emptyFilter = if enabled then Filter 0 else disabledFilter
-{-# INLINE emptyFilter #-}
-
--- | Insert an element into the filter
-insertIntoFilter :: Hashable a => Filter a -> a -> Filter a
-insertIntoFilter f@(Filter w) x
-  | f == disabledFilter = disabledFilter
-  | otherwise = Filter (setBit w (hash x .&. 63))
-{-# INLINE insertIntoFilter #-}
-
--- | Check if element might be in the filter
-filterMightContain :: Hashable a => Filter a -> a -> Bool
-filterMightContain f@(Filter w) x
-  | f == disabledFilter = True
-  | otherwise = testBit w (hash x .&. 63)
-{-# INLINE filterMightContain #-}
-
-disjoint :: Filter a -> Filter a -> Bool
-disjoint (Filter x) (Filter y) = x .&. y == 0
-{-# INLINE disjoint #-}
-
-union :: Filter a -> Filter a -> Filter a
-union (Filter x) (Filter y) = Filter (x .|. y)
-{-# INLINE union #-}
+import qualified Who2.Expr.Filter as Filt
+import Who2.Expr.Filter (Filter)
 
 ---------------------------------------------------------------------
 
@@ -121,19 +75,19 @@ threshold = 12
 
 -- | Empty sequence
 empty :: BloomSeq a
-empty = BloomSeq emptyFilter Seq.empty
+empty = BloomSeq Filt.empty Seq.empty
 {-# INLINE empty #-}
 
 -- | Create single-element sequence
 singleton :: (Eq a, Hashable a) => a -> BloomSeq a
-singleton x = BloomSeq (insertIntoFilter emptyFilter x) (Seq.singleton x)
+singleton x = BloomSeq (Filt.insert Filt.empty x) (Seq.singleton x)
 
 -- | Create from 2 elements (handles x==y case)
 fromTwo :: (Eq a, Hashable a) => a -> a -> BloomSeq a
 fromTwo x y  -- TODO: Assert x /= y
   | x == y = singleton x
   | otherwise =
-      let f = insertIntoFilter (insertIntoFilter emptyFilter x) y
+      let f = Filt.insert (Filt.insert Filt.empty x) y
       in BloomSeq f (Seq.fromList [x, y])
 
 -- | Create from list
@@ -164,36 +118,36 @@ toList = F.toList . elems
 -- | Check membership using filter then linear search if needed
 _contains :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 _contains (BloomSeq f es) x
-  | not enabled = x `elem` es
-  | not (filterMightContain f x) = False
+  | not Filt.enabled = x `elem` es
+  | not (Filt.mightContain f x) = False
   | otherwise = x `elem` es
 {-# INLINE _contains #-}
 
 -- | Check membership using filter but only search if under threshold
 containsFast :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 containsFast (BloomSeq f es) x
-  | not enabled = False
-  | f == disabledFilter = False
-  | filterMightContain f x = x `elem` es
+  | not Filt.enabled = False
+  | f == Filt.disabled = False
+  | Filt.mightContain f x = x `elem` es
   | otherwise = False
 {-# INLINE containsFast #-}
 
 -- | Check membership using filter but only search if under threshold
 containsAnyFast :: (Eq a, Hashable a, Foldable t) => BloomSeq a -> t a -> Bool
 containsAnyFast (BloomSeq f es) xs
-  | not enabled = False
-  | f == disabledFilter = False
+  | not Filt.enabled = False
+  | f == Filt.disabled = False
   | otherwise =
-    any (\x -> if filterMightContain f x then x `elem` es else False) xs
+    any (\x -> if Filt.mightContain f x then x `elem` es else False) xs
 {-# INLINE containsAnyFast #-}
 
 -- | Insert element unconditionally (appends to end, updates filter)
 insert :: (Eq a, Hashable a) => BloomSeq a -> a -> BloomSeq a
 insert (BloomSeq f es) x =
   let newSize = Seq.length es + 1
-      newFilter = if not enabled || newSize > threshold
-                  then disabledFilter
-                  else insertIntoFilter f x
+      newFilter = if not Filt.enabled || newSize > threshold
+                  then Filt.disabled
+                  else Filt.insert f x
       newElems = es :|> x
   in BloomSeq newFilter newElems
 {-# INLINE insert #-}
@@ -201,8 +155,8 @@ insert (BloomSeq f es) x =
 -- | Insert only if not already present (unless filter is disabled)
 insertIfNotPresent :: (Eq a, Hashable a) => BloomSeq a -> a -> BloomSeq a
 insertIfNotPresent bs@(BloomSeq f _) x
-  | not enabled = insert bs x
-  | f == disabledFilter = insert bs x
+  | not Filt.enabled = insert bs x
+  | f == Filt.disabled = insert bs x
   | containsFast bs x = bs
   | otherwise = insert bs x
 {-# INLINE insertIfNotPresent #-}
@@ -210,12 +164,12 @@ insertIfNotPresent bs@(BloomSeq f _) x
 -- | Merge two sequences
 merge :: (Eq a, Hashable a) => BloomSeq a -> BloomSeq a -> BloomSeq a
 merge xs ys
-  | not enabled = merged
-  | filt xs == disabledFilter || filt ys == disabledFilter = merged
-  | disjoint (filt xs) (filt ys) =
-      BloomSeq (union (filt xs) (filt ys)) (elems xs Seq.>< elems ys)
+  | not Filt.enabled = merged
+  | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
+  | Filt.disjoint (filt xs) (filt ys) =
+      BloomSeq (Filt.union (filt xs) (filt ys)) (elems xs Seq.>< elems ys)
   | otherwise = F.foldl' insertIfNotPresent xs (elems ys)
-  where merged = BloomSeq disabledFilter (elems xs Seq.>< elems ys)
+  where merged = BloomSeq Filt.disabled (elems xs Seq.>< elems ys)
 {-# INLINE merge #-}
 
 eqBy :: (a -> a -> Bool) -> BloomSeq a -> BloomSeq a -> Bool

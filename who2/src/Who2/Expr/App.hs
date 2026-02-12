@@ -82,6 +82,14 @@ instance EV.HasBVViews (App t) where
     BVApp (EBV.BVNeg _ inner) -> Just inner
     _ -> Nothing
 
+  asBVAdd e = case E.eApp e of
+    BVApp (EBV.BVAdd _ ws) -> Just ws
+    _ -> Nothing
+
+  asBVMul e = case E.eApp e of
+    BVApp (EBV.BVMul _ wp) -> Just wp
+    _ -> Nothing
+
   asBVAndBits e = case E.eApp e of
     BVApp (EBV.BVAndBits _ pbs) -> Just (coerce pbs)
     _ -> Nothing

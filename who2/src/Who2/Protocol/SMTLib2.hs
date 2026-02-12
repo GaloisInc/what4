@@ -59,6 +59,8 @@ import qualified Who2.Expr.PolarizedBloomSeq as PBS
 import qualified Who2.Expr.SymExpr as ES
 import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.Views as EV
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 
 ------------------------------------------------------------------------
 -- Variable Cache
@@ -254,20 +256,43 @@ mkBVExprWithCache ::
 mkBVExprWithCache cache = \case
   EBV.BVLit w bv -> return $ SMT2.bvhexadecimal w bv
 
-  EBV.BVAdd _ x y -> do
-    xTerm <- mkExprWithCache cache x
-    yTerm <- mkExprWithCache cache y
-    return $ SMT2.bvadd xTerm [yTerm]
+  EBV.BVAdd w ws -> do
+    -- Serialize weighted sum as additions and multiplications
+    let terms = SRS.toTerms ws
+        offset = SRS.sumOffset ws
+    -- Start with the offset if non-zero
+    let offsetTerm = if offset == BV.zero w
+                     then Nothing
+                     else Just (SMT2.bvhexadecimal w offset)
+    -- Create terms for each coefficient * variable
+    scaledTerms <- mapM (\(expr, coeff) -> do
+                           exprTerm <- mkExprWithCache cache expr
+                           if coeff == BV.mkBV w 1
+                           then return exprTerm
+                           else do
+                             let coeffTerm = SMT2.bvhexadecimal w coeff
+                             return $ SMT2.bvmul exprTerm [coeffTerm])
+                        terms
+    -- Combine all terms with bvadd
+    case (offsetTerm, scaledTerms) of
+      (Nothing, []) -> return $ SMT2.bvhexadecimal w (BV.zero w)
+      (Nothing, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) t ts
+      (Just off, []) -> return off
+      (Just off, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) off (t:ts)
 
   EBV.BVSub _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvsub xTerm yTerm
 
-  EBV.BVMul _ x y -> do
-    xTerm <- mkExprWithCache cache x
-    yTerm <- mkExprWithCache cache y
-    return $ SMT2.bvmul xTerm [yTerm]
+  EBV.BVMul _ wp -> do
+    let terms = SRP.toTerms wp
+    termList <- mapM (\(x, exponent) -> do
+                       xTerm <- mkExprWithCache cache x
+                       return $ replicate (fromIntegral exponent) xTerm) terms
+    case concat termList of
+      [] -> return $ SMT2.numeral 1  -- empty product = 1
+      (t:ts) -> return $ SMT2.bvmul t ts
 
   EBV.BVNeg _ x -> do
     xTerm <- mkExprWithCache cache x

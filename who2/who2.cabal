@@ -82,11 +82,15 @@ library
     Who2.Builder.Ops.Logic
     Who2.Expr
     Who2.Expr.App
+    Who2.Expr.BloomKv
     Who2.Expr.BloomSeq
     Who2.Expr.BV
+    Who2.Expr.Filter
     Who2.Expr.Fn
     Who2.Expr.Logic
     Who2.Expr.PolarizedBloomSeq
+    Who2.Expr.SemiRing.Product
+    Who2.Expr.SemiRing.Sum
     Who2.Expr.Subst
     Who2.Expr.SymExpr
     Who2.Expr.SymFn

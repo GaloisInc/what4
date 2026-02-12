@@ -19,6 +19,7 @@ import What4.BaseTypes (BaseBoolType)
 import What4.Interface (IsExprBuilder(..))
 import qualified What4.Interface as WI
 import qualified What4.Expr as WE
+import qualified What4.SemiRing as SR
 import What4.Utils.AbstractDomains (AbstractValue, avTop)
 
 import Who2.Expr (Expr(..), HasBaseType(..), mkExpr)
@@ -28,6 +29,8 @@ import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 
 -- | A naive builder that bypasses all simplifications by always using
 -- "top" (widest possible) abstract values and allocating every expression.
@@ -137,7 +140,11 @@ instance IsExprBuilder (TestBuilder t) where
   bvAdd tb x y = do
     let SymExpr ex = x
         SymExpr ey = y
-    result <- naiveAlloc tb (BVApp (EBV.BVAdd (EBV.width ex) ex ey))
+        w = EBV.width ex
+        sr = SR.SemiRingBVRepr SR.BVArithRepr w
+        -- Create weighted sum: 1*ex + 1*ey + 0
+        ws = SRS.add (SRS.var sr ex) (SRS.var sr ey)
+    result <- naiveAlloc tb (BVApp (EBV.BVAdd w ws))
     pure (SymExpr result)
 
   bvSub tb x y = do
@@ -149,7 +156,11 @@ instance IsExprBuilder (TestBuilder t) where
   bvMul tb x y = do
     let SymExpr ex = x
         SymExpr ey = y
-    result <- naiveAlloc tb (BVApp (EBV.BVMul (EBV.width ex) ex ey))
+        w = EBV.width ex
+        sr = SR.SemiRingBVRepr SR.BVBitsRepr w
+        -- Create product: ex^1 * ey^1
+        wp = SRP.mul (SRP.var sr ex) (SRP.var sr ey)
+    result <- naiveAlloc tb (BVApp (EBV.BVMul w wp))
     pure (SymExpr result)
 
   bvNeg tb x = do

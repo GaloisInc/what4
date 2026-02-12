@@ -1,3 +1,3 @@
 (set-logic QF_UFBV)
-(assert (= (bvadd #x0a #x14) (bvadd #x0a #x14)))
+(assert (= #x1e #x1e))
 (check-sat)

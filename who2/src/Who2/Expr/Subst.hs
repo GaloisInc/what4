@@ -32,6 +32,8 @@ import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.PolarizedBloomSeq as PBS
 import qualified Who2.Expr.SymExpr as ESE
 import qualified Who2.Expr.SymFn as ESF
+import qualified Who2.Expr.SemiRing.Product as SRP
+import qualified Who2.Expr.SemiRing.Sum as SRS
 
 -- | Existential wrapper for expressions with hidden type parameter
 data SomeExpr t = forall tp. SomeExpr (E.Expr t (EA.App t) tp)
@@ -94,18 +96,38 @@ substituteBoundVars sym = go
     substInBVExpr bvExpr substMap = case bvExpr of
       EBV.BVLit w bv -> ESE.getSymExpr <$> WI.bvLit sym w bv
       EBV.BVNeg _w e -> go e substMap >>= unOp (WI.bvNeg sym)
-      EBV.BVAdd _w e1 e2 -> do
-        e1' <- go e1 substMap
-        e2' <- go e2 substMap
-        binOp (WI.bvAdd sym) e1' e2'
+      EBV.BVAdd w ws -> do
+        -- Substitute in all terms of the weighted sum, then add them back
+        let terms = SRS.toTerms ws
+            offset = SRS.sumOffset ws
+        -- Start with the offset
+        result <- if offset == BV.zero w
+                  then ESE.getSymExpr <$> WI.bvZero sym w
+                  else ESE.getSymExpr <$> WI.bvLit sym w offset
+        -- Add each term
+        foldM (\acc (term, coeff) -> do
+                 term' <- go term substMap
+                 scaledTerm <- if coeff == BV.mkBV w 1
+                               then return term'
+                               else do
+                                 coeffExpr <- ESE.getSymExpr <$> WI.bvLit sym w coeff
+                                 ESE.getSymExpr <$> WI.bvMul sym (ESE.SymExpr term') (ESE.SymExpr coeffExpr)
+                 ESE.getSymExpr <$> WI.bvAdd sym (ESE.SymExpr acc) (ESE.SymExpr scaledTerm))
+              result
+              terms
       EBV.BVSub _w e1 e2 -> do
         e1' <- go e1 substMap
         e2' <- go e2 substMap
         binOp (WI.bvSub sym) e1' e2'
-      EBV.BVMul _w e1 e2 -> do
-        e1' <- go e1 substMap
-        e2' <- go e2 substMap
-        binOp (WI.bvMul sym) e1' e2'
+      EBV.BVMul w wp -> do
+        let terms = SRP.toTerms wp
+        terms' <- mapM (\(e, exponent) -> do
+                          e' <- go e substMap
+                          return (e', exponent)) terms
+        let expandedTerms = concatMap (\(e', exponent) -> replicate (fromIntegral exponent) e') terms'
+        case expandedTerms of
+          [] -> ESE.getSymExpr <$> WI.bvOne sym w
+          (t:ts) -> foldM (\acc x -> binOp (WI.bvMul sym) acc x) t ts
       EBV.BVUdiv _w e1 e2 -> do
         e1' <- go e1 substMap
         e2' <- go e2 substMap
