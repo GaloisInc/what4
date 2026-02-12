@@ -1,0 +1,242 @@
+{-# LANGUAGE StrictData #-}
+
+module Who2.Expr.HashedSequence
+  ( HashedSeq(..)
+  , empty
+  , singleton
+  , fromList
+  , fromSeq
+  , length
+  , null
+  , (|>)
+  , (><)
+  , map
+  , toSeq
+  , toList
+  , findIndexR
+  , adjust'
+  , ordBy
+  ) where
+
+import Prelude (Eq((==)), Ord(compare), Ordering(LT, EQ, GT), Show, Int, Bool, Maybe, (.), (*), (+), otherwise)
+import qualified Prelude as P
+import Data.Hashable (Hashable(hash, hashWithSalt))
+import Data.Bits (xor, shiftR, (.&.))
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import qualified Data.Foldable as F
+
+------------------------------------------------------------------------
+-- Hash strategy configuration
+
+-- Note that all of the tests should pass regardless of these settings.
+
+-- | Controls whether hash precomputation is enabled:
+--   * True:  Precompute and maintain hash in hsHash field for O(1) hashing
+--   * False: Always set hsHash to 0, compute hash on-demand in Hashable instance
+enabled :: Bool
+enabled = P.True
+{-# INLINE enabled #-}
+
+-- | Controls which hashing strategy to use:
+--   * True:  Polynomial rolling hash (order-sensitive, good distribution)
+--   * False: Simple XOR (order-insensitive, risk of cancellation)
+fancyHash :: Bool
+fancyHash = P.True
+{-# INLINE fancyHash #-}
+
+-- | Base for polynomial rolling hash
+hashBase :: Int
+hashBase = 31
+{-# INLINE hashBase #-}
+
+------------------------------------------------------------------------
+-- Hash combining helpers
+
+-- | Fast integer exponentiation: base^exp
+-- Uses natural Int overflow (2^64 modulus) for consistency
+pow :: Int -> Int -> Int
+pow base exp
+  | exp P.< 0 = P.error "pow: negative exponent"
+  | exp P.== 0 = 1
+  | otherwise = go base exp 1
+  where
+    go _ 0 acc = acc
+    go b e acc
+      | e .&. 1 P.== 1 = go b' e' (acc * b)
+      | otherwise      = go b' e' acc
+      where
+        b' = b * b
+        e' = e `shiftR` 1
+{-# INLINE pow #-}
+
+-- | Combine hash when appending single element
+combineHashAppend :: Int -> Int -> Int
+combineHashAppend oldHash elemHash =
+  if fancyHash
+  then oldHash * hashBase + elemHash
+  else oldHash `xor` elemHash
+{-# INLINE combineHashAppend #-}
+
+-- | Combine hash when concatenating sequences
+-- Takes: hash1, hash2, length2
+combineHashConcat :: Int -> Int -> Int -> Int
+combineHashConcat hash1 hash2 len2 =
+  if fancyHash
+  then hash1 * pow hashBase len2 + hash2
+  else hash1 `xor` hash2
+{-# INLINE combineHashConcat #-}
+
+-- | Sequence with optional precomputed hash
+--
+-- Hash precomputation (controlled by 'enabled'):
+-- - When enabled = True: hsHash contains precomputed hash for O(1) hashing
+-- - When enabled = False: hsHash is always 0, hash computed on-demand in Hashable instance
+--
+-- Hash computation strategy (controlled by 'fancyHash', only when enabled = True):
+-- - When fancyHash = True (polynomial rolling hash with base 31):
+--   * append x: new_hash = old_hash * 31 + hash x (with natural Int overflow)
+--   * merge:    new_hash = hash1 * 31^len2 + hash2 (with natural Int overflow)
+-- - When fancyHash = False (simple XOR):
+--   * append x: new_hash = old_hash `xor` hash x
+--   * merge:    new_hash = hash1 `xor` hash2
+data HashedSeq a = HashedSeq
+  { hsSeq :: !(Seq a)
+  , hsHash :: {-# UNPACK #-} !Int  -- Precomputed hash
+  }
+  deriving (Show)
+
+instance Eq a => Eq (HashedSeq a) where
+  (HashedSeq s1 _) == (HashedSeq s2 _) = s1 == s2
+  {-# INLINE (==) #-}
+
+instance Ord a => Ord (HashedSeq a) where
+  compare (HashedSeq s1 _) (HashedSeq s2 _) = compare s1 s2
+  {-# INLINE compare #-}
+
+-- | Hashable instance uses precomputed hash for O(1) operations when enabled,
+-- otherwise computes hash on-demand
+instance Hashable a => Hashable (HashedSeq a) where
+  hash hs = if enabled then hsHash hs else hash (hsSeq hs)
+  {-# INLINE hash #-}
+
+  hashWithSalt salt hs =
+    if enabled then salt `xor` hsHash hs else hashWithSalt salt (hsSeq hs)
+  {-# INLINE hashWithSalt #-}
+
+-- | Foldable instance delegates to underlying Seq
+instance F.Foldable HashedSeq where
+  foldMap f = F.foldMap f . hsSeq
+  {-# INLINE foldMap #-}
+  foldr f z = F.foldr f z . hsSeq
+  {-# INLINE foldr #-}
+  foldl' f z = F.foldl' f z . hsSeq
+  {-# INLINE foldl' #-}
+  length = Seq.length . hsSeq
+  {-# INLINE length #-}
+  null = Seq.null . hsSeq
+  {-# INLINE null #-}
+
+-- | O(1). The empty sequence with hash 0.
+empty :: HashedSeq a
+empty = HashedSeq Seq.empty 0
+{-# INLINE empty #-}
+
+-- | O(1). A singleton sequence with precomputed hash (if enabled).
+singleton :: Hashable a => a -> HashedSeq a
+singleton x = HashedSeq (Seq.singleton x) (if enabled then hash x else 0)
+{-# INLINE singleton #-}
+
+-- | O(n). Build a hashed sequence from a list.
+fromList :: Hashable a => [a] -> HashedSeq a
+fromList = F.foldl' (|>) empty
+
+-- | O(n). Build a hashed sequence from a Seq, computing the hash (if enabled).
+fromSeq :: Hashable a => Seq a -> HashedSeq a
+fromSeq s =
+  if enabled
+    then HashedSeq s (F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s)
+    else HashedSeq s 0
+
+-- | O(1). The number of elements in the sequence.
+length :: HashedSeq a -> Int
+length = Seq.length . hsSeq
+{-# INLINE length #-}
+
+-- | O(1). Is the sequence empty?
+null :: HashedSeq a -> Bool
+null = Seq.null . hsSeq
+{-# INLINE null #-}
+
+-- | O(1). Add an element to the right end of the sequence.
+-- The hash is updated incrementally (if enabled).
+(|>) :: Hashable a => HashedSeq a -> a -> HashedSeq a
+(|>) (HashedSeq s h) x =
+  if enabled
+    then HashedSeq (s Seq.|> x) (combineHashAppend h (hash x))
+    else HashedSeq (s Seq.|> x) 0
+
+infixl 5 |>
+
+-- | O(log(min(n1,n2))). Concatenate two sequences.
+-- The hash is combined incrementally (if enabled).
+(><) :: HashedSeq a -> HashedSeq a -> HashedSeq a
+(><) (HashedSeq s1 h1) (HashedSeq s2 h2) =
+  if enabled
+    then HashedSeq (s1 Seq.>< s2) (combineHashConcat h1 h2 (Seq.length s2))
+    else HashedSeq (s1 Seq.>< s2) 0
+
+infixr 5 ><
+
+-- | O(n). Map a function over the sequence.
+-- The result hash is recomputed (if enabled).
+map :: Hashable b => (a -> b) -> HashedSeq a -> HashedSeq b
+map f (HashedSeq s _) =
+  let newSeq = P.fmap f s
+  in if enabled
+       then HashedSeq newSeq (rehashSeq newSeq)
+       else HashedSeq newSeq 0
+  where
+    rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
+
+-- | O(1). Extract the underlying sequence.
+toSeq :: HashedSeq a -> Seq a
+toSeq = hsSeq
+{-# INLINE toSeq #-}
+
+-- | O(n). Convert to a list.
+toList :: HashedSeq a -> [a]
+toList = F.toList . hsSeq
+{-# INLINE toList #-}
+
+-- | O(n). Find the rightmost index matching a predicate.
+findIndexR :: (a -> Bool) -> HashedSeq a -> Maybe Int
+findIndexR p = Seq.findIndexR p . hsSeq
+{-# INLINE findIndexR #-}
+
+-- | O(n). Update the element at the given index.
+-- The hash is recomputed (if enabled) because we can't incrementally update
+-- when modifying an interior element.
+adjust' :: Hashable a => (a -> a) -> Int -> HashedSeq a -> HashedSeq a
+adjust' f i hs@(HashedSeq s _) =
+  let newSeq = Seq.adjust' f i s
+  in if s == newSeq
+     then hs  -- No change
+     else if enabled
+            then HashedSeq newSeq (rehashSeq newSeq)
+            else HashedSeq newSeq 0
+  where
+    rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
+
+-- | Lexicographic ordering with custom comparison function
+ordBy :: (a -> a -> Ordering) -> HashedSeq a -> HashedSeq a -> Ordering
+ordBy cmp x y = lexCompare (toList x) (toList y)
+  where
+    lexCompare [] [] = EQ
+    lexCompare [] (_:_) = LT
+    lexCompare (_:_) [] = GT
+    lexCompare (a:as) (b:bs) =
+      case cmp a b of
+        LT -> LT
+        GT -> GT
+        EQ -> lexCompare as bs

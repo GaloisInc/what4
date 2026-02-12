@@ -28,11 +28,12 @@ module Who2.Expr.BloomSeq
   ) where
 
 import Data.Hashable (Hashable(hashWithSalt))
+import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import Data.Sequence (Seq((:|>)))
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
+import qualified Who2.Expr.HashedSequence as HS
 
 ---------------------------------------------------------------------
 
@@ -58,13 +59,17 @@ import Who2.Expr.Filter (Filter)
 -- the performance penalty of linear search through large sequences.
 data BloomSeq a = BloomSeq
   { filt :: {-# UNPACK #-} !(Filter a)
-  , elems :: !(Seq a)
+  , elems :: !(HS.HashedSeq a)
   }
   deriving (Eq, Ord, Show)
 
 instance Foldable BloomSeq where
   foldMap f = foldMap f . elems
   {-# INLINE foldMap #-}
+
+-- | Hash instance - delegates to HashedSeq for O(1) hashing
+instance Hashable a => Hashable (BloomSeq a) where
+  hashWithSalt salt bs = hashWithSalt salt (elems bs)
 
 -- | Threshold for disabling filter.
 --
@@ -75,12 +80,12 @@ threshold = 12
 
 -- | Empty sequence
 empty :: BloomSeq a
-empty = BloomSeq Filt.empty Seq.empty
+empty = BloomSeq Filt.empty HS.empty
 {-# INLINE empty #-}
 
 -- | Create single-element sequence
 singleton :: (Eq a, Hashable a) => a -> BloomSeq a
-singleton x = BloomSeq (Filt.insert Filt.empty x) (Seq.singleton x)
+singleton x = BloomSeq (Filt.insert Filt.empty x) (HS.singleton x)
 
 -- | Create from 2 elements (handles x==y case)
 fromTwo :: (Eq a, Hashable a) => a -> a -> BloomSeq a
@@ -88,7 +93,7 @@ fromTwo x y  -- TODO: Assert x /= y
   | x == y = singleton x
   | otherwise =
       let f = Filt.insert (Filt.insert Filt.empty x) y
-      in BloomSeq f (Seq.fromList [x, y])
+      in BloomSeq f (HS.fromList [x, y])
 
 -- | Create from list
 fromList :: (Eq a, Hashable a) => [a] -> BloomSeq a
@@ -97,17 +102,17 @@ fromList = F.foldl' insertIfNotPresent empty
 
 -- | Return size of sequence
 size :: BloomSeq a -> Int
-size = Seq.length . elems
+size = HS.length . elems
 {-# INLINE size #-}
 
 -- | Check if sequence is empty
 isEmpty :: BloomSeq a -> Bool
-isEmpty = Seq.null . elems
+isEmpty = HS.null . elems
 {-# INLINE isEmpty #-}
 
 -- | Get the underlying sequence
 toSeq :: BloomSeq a -> Seq a
-toSeq = elems
+toSeq = HS.toSeq . elems
 {-# INLINE toSeq #-}
 
 -- | Convert to list
@@ -144,11 +149,11 @@ containsAnyFast (BloomSeq f es) xs
 -- | Insert element unconditionally (appends to end, updates filter)
 insert :: (Eq a, Hashable a) => BloomSeq a -> a -> BloomSeq a
 insert (BloomSeq f es) x =
-  let newSize = Seq.length es + 1
+  let newSize = HS.length es + 1
       newFilter = if not Filt.enabled || newSize > threshold
                   then Filt.disabled
                   else Filt.insert f x
-      newElems = es :|> x
+      newElems = es HS.|> x
   in BloomSeq newFilter newElems
 {-# INLINE insert #-}
 
@@ -167,33 +172,20 @@ merge xs ys
   | not Filt.enabled = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
-      BloomSeq (Filt.union (filt xs) (filt ys)) (elems xs Seq.>< elems ys)
+      BloomSeq (Filt.union (filt xs) (filt ys)) (elems xs HS.>< elems ys)
   | otherwise = F.foldl' insertIfNotPresent xs (elems ys)
-  where merged = BloomSeq Filt.disabled (elems xs Seq.>< elems ys)
+  where merged = BloomSeq Filt.disabled (elems xs HS.>< elems ys)
 {-# INLINE merge #-}
 
 eqBy :: (a -> a -> Bool) -> BloomSeq a -> BloomSeq a -> Bool
 eqBy cmp x y =
   if filt x /= filt y
   then False
-  else and (Seq.zipWith cmp (elems x) (elems y))
+  else and (Seq.zipWith cmp (HS.toSeq (elems x)) (HS.toSeq (elems y)))
 
 ordBy :: (a -> a -> Ordering) -> BloomSeq a -> BloomSeq a -> Ordering
 ordBy cmp x y =
   case compare (filt x) (filt y) of
     LT -> LT
     GT -> GT
-    EQ -> lexCompare (F.toList (elems x)) (F.toList (elems y))
-  where
-    lexCompare [] [] = EQ
-    lexCompare [] (_:_) = LT
-    lexCompare (_:_) [] = GT
-    lexCompare (a:as) (b:bs) =
-      case cmp a b of
-        LT -> LT
-        GT -> GT
-        EQ -> lexCompare as bs
-
--- | Hash instance - hash the sequence elements, not the filter
-instance Hashable a => Hashable (BloomSeq a) where
-  hashWithSalt salt bs = F.foldl' hashWithSalt salt (elems bs)
+    EQ -> HS.ordBy cmp (elems x) (elems y)

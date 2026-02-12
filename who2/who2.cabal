@@ -87,6 +87,7 @@ library
     Who2.Expr.BV
     Who2.Expr.Filter
     Who2.Expr.Fn
+    Who2.Expr.HashedSequence
     Who2.Expr.Logic
     Who2.Expr.PolarizedBloomSeq
     Who2.Expr.SemiRing.Product
@@ -116,6 +117,7 @@ test-suite who2-tests
     Who2.ExprBuilderAPI
     Who2.Functions
     Who2.Gen
+    Who2.HashedSeq
     Who2.Instances
     Who2.Properties
     Who2.Simplification
@@ -128,6 +130,7 @@ test-suite who2-tests
     containers,
     directory,
     filepath,
+    hashable,
     hedgehog >= 1.0.2,
     parameterized-utils,
     prettyprinter >= 1.7.0,

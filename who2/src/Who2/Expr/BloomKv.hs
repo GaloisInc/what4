@@ -32,10 +32,10 @@ import qualified Prelude as P
 import Prelude (Eq, Ord, Show, Bool, Int, Ordering, Functor, Foldable, (==), (/=), (>), (&&), (||), (+), (.))
 import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Sequence as Seq
-import Data.Sequence (Seq((:|>)))
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
+import qualified Who2.Expr.HashedSequence as HS
 
 ---------------------------------------------------------------------
 
@@ -46,6 +46,10 @@ data Kv k v = Kv
   }
   deriving (Eq, Ord, Show, Functor)
 
+-- | Hashable instance for Kv
+instance (Hashable k, Hashable v) => Hashable (Kv k v) where
+  hashWithSalt s (Kv k v) = s `hashWithSalt` k `hashWithSalt` v
+
 ---------------------------------------------------------------------
 
 -- | A bloom-filtered key-value map optimized for small sizes
@@ -55,7 +59,7 @@ data Kv k v = Kv
 -- inserts become unconditional appends (avoiding expensive linear searches).
 data BloomKv k v = BloomKv
   { filt :: {-# UNPACK #-} !(Filter k)
-  , kvs :: !(Seq (Kv k v))
+  , kvs :: !(HS.HashedSeq (Kv k v))
   }
   deriving (Eq, Ord, Show)
 
@@ -72,41 +76,41 @@ threshold = 12
 
 -- | Empty map
 empty :: BloomKv k v
-empty = BloomKv Filt.empty Seq.empty
+empty = BloomKv Filt.empty HS.empty
 {-# INLINE empty #-}
 
 -- | Create single-element map
-singleton :: (Eq k, Hashable k) => k -> v -> BloomKv k v
-singleton k v = BloomKv (Filt.insert Filt.empty k) (Seq.singleton (Kv k v))
+singleton :: (Eq k, Hashable k, Hashable v) => k -> v -> BloomKv k v
+singleton k v = BloomKv (Filt.insert Filt.empty k) (HS.singleton (Kv k v))
 
 -- | Create from list of key-value pairs
-fromList :: (Eq k, Hashable k) => (v -> v -> v) -> [(k, v)] -> BloomKv k v
+fromList :: (Eq k, Hashable k, Hashable v) => (v -> v -> v) -> [(k, v)] -> BloomKv k v
 fromList combine = F.foldl' (\acc (k, v) -> insert combine acc k v) empty
 {-# INLINE fromList #-}
 
 -- | Return size of map (total number of pairs, may include duplicates)
 size :: BloomKv k v -> Int
-size = Seq.length . kvs
+size = HS.length . kvs
 {-# INLINE size #-}
 
 -- | Check if map is empty
 isEmpty :: BloomKv k v -> Bool
-isEmpty = Seq.null . kvs
+isEmpty = HS.null . kvs
 {-# INLINE isEmpty #-}
 
 -- | Convert to list
 toList :: BloomKv k v -> [(k, v)]
-toList = P.fmap (\(Kv k v) -> (k, v)) . F.toList . kvs
+toList = P.fmap (\(Kv k v) -> (k, v)) . HS.toList . kvs
 {-# INLINE toList #-}
 
 -- | Extract all keys
 keys :: BloomKv k v -> [k]
-keys = P.fmap kvKey . F.toList . kvs
+keys = P.fmap kvKey . HS.toList . kvs
 {-# INLINE keys #-}
 
 -- | Extract all values
 values :: BloomKv k v -> [v]
-values = P.fmap kvValue . F.toList . kvs
+values = P.fmap kvValue . HS.toList . kvs
 {-# INLINE values #-}
 
 -- | Insert key-value pair with combine function
@@ -114,7 +118,7 @@ values = P.fmap kvValue . F.toList . kvs
 -- Below threshold: Searches for existing key and combines values (last-wins if no combine).
 -- Above threshold: Unconditionally appends without searching (multimap mode).
 insert ::
-  (Eq k, Hashable k) =>
+  (Eq k, Hashable k, Hashable v) =>
   (v -> v -> v) ->
   BloomKv k v ->
   k ->
@@ -125,36 +129,36 @@ insert combine (BloomKv f kvSeq) key newVal
   | f == Filt.disabled = appendNew Filt.disabled kvSeq
   | P.not (Filt.mightContain f key) = appendNew newFilter kvSeq
   | P.otherwise =
-      case Seq.findIndexR (\(Kv k _) -> k == key) kvSeq of
+      case HS.findIndexR (\(Kv k _) -> k == key) kvSeq of
         P.Just idx ->
           let upd (Kv k oldV) = Kv k (combine oldV newVal) in
-          BloomKv f (Seq.adjust' upd idx kvSeq)
+          BloomKv f (HS.adjust' upd idx kvSeq)
         P.Nothing ->
           appendNew newFilter kvSeq
   where
     newFilter =
-      let newSize = Seq.length kvSeq + 1
+      let newSize = HS.length kvSeq + 1
       in if P.not Filt.enabled || newSize > threshold
          then Filt.disabled
          else Filt.insert f key
 
-    appendNew flt sq = BloomKv flt (sq :|> Kv key newVal)
+    appendNew flt sq = BloomKv flt (sq HS.|> Kv key newVal)
 {-# INLINE insert #-}
 
 -- | Merge two maps with combine function
-merge :: (Eq k, Ord k, Hashable k) => (v -> v -> v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
+merge :: (Eq k, Ord k, Hashable k, Hashable v) => (v -> v -> v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
 merge combine xs ys
   | P.not Filt.enabled = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
-      BloomKv (Filt.union (filt xs) (filt ys)) (kvs xs Seq.>< kvs ys)
+      BloomKv (Filt.union (filt xs) (filt ys)) (kvs xs HS.>< kvs ys)
   | P.otherwise = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
-  where merged = BloomKv Filt.disabled (kvs xs Seq.>< kvs ys)
+  where merged = BloomKv Filt.disabled (kvs xs HS.>< kvs ys)
 {-# INLINE merge #-}
 
 -- | Map a function over all values
-mapValues :: (v -> w) -> BloomKv k v -> BloomKv k w
-mapValues f (BloomKv flt sq) = BloomKv flt (P.fmap (P.fmap f) sq)
+mapValues :: (Hashable k, Hashable w) => (v -> w) -> BloomKv k v -> BloomKv k w
+mapValues f (BloomKv flt sq) = BloomKv flt (HS.map (P.fmap f) sq)
 {-# INLINE mapValues #-}
 
 -- | Equality with custom comparisons
@@ -162,7 +166,7 @@ eqBy :: (k -> k -> Bool) -> (v -> v -> Bool) -> BloomKv k v -> BloomKv k v -> Bo
 eqBy cmpK cmpV x y =
   if filt x /= filt y
   then P.False
-  else F.and (Seq.zipWith (\(Kv k1 v1) (Kv k2 v2) -> cmpK k1 k2 && cmpV v1 v2) (kvs x) (kvs y))
+  else F.and (Seq.zipWith (\(Kv k1 v1) (Kv k2 v2) -> cmpK k1 k2 && cmpV v1 v2) (HS.toSeq (kvs x)) (HS.toSeq (kvs y)))
 
 -- | Ordering with custom comparisons
 ordBy :: (k -> k -> Ordering) -> (v -> v -> Ordering) -> BloomKv k v -> BloomKv k v -> Ordering
@@ -170,21 +174,14 @@ ordBy cmpK cmpV x y =
   case P.compare (filt x) (filt y) of
     P.LT -> P.LT
     P.GT -> P.GT
-    P.EQ -> lexCompare (F.toList (kvs x)) (F.toList (kvs y))
+    P.EQ -> HS.ordBy cmpKv (kvs x) (kvs y)
   where
-    lexCompare [] [] = P.EQ
-    lexCompare [] (_:_) = P.LT
-    lexCompare (_:_) [] = P.GT
-    lexCompare (Kv k1 v1:as) (Kv k2 v2:bs) =
+    cmpKv (Kv k1 v1) (Kv k2 v2) =
       case cmpK k1 k2 of
         P.LT -> P.LT
         P.GT -> P.GT
-        P.EQ -> case cmpV v1 v2 of
-          P.LT -> P.LT
-          P.GT -> P.GT
-          P.EQ -> lexCompare as bs
+        P.EQ -> cmpV v1 v2
 
--- | Hash instance - hash both keys and values
+-- | Hash instance - delegates to HashedSeq for O(1) hashing
 instance (Hashable k, Hashable v) => Hashable (BloomKv k v) where
-  hashWithSalt salt bkv = F.foldl' hashKv salt (kvs bkv)
-    where hashKv s (Kv k v) = s `hashWithSalt` k `hashWithSalt` v
+  hashWithSalt salt bkv = hashWithSalt salt (kvs bkv)

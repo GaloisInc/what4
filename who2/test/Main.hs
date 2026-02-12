@@ -9,6 +9,7 @@ import Test.Tasty.Hedgehog (testProperty)
 import qualified Hedgehog
 
 import qualified Who2.Functions as Functions
+import qualified Who2.HashedSeq as HashedSeq
 import qualified Who2.Instances as Instances
 import qualified Who2.Properties as Props
 import qualified Who2.Simplification as Simpl
@@ -63,6 +64,7 @@ propertyTests =
     , ordPropertyTests
     , bloomSeqEqByPropertyTests
     , bloomSeqOrdByPropertyTests
+    , hashedSeqPropertyTests
     ]
 
 -- | Simplification correctness properties
@@ -151,4 +153,24 @@ bloomSeqOrdByPropertyTests =
         Hedgehog.withTests 1000 Instances.propBloomSeqOrdByTransitive
     , testProperty "Consistency with eqBy" $
         Hedgehog.withTests 1000 Instances.propBloomSeqOrdByConsistentWithEqBy
+    ]
+
+-- | HashedSeq property tests
+hashedSeqPropertyTests :: TestTree
+hashedSeqPropertyTests =
+  testGroup "HashedSeq Properties"
+    [ testProperty "Hash consistency (equal implies same hash)" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqHashConsistency
+    , testProperty "Eq consistency with list" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqEqConsistency
+    , testProperty "Append maintains hash consistency" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqAppendHashConsistency
+    , testProperty "Merge maintains hash consistency" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqMergeHashConsistency
+    , testProperty "ordBy reflexivity" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByReflexive
+    , testProperty "ordBy antisymmetry" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByAntisymmetric
+    , testProperty "ordBy transitivity" $
+        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByTransitive
     ]

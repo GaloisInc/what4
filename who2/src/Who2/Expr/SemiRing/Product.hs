@@ -26,7 +26,8 @@ module Who2.Expr.SemiRing.Product
 
 import qualified Prelude as P
 import Prelude (Eq((==)), Ord(compare), Ordering(EQ), Show(show), Bool, Maybe(Just, Nothing), (.), (&&), otherwise)
-import Data.Hashable (Hashable(hashWithSalt))
+import Data.Hashable (Hashable(hash, hashWithSalt))
+import Data.Bits (xor)
 import Numeric.Natural (Natural)
 import qualified Data.Parameterized.Classes as PC
 
@@ -53,16 +54,32 @@ instance (Show (f (SR.SemiRingBase sr)), Show (SR.Coefficient sr)) => Show (SRPr
   show p = "SRProd { prodMap = " P.++ P.show (prodMap p) P.++
            ", prodCoeff = " P.++ P.show (prodCoeff p) P.++ " }"
 
-instance (PC.TestEquality f, Eq (f (SR.SemiRingBase sr)), Eq (SR.Coefficient sr)) => Eq (SRProd sr f) where
+instance
+  ( PC.TestEquality f
+  , Eq (f (SR.SemiRingBase sr))
+  , Eq (SR.Coefficient sr)
+  , Hashable (f (SR.SemiRingBase sr))
+  ) => Eq (SRProd sr f) where
   p1 == p2 = prodCoeff p1 == prodCoeff p2 && BKv.eqBy (==) (==) (prodMap p1) (prodMap p2)
 
-instance (PC.TestEquality f, Ord (f (SR.SemiRingBase sr)), Ord (SR.Coefficient sr)) => Ord (SRProd sr f) where
+instance
+  ( PC.TestEquality f
+  , Ord (f (SR.SemiRingBase sr))
+  , Ord (SR.Coefficient sr)
+  , Hashable (f (SR.SemiRingBase sr))
+  ) => Ord (SRProd sr f) where
   compare p1 p2 = case compare (prodCoeff p1) (prodCoeff p2) of
     EQ -> BKv.ordBy compare compare (prodMap p1) (prodMap p2)
     other -> other
 
-instance (PC.TestEquality f, PC.HashableF f, Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) => Hashable (SRProd sr f) where
-  hashWithSalt s p = hashWithSalt (hashWithSalt s (prodCoeff p)) (prodMap p)
+instance
+  (PC.TestEquality f
+  , PC.HashableF f
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) => Hashable (SRProd sr f) where
+  hash p = hash (prodCoeff p) `hashWithSalt` hash (prodMap p)
+  hashWithSalt salt p = salt `xor` hash p
 
 -- | Create a constant product
 constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRProd sr f
@@ -73,13 +90,13 @@ one :: SR.SemiRingRepr sr -> SRProd sr f
 one sr = SRProd BKv.empty (SR.one sr) sr
 
 -- | Create a product from a single variable (coefficient 1)
-var :: (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr))) =>
+var :: (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
        SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRProd sr f
 var sr x = SRProd (BKv.singleton x 1) (SR.one sr) sr
 
 -- | Create a product from a list of terms and their exponents (coefficient 1)
 fromTerms ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr))) =>
+  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
   SR.SemiRingRepr sr ->
   [(f (SR.SemiRingBase sr), Natural)] ->
   SRProd sr f
@@ -95,7 +112,7 @@ toTerms = BKv.toList . prodMap
 
 -- | Multiply two products
 mul ::
-  (Eq (f (SR.SemiRingBase sr)), Ord (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr))) =>
+  (Eq (f (SR.SemiRingBase sr)), Ord (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
   SRProd sr f ->
   SRProd sr f ->
   SRProd sr f
@@ -108,7 +125,7 @@ mul p1 p2 =
 
 -- | Multiply by a variable
 mulVar ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr))) =>
+  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
   SRProd sr f ->
   f (SR.SemiRingBase sr) ->
   SRProd sr f
@@ -148,4 +165,4 @@ contains ::
   SRProd sr f ->
   f (SR.SemiRingBase sr) ->
   Bool
-contains p x = P.not (BKv.isEmpty (BKv.insert (P.+) BKv.empty x 0))
+contains p x = P.not (BKv.isEmpty (BKv.insert (P.+) (prodMap p) x 1))
