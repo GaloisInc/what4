@@ -219,6 +219,10 @@ library
     What4.Utils.BVDomain
     What4.Utils.BVDomain.Arith
     What4.Utils.BVDomain.Bitwise
+    What4.Utils.BVDomain.Stnum
+    What4.Utils.BVDomain.SWB
+    What4.Utils.BVDomain.SwrappedInterval
+    What4.Utils.BVDomain.Tnum
     What4.Utils.BVDomain.XOR
     What4.Utils.Complex
     What4.Utils.Endian
