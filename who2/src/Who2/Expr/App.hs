@@ -10,6 +10,29 @@ This module defines datastructures that encode the syntax of expressions used in
 Like "What4.Expr.App", this module uses normalizing datastructures. Unlike
 those in What4, the ones used here are roughly constant-time, leading to roughly
 linear time expression construction.
+
+The datastructures in What4 can be understood as extending local rewrites such
+as @x and ~x => false@ over arbitrarily many elements, i.e.,
+
+> ... and x and ... and ~x and ... => false
+
+This comes at the cost of @O(n log n)@ construction, because What4 uses set-
+and map-like datastructures for this purpose.
+
+In contrast, Who2 uses datastructures based on Bloom filters that act like
+sets ("Who2.Expr.BloomSeq") or maps ("Who2.Expr.BloomKv") for small numbers
+of elements, but eventually act more like lists (i.e., allowing duplicates and
+enabling constant-time appending). This can be thought of as extending local
+rewrites over some small number of elements, while retaining approximately
+constant-time behavior.
+
+These fundamental Bloom filter structures are then utilized in higher level
+structures that encode algebraic properties of operations, e.g.,
+
+* "Who2.Expr.PolarizedBloomSeq.PolarizedBloomSeq" for boolean and bitvector AND
+  and OR
+* 'Who2.Expr.SemiRing.Sum.SRSum' for bitvector addition
+* 'Who2.Expr.SemiRing.Product.SRProd' for bitvector multiplication
 -}
 
 
