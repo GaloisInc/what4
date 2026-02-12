@@ -142,10 +142,14 @@ andPred trueExpr falseExpr alloc x y
       orResult <- orPred trueExpr falseExpr alloc a b
       notPred trueExpr falseExpr alloc orResult
     -- (x1 && ... && xn) && (y1 && ... && yn) = x1 && ... && xn && y1 && ... && yn
+    -- test: and-nested-contradiction
+    -- test: and-three-way-contradiction
+    -- test: and-nested-flatten
   | Just xPol <- EV.asAndPred x
   , Just yPol <- EV.asAndPred y = fromMerged (PBS.merge (coerce xPol) (coerce yPol))
     -- (x1 && ... && xn) && y = x1 && ... && xn && y
     -- x && (y1 && ... && yn) = y1 && ... && yn && x
+    -- test: and-insert-contradiction
   | Just xPol <- EV.asAndPred x = insertIntoAndPred (coerce xPol) y x
   | Just yPol <- EV.asAndPred y = insertIntoAndPred (coerce yPol) x y
     -- x && y = x && y
@@ -236,10 +240,14 @@ orPred trueExpr falseExpr alloc x y
       andResult <- andPred trueExpr falseExpr alloc a b
       notPred trueExpr falseExpr alloc andResult
     -- (x1 || ... || xn) || (y1 || ... || yn) = x1 || ... || xn || y1 || ... || yn
+    -- test: or-nested-tautology
+    -- test: or-three-way-tautology
+    -- test: or-nested-flatten
   | Just xPol <- EV.asOrPred x
   , Just yPol <- EV.asOrPred y = fromMerged (PBS.merge (coerce xPol) (coerce yPol))
     -- (x1 || ... || xn) || y = x1 || ... || xn || y
     -- x || (y1 || ... || yn) = y1 || ... || yn || x
+    -- test: or-insert-tautology
   | Just xPol <- EV.asOrPred x = insertIntoOrPred (coerce xPol) y x
   | Just yPol <- EV.asOrPred y = insertIntoOrPred (coerce yPol) x y
     -- x || y = x || y
