@@ -1,14 +1,31 @@
+{-|
+Module      : Who2.Expr.App
+Copyright   : (c) Galois Inc, 2026
+License     : BSD3
+Maintainer  : langston@galois.com
+
+This module defines datastructures that encode the syntax of expressions used in
+"Who2.Builder".
+
+Like "What4.Expr.App", this module uses normalizing datastructures. Unlike
+those in What4, the ones used here are roughly constant-time, leading to roughly
+linear time expression construction.
+-}
+
+
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Who2.Expr.App
   ( App(..)
+  , pretty
   ) where
 
 import Data.Coerce (coerce)
@@ -18,6 +35,8 @@ import Data.Type.Equality (TestEquality(testEquality))
 import qualified Data.Parameterized.Classes as PC
 import qualified Data.Parameterized.TH.GADT as PTH
 import qualified Data.Parameterized.Context as Ctx
+import qualified Data.Parameterized.TraversableFC as TFC
+import qualified Prettyprinter as PP
 
 import qualified What4.BaseTypes as BT
 import qualified What4.Expr as WE
@@ -145,3 +164,15 @@ instance
   , Ord (f BT.BaseBoolType)
   ) => Ord (App t f tp) where
   compare x y = PC.toOrdering (PC.compareF x y)
+
+-- | Pretty-print an App given a pretty-printer for the term functor
+pretty :: (forall tp'. f tp' -> PP.Doc ann) -> App t f tp -> PP.Doc ann
+pretty ppF = \case
+  BoundVarApp bv -> PP.pretty (show (WE.bvarName bv))
+  BVApp bvExpr -> EBV.pretty ppF bvExpr
+  LogicApp logicExpr -> EL.pretty ppF logicExpr
+  FnApp fn args ->
+    PP.parens $ PP.hsep
+      [ PP.pretty (show (ESF.symFnName fn))
+      , PP.hsep (TFC.toListFC ppF args)
+      ]

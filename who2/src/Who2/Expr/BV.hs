@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -16,12 +17,14 @@ module Who2.Expr.BV
   , BVExprWrapper(..)
   , width
   , asBVNotBits
+  , pretty
   ) where
 
 import Data.Kind (Type)
 import Data.Hashable (hashWithSalt)
 
 import qualified Data.BitVector.Sized as BV
+import qualified Prettyprinter as PP
 
 import qualified Data.Parameterized.Classes as PC
 import           Data.Parameterized.NatRepr (type (<=), type (+), NatRepr, addNat)
@@ -283,3 +286,29 @@ instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (BVExprWrapper (E.Expr t f
     Just inner -> PBS.Negative (BVExprWrapper inner)
     Nothing -> PBS.Positive (BVExprWrapper expr)
   {-# INLINE polarity #-}
+
+-- | Pretty-print a bitvector expression given a pretty-printer for the term functor
+pretty :: (forall tp'. f tp' -> PP.Doc ann) -> BVExpr f tp -> PP.Doc ann
+pretty ppF = \case
+  BVLit _w bv -> PP.pretty "#x" PP.<> PP.pretty (show bv)
+  BVAdd _w _ws -> PP.pretty "bv_add"
+  BVNeg _w x -> PP.parens $ PP.pretty "bvneg" PP.<+> ppF x
+  BVSub _w x y -> PP.parens $ PP.pretty "bvsub" PP.<+> ppF x PP.<+> ppF y
+  BVMul _w _wp -> PP.pretty "bv_mul"
+  BVAndBits _w _pbs -> PP.pretty "bvand"
+  BVOrBits _w _pbs -> PP.pretty "bvor"
+  BVXorBits _w x y -> PP.parens $ PP.pretty "bvxor" PP.<+> ppF x PP.<+> ppF y
+  BVNotBits _w x -> PP.parens $ PP.pretty "bvnot" PP.<+> ppF x
+  BVConcat _w _w' x y -> PP.parens $ PP.pretty "concat" PP.<+> ppF x PP.<+> ppF y
+  BVSelect _i _n _w x -> PP.parens $ PP.pretty "select" PP.<+> ppF x
+  BVZext _w' _w x -> PP.parens $ PP.pretty "zero_extend" PP.<+> ppF x
+  BVSext _w' _w x -> PP.parens $ PP.pretty "sign_extend" PP.<+> ppF x
+  BVShl _w x y -> PP.parens $ PP.pretty "bvshl" PP.<+> ppF x PP.<+> ppF y
+  BVLshr _w x y -> PP.parens $ PP.pretty "bvlshr" PP.<+> ppF x PP.<+> ppF y
+  BVAshr _w x y -> PP.parens $ PP.pretty "bvashr" PP.<+> ppF x PP.<+> ppF y
+  BVUdiv _w x y -> PP.parens $ PP.pretty "bvudiv" PP.<+> ppF x PP.<+> ppF y
+  BVUrem _w x y -> PP.parens $ PP.pretty "bvurem" PP.<+> ppF x PP.<+> ppF y
+  BVSdiv _w x y -> PP.parens $ PP.pretty "bvsdiv" PP.<+> ppF x PP.<+> ppF y
+  BVSrem _w x y -> PP.parens $ PP.pretty "bvsrem" PP.<+> ppF x PP.<+> ppF y
+  BVRol _w x y -> PP.parens $ PP.pretty "rotate_left" PP.<+> ppF x PP.<+> ppF y
+  BVRor _w x y -> PP.parens $ PP.pretty "rotate_right" PP.<+> ppF x PP.<+> ppF y

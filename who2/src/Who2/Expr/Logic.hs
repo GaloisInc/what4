@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
@@ -12,12 +13,14 @@
 module Who2.Expr.Logic
   ( LogicExpr(..)
   , BoolExprWrapper(..)
+  , pretty
   ) where
 
 import Data.Kind (Type)
 
 import qualified Data.Parameterized.Classes as PC
 import qualified Data.Parameterized.TH.GADT as PTH
+import qualified Prettyprinter as PP
 
 import           Data.Parameterized.NatRepr (type (<=), NatRepr)
 
@@ -139,3 +142,18 @@ instance (PC.HashableF f, Eq (f BT.BaseBoolType), PC.Hashable (f BT.BaseBoolType
        , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` PTH.ConType [t|BoolExprWrapper|], [|\s pbs -> PBS.hashPBSWith (\s' (BoolExprWrapper e) -> PC.hashWithSaltF s' e) s pbs|])
        ]
      )
+
+-- | Pretty-print a logic expression given a pretty-printer for the term functor
+pretty :: (forall tp'. f tp' -> PP.Doc ann) -> LogicExpr f tp -> PP.Doc ann
+pretty ppF = \case
+  TruePred -> PP.pretty "true"
+  FalsePred -> PP.pretty "false"
+  EqPred x y -> PP.parens $ PP.pretty "=" PP.<+> ppF x PP.<+> ppF y
+  AndPred _pbs -> PP.pretty "and"
+  NotPred x -> PP.parens $ PP.pretty "not" PP.<+> ppF x
+  OrPred _pbs -> PP.pretty "or"
+  Ite c t f -> PP.parens $ PP.pretty "ite" PP.<+> ppF c PP.<+> ppF t PP.<+> ppF f
+  BVUlt _w x y -> PP.parens $ PP.pretty "bvult" PP.<+> ppF x PP.<+> ppF y
+  BVUle _w x y -> PP.parens $ PP.pretty "bvule" PP.<+> ppF x PP.<+> ppF y
+  BVSlt _w x y -> PP.parens $ PP.pretty "bvslt" PP.<+> ppF x PP.<+> ppF y
+  BVSle _w x y -> PP.parens $ PP.pretty "bvsle" PP.<+> ppF x PP.<+> ppF y

@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -16,6 +17,7 @@ module Who2.Expr
   , HasBaseType(baseType)
   , maxByHash
   , minByHash
+  , pretty
   ) where
 
 import Data.Bits (xor)
@@ -24,6 +26,7 @@ import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 
 import qualified Data.Parameterized.Classes as PC
 import Data.Parameterized.Nonce (Nonce, NonceGenerator, freshNonce)
+import qualified Prettyprinter as PP
 
 import qualified What4.BaseTypes as BT
 import qualified What4.Utils.AbstractDomains as AD
@@ -146,3 +149,7 @@ minByHash x y
   | eId x < eId y = x
   | otherwise = y
 {-# INLINE minByHash #-}
+
+-- | Pretty-print an expression given a pretty-printer for the app functor
+pretty :: (forall tp'. f (Expr t f) tp' -> PP.Doc ann) -> Expr t f tp -> PP.Doc ann
+pretty ppApp = ppApp . eApp
