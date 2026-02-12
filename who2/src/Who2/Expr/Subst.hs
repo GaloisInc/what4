@@ -121,10 +121,10 @@ substituteBoundVars sym = go
         binOp (WI.bvSub sym) e1' e2'
       EBV.BVMul w wp -> do
         let terms = SRP.toTerms wp
-        terms' <- mapM (\(e, exponent) -> do
+        terms' <- mapM (\(e, expn) -> do
                           e' <- go e substMap
-                          return (e', exponent)) terms
-        let expandedTerms = concatMap (\(e', exponent) -> replicate (fromIntegral exponent) e') terms'
+                          return (e', expn)) terms
+        let expandedTerms = concatMap (\(e', expn) -> replicate (fromIntegral expn) e') terms'
         case expandedTerms of
           [] -> ESE.getSymExpr <$> WI.bvOne sym w
           (t:ts) -> foldM (\acc x -> binOp (WI.bvMul sym) acc x) t ts

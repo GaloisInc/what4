@@ -159,13 +159,13 @@ bvAdd alloc x y
       Expr t' f' (BT.BaseBVType w') ->
       SRS.SRSum (SR.SemiRingBV SR.BVArith w') (Expr t' f') ->
       IO (Expr t' f' (BT.BaseBVType w'))
-    buildBVAdd alloc x y ws =
-      let w = EBV.width x
+    buildBVAdd alloc' x' y' ws =
+      let w = EBV.width x'
       in case SRS.asConstant ws of
-           Just c -> bvLit alloc w c
-           Nothing -> alloc
+           Just c -> bvLit alloc' w c
+           Nothing -> alloc'
                         (EBV.BVAdd w ws)
-                        (BVD.add (E.eAbsVal x) (E.eAbsVal y))
+                        (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
 {-# INLINE bvAdd #-}
 
 bvNeg ::
@@ -286,13 +286,13 @@ bvMul alloc x y
       Expr t' f' (BT.BaseBVType w') ->
       SRP.SRProd (SR.SemiRingBV SR.BVBits w') (Expr t' f') ->
       IO (Expr t' f' (BT.BaseBVType w'))
-    buildBVMul alloc x y wp =
-      let w = EBV.width x
+    buildBVMul alloc' x' y' wp =
+      let w = EBV.width x'
       in case SRP.asConstant wp of
-           Just c -> bvLit alloc w c
-           Nothing -> alloc
+           Just c -> bvLit alloc' w c
+           Nothing -> alloc'
                         (EBV.BVMul w wp)
-                        (BVD.mul (E.eAbsVal x) (E.eAbsVal y))
+                        (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
 {-# INLINE bvMul #-}
 
 bvAndBits ::

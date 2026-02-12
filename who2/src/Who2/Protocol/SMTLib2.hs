@@ -287,9 +287,9 @@ mkBVExprWithCache cache = \case
 
   EBV.BVMul _ wp -> do
     let terms = SRP.toTerms wp
-    termList <- mapM (\(x, exponent) -> do
+    termList <- mapM (\(x, expn) -> do
                        xTerm <- mkExprWithCache cache x
-                       return $ replicate (fromIntegral exponent) xTerm) terms
+                       return $ replicate (fromIntegral expn) xTerm) terms
     case concat termList of
       [] -> return $ SMT2.numeral 1  -- empty product = 1
       (t:ts) -> return $ SMT2.bvmul t ts
