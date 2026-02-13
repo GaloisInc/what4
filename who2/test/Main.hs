@@ -10,7 +10,11 @@ import qualified Hedgehog
 
 import qualified Who2.Functions as Functions
 import qualified Who2.HashedSeq as HashedSeq
-import qualified Who2.Instances as Instances
+import qualified Who2.Laws.Expr as LawsExpr
+import qualified Who2.Laws.BloomSeq as LawsBloomSeq
+import qualified Who2.Laws.BloomKv as LawsBloomKv
+import qualified Who2.Laws.PolarizedBloomSeq as LawsPolarizedBloomSeq
+import qualified Who2.Laws.HashedSeq as LawsHashedSeq
 import qualified Who2.Properties as Props
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
@@ -64,7 +68,12 @@ propertyTests =
     , ordPropertyTests
     , bloomSeqEqByPropertyTests
     , bloomSeqOrdByPropertyTests
+    , bloomKvEqByPropertyTests
+    , bloomKvOrdByPropertyTests
+    , polarizedBloomSeqEqByPropertyTests
+    , polarizedBloomSeqOrdByPropertyTests
     , hashedSeqPropertyTests
+    , hashedSeqOrdByPropertyTests
     ]
 
 -- | Simplification correctness properties
@@ -94,13 +103,13 @@ testEqualityPropertyTests :: TestTree
 testEqualityPropertyTests =
   testGroup "TestEquality Properties"
     [ testProperty "Reflexivity (testEquality x x == Just Refl)" $
-        Hedgehog.withTests 1000 Instances.propTestEqualityReflexive
+        Hedgehog.withTests 1000 LawsExpr.propTestEqualityReflexive
     , testProperty "Symmetry (testEquality x y == testEquality y x)" $
-        Hedgehog.withTests 1000 Instances.propTestEqualitySymmetric
+        Hedgehog.withTests 1000 LawsExpr.propTestEqualitySymmetric
     , testProperty "Transitivity" $
-        Hedgehog.withTests 1000 Instances.propTestEqualityTransitive
+        Hedgehog.withTests 1000 LawsExpr.propTestEqualityTransitive
     , testProperty "Hash consistency (equal implies same hash)" $
-        Hedgehog.withTests 1000 Instances.propTestEqualityHashConsistent
+        Hedgehog.withTests 1000 LawsExpr.propTestEqualityHashConsistent
     ]
 
 -- | OrdF instance property tests
@@ -108,13 +117,13 @@ ordFPropertyTests :: TestTree
 ordFPropertyTests =
   testGroup "OrdF Properties"
     [ testProperty "Reflexivity (compareF x x == EQF)" $
-        Hedgehog.withTests 1000 Instances.propOrdFReflexive
+        Hedgehog.withTests 1000 LawsExpr.propOrdFReflexive
     , testProperty "Antisymmetry (compareF x y opposite of compareF y x)" $
-        Hedgehog.withTests 1000 Instances.propOrdFAntisymmetric
+        Hedgehog.withTests 1000 LawsExpr.propOrdFAntisymmetric
     , testProperty "Transitivity" $
-        Hedgehog.withTests 1000 Instances.propOrdFTransitive
+        Hedgehog.withTests 1000 LawsExpr.propOrdFTransitive
     , testProperty "Consistency with TestEquality" $
-        Hedgehog.withTests 1000 Instances.propOrdFConsistentWithTestEquality
+        Hedgehog.withTests 1000 LawsExpr.propOrdFConsistentWithTestEquality
     ]
 
 -- | Ord instance property tests
@@ -122,13 +131,13 @@ ordPropertyTests :: TestTree
 ordPropertyTests =
   testGroup "Ord Properties"
     [ testProperty "Reflexivity" $
-        Hedgehog.withTests 1000 Instances.propOrdReflexive
+        Hedgehog.withTests 1000 LawsExpr.propOrdReflexive
     , testProperty "Antisymmetry" $
-        Hedgehog.withTests 1000 Instances.propOrdAntisymmetric
+        Hedgehog.withTests 1000 LawsExpr.propOrdAntisymmetric
     , testProperty "Transitivity" $
-        Hedgehog.withTests 1000 Instances.propOrdTransitive
+        Hedgehog.withTests 1000 LawsExpr.propOrdTransitive
     , testProperty "Consistency with Eq" $
-        Hedgehog.withTests 1000 Instances.propOrdConsistentWithEq
+        Hedgehog.withTests 1000 LawsExpr.propOrdConsistentWithEq
     ]
 
 -- | BloomSeq eqBy property tests
@@ -136,11 +145,11 @@ bloomSeqEqByPropertyTests :: TestTree
 bloomSeqEqByPropertyTests =
   testGroup "BloomSeq eqBy Properties"
     [ testProperty "Reflexivity" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqEqByReflexive
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqEqByReflexive
     , testProperty "Symmetry" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqEqBySymmetric
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqEqBySymmetric
     , testProperty "Transitivity" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqEqByTransitive
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqEqByTransitive
     ]
 
 -- | BloomSeq ordBy property tests
@@ -148,13 +157,65 @@ bloomSeqOrdByPropertyTests :: TestTree
 bloomSeqOrdByPropertyTests =
   testGroup "BloomSeq ordBy Properties"
     [ testProperty "Reflexivity" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqOrdByReflexive
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqOrdByReflexive
     , testProperty "Antisymmetry" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqOrdByAntisymmetric
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqOrdByAntisymmetric
     , testProperty "Transitivity" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqOrdByTransitive
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqOrdByTransitive
     , testProperty "Consistency with eqBy" $
-        Hedgehog.withTests 1000 Instances.propBloomSeqOrdByConsistentWithEqBy
+        Hedgehog.withTests 1000 LawsBloomSeq.propBloomSeqOrdByConsistentWithEqBy
+    ]
+
+-- | BloomKv eqBy property tests
+bloomKvEqByPropertyTests :: TestTree
+bloomKvEqByPropertyTests =
+  testGroup "BloomKv eqBy Properties"
+    [ testProperty "Reflexivity" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvEqByReflexive
+    , testProperty "Symmetry" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvEqBySymmetric
+    , testProperty "Transitivity" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvEqByTransitive
+    ]
+
+-- | BloomKv ordBy property tests
+bloomKvOrdByPropertyTests :: TestTree
+bloomKvOrdByPropertyTests =
+  testGroup "BloomKv ordBy Properties"
+    [ testProperty "Reflexivity" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvOrdByReflexive
+    , testProperty "Antisymmetry" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvOrdByAntisymmetric
+    , testProperty "Transitivity" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvOrdByTransitive
+    , testProperty "Consistency with eqBy" $
+        Hedgehog.withTests 1000 LawsBloomKv.propBloomKvOrdByConsistentWithEqBy
+    ]
+
+-- | PolarizedBloomSeq eqBy property tests
+polarizedBloomSeqEqByPropertyTests :: TestTree
+polarizedBloomSeqEqByPropertyTests =
+  testGroup "PolarizedBloomSeq eqBy Properties"
+    [ testProperty "Reflexivity" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqEqByReflexive
+    , testProperty "Symmetry" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqEqBySymmetric
+    , testProperty "Transitivity" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqEqByTransitive
+    ]
+
+-- | PolarizedBloomSeq ordBy property tests
+polarizedBloomSeqOrdByPropertyTests :: TestTree
+polarizedBloomSeqOrdByPropertyTests =
+  testGroup "PolarizedBloomSeq ordBy Properties"
+    [ testProperty "Reflexivity" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqOrdByReflexive
+    , testProperty "Antisymmetry" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqOrdByAntisymmetric
+    , testProperty "Transitivity" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqOrdByTransitive
+    , testProperty "Consistency with eqBy" $
+        Hedgehog.withTests 1000 LawsPolarizedBloomSeq.propPolarizedBloomSeqOrdByConsistentWithEqBy
     ]
 
 -- | HashedSeq property tests
@@ -169,10 +230,16 @@ hashedSeqPropertyTests =
         Hedgehog.withTests 1000 HashedSeq.propHashedSeqAppendHashConsistency
     , testProperty "Merge maintains hash consistency" $
         Hedgehog.withTests 1000 HashedSeq.propHashedSeqMergeHashConsistency
-    , testProperty "ordBy reflexivity" $
-        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByReflexive
-    , testProperty "ordBy antisymmetry" $
-        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByAntisymmetric
-    , testProperty "ordBy transitivity" $
-        Hedgehog.withTests 1000 HashedSeq.propHashedSeqOrdByTransitive
+    ]
+
+-- | HashedSeq ordBy property tests
+hashedSeqOrdByPropertyTests :: TestTree
+hashedSeqOrdByPropertyTests =
+  testGroup "HashedSeq ordBy Properties"
+    [ testProperty "Reflexivity" $
+        Hedgehog.withTests 1000 LawsHashedSeq.propHashedSeqOrdByReflexive
+    , testProperty "Antisymmetry" $
+        Hedgehog.withTests 1000 LawsHashedSeq.propHashedSeqOrdByAntisymmetric
+    , testProperty "Transitivity" $
+        Hedgehog.withTests 1000 LawsHashedSeq.propHashedSeqOrdByTransitive
     ]

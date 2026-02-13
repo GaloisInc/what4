@@ -40,6 +40,36 @@ flag emit-ad-constraints-all-bv
   manual: True
   default: False
 
+flag normalize-xor
+  description: Normalize xor: x ⊕ y = ¬(x = y)
+  manual: True
+  default: True
+
+flag normalize-or
+  description: Normalize or: x ∨ y = ¬(¬x ∧ ¬y) (De Morgan)
+  manual: True
+  default: True
+
+flag normalize-bvneg
+  description: Normalize bvneg: -(x) = ~x + 1 (two's complement)
+  manual: True
+  default: True
+
+flag normalize-bvule
+  description: Normalize bvule: x ≤ y = (x < y) ∨ (x = y)
+  manual: True
+  default: True
+
+flag normalize-bvsle
+  description: Normalize bvsle: x ≤ₛ y = (x <ₛ y) ∨ (x = y)
+  manual: True
+  default: True
+
+flag use-hash-consed-structures
+  description: Use hash-consed data structures (IntMap-based) for BVAndBits, BVOrBits, BVAdd, BVMul instead of bloom-based structures (requires hash-consing)
+  manual: True
+  default: False
+
 -----------------------------------------------------------
 
 common bldflags
@@ -125,6 +155,18 @@ library
     cpp-options: -DEMIT_AD_CONSTRAINTS_BOUND_VARS
   if flag(emit-ad-constraints-all-bv)
     cpp-options: -DEMIT_AD_CONSTRAINTS_ALL_BV
+  if flag(normalize-xor)
+    cpp-options: -DNORMALIZE_XOR
+  if flag(normalize-or)
+    cpp-options: -DNORMALIZE_OR
+  if flag(normalize-bvneg)
+    cpp-options: -DNORMALIZE_BVNEG
+  if flag(normalize-bvule)
+    cpp-options: -DNORMALIZE_BVULE
+  if flag(normalize-bvsle)
+    cpp-options: -DNORMALIZE_BVSLE
+  if flag(use-hash-consed-structures)
+    cpp-options: -DUSE_HASH_CONSED_STRUCTURES
 
   exposed-modules:
     Who2.Builder
@@ -140,6 +182,11 @@ library
     Who2.Expr.BV
     Who2.Expr.Filter
     Who2.Expr.Fn
+    Who2.Expr.HashConsed.ExprMap
+    Who2.Expr.HashConsed.ExprSet
+    Who2.Expr.HashConsed.PolarizedExprSet
+    Who2.Expr.HashConsed.SRProd
+    Who2.Expr.HashConsed.SRSum
     Who2.Expr.Logic
     Who2.Expr.SemiRing.Product
     Who2.Expr.SemiRing.Sum
@@ -170,7 +217,12 @@ test-suite who2-tests
     Who2.Functions
     Who2.Gen
     Who2.HashedSeq
-    Who2.Instances
+    Who2.Laws.Helpers
+    Who2.Laws.Expr
+    Who2.Laws.BloomSeq
+    Who2.Laws.BloomKv
+    Who2.Laws.PolarizedBloomSeq
+    Who2.Laws.HashedSeq
     Who2.Properties
     Who2.Simplification
     Who2.SMTLib2

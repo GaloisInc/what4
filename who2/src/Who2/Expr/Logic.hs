@@ -17,6 +17,7 @@ module Who2.Expr.Logic
   ) where
 
 import Data.Kind (Type)
+import Data.Type.Equality (type (:~:)(..))
 
 import qualified Data.Parameterized.Classes as PC
 import qualified Data.Parameterized.TH.GADT as PTH
@@ -58,6 +59,11 @@ data LogicExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   AndPred :: !(PBS.PolarizedBloomSeq (BoolExprWrapper f)) -> LogicExpr f BT.BaseBoolType
 
   NotPred ::
+    !(f BT.BaseBoolType) ->
+    LogicExpr f BT.BaseBoolType
+
+  XorPred ::
+    !(f BT.BaseBoolType) ->
     !(f BT.BaseBoolType) ->
     LogicExpr f BT.BaseBoolType
 
@@ -105,12 +111,48 @@ instance HasBaseType f => HasBaseType (LogicExpr f) where
       EqPred _ _ -> BT.BaseBoolRepr
       AndPred _ -> BT.BaseBoolRepr
       NotPred _ -> BT.BaseBoolRepr
+      XorPred _ _ -> BT.BaseBoolRepr
       OrPred _ -> BT.BaseBoolRepr
       Ite _ t _ -> baseType t
       BVUlt {} -> BT.BaseBoolRepr
       BVUle {} -> BT.BaseBoolRepr
       BVSlt {} -> BT.BaseBoolRepr
       BVSle {} -> BT.BaseBoolRepr
+
+-- TestEquality helper
+
+testEqPolarizedBloomSeqBool ::
+  PC.TestEquality f =>
+  PBS.PolarizedBloomSeq (BoolExprWrapper f) ->
+  PBS.PolarizedBloomSeq (BoolExprWrapper f) ->
+  Maybe (BT.BaseBoolType :~: BT.BaseBoolType)
+testEqPolarizedBloomSeqBool x y =
+  if PBS.eqBy (\(BoolExprWrapper u) (BoolExprWrapper v) -> PC.isJust (PC.testEquality u v)) x y
+  then Just PC.Refl
+  else Nothing
+{-# INLINE testEqPolarizedBloomSeqBool #-}
+
+-- OrdF helper
+
+comparePolarizedBloomSeqBool ::
+  (PC.OrdF f, Ord (f BT.BaseBoolType)) =>
+  PBS.PolarizedBloomSeq (BoolExprWrapper f) ->
+  PBS.PolarizedBloomSeq (BoolExprWrapper f) ->
+  PC.OrderingF BT.BaseBoolType BT.BaseBoolType
+comparePolarizedBloomSeqBool pbs1 pbs2 =
+  PC.fromOrdering (PBS.ordBy (\(BoolExprWrapper u) (BoolExprWrapper v) -> compare u v) pbs1 pbs2)
+{-# INLINE comparePolarizedBloomSeqBool #-}
+
+-- HashableF helper
+
+hashPolarizedBloomSeqBool ::
+  (PC.HashableF f, Eq (f BT.BaseBoolType), PC.Hashable (f BT.BaseBoolType)) =>
+  Int ->
+  PBS.PolarizedBloomSeq (BoolExprWrapper f) ->
+  Int
+hashPolarizedBloomSeqBool s pbs =
+  PBS.hashPBSWith (\s' (BoolExprWrapper e) -> PC.hashWithSaltF s' e) s pbs
+{-# INLINE hashPolarizedBloomSeqBool #-}
 
 $(return [])
 
@@ -120,7 +162,7 @@ instance (PC.TestEquality f) => PC.TestEquality (LogicExpr f) where
        [t|LogicExpr|]
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
        , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType), [|\x y -> if PBS.eqBy (\(BoolExprWrapper u) (BoolExprWrapper v) -> PC.isJust (PC.testEquality u v)) x y then Just PC.Refl else Nothing|])
+       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType), [|testEqPolarizedBloomSeqBool|])
        ]
      )
 
@@ -130,7 +172,7 @@ instance (PC.OrdF f, Ord (f BT.BaseBoolType)) => PC.OrdF (LogicExpr f) where
        [t|LogicExpr|]
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
        , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType), [|\pbs1 pbs2 -> PC.fromOrdering (PBS.ordBy (\(BoolExprWrapper u) (BoolExprWrapper v) -> compare u v) pbs1 pbs2)|])
+       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType), [|comparePolarizedBloomSeqBool|])
        ]
      )
 
@@ -139,7 +181,7 @@ instance (PC.HashableF f, Eq (f BT.BaseBoolType), PC.Hashable (f BT.BaseBoolType
     $(PTH.structuralHashWithSalt
        [t|LogicExpr|]
        [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.hashWithSaltF|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` PTH.ConType [t|BoolExprWrapper|], [|\s pbs -> PBS.hashPBSWith (\s' (BoolExprWrapper e) -> PC.hashWithSaltF s' e) s pbs|])
+       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` PTH.ConType [t|BoolExprWrapper|], [|hashPolarizedBloomSeqBool|])
        ]
      )
 
@@ -151,6 +193,7 @@ pretty ppF = \case
   EqPred x y -> PP.parens $ PP.pretty "=" PP.<+> ppF x PP.<+> ppF y
   AndPred _pbs -> PP.pretty "and"
   NotPred x -> PP.parens $ PP.pretty "not" PP.<+> ppF x
+  XorPred x y -> PP.parens $ PP.pretty "xor" PP.<+> ppF x PP.<+> ppF y
   OrPred _pbs -> PP.pretty "or"
   Ite c t f -> PP.parens $ PP.pretty "ite" PP.<+> ppF c PP.<+> ppF t PP.<+> ppF f
   BVUlt _w x y -> PP.parens $ PP.pretty "bvult" PP.<+> ppF x PP.<+> ppF y

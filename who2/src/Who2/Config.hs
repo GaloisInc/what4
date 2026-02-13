@@ -18,6 +18,7 @@
 module Who2.Config
   ( -- * Core Expression Features
     hashConsing
+  , useHashConsedStructures
     -- * Bloom Filter and Hashing
   , bloomFilter
   , hashedSequence
@@ -25,6 +26,12 @@ module Who2.Config
     -- * SMT Solver Hints
   , emitAbstractDomainConstraintsForBoundVars
   , emitAbstractDomainConstraintsForAllBV
+    -- * AST Normalizations
+  , normalizeXor
+  , normalizeOr
+  , normalizeBVNeg
+  , normalizeBVUle
+  , normalizeBVSle
   ) where
 
 ------------------------------------------------------------------------
@@ -46,6 +53,29 @@ hashConsing = True
 hashConsing = False
 #endif
 {-# INLINE hashConsing #-}
+
+-- | Use hash-consed data structures (IntMap-based) instead of bloom-based structures.
+--
+-- When enabled, builder functions create HC constructors:
+--
+-- * 'BVAndBitsHC' (uses PolarizedExprSet) instead of 'BVAndBits' (uses PolarizedBloomSeq)
+-- * 'BVOrBitsHC' (uses PolarizedExprSet) instead of 'BVOrBits' (uses PolarizedBloomSeq)
+-- * 'BVAddHC' (uses SRSum from HashConsed) instead of 'BVAdd' (uses SRSum from SemiRing.Sum)
+-- * 'BVMulHC' (uses SRProd from HashConsed) instead of 'BVMul' (uses SRProd from SemiRing.Product)
+--
+-- * 'True':  Use IntMap-based storage for O(log n) operations
+-- * 'False': Use bloom filter-based storage (default)
+--
+-- Build flag: @-f[+\/-]use-hash-consed-structures@ (default: disabled)
+--
+-- REQUIRES: hashConsing = True (enforced by CPP check below)
+useHashConsedStructures :: Bool
+#if defined(HASH_CONSING) && defined(USE_HASH_CONSED_STRUCTURES)
+useHashConsedStructures = True
+#else
+useHashConsedStructures = False
+#endif
+{-# INLINE useHashConsedStructures #-}
 
 ------------------------------------------------------------------------
 -- Bloom Filter and Hashing
@@ -131,3 +161,76 @@ emitAbstractDomainConstraintsForAllBV = True
 emitAbstractDomainConstraintsForAllBV = False
 #endif
 {-# INLINE emitAbstractDomainConstraintsForAllBV #-}
+
+------------------------------------------------------------------------
+-- AST Normalizations
+
+-- | Controls whether XOR is normalized to NOT(EQ).
+--
+-- * 'True':  x ⊕ y = ¬(x = y), no XorPred constructor created.
+-- * 'False': Creates XorPred constructor for direct solver emission.
+--
+-- Build flag: @-f[+\/-]normalize-xor@ (default: enabled)
+normalizeXor :: Bool
+#ifdef NORMALIZE_XOR
+normalizeXor = True
+#else
+normalizeXor = False
+#endif
+{-# INLINE normalizeXor #-}
+
+-- | Controls whether OR is normalized to NOT(AND(NOT, NOT)).
+--
+-- * 'True':  x ∨ y = ¬(¬x ∧ ¬y), no OrPred constructor created.
+-- * 'False': Creates OrPred constructor with PolarizedBloomSeq optimization.
+--
+-- Build flag: @-f[+\/-]normalize-or@ (default: enabled)
+normalizeOr :: Bool
+#ifdef NORMALIZE_OR
+normalizeOr = True
+#else
+normalizeOr = False
+#endif
+{-# INLINE normalizeOr #-}
+
+-- | Controls whether bvneg is normalized to two's complement.
+--
+-- * 'True':  -(x) = ~x + 1, no BVNeg constructor created.
+-- * 'False': Creates BVNeg constructor for direct solver emission.
+--
+-- Build flag: @-f[+\/-]normalize-bvneg@ (default: enabled)
+normalizeBVNeg :: Bool
+#ifdef NORMALIZE_BVNEG
+normalizeBVNeg = True
+#else
+normalizeBVNeg = False
+#endif
+{-# INLINE normalizeBVNeg #-}
+
+-- | Controls whether bvule is normalized to bvult + eq.
+--
+-- * 'True':  x ≤ y = (x < y) ∨ (x = y), no BVUle constructor created.
+-- * 'False': Creates BVUle constructor for direct solver emission.
+--
+-- Build flag: @-f[+\/-]normalize-bvule@ (default: enabled)
+normalizeBVUle :: Bool
+#ifdef NORMALIZE_BVULE
+normalizeBVUle = True
+#else
+normalizeBVUle = False
+#endif
+{-# INLINE normalizeBVUle #-}
+
+-- | Controls whether bvsle is normalized to bvslt + eq.
+--
+-- * 'True':  x ≤ₛ y = (x <ₛ y) ∨ (x = y), no BVSle constructor created.
+-- * 'False': Creates BVSle constructor for direct solver emission.
+--
+-- Build flag: @-f[+\/-]normalize-bvsle@ (default: enabled)
+normalizeBVSle :: Bool
+#ifdef NORMALIZE_BVSLE
+normalizeBVSle = True
+#else
+normalizeBVSle = False
+#endif
+{-# INLINE normalizeBVSle #-}

@@ -37,6 +37,7 @@ import qualified Who2.Expr as E
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.Bloom.Polarized as PBS
+import qualified Who2.Config as Config
 
 isTrue :: Expr t f BT.BaseBoolType -> Bool
 isTrue e = AD.getAbsValue e == Just True
@@ -137,7 +138,8 @@ andPred trueExpr falseExpr alloc x y
   | Just nx <- EV.asNotPred x, nx == y = pure falseExpr
     -- (not a) && (not b) = not (a || b)
     -- test: and-demorgan
-  | Just a <- EV.asNotPred x
+  | not Config.normalizeOr
+  , Just a <- EV.asNotPred x
   , Just b <- EV.asNotPred y = do
       orResult <- orPred trueExpr falseExpr alloc a b
       notPred trueExpr falseExpr alloc orResult
@@ -214,6 +216,12 @@ orPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 orPred trueExpr falseExpr alloc x y
+    -- x || y = not (not x && not y)
+  | Config.normalizeOr = do
+      nx <- notPred trueExpr falseExpr alloc x
+      ny <- notPred trueExpr falseExpr alloc y
+      andResult <- andPred trueExpr falseExpr alloc nx ny
+      notPred trueExpr falseExpr alloc andResult
     -- true || y = true
     -- test: or-true-left
   | isTrue x = pure trueExpr
@@ -290,6 +298,10 @@ xorPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 xorPred trueExpr falseExpr alloc x y
+    -- x `xor` y = not (x == y)
+  | Config.normalizeXor = do
+      eqResult <- eq trueExpr falseExpr alloc x y
+      notPred trueExpr falseExpr alloc eqResult
     -- false `xor` y = y
     -- test: xor-false-left
   | isFalse x = pure y
@@ -305,10 +317,7 @@ xorPred trueExpr falseExpr alloc x y
     -- x `xor` x = false
     -- test: xor-idempotent
   | x == y = pure falseExpr
-    -- x `xor` y = not (x == y)
-  | otherwise = do
-      eqResult <- eq trueExpr falseExpr alloc x y
-      notPred trueExpr falseExpr alloc eqResult
+  | otherwise = alloc (EL.XorPred x y) Nothing
 {-# INLINE xorPred #-}
 
 ite ::
@@ -417,11 +426,22 @@ bvUlt trueExpr falseExpr alloc x y
   | Just (_, xBV) <- asBVLit' x
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.ult xBV yBV then trueExpr else falseExpr
-  | otherwise = alloc (EL.BVUlt (bvWidth' x) x y) (BVD.ult (E.eAbsVal x) (E.eAbsVal y))
+  | otherwise =
+      alloc
+        (EL.BVUlt (bvWidth' x) x y)
+        (BVD.ult (E.eAbsVal x) (E.eAbsVal y))
 {-# INLINE bvUlt #-}
 
 bvUle ::
-  (HasBaseType (f (Expr t f)), EV.HasBVViews f, Eq (Expr t f (BT.BaseBVType w))) =>
+  ( HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , EV.HasLogicViews f
+  , Eq (Expr t f (BT.BaseBVType w))
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  , AD.Abstractable (BT.BaseBVType w)
+  ) =>
   1 <= w =>
   Expr t f BT.BaseBoolType ->
   Expr t f BT.BaseBoolType ->
@@ -430,6 +450,11 @@ bvUle ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvUle trueExpr falseExpr alloc x y
+  -- x <= y = (x < y) || (x == y)
+  | Config.normalizeBVUle = do
+      ltResult <- bvUlt trueExpr falseExpr alloc x y
+      eqResult <- eq trueExpr falseExpr alloc x y
+      orPred trueExpr falseExpr alloc ltResult eqResult
   -- x <= x = true
   -- test: bvule-refl
   | x == y = pure trueExpr
@@ -441,7 +466,10 @@ bvUle trueExpr falseExpr alloc x y
   | Just (_, xBV) <- asBVLit' x
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.ule xBV yBV then trueExpr else falseExpr
-  | otherwise = alloc (EL.BVUle (bvWidth' x) x y) (fmap not (BVD.ult (E.eAbsVal y) (E.eAbsVal x)))
+  | otherwise =
+      alloc
+        (EL.BVUle (bvWidth' x) x y)
+        (fmap not (BVD.ult (E.eAbsVal y) (E.eAbsVal x)))
 {-# INLINE bvUle #-}
 
 bvSlt ::
@@ -461,11 +489,22 @@ bvSlt trueExpr falseExpr alloc x y
   | Just (w, xBV) <- asBVLit' x
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.slt w xBV yBV then trueExpr else falseExpr
-  | otherwise = alloc (EL.BVSlt (bvWidth' x) x y) (BVD.slt (bvWidth' x) (E.eAbsVal x) (E.eAbsVal y))
+  | otherwise =
+      alloc
+        (EL.BVSlt (bvWidth' x) x y)
+        (BVD.slt (bvWidth' x) (E.eAbsVal x) (E.eAbsVal y))
 {-# INLINE bvSlt #-}
 
 bvSle ::
-  (HasBaseType (f (Expr t f)), EV.HasBVViews f, Eq (Expr t f (BT.BaseBVType w))) =>
+  ( HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , EV.HasLogicViews f
+  , Eq (Expr t f (BT.BaseBVType w))
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  , AD.Abstractable (BT.BaseBVType w)
+  ) =>
   1 <= w =>
   Expr t f BT.BaseBoolType ->
   Expr t f BT.BaseBoolType ->
@@ -474,6 +513,11 @@ bvSle ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvSle trueExpr falseExpr alloc x y
+  -- x <=s y = (x <s y) || (x == y)
+  | Config.normalizeBVSle = do
+      sltResult <- bvSlt trueExpr falseExpr alloc x y
+      eqResult <- eq trueExpr falseExpr alloc x y
+      orPred trueExpr falseExpr alloc sltResult eqResult
   -- x <= x = true
   -- test: bvsle-refl
   | x == y = pure trueExpr
@@ -482,7 +526,10 @@ bvSle trueExpr falseExpr alloc x y
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.sle w xBV yBV then trueExpr else falseExpr
   -- x <= y iff not (y < x)
-  | otherwise = alloc (EL.BVSle (bvWidth' x) x y) (fmap not (BVD.slt (bvWidth' x) (E.eAbsVal y) (E.eAbsVal x)))
+  | otherwise =
+      alloc
+        (EL.BVSle (bvWidth' x) x y)
+        (fmap not (BVD.slt (bvWidth' x) (E.eAbsVal y) (E.eAbsVal x)))
 {-# INLINE bvSle #-}
 
 bvIsNonzero ::

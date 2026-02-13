@@ -54,8 +54,19 @@ import Who2.Unsupported (unsupported)
 -- and that this overhead largely arises from What4's normalizing data
 -- structures (see "What4.Expr.App"). Such data structures can make building
 -- expressions take @O(n log n)@. 'Builder' performs local rewrites and tracks
--- abstract domains, but does not include such heavyweight datastructures.
--- It strives to keep construction approximately linear.
+-- abstract domains, but by default it does not include such heavyweight
+-- datastructures.
+--
+-- 'Builder' is configurable via compile-time options in "Who2.Config". This
+-- enables experimentation with different options that can have considerable
+-- positive or negative effects on performance, and likely depend on workload.
+-- In this way, Who2 also provides a platform for experimenting with different
+-- techniques and trade-offs.
+--
+-- In the default configuration, 'Builder' uses approximately linear time
+-- operations and datastructures based on bloom filters. When 'hashConsing' is
+-- enabled, 'Builder' can optionally utilize heavier-weight datastructures for
+-- more agressive simplification. See "Who2.Expr.App" for more details.
 data Builder t
   = Builder
     { bNonceGen :: !(NonceGenerator IO t)

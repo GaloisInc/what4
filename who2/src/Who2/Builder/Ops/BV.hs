@@ -54,6 +54,10 @@ import qualified Who2.Expr.SemiRing.Sum as SRS
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.Bloom.Polarized as PBS
+import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
+import qualified Who2.Expr.HashConsed.SRSum as HCSR
+import qualified Who2.Expr.HashConsed.SRProd as HCPR
+import qualified Who2.Config as Config
 
 asInteger :: Expr t f (BT.BaseBVType w) -> Maybe Integer
 asInteger = BVD.asSingleton . AD.getAbsValue
@@ -106,18 +110,36 @@ bvAdd alloc x y
   -- x + 0 = x
   -- test: bvadd-zero-right
   | isZero y = pure x
+  -- c1 + c2 = fold constants
+  -- test: bvadd-const-simplify
+  | Just (w, c1) <- asBVLit x
+  , Just (_, c2) <- asBVLit y =
+      bvLit alloc w (BV.add w c1 c2)
+  -- Runtime dispatch based on config
+  | Config.useHashConsedStructures = bvAddHC alloc x y
+  | otherwise = bvAddBloom alloc x y
+{-# INLINE bvAdd #-}
+
+-- Bloom-based bvAdd implementation
+bvAddBloom ::
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvAddBloom alloc x y
   -- (x_ws) + (y_ws) = merge weighted sums
-  -- test: bvadd-commutative
+  -- test: bvadd-combine-constants
   | Just xWs <- EV.asBVAdd x
   , Just yWs <- EV.asBVAdd y =
       buildBVAdd alloc x y (SRS.add xWs yWs)
   -- (x_ws) + c = add constant to weighted sum offset
-  -- test: bvadd-combine-constants
+  -- test: bvadd-combine-constants-left
   | Just xWs <- EV.asBVAdd x
   , Just (_, c) <- asBVLit y =
       buildBVAdd alloc x y (SRS.addConstant xWs c)
   -- c + (y_ws) = add constant to weighted sum offset
-  -- test: bvadd-combine-constants-left
   | Just (_, c) <- asBVLit x
   , Just yWs <- EV.asBVAdd y =
       buildBVAdd alloc x y (SRS.addConstant yWs c)
@@ -127,11 +149,6 @@ bvAdd alloc x y
   -- x + (y_ws) = add variable to weighted sum
   | Just yWs <- EV.asBVAdd y =
       buildBVAdd alloc x y (SRS.addVar yWs x)
-  -- c1 + c2 = fold constants
-  -- test: bvadd-const-simplify
-  | Just (w, c1) <- asBVLit x
-  , Just (_, c2) <- asBVLit y =
-      bvLit alloc w (BV.add w c1 c2)
   -- x + c = create weighted sum with offset
   | Just (_, c) <- asBVLit y =
       let w = EBV.width x
@@ -143,6 +160,7 @@ bvAdd alloc x y
           sr = SR.SemiRingBVRepr SR.BVArithRepr w
       in buildBVAdd alloc x y (SRS.affineVar sr (BV.one w) y c)
   -- x + y = create weighted sum with two variables
+  -- test: bvadd-commutative
   | otherwise =
       let w = EBV.width x
           sr = SR.SemiRingBVRepr SR.BVArithRepr w
@@ -151,30 +169,86 @@ bvAdd alloc x y
           ws = SRS.add (SRS.var sr x') (SRS.var sr y')
       in buildBVAdd alloc x y ws
   where
-    buildBVAdd ::
-      forall w' t' f'.
-      (HasBaseType (f' (Expr t' f')), Eq (Expr t' f' (BT.BaseBVType w')), Ord (Expr t' f' (BT.BaseBVType w')), Hashable (Expr t' f' (BT.BaseBVType w')), PC.HashableF (Expr t' f'), PC.OrdF (Expr t' f'), EV.HasBVViews f', 1 <= w') =>
-      (forall tp. EBV.BVExpr (Expr t' f') tp -> AD.AbstractValue tp -> IO (Expr t' f' tp)) ->
-      Expr t' f' (BT.BaseBVType w') ->
-      Expr t' f' (BT.BaseBVType w') ->
-      SRS.SRSum (SR.SemiRingBV SR.BVArith w') (Expr t' f') ->
-      IO (Expr t' f' (BT.BaseBVType w'))
     buildBVAdd alloc' x' y' ws =
       let w = EBV.width x'
       in case SRS.asConstant ws of
-           Just c -> bvLit alloc' w c
-           Nothing -> alloc'
-                        (EBV.BVAdd w ws)
-                        (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
-{-# INLINE bvAdd #-}
+           Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
+           Nothing -> alloc' (EBV.BVAdd w ws) (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
+{-# INLINE bvAddBloom #-}
+
+-- Hash-consed bvAdd implementation
+bvAddHC ::
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f, E.HasNonce (Expr t f)) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvAddHC alloc x y
+  -- (x_ws) + (y_ws) = merge weighted sums
+  | Just xWs <- EV.asBVAddHC x
+  , Just yWs <- EV.asBVAddHC y =
+      buildBVAddHC alloc x y (HCSR.add xWs yWs)
+  -- (x_ws) + c = add constant to weighted sum offset
+  | Just xWs <- EV.asBVAddHC x
+  , Just (_, c) <- asBVLit y =
+      buildBVAddHC alloc x y (HCSR.addConstant xWs c)
+  -- c + (y_ws) = add constant to weighted sum offset
+  | Just (_, c) <- asBVLit x
+  , Just yWs <- EV.asBVAddHC y =
+      buildBVAddHC alloc x y (HCSR.addConstant yWs c)
+  -- (x_ws) + y = add variable to weighted sum
+  | Just xWs <- EV.asBVAddHC x =
+      buildBVAddHC alloc x y (HCSR.addVar xWs y)
+  -- x + (y_ws) = add variable to weighted sum
+  | Just yWs <- EV.asBVAddHC y =
+      buildBVAddHC alloc x y (HCSR.addVar yWs x)
+  -- x + c = create weighted sum with offset
+  | Just (_, c) <- asBVLit y =
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+      in buildBVAddHC alloc x y (HCSR.affineVar sr (BV.one w) x c)
+  -- c + y = create weighted sum with offset
+  | Just (_, c) <- asBVLit x =
+      let w = EBV.width y
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+      in buildBVAddHC alloc x y (HCSR.affineVar sr (BV.one w) y c)
+  -- x + y = create weighted sum with two variables
+  | otherwise =
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVArithRepr w
+          x' = E.minByHash x y
+          y' = E.maxByHash x y
+          ws = HCSR.add (HCSR.var sr x') (HCSR.var sr y')
+      in buildBVAddHC alloc x y ws
+  where
+    buildBVAddHC alloc' x' y' ws =
+      let w = EBV.width x'
+      in case HCSR.asConstant ws of
+           Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
+           Nothing -> alloc' (EBV.BVAddHC w ws) (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
+{-# INLINE bvAddHC #-}
 
 bvNeg ::
-  (HasBaseType (f (Expr t f)), EV.HasBVViews f) =>
+  ( HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Eq (Expr t f (BT.BaseBVType w))
+  , Ord (Expr t f (BT.BaseBVType w))
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (Expr t f)
+  , PC.OrdF (Expr t f)
+  ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvNeg alloc x
+  -- -(x) = ~x + 1
+  | Config.normalizeBVNeg = do
+      let w = EBV.width x
+      notX <- bvNotBits alloc x
+      one <- bvLit alloc w (BV.one w)
+      bvAdd alloc notX one
   -- -(0) = 0
   -- test: bvneg-zero
   | isZero x = pure x
@@ -182,7 +256,6 @@ bvNeg alloc x
   -- test: bvneg-const
   | Just (w, bv) <- asBVLit x = bvLit alloc w (BV.negate w bv)
   -- -(-y) = y
-  -- test: bvneg-double
   | Just inner <- EV.asBVNeg x = pure inner
   | otherwise =
       alloc
@@ -242,18 +315,37 @@ bvMul alloc x y
   -- x * 1 = x
   -- test: bvmul-one-right
   | isOne y = pure x
+  -- c1 * c2 = fold constants
+  -- test: bvmul-const
+  | Just (wx, bvx) <- asBVLit x
+  , Just (_, bvy) <- asBVLit y =
+      bvLit alloc wx (BV.mul wx bvx bvy)
+  -- Runtime dispatch based on config
+  | Config.useHashConsedStructures = bvMulHC alloc x y
+  | otherwise = bvMulBloom alloc x y
+{-# INLINE bvMul #-}
+
+-- Bloom-based bvMul implementation
+bvMulBloom ::
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), EV.HasBVViews f) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvMulBloom alloc x y
   -- (x_prod) * (y_prod) = merge products
   -- test: bvmul-exponent-combine
   | Just xProd <- EV.asBVMul x
   , Just yProd <- EV.asBVMul y =
       buildBVMul alloc x y (SRP.mul xProd yProd)
   -- (x_prod) * c = scale product coefficient
-  -- test: bvmul-scale-right
+  -- test: bvmul-scale-left
   | Just xProd <- EV.asBVMul x
   , Just (_, c) <- asBVLit y =
       buildBVMul alloc x y (SRP.scale xProd c)
   -- c * (y_prod) = scale product coefficient
-  -- test: bvmul-scale-left
+  -- test: bvmul-scale-right
   | Just (_, c) <- asBVLit x
   , Just yProd <- EV.asBVMul y =
       buildBVMul alloc x y (SRP.scale yProd c)
@@ -263,11 +355,6 @@ bvMul alloc x y
   -- x * (y_prod) = multiply product by variable
   | Just yProd <- EV.asBVMul y =
       buildBVMul alloc x y (SRP.mulVar yProd x)
-  -- c1 * c2 = fold constants
-  -- test: bvmul-const
-  | Just (wx, bvx) <- asBVLit x
-  , Just (_, bvy) <- asBVLit y =
-      bvLit alloc wx (BV.mul wx bvx bvy)
   -- x * y = create product
   -- test: bvmul-commutative
   | otherwise =
@@ -278,22 +365,55 @@ bvMul alloc x y
           wp = SRP.mul (SRP.var sr x') (SRP.var sr y')
       in buildBVMul alloc x y wp
   where
-    buildBVMul ::
-      forall w' t' f'.
-      (HasBaseType (f' (Expr t' f')), 1 <= w') =>
-      (forall tp. EBV.BVExpr (Expr t' f') tp -> AD.AbstractValue tp -> IO (Expr t' f' tp)) ->
-      Expr t' f' (BT.BaseBVType w') ->
-      Expr t' f' (BT.BaseBVType w') ->
-      SRP.SRProd (SR.SemiRingBV SR.BVBits w') (Expr t' f') ->
-      IO (Expr t' f' (BT.BaseBVType w'))
     buildBVMul alloc' x' y' wp =
       let w = EBV.width x'
       in case SRP.asConstant wp of
-           Just c -> bvLit alloc' w c
-           Nothing -> alloc'
-                        (EBV.BVMul w wp)
-                        (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
-{-# INLINE bvMul #-}
+           Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
+           Nothing -> alloc' (EBV.BVMul w wp) (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
+{-# INLINE bvMulBloom #-}
+
+-- Hash-consed bvMul implementation
+bvMulHC ::
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), EV.HasBVViews f, E.HasNonce (Expr t f)) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvMulHC alloc x y
+  -- (x_prod) * (y_prod) = merge products
+  | Just xProd <- EV.asBVMulHC x
+  , Just yProd <- EV.asBVMulHC y =
+      buildBVMulHC alloc x y (HCPR.mul xProd yProd)
+  -- (x_prod) * c = scale product coefficient
+  | Just xProd <- EV.asBVMulHC x
+  , Just (_, c) <- asBVLit y =
+      buildBVMulHC alloc x y (HCPR.scale xProd c)
+  -- c * (y_prod) = scale product coefficient
+  | Just (_, c) <- asBVLit x
+  , Just yProd <- EV.asBVMulHC y =
+      buildBVMulHC alloc x y (HCPR.scale yProd c)
+  -- (x_prod) * y = multiply product by variable
+  | Just xProd <- EV.asBVMulHC x =
+      buildBVMulHC alloc x y (HCPR.mulVar xProd y)
+  -- x * (y_prod) = multiply product by variable
+  | Just yProd <- EV.asBVMulHC y =
+      buildBVMulHC alloc x y (HCPR.mulVar yProd x)
+  -- x * y = create product
+  | otherwise =
+      let w = EBV.width x
+          sr = SR.SemiRingBVRepr SR.BVBitsRepr w
+          x' = E.minByHash x y
+          y' = E.maxByHash x y
+          wp = HCPR.mul (HCPR.var sr x') (HCPR.var sr y')
+      in buildBVMulHC alloc x y wp
+  where
+    buildBVMulHC alloc' x' y' wp =
+      let w = EBV.width x'
+      in case HCPR.asConstant wp of
+           Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
+           Nothing -> alloc' (EBV.BVMulHC w wp) (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
+{-# INLINE bvMulHC #-}
 
 bvAndBits ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
@@ -332,6 +452,25 @@ bvAndBits alloc x y
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.and bvx bvy)
+  -- Runtime dispatch based on config
+  | Config.useHashConsedStructures = bvAndBitsHC alloc x y
+  | otherwise = bvAndBitsBloom alloc x y
+{-# INLINE bvAndBits #-}
+
+-- Bloom-based implementation
+bvAndBitsBloom ::
+  ( Eq (f (Expr t f) (BT.BaseBVType w))
+  , HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (f (Expr t f))
+  ) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvAndBitsBloom alloc x y
   -- (x1 & ... & xn) & (y1 & ... & yn) = x1 & ... & xn & y1 & ... & yn
   | Just xs <- EV.asBVAndBits x
   , Just ys <- EV.asBVAndBits y = fromMerged (PBS.merge (coerce xs) (coerce ys))
@@ -365,7 +504,57 @@ bvAndBits alloc x y
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
           else alloc (EBV.BVAndBits (EBV.width unchanged) newPol) newAbsVal
-{-# INLINE bvAndBits #-}
+{-# INLINE bvAndBitsBloom #-}
+
+-- Hash-consed implementation
+bvAndBitsHC ::
+  ( Eq (f (Expr t f) (BT.BaseBVType w))
+  , HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (f (Expr t f))
+  , E.HasNonce (Expr t f)
+  ) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvAndBitsHC alloc x y
+  -- (x1 & ... & xn) & (y1 & ... & yn) = x1 & ... & xn & y1 & ... & yn
+  | Just xs <- EV.asBVAndBitsHC x
+  , Just ys <- EV.asBVAndBitsHC y = fromMerged (PES.merge xs ys)
+  -- (x1 & ... & xn) & y = x1 & ... & xn & y
+  | Just xs <- EV.asBVAndBitsHC x = insertIntoBVAndBitsHC xs y x
+  -- x & (y1 & ... & yn) = y1 & ... & yn & x
+  | Just ys <- EV.asBVAndBitsHC y = insertIntoBVAndBitsHC ys x y
+  | otherwise =
+      let x' = E.minByHash x y
+          y' = E.maxByHash x y
+      in fromSimplified (PES.fromTwo x' y')
+  where
+    collapsed = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
+    newAbsVal = BVD.and (E.eAbsVal x) (E.eAbsVal y)
+    fromMerged =
+      \case
+        Just pset -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
+        -- (x1 & ... & xn) & (y1 & ... & ~xi & ... & yn) = false
+        Nothing -> collapsed
+    fromSimplified =
+      \case
+        PES.Inconsistent -> collapsed
+        PES.SinglePositive e -> pure e
+        PES.SingleNegative e -> bvNotBits alloc e
+        PES.Merged pset -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
+    -- Insert a single element into an existing BVAndBitsHC
+    insertIntoBVAndBitsHC pset newElem unchanged =
+      case PES.insertIfNotPresent pset newElem of
+        Nothing -> collapsed
+        Just newPset ->
+          if PES.totalSize newPset == PES.totalSize pset
+          then pure unchanged
+          else alloc (EBV.BVAndBitsHC (EBV.width unchanged) newPset) newAbsVal
+{-# INLINE bvAndBitsHC #-}
 
 bvOrBits ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
@@ -404,6 +593,25 @@ bvOrBits alloc x y
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.or bvx bvy)
+  -- Runtime dispatch based on config
+  | Config.useHashConsedStructures = bvOrBitsHC alloc x y
+  | otherwise = bvOrBitsBloom alloc x y
+{-# INLINE bvOrBits #-}
+
+-- Bloom-based implementation
+bvOrBitsBloom ::
+  ( Eq (f (Expr t f) (BT.BaseBVType w))
+  , HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (f (Expr t f))
+  ) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvOrBitsBloom alloc x y
   -- (x1 | ... | xn) | (y1 | ... | yn) = x1 | ... | xn | y1 | ... | yn
   | Just xPol <- EV.asBVOrBits x
   , Just yPol <- EV.asBVOrBits y = fromMerged (PBS.merge (coerce xPol) (coerce yPol))
@@ -437,7 +645,57 @@ bvOrBits alloc x y
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
           else alloc (EBV.BVOrBits (EBV.width unchanged) newPol) newAbsVal
-{-# INLINE bvOrBits #-}
+{-# INLINE bvOrBitsBloom #-}
+
+-- Hash-consed implementation
+bvOrBitsHC ::
+  ( Eq (f (Expr t f) (BT.BaseBVType w))
+  , HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (f (Expr t f))
+  , E.HasNonce (Expr t f)
+  ) =>
+  1 <= w =>
+  (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f (BT.BaseBVType w) ->
+  Expr t f (BT.BaseBVType w) ->
+  IO (Expr t f (BT.BaseBVType w))
+bvOrBitsHC alloc x y
+  -- (x1 | ... | xn) | (y1 | ... | yn) = x1 | ... | xn | y1 | ... | yn
+  | Just xPset <- EV.asBVOrBitsHC x
+  , Just yPset <- EV.asBVOrBitsHC y = fromMerged (PES.merge xPset yPset)
+  -- (x1 | ... | xn) | y = x1 | ... | xn | y
+  | Just xPset <- EV.asBVOrBitsHC x = insertIntoBVOrBitsHC xPset y x
+  -- x | (y1 | ... | yn) = y1 | ... | yn | x
+  | Just yPset <- EV.asBVOrBitsHC y = insertIntoBVOrBitsHC yPset x y
+  | otherwise =
+      let x' = E.minByHash x y
+          y' = E.maxByHash x y
+      in fromSimplified (PES.fromTwo x' y')
+  where
+    collapsed = bvLit alloc (EBV.width x) (BV.maxUnsigned (EBV.width x))
+    newAbsVal = BVD.or (E.eAbsVal x) (E.eAbsVal y)
+    fromMerged =
+      \case
+        Just pset -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
+        -- (x1 | ... | xn) | (y1 | ... | ~xi | ... | yn) = true
+        Nothing -> collapsed
+    fromSimplified =
+      \case
+        PES.Inconsistent -> collapsed
+        PES.SinglePositive e -> pure e
+        PES.SingleNegative e -> bvNotBits alloc e
+        PES.Merged pset -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
+    -- Insert a single element into an existing BVOrBitsHC
+    insertIntoBVOrBitsHC pset newElem unchanged =
+      case PES.insertIfNotPresent pset newElem of
+        Nothing -> collapsed
+        Just newPset ->
+          if PES.totalSize newPset == PES.totalSize pset
+          then pure unchanged
+          else alloc (EBV.BVOrBitsHC (EBV.width unchanged) newPset) newAbsVal
+{-# INLINE bvOrBitsHC #-}
 
 bvXorBits ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
@@ -712,7 +970,14 @@ bvUrem alloc x y
 {-# INLINE bvUrem #-}
 
 bvSdiv ::
-  (HasBaseType (f (Expr t f)), EV.HasBVViews f) =>
+  ( HasBaseType (f (Expr t f))
+  , EV.HasBVViews f
+  , Eq (Expr t f (BT.BaseBVType w))
+  , Ord (Expr t f (BT.BaseBVType w))
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (Expr t f)
+  , PC.OrdF (Expr t f)
+  ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->

@@ -66,6 +66,9 @@ import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
+import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
+import qualified Who2.Expr.HashConsed.SRSum as HCSR
+import qualified Who2.Expr.HashConsed.SRProd as HCPR
 
 import Who2.Config (emitAbstractDomainConstraintsForBoundVars, emitAbstractDomainConstraintsForAllBV)
 
@@ -438,6 +441,58 @@ mkBVExprWithCache cache = \case
         let leftPart = SMT2.bvshl xTerm shiftAmt
         return $ SMT2.bvor rightPart [leftPart]
 
+  -- Hash-consed constructors
+  EBV.BVAndBitsHC _ pset -> do
+    let posElems = PES.toListPos pset
+        negElems = PES.toListNeg pset
+    posTerms <- mapM (mkExprWithCache cache) posElems
+    negTerms <- mapM (mkExprWithCache cache) negElems
+    let negTerms' = map SMT2.bvnot negTerms
+        allTerms = posTerms ++ negTerms'
+    case allTerms of
+      [] -> error "BVAndBitsHC: empty PolarizedExprSet"
+      (t:ts) -> return $ SMT2.bvand t ts
+
+  EBV.BVOrBitsHC _ pset -> do
+    let posElems = PES.toListPos pset
+        negElems = PES.toListNeg pset
+    posTerms <- mapM (mkExprWithCache cache) posElems
+    negTerms <- mapM (mkExprWithCache cache) negElems
+    let negTerms' = map SMT2.bvnot negTerms
+        allTerms = posTerms ++ negTerms'
+    case allTerms of
+      [] -> error "BVOrBitsHC: empty PolarizedExprSet"
+      (t:ts) -> return $ SMT2.bvor t ts
+
+  EBV.BVAddHC w ws -> do
+    let terms = HCSR.toTerms ws
+        offset = HCSR.sumOffset ws
+    let offsetTerm = if offset == BV.zero w
+                     then Nothing
+                     else Just (SMT2.bvhexadecimal w offset)
+    scaledTerms <- mapM (\(expr, coeff) -> do
+                           exprTerm <- mkExprWithCache cache expr
+                           if coeff == BV.mkBV w 1
+                           then return exprTerm
+                           else do
+                             let coeffTerm = SMT2.bvhexadecimal w coeff
+                             return $ SMT2.bvmul exprTerm [coeffTerm])
+                        terms
+    case (offsetTerm, scaledTerms) of
+      (Nothing, []) -> return $ SMT2.bvhexadecimal w (BV.zero w)
+      (Nothing, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) t ts
+      (Just off, []) -> return off
+      (Just off, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) off (t:ts)
+
+  EBV.BVMulHC _ wp -> do
+    let terms = HCPR.toTerms wp
+    termList <- mapM (\(x, expn) -> do
+                       xTerm <- mkExprWithCache cache x
+                       return $ replicate (fromIntegral expn) xTerm) terms
+    case concat termList of
+      [] -> return $ SMT2.numeral 1
+      (t:ts) -> return $ SMT2.bvmul t ts
+
 -- | Convert BVExpr without cache (exported for testing)
 mkBVExpr ::
   EBV.BVExpr (E.Expr t (EA.App t)) tp ->
@@ -543,6 +598,11 @@ mkLogicExprWithCache cache = \case
   EL.NotPred x -> do
     xTerm <- mkExprWithCache cache x
     return $ SMT2.not xTerm
+
+  EL.XorPred x y -> do
+    xTerm <- mkExprWithCache cache x
+    yTerm <- mkExprWithCache cache y
+    return $ SMT2.xor [xTerm, yTerm]
 
   EL.OrPred pbs -> do
     let posElems = coerce $ PBS.toListPos pbs

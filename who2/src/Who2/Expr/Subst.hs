@@ -34,6 +34,9 @@ import qualified Who2.Expr.SymExpr as ESE
 import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
+import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
+import qualified Who2.Expr.HashConsed.SRSum as HCSR
+import qualified Who2.Expr.HashConsed.SRProd as HCPR
 
 -- | Existential wrapper for expressions with hidden type parameter
 data SomeExpr t = forall tp. SomeExpr (E.Expr t (EA.App t) tp)
@@ -196,6 +199,46 @@ substituteBoundVars sym = go
         e1' <- go e1 substMap
         e2' <- go e2 substMap
         binOp (WI.bvRor sym) e1' e2'
+      -- Hash-consed constructors
+      EBV.BVAndBitsHC w pset -> do
+        posElems' <- mapM (`go` substMap) (PES.toListPos pset)
+        negElems' <- mapM (`go` substMap) (PES.toListNeg pset)
+        negElems'' <- mapM (unOp (WI.bvNotBits sym)) negElems'
+        case posElems' ++ negElems'' of
+          [] -> ESE.getSymExpr <$> WI.bvLit sym w (BV.maxUnsigned w)
+          (x:xs) -> foldM (\a b -> binOp (WI.bvAndBits sym) a b) x xs
+      EBV.BVOrBitsHC w pset -> do
+        posElems' <- mapM (`go` substMap) (PES.toListPos pset)
+        negElems' <- mapM (`go` substMap) (PES.toListNeg pset)
+        negElems'' <- mapM (unOp (WI.bvNotBits sym)) negElems'
+        case posElems' ++ negElems'' of
+          [] -> ESE.getSymExpr <$> WI.bvZero sym w
+          (x:xs) -> foldM (\a b -> binOp (WI.bvOrBits sym) a b) x xs
+      EBV.BVAddHC w ws -> do
+        let terms = HCSR.toTerms ws
+            offset = HCSR.sumOffset ws
+        result <- if offset == BV.zero w
+                  then ESE.getSymExpr <$> WI.bvZero sym w
+                  else ESE.getSymExpr <$> WI.bvLit sym w offset
+        foldM (\acc (term, coeff) -> do
+                 term' <- go term substMap
+                 scaledTerm <- if coeff == BV.mkBV w 1
+                               then return term'
+                               else do
+                                 coeffExpr <- ESE.getSymExpr <$> WI.bvLit sym w coeff
+                                 ESE.getSymExpr <$> WI.bvMul sym (ESE.SymExpr term') (ESE.SymExpr coeffExpr)
+                 ESE.getSymExpr <$> WI.bvAdd sym (ESE.SymExpr acc) (ESE.SymExpr scaledTerm))
+              result
+              terms
+      EBV.BVMulHC w wp -> do
+        let terms = HCPR.toTerms wp
+        terms' <- mapM (\(e, expn) -> do
+                          e' <- go e substMap
+                          return (e', expn)) terms
+        let expandedTerms = concatMap (\(e', expn) -> replicate (fromIntegral expn) e') terms'
+        case expandedTerms of
+          [] -> ESE.getSymExpr <$> WI.bvOne sym w
+          (t:ts) -> foldM (\acc x -> binOp (WI.bvMul sym) acc x) t ts
 
     -- Substitute in logic expressions using IsExprBuilder methods
     substInLogicExpr :: forall tp. EL.LogicExpr (E.Expr t (EA.App t)) tp -> IntMap.IntMap (SomeExpr t) -> IO (E.Expr t (EA.App t) tp)
@@ -203,6 +246,10 @@ substituteBoundVars sym = go
       EL.TruePred -> pure $ ESE.getSymExpr (WI.truePred sym)
       EL.FalsePred -> pure $ ESE.getSymExpr (WI.falsePred sym)
       EL.NotPred e -> go e substMap >>= unOp (WI.notPred sym)
+      EL.XorPred e1 e2 -> do
+        e1' <- go e1 substMap
+        e2' <- go e2 substMap
+        binOp (WI.xorPred sym) e1' e2'
       EL.AndPred pbs -> do
         -- Fold positive elements with andPred
         posElems' <- mapM ((`go` substMap) . EL.unBoolExprWrapper) (PBS.toListPos pbs)

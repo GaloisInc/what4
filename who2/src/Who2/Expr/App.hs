@@ -7,9 +7,11 @@ Maintainer  : langston@galois.com
 This module defines datastructures that encode the syntax of expressions used in
 "Who2.Builder".
 
-Like "What4.Expr.App", this module uses normalizing datastructures. Unlike
-those in What4, the ones used here are roughly constant-time, leading to roughly
-linear time expression construction.
+Like "What4.Expr.App", this module uses normalizing datastructures. There are
+two different families of such structures, and the family in use is controlled
+by options in 'Who2.Config'.
+
+-- * Constant-time datastructures
 
 The datastructures in What4 can be understood as extending local rewrites such
 as @x and ~x => false@ over arbitrarily many elements, i.e.,
@@ -19,20 +21,41 @@ as @x and ~x => false@ over arbitrarily many elements, i.e.,
 This comes at the cost of @O(n log n)@ construction, because What4 uses set-
 and map-like datastructures for this purpose.
 
-In contrast, Who2 uses datastructures based on Bloom filters that act like
-sets ("Who2.Expr.BloomSeq") or maps ("Who2.Expr.BloomKv") for small numbers
-of elements, but eventually act more like lists (i.e., allowing duplicates and
-enabling constant-time appending). This can be thought of as extending local
-rewrites over some small number of elements, while retaining approximately
-constant-time behavior.
+In contrast, by default Who2 uses datastructures based on Bloom filters that
+act like sets ("Who2.Expr.Bloom.Seq") or maps ("Who2.Expr.Bloom.Kv") for
+small numbers of elements, but eventually act more like lists (i.e., allowing
+duplicates and enabling constant-time appending). This can be thought of as
+extending local rewrites over some small (fixed) number of elements, while
+retaining approximately constant-time behavior (leading to approximately @O(n)@
+construction overall).
 
 These fundamental Bloom filter structures are then utilized in higher level
 structures that encode algebraic properties of operations, e.g.,
 
-* "Who2.Expr.PolarizedBloomSeq.PolarizedBloomSeq" for boolean and bitvector AND
-  and OR
+* "Who2.Expr.Bloom.Polarized" for boolean and bitvector AND and OR
 * 'Who2.Expr.SemiRing.Sum.SRSum' for bitvector addition
 * 'Who2.Expr.SemiRing.Product.SRProd' for bitvector multiplication
+
+-- * Log-time datastructures
+
+When 'Who2.Config.hashConsing' is enabled, Who2 can assume that structural
+equality of expressions is entirely determined by equality of their
+@Nonce@s. This allows storing expressions in data structures built on
+big-endian patricia trees, i.e., @IntMap@. (This behavior is controlled by
+'Who2.Config.hashConsing.useHashConsedStructures'.) While these have similar
+asymptotics to the structures used in What4 (which are based on finger trees),
+patricia trees should be considerably faster in practice.
+
+As with the Bloom filter based structures, there are the basic set and map types:
+
+* "Who2.Expr.HashConsed.ExprSet"
+* "Who2.Expr.HashConsed.ExprMap"
+
+and the more \"algebraic\" structures built on top of them:
+
+* "Who2.Expr.HashConsed.PolarizedExprSet"
+* "Who2.Expr.HashConsed.SRProd"
+* "Who2.Expr.HashConsed.SRSum"
 -}
 
 
@@ -99,6 +122,10 @@ instance EV.HasLogicViews (App t) where
     LogicApp (EL.NotPred inner) -> Just inner
     _ -> Nothing
 
+  asXorPred e = case E.eApp e of
+    LogicApp (EL.XorPred x y) -> Just (x, y)
+    _ -> Nothing
+
   asAndPred e = case E.eApp e of
     LogicApp (EL.AndPred pbs) -> Just (coerce pbs)
     _ -> Nothing
@@ -138,6 +165,23 @@ instance EV.HasBVViews (App t) where
 
   asBVOrBits e = case E.eApp e of
     BVApp (EBV.BVOrBits _ pbs) -> Just (coerce pbs)
+    _ -> Nothing
+
+  -- Hash-consed constructor views
+  asBVAndBitsHC e = case E.eApp e of
+    BVApp (EBV.BVAndBitsHC _ pset) -> Just pset
+    _ -> Nothing
+
+  asBVOrBitsHC e = case E.eApp e of
+    BVApp (EBV.BVOrBitsHC _ pset) -> Just pset
+    _ -> Nothing
+
+  asBVAddHC e = case E.eApp e of
+    BVApp (EBV.BVAddHC _ ws) -> Just ws
+    _ -> Nothing
+
+  asBVMulHC e = case E.eApp e of
+    BVApp (EBV.BVMulHC _ wp) -> Just wp
     _ -> Nothing
 
 instance TestEquality f => TestEquality (App t f) where

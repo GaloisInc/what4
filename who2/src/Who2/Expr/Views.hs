@@ -16,12 +16,18 @@ import qualified Who2.Expr as E
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
+import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
+import qualified Who2.Expr.HashConsed.SRSum as HCSR
+import qualified Who2.Expr.HashConsed.SRProd as HCPR
 
 -- | Typeclass for inspecting logical structure of expressions.
 -- This allows us to implement rewrites without creating import cycles.
 class HasLogicViews f where
   -- | View: is this (not x)? Returns x if so.
   asNotPred :: E.Expr t f BT.BaseBoolType -> Maybe (E.Expr t f BT.BaseBoolType)
+
+  -- | View: is this (xor x y)? Returns (x, y) if so.
+  asXorPred :: E.Expr t f BT.BaseBoolType -> Maybe (E.Expr t f BT.BaseBoolType, E.Expr t f BT.BaseBoolType)
 
   -- | View: is this an AndPred? Returns the polarized bloom sequence.
   asAndPred :: E.Expr t f BT.BaseBoolType -> Maybe (PBS.PolarizedBloomSeq (E.Expr t f BT.BaseBoolType))
@@ -54,3 +60,17 @@ class HasBVViews f where
 
   -- | View: is this BVOrBits? Returns the polarized bloom sequence.
   asBVOrBits :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PBS.PolarizedBloomSeq (E.Expr t f (BT.BaseBVType w)))
+
+  -- Hash-consed constructor views
+
+  -- | View: is this BVAndBitsHC? Returns the hash-consed polarized expression set.
+  asBVAndBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f) (BT.BaseBVType w))
+
+  -- | View: is this BVOrBitsHC? Returns the hash-consed polarized expression set.
+  asBVOrBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f) (BT.BaseBVType w))
+
+  -- | View: is this BVAddHC? Returns the hash-consed weighted sum.
+  asBVAddHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (HCSR.SRSum (SR.SemiRingBV SR.BVArith w) (E.Expr t f))
+
+  -- | View: is this BVMulHC? Returns the hash-consed product.
+  asBVMulHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (HCPR.SRProd (SR.SemiRingBV SR.BVBits w) (E.Expr t f))
