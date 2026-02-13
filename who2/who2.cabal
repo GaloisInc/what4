@@ -97,6 +97,7 @@ library
     Who2.Expr.SymFn
     Who2.Expr.Views
     Who2.Protocol.SMTLib2
+    Who2.Unsupported
   build-depends:
     base >= 4.10 && < 5,
     bv-sized,

@@ -22,6 +22,7 @@ import Who2.Expr.App (App)
 import Who2.Expr (Expr)
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
+import Who2.Unsupported (unsupported)
 
 newtype SymExpr t tp
   = SymExpr { getSymExpr :: Expr t (App t) tp }
@@ -50,11 +51,11 @@ instance WI.IsExpr (SymExpr t) where
     case E.baseType e of
       BT.BaseBVRepr w -> BV.mkBV w <$> BVD.asSingleton (AD.getAbsValue e)
 
-  integerBounds = error "Who2.Expr.SymExpr.integerBounds: not yet supported in Who2"
+  integerBounds = unsupported "Who2.Expr.SymExpr.integerBounds"
 
-  asFloat = error "Who2.Expr.SymExpr.asFloat: not yet supported in Who2"
+  asFloat = unsupported "Who2.Expr.SymExpr.asFloat"
 
-  rationalBounds = error "Who2.Expr.SymExpr.rationalBounds: not yet supported in Who2"
+  rationalBounds = unsupported "Who2.Expr.SymExpr.rationalBounds"
 
   unsignedBVBounds e =
     case E.baseType e of
@@ -64,7 +65,7 @@ instance WI.IsExpr (SymExpr t) where
     case E.baseType e of
       BT.BaseBVRepr w -> Just $ BVD.sbounds w (AD.getAbsValue e)
 
-  asAffineVar = error "Who2.Expr.SymExpr.asAffineVar: not yet supported in Who2"
+  asAffineVar = unsupported "Who2.Expr.SymExpr.asAffineVar"
 
   printSymExpr = PP.pretty
 
