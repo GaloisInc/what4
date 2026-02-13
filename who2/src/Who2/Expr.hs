@@ -90,6 +90,7 @@ instance
   PC.HashableF (f (Expr t f)) =>
   PC.HashableF (Expr t f) where
   hashWithSaltF salt = (xor salt) . eHash
+  {-# INLINE hashWithSaltF #-}
   hashF = eHash
   {-# INLINE hashF #-}
 
