@@ -34,12 +34,13 @@ module Who2.Protocol.SMTLib2
   ) where
 
 import qualified Data.BitVector.Sized as BV
+import Data.Bits ((.&.), complement, xor)
 import Data.Coerce (coerce)
 import Data.IORef (IORef, newIORef, readIORef, modifyIORef')
 import qualified Data.Map.Strict as Map
 import qualified Data.Parameterized.Context as Ctx
 import Data.Parameterized.Nonce (Nonce, indexValue)
-import Data.Parameterized.NatRepr (natValue)
+import Data.Parameterized.NatRepr (natValue, NatRepr, type (<=))
 import Data.Parameterized.TraversableFC (fmapFC, toListFC)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Text.Lazy
@@ -50,6 +51,10 @@ import qualified What4.Expr as WE
 import qualified What4.Expr.App as WEA
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
 import qualified What4.Symbol as WS
+import qualified What4.Utils.AbstractDomains as AD
+import qualified What4.Utils.BVDomain as BVD
+import What4.Utils.BVDomain (BVDomain)
+import qualified What4.Utils.BVDomain.Bitwise as B
 
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as EA
@@ -61,6 +66,27 @@ import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
+
+------------------------------------------------------------------------
+-- Flags
+
+-- | Emit abstract domain constraints for bound variables.
+--
+-- When True, bound variables (free variables in formulas) are wrapped with
+-- @bvand@/@bvor@ to encode known bits from abstract domain analysis. This
+-- provides solver hints at minimal cost (linear in number of variables).
+emitAbstractDomainConstraintsForBoundVars :: Bool
+emitAbstractDomainConstraintsForBoundVars = False
+{-# INLINE emitAbstractDomainConstraintsForBoundVars #-}
+
+-- | Emit abstract domain constraints for all bitvector expressions.
+--
+-- When @True@, ALL bitvector expressions are wrapped with @bvand@/@bvor@
+-- to encode known bits. WARNING: This might be very expensive, needs more
+-- benchmarking.
+emitAbstractDomainConstraintsForAllBV :: Bool
+emitAbstractDomainConstraintsForAllBV = False
+{-# INLINE emitAbstractDomainConstraintsForAllBV #-}
 
 ------------------------------------------------------------------------
 -- Variable Cache
@@ -200,7 +226,11 @@ mkExprWithCache ::
   SerializerCache t ->
   E.Expr t (EA.App t) tp ->
   IO SMT2.Term
-mkExprWithCache cache expr = mkAppWithCache cache (E.eApp expr)
+mkExprWithCache cache expr = do
+  baseTerm <- mkAppWithCache cache (E.eApp expr)
+  if emitAbstractDomainConstraintsForAllBV
+    then return $ applyExprConstraints (E.baseType expr) (E.eAbsVal expr) baseTerm
+    else return baseTerm
 
 -- | Convert a Who2 Expr to a Term (creates new cache)
 mkExpr ::
@@ -243,7 +273,14 @@ mkBoundVar ::
   SerializerCache t ->
   WE.ExprBoundVar t tp ->
   IO SMT2.Term
-mkBoundVar cache var = lookupOrGenVarName cache (WE.bvarId var) (WEA.bvarType var)
+mkBoundVar cache var = do
+  baseTerm <- lookupOrGenVarName cache (WE.bvarId var) (WEA.bvarType var)
+  if emitAbstractDomainConstraintsForBoundVars
+    then return $ applyBoundVarConstraints
+                    (WEA.bvarType var)
+                    (WEA.bvarAbstractValue var)
+                    baseTerm
+    else return baseTerm
 
 ------------------------------------------------------------------------
 -- Bitvector Operations
@@ -427,6 +464,71 @@ mkBVExpr ::
 mkBVExpr bvExpr = do
   cache <- newSerializerCache
   mkBVExprWithCache cache bvExpr
+
+-- | Compute max unsigned value for a bitvector width (all bits set to 1).
+maxUnsigned :: (1 <= w) => NatRepr w -> Integer
+maxUnsigned w = 2 ^ natValue w - 1
+
+-- | Apply abstract domain constraints to a bitvector term.
+--
+-- Wraps the term with bvand/bvor to encode known-0 and known-1 bits from
+-- the abstract domain. Returns the original term unchanged if:
+--   - All bits are unknown (no precision to encode)
+--   - Domain is a singleton (term should already be concrete)
+applyBVAbstractConstraints ::
+  forall w.
+  (1 <= w) =>
+  NatRepr w ->
+  BVDomain w ->
+  SMT2.Term ->
+  SMT2.Term
+applyBVAbstractConstraints w domain baseTerm
+  -- If domain is singleton, term already encodes full precision
+  | Just _ <- BVD.asSingleton domain = baseTerm
+  | otherwise =
+      let mask = maxUnsigned w
+          (lo, hi) = B.bitbounds (BVD.asBitwiseDomain domain)
+          unknown = lo `xor` hi
+          known1 = hi .&. complement unknown  -- bits that MUST be 1
+          known0_mask = complement lo         -- inverted: 1s where bits CAN be 1
+      in if unknown == mask
+         then baseTerm  -- No known bits, skip constraints
+         else
+           -- Encode: (bvand (bvor baseTerm known1) known0_mask)
+           -- The bvor forces known-1 bits to 1
+           -- The bvand forces known-0 bits to 0
+           let known1_term = SMT2.bvhexadecimal w (BV.mkBV w known1)
+               known0_term = SMT2.bvhexadecimal w (BV.mkBV w known0_mask)
+               withKnown1 = SMT2.bvor baseTerm [known1_term]
+           in SMT2.bvand withKnown1 [known0_term]
+
+-- | Apply abstract domain constraints from a bound variable's abstract value.
+--
+-- Only applies to bitvector types. Returns original term for other types.
+-- Handles the case where bvarAbstractValue is Nothing (no constraints applied).
+applyBoundVarConstraints ::
+  forall tp.
+  BT.BaseTypeRepr tp ->
+  Maybe (AD.AbstractValue tp) ->
+  SMT2.Term ->
+  SMT2.Term
+applyBoundVarConstraints (BT.BaseBVRepr w) (Just absVal) baseTerm =
+  applyBVAbstractConstraints w absVal baseTerm
+applyBoundVarConstraints _ _ baseTerm =
+  baseTerm  -- No constraints for non-BV types or missing abstract values
+
+-- | Apply abstract domain constraints from an expression's abstract value.
+-- Only applies to bitvector types. Returns original term for other types.
+applyExprConstraints ::
+  forall tp.
+  BT.BaseTypeRepr tp ->
+  AD.AbstractValue tp ->
+  SMT2.Term ->
+  SMT2.Term
+applyExprConstraints (BT.BaseBVRepr w) absVal baseTerm =
+  applyBVAbstractConstraints w absVal baseTerm
+applyExprConstraints _ _ baseTerm =
+  baseTerm  -- Only apply to bitvectors
 
 ------------------------------------------------------------------------
 -- Logic Operations
