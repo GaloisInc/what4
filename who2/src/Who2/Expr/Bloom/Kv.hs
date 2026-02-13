@@ -7,7 +7,7 @@
 -- 'BloomSeq'. Below a certain threshold, it maintains single-value-per-key
 -- semantics (last-wins). Above the threshold, it transitions to multimap mode
 -- where insertions are unconditional appends without searching for duplicates.
-module Who2.Expr.BloomKv
+module Who2.Expr.Bloom.Kv
   ( BloomKv(..)
   , Kv(..)
   , empty
@@ -34,7 +34,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
-import qualified Who2.Expr.HashedSequence as HS
+import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 import Who2.Config (bloomFilter)
 

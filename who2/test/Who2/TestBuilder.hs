@@ -28,7 +28,7 @@ import Who2.Expr.SymExpr (SymExpr(..))
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
 

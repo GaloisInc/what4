@@ -53,7 +53,7 @@ import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Views as EV
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Polarized as PBS
 
 asInteger :: Expr t f (BT.BaseBVType w) -> Maybe Integer
 asInteger = BVD.asSingleton . AD.getAbsValue

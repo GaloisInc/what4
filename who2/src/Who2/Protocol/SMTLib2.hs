@@ -60,7 +60,7 @@ import qualified Who2.Expr as E
 import qualified Who2.Expr.App as EA
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.SymExpr as ES
 import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.Views as EV

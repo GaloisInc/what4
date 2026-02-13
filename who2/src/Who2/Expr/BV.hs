@@ -36,8 +36,8 @@ import qualified What4.SemiRing as SR
 
 import Who2.Expr (Expr, HasBaseType(baseType))
 import qualified Who2.Expr as E
-import qualified Who2.Expr.BloomKv as BKv
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Kv as BKv
+import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS

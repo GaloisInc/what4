@@ -33,7 +33,7 @@ import qualified Data.Parameterized.Classes as PC
 
 import qualified What4.SemiRing as SR
 
-import qualified Who2.Expr.BloomKv as BKv
+import qualified Who2.Expr.Bloom.Kv as BKv
 
 -- | A product of semiring values using BloomKv.
 --

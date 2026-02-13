@@ -5,7 +5,7 @@
 --
 -- This is a normalizing datastructure for associative, idempotent operations,
 -- see "What4.Expr.App" for an overview of such data structures.
-module Who2.Expr.BloomSeq
+module Who2.Expr.Bloom.Seq
   ( BloomSeq(..)
   , empty
   , singleton
@@ -33,7 +33,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
-import qualified Who2.Expr.HashedSequence as HS
+import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 import Who2.Config (bloomFilter)
 

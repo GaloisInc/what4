@@ -19,7 +19,7 @@
 -- * @x || (not x)@ => @true@
 -- * @x & (~x)@ => @0@
 -- * @x | (~x)@ => @~0@
-module Who2.Expr.PolarizedBloomSeq
+module Who2.Expr.Bloom.Polarized
   ( PolarizedBloomSeq(..)
   , Polarized(..)
   , Polarizable(..)
@@ -45,7 +45,7 @@ module Who2.Expr.PolarizedBloomSeq
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Kind (Type)
 import qualified Data.Parameterized.Classes as PC
-import qualified Who2.Expr.BloomSeq as BS
+import qualified Who2.Expr.Bloom.Seq as BS
 
 -- | A value tagged with its polarity
 data Polarized a = Positive a | Negative a

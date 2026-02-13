@@ -46,7 +46,7 @@ import qualified Hedgehog.Range as Range
 
 import Who2.Builder (newBuilder)
 import Who2.Expr (eHash)
-import qualified Who2.Expr.BloomSeq as BS
+import qualified Who2.Expr.Bloom.Seq as BS
 import Who2.Expr.SymExpr (SymExpr(SymExpr))
 import Who2.Gen (defaultGenConfig, genBool)
 import Who2.Properties (interp)

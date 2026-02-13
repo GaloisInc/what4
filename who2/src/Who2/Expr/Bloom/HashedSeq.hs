@@ -1,6 +1,6 @@
 {-# LANGUAGE StrictData #-}
 
-module Who2.Expr.HashedSequence
+module Who2.Expr.Bloom.HashedSeq
   ( HashedSeq(..)
   , empty
   , singleton

@@ -2,9 +2,9 @@
 
 -- | Centralized configuration for Who2 expression builder.
 --
--- This module collects all top-level Bool configuration constants that control
--- performance and behavior features. Each constant can be controlled at build
--- time using Cabal flags.
+-- This module collects all top-level 'Bool' configuration constants that
+-- control performance and behavior features. Each constant can be controlled at
+-- build time using Cabal flags.
 --
 -- To enable/disable features at build time:
 -- @
@@ -13,7 +13,7 @@
 -- cabal build -f+fancy-hash            # Enable polynomial rolling hash
 -- @
 --
--- All constants use INLINE pragmas for zero-overhead abstraction - when
+-- All constants use @INLINE@ pragmas for zero-overhead abstraction - when
 -- disabled, the compiler eliminates dead code paths entirely.
 module Who2.Config
   ( -- * Core Expression Features

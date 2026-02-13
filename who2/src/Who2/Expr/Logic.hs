@@ -28,7 +28,7 @@ import qualified What4.BaseTypes as BT
 
 import Who2.Expr (HasBaseType(baseType))
 import qualified Who2.Expr as E
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.Views as EV
 
 -- | 'Polarizable' wrapper for boolean expressions used in both 'AndPred' and 'OrPred'

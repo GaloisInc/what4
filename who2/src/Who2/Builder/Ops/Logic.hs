@@ -36,7 +36,7 @@ import Who2.Expr (Expr, HasBaseType(baseType))
 import qualified Who2.Expr as E
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.Views as EV
-import qualified Who2.Expr.PolarizedBloomSeq as PBS
+import qualified Who2.Expr.Bloom.Polarized as PBS
 
 isTrue :: Expr t f BT.BaseBoolType -> Bool
 isTrue e = AD.getAbsValue e == Just True

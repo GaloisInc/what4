@@ -18,7 +18,7 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
-import qualified Who2.Expr.HashedSequence as HS
+import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 genHashedSeqInt :: H.Gen (HS.HashedSeq Int)
 genHashedSeqInt = do
