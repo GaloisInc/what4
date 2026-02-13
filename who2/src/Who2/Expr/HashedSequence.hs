@@ -25,26 +25,12 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 
+import Who2.Config (hashedSequence, fancyHash)
+
 ------------------------------------------------------------------------
 -- Hash strategy configuration
 
--- Note that all of the tests should pass regardless of these settings.
-
--- | Controls whether hash precomputation is enabled:
---   * True:  Precompute and maintain hash in hsHash field for O(1) hashing
---   * False: Always set hsHash to 0, compute hash on-demand in Hashable instance
-enabled :: Bool
-enabled = P.True
-{-# INLINE enabled #-}
-
--- | Controls which hashing strategy to use:
---   * True:  Polynomial rolling hash (order-sensitive, good distribution)
---   * False: Simple XOR (order-insensitive, risk of cancellation)
-fancyHash :: Bool
-fancyHash = P.False
-{-# INLINE fancyHash #-}
-
--- | Base for polynomial rolling hash
+-- | Base for polynomial rolling hash (only used when fancyHash = True)
 hashBase :: Int
 hashBase = 31
 {-# INLINE hashBase #-}
@@ -88,11 +74,11 @@ combineHashConcat hash1 hash2 len2 =
 
 -- | Sequence with optional precomputed hash
 --
--- Hash precomputation (controlled by 'enabled'):
--- - When enabled = True: hsHash contains precomputed hash for O(1) hashing
--- - When enabled = False: hsHash is always 0, hash computed on-demand in Hashable instance
+-- Hash precomputation (controlled by 'hashedSequence'):
+-- - When hashedSequence = True: hsHash contains precomputed hash for O(1) hashing
+-- - When hashedSequence = False: hsHash is always 0, hash computed on-demand in Hashable instance
 --
--- Hash computation strategy (controlled by 'fancyHash', only when enabled = True):
+-- Hash computation strategy (controlled by 'fancyHash', only when hashedSequence = True):
 -- - When fancyHash = True (polynomial rolling hash with base 31):
 --   * append x: new_hash = old_hash * 31 + hash x (with natural Int overflow)
 --   * merge:    new_hash = hash1 * 31^len2 + hash2 (with natural Int overflow)
@@ -113,14 +99,14 @@ instance Ord a => Ord (HashedSeq a) where
   compare (HashedSeq s1 _) (HashedSeq s2 _) = compare s1 s2
   {-# INLINE compare #-}
 
--- | Hashable instance uses precomputed hash for O(1) operations when enabled,
+-- | Hashable instance uses precomputed hash for O(1) operations when hashedSequence,
 -- otherwise computes hash on-demand
 instance Hashable a => Hashable (HashedSeq a) where
-  hash hs = if enabled then hsHash hs else hash (hsSeq hs)
+  hash hs = if hashedSequence then hsHash hs else hash (hsSeq hs)
   {-# INLINE hash #-}
 
   hashWithSalt salt hs =
-    if enabled then salt `xor` hsHash hs else hashWithSalt salt (hsSeq hs)
+    if hashedSequence then salt `xor` hsHash hs else hashWithSalt salt (hsSeq hs)
   {-# INLINE hashWithSalt #-}
 
 -- | Foldable instance delegates to underlying Seq
@@ -141,19 +127,19 @@ empty :: HashedSeq a
 empty = HashedSeq Seq.empty 0
 {-# INLINE empty #-}
 
--- | O(1). A singleton sequence with precomputed hash (if enabled).
+-- | O(1). A singleton sequence with precomputed hash (if hashedSequence).
 singleton :: Hashable a => a -> HashedSeq a
-singleton x = HashedSeq (Seq.singleton x) (if enabled then hash x else 0)
+singleton x = HashedSeq (Seq.singleton x) (if hashedSequence then hash x else 0)
 {-# INLINE singleton #-}
 
 -- | O(n). Build a hashed sequence from a list.
 fromList :: Hashable a => [a] -> HashedSeq a
 fromList = F.foldl' (|>) empty
 
--- | O(n). Build a hashed sequence from a Seq, computing the hash (if enabled).
+-- | O(n). Build a hashed sequence from a Seq, computing the hash (if hashedSequence).
 fromSeq :: Hashable a => Seq a -> HashedSeq a
 fromSeq s =
-  if enabled
+  if hashedSequence
     then HashedSeq s (F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s)
     else HashedSeq s 0
 
@@ -168,20 +154,20 @@ null = Seq.null . hsSeq
 {-# INLINE null #-}
 
 -- | O(1). Add an element to the right end of the sequence.
--- The hash is updated incrementally (if enabled).
+-- The hash is updated incrementally (if hashedSequence).
 (|>) :: Hashable a => HashedSeq a -> a -> HashedSeq a
 (|>) (HashedSeq s h) x =
-  if enabled
+  if hashedSequence
     then HashedSeq (s Seq.|> x) (combineHashAppend h (hash x))
     else HashedSeq (s Seq.|> x) 0
 
 infixl 5 |>
 
 -- | O(log(min(n1,n2))). Concatenate two sequences.
--- The hash is combined incrementally (if enabled).
+-- The hash is combined incrementally (if hashedSequence).
 (><) :: HashedSeq a -> HashedSeq a -> HashedSeq a
 (><) (HashedSeq s1 h1) (HashedSeq s2 h2) =
-  if enabled
+  if hashedSequence
   then HashedSeq (s1 Seq.>< s2) (combineHashConcat h1 h2 (Seq.length s2))
   else HashedSeq (s1 Seq.>< s2) 0
 
@@ -203,7 +189,7 @@ findIndexR p = Seq.findIndexR p . hsSeq
 {-# INLINE findIndexR #-}
 
 -- | O(n). Update the element at the given index.
--- The hash is recomputed (if enabled) because we can't incrementally update
+-- The hash is recomputed (if hashedSequence) because we can't incrementally update
 -- when modifying an interior element.
 adjust' :: Hashable a => (a -> a) -> Int -> HashedSeq a -> HashedSeq a
 adjust' f i hs@(HashedSeq s _) =
@@ -211,7 +197,7 @@ adjust' f i hs@(HashedSeq s _) =
   in if s == newSeq  -- TODO: Just compare the one element
      then hs  -- No change
      else
-      if enabled
+      if hashedSequence
       then HashedSeq newSeq (rehashSeq newSeq)
       else HashedSeq newSeq 0
   where

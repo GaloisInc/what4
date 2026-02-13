@@ -18,7 +18,6 @@ module Who2.Expr
   , maxByHash
   , minByHash
   , pretty
-  , useHashConsing
   ) where
 
 import Data.Bits (xor)
@@ -32,18 +31,10 @@ import qualified Prettyprinter as PP
 import qualified What4.BaseTypes as BT
 import qualified What4.Utils.AbstractDomains as AD
 
-------------------------------------------------------------------------
--- Hash-consing configuration
+import Who2.Config (hashConsing)
 
--- | Controls whether hash-consing is enabled:
---
--- * 'True':  Builder maintains term cache for structural sharing
--- * 'False': No caching, fresh terms always created
---
--- Tests are expected to pass in both configurations.
-useHashConsing :: Bool
-useHashConsing = True
-{-# INLINE useHashConsing #-}
+------------------------------------------------------------------------
+-- Expression datatype
 
 -- | Expression datatype, used as the @f@ parameter to 'Who2.Expr.App'.
 data Expr
@@ -70,7 +61,7 @@ mkExpr ::
 mkExpr gen app absVal = do
   nonce <- freshNonce gen
   let eh =
-        if useHashConsing
+        if hashConsing
         then PC.hash (indexValue nonce)
         else PC.hashF app
   pure $! RiskyExpr
@@ -93,7 +84,7 @@ instance
   , HasBaseType (f (Expr t f))
   ) => Eq (Expr t f tp) where
   x == y
-    | useHashConsing = eId x == eId y
+    | hashConsing = eId x == eId y
     | eId x == eId y = True
     | Just b <- AD.avCheckEq (baseType x) (eAbsVal x) (eAbsVal y) = b
     | eHash x /= eHash y = False
@@ -124,7 +115,7 @@ instance
 
 instance TestEquality (f (Expr t f)) => PC.TestEquality (Expr t f) where
   testEquality x y
-    | useHashConsing = testEquality (eId x) (eId y)
+    | hashConsing = testEquality (eId x) (eId y)
     | otherwise =
         case testEquality (eId x) (eId y) of
           Just Refl -> Just Refl
@@ -135,7 +126,7 @@ instance TestEquality (f (Expr t f)) => PC.TestEquality (Expr t f) where
 
 instance PC.OrdF (f (Expr t f)) => PC.OrdF (Expr t f) where
   compareF x y
-    | useHashConsing =
+    | hashConsing =
         case testEquality (eId x) (eId y) of
           Just Refl -> PC.EQF
           Nothing -> PC.compareF (eId x) (eId y)
@@ -151,7 +142,7 @@ instance
   , HasBaseType (f (Expr t f))
   ) => Ord (Expr t f tp) where
   compare x y
-    | useHashConsing = compare (eId x) (eId y)
+    | hashConsing = compare (eId x) (eId y)
     | eId x == eId y = EQ
     | eHash x /= eHash y = compare (eHash x) (eHash y)
     | otherwise = compare (eApp x) (eApp y)

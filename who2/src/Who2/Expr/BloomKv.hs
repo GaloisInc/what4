@@ -36,6 +36,8 @@ import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
 import qualified Who2.Expr.HashedSequence as HS
 
+import Who2.Config (bloomFilter)
+
 ---------------------------------------------------------------------
 
 -- | Key-value pair (internal representation)
@@ -124,7 +126,7 @@ insert ::
   v ->
   BloomKv k v
 insert combine (BloomKv f kvSeq) key newVal
-  | P.not Filt.enabled = appendNew Filt.disabled kvSeq
+  | P.not bloomFilter = appendNew Filt.disabled kvSeq
   | f == Filt.disabled = appendNew Filt.disabled kvSeq
   | P.not (Filt.mightContain f key) = appendNew newFilter kvSeq
   | P.otherwise =
@@ -137,7 +139,7 @@ insert combine (BloomKv f kvSeq) key newVal
   where
     newFilter =
       let newSize = HS.length kvSeq + 1
-      in if P.not Filt.enabled || newSize > threshold
+      in if P.not bloomFilter || newSize > threshold
          then Filt.disabled
          else Filt.insert f key
 
@@ -147,7 +149,7 @@ insert combine (BloomKv f kvSeq) key newVal
 -- | Merge two maps with combine function
 merge :: (Eq k, Ord k, Hashable k, Hashable v) => (v -> v -> v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
 merge combine xs ys
-  | P.not Filt.enabled = merged
+  | P.not bloomFilter = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
       BloomKv (Filt.union (filt xs) (filt ys)) (kvs xs HS.>< kvs ys)

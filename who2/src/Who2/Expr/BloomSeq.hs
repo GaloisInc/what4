@@ -35,6 +35,8 @@ import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
 import qualified Who2.Expr.HashedSequence as HS
 
+import Who2.Config (bloomFilter)
+
 ---------------------------------------------------------------------
 
 -- | A fast set-like data-structure.
@@ -123,7 +125,7 @@ toList = F.toList . elems
 -- | Check membership using filter then linear search if needed
 _contains :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 _contains (BloomSeq f es) x
-  | not Filt.enabled = x `elem` es
+  | not bloomFilter = x `elem` es
   | not (Filt.mightContain f x) = False
   | otherwise = x `elem` es
 {-# INLINE _contains #-}
@@ -131,7 +133,7 @@ _contains (BloomSeq f es) x
 -- | Check membership using filter but only search if under threshold
 containsFast :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 containsFast (BloomSeq f es) x
-  | not Filt.enabled = False
+  | not bloomFilter = False
   | f == Filt.disabled = False
   | Filt.mightContain f x = x `elem` es
   | otherwise = False
@@ -140,7 +142,7 @@ containsFast (BloomSeq f es) x
 -- | Check membership using filter but only search if under threshold
 containsAnyFast :: (Eq a, Hashable a, Foldable t) => BloomSeq a -> t a -> Bool
 containsAnyFast (BloomSeq f es) xs
-  | not Filt.enabled = False
+  | not bloomFilter = False
   | f == Filt.disabled = False
   | otherwise =
     any (\x -> if Filt.mightContain f x then x `elem` es else False) xs
@@ -150,7 +152,7 @@ containsAnyFast (BloomSeq f es) xs
 insert :: (Eq a, Hashable a) => BloomSeq a -> a -> BloomSeq a
 insert (BloomSeq f es) x =
   let newSize = HS.length es + 1
-      newFilter = if not Filt.enabled || newSize > threshold
+      newFilter = if not bloomFilter || newSize > threshold
                   then Filt.disabled
                   else Filt.insert f x
       newElems = es HS.|> x
@@ -160,7 +162,7 @@ insert (BloomSeq f es) x =
 -- | Insert only if not already present (unless filter is disabled)
 insertIfNotPresent :: (Eq a, Hashable a) => BloomSeq a -> a -> BloomSeq a
 insertIfNotPresent bs@(BloomSeq f _) x
-  | not Filt.enabled = insert bs x
+  | not bloomFilter = insert bs x
   | f == Filt.disabled = insert bs x
   | containsFast bs x = bs
   | otherwise = insert bs x
@@ -169,7 +171,7 @@ insertIfNotPresent bs@(BloomSeq f _) x
 -- | Merge two sequences
 merge :: (Eq a, Hashable a) => BloomSeq a -> BloomSeq a -> BloomSeq a
 merge xs ys
-  | not Filt.enabled = merged
+  | not bloomFilter = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
       BloomSeq (Filt.union (filt xs) (filt ys)) (elems xs HS.>< elems ys)

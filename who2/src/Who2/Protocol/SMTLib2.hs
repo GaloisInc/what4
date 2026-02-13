@@ -67,26 +67,7 @@ import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.SemiRing.Product as SRP
 import qualified Who2.Expr.SemiRing.Sum as SRS
 
-------------------------------------------------------------------------
--- Flags
-
--- | Emit abstract domain constraints for bound variables.
---
--- When True, bound variables (free variables in formulas) are wrapped with
--- @bvand@/@bvor@ to encode known bits from abstract domain analysis. This
--- provides solver hints at minimal cost (linear in number of variables).
-emitAbstractDomainConstraintsForBoundVars :: Bool
-emitAbstractDomainConstraintsForBoundVars = False
-{-# INLINE emitAbstractDomainConstraintsForBoundVars #-}
-
--- | Emit abstract domain constraints for all bitvector expressions.
---
--- When @True@, ALL bitvector expressions are wrapped with @bvand@/@bvor@
--- to encode known bits. WARNING: This might be very expensive, needs more
--- benchmarking.
-emitAbstractDomainConstraintsForAllBV :: Bool
-emitAbstractDomainConstraintsForAllBV = False
-{-# INLINE emitAbstractDomainConstraintsForAllBV #-}
+import Who2.Config (emitAbstractDomainConstraintsForBoundVars, emitAbstractDomainConstraintsForAllBV)
 
 ------------------------------------------------------------------------
 -- Variable Cache

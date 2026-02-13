@@ -33,6 +33,7 @@ import qualified What4.Utils.BVDomain as BVD
 
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Builder.Ops.Logic as Logic
+import Who2.Config (hashConsing)
 import Who2.Expr (Expr)
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as EA
@@ -86,7 +87,7 @@ newBuilder g = do
         , bTermCache = cache
         }
 
-  when E.useHashConsing $ do
+  when hashConsing $ do
     let trueApp = EA.LogicApp EL.TruePred
         falseApp = EA.LogicApp EL.FalsePred
     seq trueExpr $ stToIO $ PH.insert cache trueApp (getSymExpr trueExpr)
@@ -101,7 +102,7 @@ alloc ::
   AbstractValue tp ->
   IO (Expr t (App t) tp)
 alloc b app absVal =
-  if E.useHashConsing
+  if hashConsing
   then allocWithHashCons b app absVal
   else E.mkExpr (bNonceGen b) app absVal
 {-# INLINE alloc #-}

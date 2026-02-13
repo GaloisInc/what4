@@ -3,7 +3,6 @@
 -- | Bloom filter for fast negative membership tests
 module Who2.Expr.Filter
   ( Filter(..)
-  , enabled
   , empty
   , disabled
   , insert
@@ -16,12 +15,7 @@ import Data.Word (Word64)
 import Data.Bits (testBit, setBit, complement, (.&.), (.|.))
 import Data.Hashable (Hashable(hash))
 
----------------------------------------------------------------------
-
--- | Configuration: is bloom filtering enabled?
-enabled :: Bool
-enabled = True
-{-# INLINE enabled #-}
+import Who2.Config (bloomFilter)
 
 ---------------------------------------------------------------------
 
@@ -36,7 +30,7 @@ disabled = Filter (complement 0)
 
 -- | Empty filter (all 0 bits if enabled, disabled if not)
 empty :: Filter a
-empty = if enabled then Filter 0 else disabled
+empty = if bloomFilter then Filter 0 else disabled
 {-# INLINE empty #-}
 
 -- | Insert an element into the filter
