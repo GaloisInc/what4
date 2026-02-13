@@ -12,10 +12,13 @@ module Who2.Builder
   , newBuilder
   ) where
 
+import Control.Monad (when)
+import Control.Monad.ST (stToIO)
 import Data.Coerce (coerce)
 import qualified Data.IntMap.Strict as IntMap
 
 import qualified Data.Parameterized.Classes as PC
+import qualified Data.Parameterized.HashTable as PH
 import qualified Data.Parameterized.Map as MapF
 import Data.Parameterized.Nonce (Nonce, NonceGenerator)
 import qualified Data.Parameterized.Nonce as Nonce
@@ -56,18 +59,39 @@ data Builder t
     { bNonceGen :: !(NonceGenerator IO t)
     , bTrue :: !(SymExpr t WI.BaseBoolType)
     , bFalse :: !(SymExpr t WI.BaseBoolType)
+    , bTermCache :: !(PH.HashTable PH.RealWorld (App t (Expr t (App t))) (Expr t (App t)))
     }
+
+-- | Initial cache size (number of buckets)
+-- Similar to What4's cacheStartSizeOption (default 100,000)
+-- Start smaller for Who2's lightweight design
+cacheInitialSize :: Int
+cacheInitialSize = 10000
+{-# INLINE cacheInitialSize #-}
 
 -- | Create a new 'Builder'
 newBuilder :: NonceGenerator IO t -> IO (Builder t)
 newBuilder g = do
+  -- Create sized hash table for better performance
+  cache <- stToIO $ PH.newSized cacheInitialSize
+
   trueExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.TruePred) (Just True)
   falseExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.FalsePred) (Just False)
-  return Builder
-    { bNonceGen = g
-    , bTrue = trueExpr
-    , bFalse = falseExpr
-    }
+
+  let builder = Builder
+        { bNonceGen = g
+        , bTrue = trueExpr
+        , bFalse = falseExpr
+        , bTermCache = cache
+        }
+
+  when E.useHashConsing $ do
+    let trueApp = EA.LogicApp EL.TruePred
+        falseApp = EA.LogicApp EL.FalsePred
+    seq trueExpr $ stToIO $ PH.insert cache trueApp (getSymExpr trueExpr)
+    seq falseExpr $ stToIO $ PH.insert cache falseApp (getSymExpr falseExpr)
+
+  return builder
 
 -- Internal helper
 alloc ::
@@ -75,8 +99,26 @@ alloc ::
   App t (Expr t (App t)) tp ->
   AbstractValue tp ->
   IO (Expr t (App t) tp)
-alloc b = E.mkExpr (bNonceGen b)
+alloc b app absVal =
+  if E.useHashConsing
+  then allocWithHashCons b app absVal
+  else E.mkExpr (bNonceGen b) app absVal
 {-# INLINE alloc #-}
+
+allocWithHashCons ::
+  Builder t ->
+  App t (Expr t (App t)) tp ->
+  AbstractValue tp ->
+  IO (Expr t (App t) tp)
+allocWithHashCons b app absVal = do
+  me <- stToIO $ PH.lookup (bTermCache b) app
+  case me of
+    Just e -> return e
+    Nothing -> do
+      newTerm <- E.mkExpr (bNonceGen b) app absVal
+      -- Force evaluation before insertion to prevent thunk accumulation
+      seq newTerm $ stToIO $ PH.insert (bTermCache b) app newTerm
+      return newTerm
 
 toSymExpr :: IO (Expr t (App t) tp) -> IO (SymExpr t tp)
 toSymExpr = coerce
