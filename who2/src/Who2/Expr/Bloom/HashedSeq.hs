@@ -1,82 +1,37 @@
 {-# LANGUAGE StrictData #-}
 
 module Who2.Expr.Bloom.HashedSeq
-  ( HashedSeq(..)
+  ( HashedSeq
+  , eqBy
+  , ordBy
   , empty
   , singleton
   , fromList
   , fromSeq
-  , length
-  , null
+  , Who2.Expr.Bloom.HashedSeq.length
+  , Who2.Expr.Bloom.HashedSeq.null
   , (|>)
   , (><)
   , toSeq
   , toList
   , findIndexR
   , adjust'
-  , ordBy
   ) where
 
-import Prelude (Eq((==)), Ord(compare), Ordering(LT, EQ, GT), Show, Int, Bool, Maybe, (.), (*), (+), otherwise)
-import qualified Prelude as P
-import Data.Hashable (Hashable(hash, hashWithSalt))
 import Data.Bits (xor, shiftR, (.&.))
+import qualified Data.Foldable as F
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
+import Data.Hashable (Hashable(hash, hashWithSalt))
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import qualified Data.Foldable as F
 
 import Who2.Config (hashedSequence, fancyHash)
 
 ------------------------------------------------------------------------
--- Hash strategy configuration
-
--- | Base for polynomial rolling hash (only used when fancyHash = True)
-hashBase :: Int
-hashBase = 31
-{-# INLINE hashBase #-}
-
+-- Type and instances
 ------------------------------------------------------------------------
--- Hash combining helpers
 
--- | Fast integer exponentiation: base^exp
--- Uses natural Int overflow (2^64 modulus) for consistency
-pow :: Int -> Int -> Int
-pow base exp
-  | exp P.< 0 = P.error "pow: negative exponent"
-  | exp P.== 0 = 1
-  | otherwise = go base exp 1
-  where
-    go _ 0 acc = acc
-    go b e acc
-      | e .&. 1 P.== 1 = go b' e' (acc * b)
-      | otherwise      = go b' e' acc
-      where
-        b' = b * b
-        e' = e `shiftR` 1
-{-# INLINE pow #-}
-
--- | Combine hash when appending single element
-combineHashAppend :: Int -> Int -> Int
-combineHashAppend oldHash elemHash =
-  if fancyHash
-  then oldHash * hashBase + elemHash
-  else oldHash `xor` elemHash
-{-# INLINE combineHashAppend #-}
-
--- | Combine hash when concatenating sequences
--- Takes: hash1, hash2, length2
-combineHashConcat :: Int -> Int -> Int -> Int
-combineHashConcat hash1 hash2 len2 =
-  if fancyHash
-  then hash1 * pow hashBase len2 + hash2
-  else hash1 `xor` hash2
-{-# INLINE combineHashConcat #-}
-
--- | Sequence with optional precomputed hash
---
--- Hash precomputation (controlled by 'hashedSequence'):
--- - When hashedSequence = True: hsHash contains precomputed hash for O(1) hashing
--- - When hashedSequence = False: hsHash is always 0, hash computed on-demand in Hashable instance
+-- | Sequence with optional precomputed hash (controlled by 'hashedSequence').
 --
 -- Hash computation strategy (controlled by 'fancyHash', only when hashedSequence = True):
 -- - When fancyHash = True (polynomial rolling hash with base 31):
@@ -87,17 +42,60 @@ combineHashConcat hash1 hash2 len2 =
 --   * merge:    new_hash = hash1 `xor` hash2
 data HashedSeq a = HashedSeq
   { hsSeq :: !(Seq a)
-  , hsHash :: {-# UNPACK #-} !Int  -- Precomputed hash
+    -- | INVARIANT: If 'hashedSequence' is 'True', this is the hash of the
+    -- elements in 'hsSeq'. Otherwise, it is 0.
+  , hsHash :: {-# UNPACK #-} !Int
   }
+  -- DO NOT derive or implement Functor nor Traversable, as they would break
+  -- the invariant.
   deriving (Show)
 
+-- | Like 'liftEq', but without typeclass constraints
+eqBy ::
+  (a -> b -> Bool) ->
+  HashedSeq a ->
+  HashedSeq b ->
+  Bool
+eqBy eq (HashedSeq s1 h1) (HashedSeq s2 h2) =
+  if hashedSequence && h1 /= h2
+  then False
+  else liftEq eq s1 s2
+{-# INLINE eqBy #-}
+
+-- | @'eqBy' (==)@
 instance Eq a => Eq (HashedSeq a) where
-  (HashedSeq s1 _) == (HashedSeq s2 _) = s1 == s2
+  (==) = eqBy (==)
   {-# INLINE (==) #-}
 
+-- | @eqBy@
+instance Eq1 HashedSeq where
+  liftEq = eqBy
+  {-# INLINE liftEq #-}
+
+-- | Like 'liftCompare', but without typeclass constraints
+ordBy ::
+  (a -> b -> Ordering) ->
+  HashedSeq a ->
+  HashedSeq b ->
+  Ordering
+ordBy cmp (HashedSeq s1 h1) (HashedSeq s2 h2) =
+  if hashedSequence
+  then
+    case compare h1 h2 of
+      EQ -> liftCompare cmp s1 s2
+      r -> r
+  else liftCompare cmp s1 s2
+{-# INLINE ordBy #-}
+
+-- | @'ordBy' 'compare'@
 instance Ord a => Ord (HashedSeq a) where
-  compare (HashedSeq s1 _) (HashedSeq s2 _) = compare s1 s2
+  compare = ordBy compare
   {-# INLINE compare #-}
+
+-- | @'ordBy'@
+instance Ord1 HashedSeq where
+  liftCompare = ordBy
+  {-# INLINE liftCompare #-}
 
 -- | Hashable instance uses precomputed hash for O(1) operations when hashedSequence,
 -- otherwise computes hash on-demand
@@ -109,7 +107,7 @@ instance Hashable a => Hashable (HashedSeq a) where
     if hashedSequence then salt `xor` hsHash hs else hashWithSalt salt (hsSeq hs)
   {-# INLINE hashWithSalt #-}
 
--- | Foldable instance delegates to underlying Seq
+-- | Delegates to underlying 'Seq'
 instance F.Foldable HashedSeq where
   foldMap f = F.foldMap f . hsSeq
   {-# INLINE foldMap #-}
@@ -121,6 +119,10 @@ instance F.Foldable HashedSeq where
   {-# INLINE length #-}
   null = Seq.null . hsSeq
   {-# INLINE null #-}
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | O(1). The empty sequence with hash 0.
 empty :: HashedSeq a
@@ -140,8 +142,8 @@ fromList = F.foldl' (|>) empty
 fromSeq :: Hashable a => Seq a -> HashedSeq a
 fromSeq s =
   if hashedSequence
-    then HashedSeq s (F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s)
-    else HashedSeq s 0
+  then HashedSeq s (F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s)
+  else HashedSeq s 0
 
 -- | O(1). The number of elements in the sequence.
 length :: HashedSeq a -> Int
@@ -158,8 +160,8 @@ null = Seq.null . hsSeq
 (|>) :: Hashable a => HashedSeq a -> a -> HashedSeq a
 (|>) (HashedSeq s h) x =
   if hashedSequence
-    then HashedSeq (s Seq.|> x) (combineHashAppend h (hash x))
-    else HashedSeq (s Seq.|> x) 0
+  then HashedSeq (s Seq.|> x) (combineHashAppend h (hash x))
+  else HashedSeq (s Seq.|> x) 0
 
 infixl 5 |>
 
@@ -203,15 +205,45 @@ adjust' f i hs@(HashedSeq s _) =
   where
     rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
 
--- | Lexicographic ordering with custom comparison function
-ordBy :: (a -> a -> Ordering) -> HashedSeq a -> HashedSeq a -> Ordering
-ordBy cmp x y = lexCompare (toList x) (toList y)
+------------------------------------------------------------------------
+-- Hash helpers
+------------------------------------------------------------------------
+
+-- | Base for polynomial rolling hash (only used when fancyHash = True)
+hashBase :: Int
+hashBase = 31
+{-# INLINE hashBase #-}
+
+-- | Fast integer exponentiation: base^exp
+-- Uses natural Int overflow (2^64 modulus) for consistency
+pow :: Int -> Int -> Int
+pow base ex
+  | ex < 0 = error "pow: negative eonent"
+  | ex == 0 = 1
+  | otherwise = go base ex 1
   where
-    lexCompare [] [] = EQ
-    lexCompare [] (_:_) = LT
-    lexCompare (_:_) [] = GT
-    lexCompare (a:as) (b:bs) =
-      case cmp a b of
-        LT -> LT
-        GT -> GT
-        EQ -> lexCompare as bs
+    go _ 0 acc = acc
+    go b e acc
+      | e .&. 1 == 1 = go b' e' (acc * b)
+      | otherwise      = go b' e' acc
+      where
+        b' = b * b
+        e' = e `shiftR` 1
+{-# INLINE pow #-}
+
+-- | Combine hash when appending single element
+combineHashAppend :: Int -> Int -> Int
+combineHashAppend oldHash elemHash =
+  if fancyHash
+  then oldHash * hashBase + elemHash
+  else oldHash `xor` elemHash
+{-# INLINE combineHashAppend #-}
+
+-- | Combine hash when concatenating sequences
+-- Takes: hash1, hash2, length2
+combineHashConcat :: Int -> Int -> Int -> Int
+combineHashConcat hash1 hash2 len2 =
+  if fancyHash
+  then hash1 * pow hashBase len2 + hash2
+  else hash1 `xor` hash2
+{-# INLINE combineHashConcat #-}

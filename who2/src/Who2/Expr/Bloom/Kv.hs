@@ -9,7 +9,8 @@
 -- where insertions are unconditional appends without searching for duplicates.
 module Who2.Expr.Bloom.Kv
   ( BloomKv(..)
-  , Kv(..)
+  , eqBy2
+  , ordBy2
   , empty
   , singleton
   , fromList
@@ -20,17 +21,13 @@ module Who2.Expr.Bloom.Kv
   , values
   , insert
   , merge
-  , eqBy
-  , ordBy
 
   , -- * Configuration
     threshold
   ) where
 
-import qualified Prelude as P
-import Prelude (Eq, Ord, Show, Bool, Int, Ordering, Functor, Foldable, (==), (/=), (>), (&&), (||), (+), (.))
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare), Eq2(liftEq2), Ord2(liftCompare2))
 import Data.Hashable (Hashable(hashWithSalt))
-import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
@@ -51,7 +48,31 @@ data Kv k v = Kv
 instance (Hashable k, Hashable v) => Hashable (Kv k v) where
   hashWithSalt s (Kv k v) = s `hashWithSalt` k `hashWithSalt` v
 
----------------------------------------------------------------------
+eqBy2Kv ::
+  (k1 -> k2 -> Bool) ->
+  (v1 -> v2 -> Bool) ->
+  Kv k1 v1 ->
+  Kv k2 v2 ->
+  Bool
+eqBy2Kv eqK eqV (Kv k1 v1) (Kv k2 v2) = eqK k1 k2 && eqV v1 v2
+{-# INLINE eqBy2Kv #-}
+
+ordBy2Kv ::
+  (k1 -> k2 -> Ordering) ->
+  (v1 -> v2 -> Ordering) ->
+  Kv k1 v1 ->
+  Kv k2 v2 ->
+  Ordering
+ordBy2Kv cmpK cmpV (Kv k1 v1) (Kv k2 v2) =
+  case cmpK k1 k2 of
+    LT -> LT
+    GT -> GT
+    EQ -> cmpV v1 v2
+{-# INLINE ordBy2Kv #-}
+
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | A bloom-filtered key-value map optimized for small sizes
 --
@@ -62,11 +83,82 @@ data BloomKv k v = BloomKv
   { filt :: {-# UNPACK #-} !(Filter k)
   , kvs :: !(HS.HashedSeq (Kv k v))
   }
-  deriving (Eq, Ord, Show)
+  deriving Show
 
 instance Foldable (BloomKv k) where
-  foldMap f = P.foldMap (f . kvValue) . kvs
+  foldMap f = foldMap (f . kvValue) . kvs
   {-# INLINE foldMap #-}
+
+-- | Like 'liftCompare2', but without typeclass constraints
+eqBy2 ::
+  (k1 -> k2 -> Bool) ->
+  (v1 -> v2 -> Bool) ->
+  BloomKv k1 v1 ->
+  BloomKv k2 v2 ->
+  Bool
+eqBy2 eqK eqV x y =
+  let fx = filt x in
+  let fy = filt y in
+  if bloomFilter && (Filt.getFilter fx /= Filt.getFilter fy)
+  then False
+  else HS.eqBy (eqBy2Kv eqK eqV) (kvs x) (kvs y)
+{-# INLINE eqBy2 #-}
+
+-- | @'eqBy2' (==) (==)@
+instance (Eq k, Eq v) => Eq (BloomKv k v) where
+  (==) = eqBy2 (==) (==)
+  {-# INLINE (==) #-}
+
+-- | @'eqBy2' (==)@
+instance Eq k => Eq1 (BloomKv k) where
+  liftEq = eqBy2 (==)
+  {-# INLINE liftEq #-}
+
+-- | @'eqBy2'@
+instance Eq2 BloomKv where
+  liftEq2 = eqBy2
+  {-# INLINE liftEq2 #-}
+
+-- | Like 'liftCompare2', but without typeclass constraints
+ordBy2 ::
+  (k1 -> k2 -> Ordering) ->
+  (v1 -> v2 -> Ordering) ->
+  BloomKv k1 v1 ->
+  BloomKv k2 v2 ->
+  Ordering
+ordBy2 cmpK cmpV x y =
+  let fx = filt x in
+  let fy = filt y in
+  if bloomFilter
+  then
+    case compare (Filt.getFilter fx) (Filt.getFilter fy) of
+      EQ -> HS.ordBy (ordBy2Kv cmpK cmpV) (kvs x) (kvs y)
+      r -> r
+  else HS.ordBy (ordBy2Kv cmpK cmpV) (kvs x) (kvs y)
+{-# INLINE ordBy2 #-}
+
+-- | @'ordBy2' 'compare' 'compare'@
+instance (Ord k, Ord v) => Ord (BloomKv k v) where
+  compare = ordBy2 compare compare
+  {-# INLINE compare #-}
+
+-- | @'ordBy2' 'compare'@
+instance Ord k => Ord1 (BloomKv k) where
+  liftCompare = ordBy2 compare
+  {-# INLINE liftCompare #-}
+
+-- | @'ordBy2'@
+instance Ord2 BloomKv where
+  liftCompare2 = ordBy2
+  {-# INLINE liftCompare2 #-}
+
+-- | Hash instance - delegates to HashedSeq for O(1) hashing
+instance (Hashable k, Hashable v) => Hashable (BloomKv k v) where
+  hashWithSalt salt bkv = hashWithSalt salt (kvs bkv)
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | Threshold for disabling filter
 --
@@ -101,17 +193,17 @@ isEmpty = HS.null . kvs
 
 -- | Convert to list
 toList :: BloomKv k v -> [(k, v)]
-toList = P.map (\(Kv k v) -> (k, v)) . HS.toList . kvs
+toList = map (\(Kv k v) -> (k, v)) . HS.toList . kvs
 {-# INLINE toList #-}
 
 -- | Extract all keys
 keys :: BloomKv k v -> [k]
-keys = P.map kvKey . HS.toList . kvs
+keys = map kvKey . HS.toList . kvs
 {-# INLINE keys #-}
 
 -- | Extract all values
 values :: BloomKv k v -> [v]
-values = P.map kvValue . HS.toList . kvs
+values = map kvValue . HS.toList . kvs
 {-# INLINE values #-}
 
 -- | Insert key-value pair with combine function
@@ -126,20 +218,20 @@ insert ::
   v ->
   BloomKv k v
 insert combine (BloomKv f kvSeq) key newVal
-  | P.not bloomFilter = appendNew Filt.disabled kvSeq
+  | not bloomFilter = appendNew Filt.disabled kvSeq
   | f == Filt.disabled = appendNew Filt.disabled kvSeq
-  | P.not (Filt.mightContain f key) = appendNew newFilter kvSeq
-  | P.otherwise =
+  | not (Filt.mightContain f key) = appendNew newFilter kvSeq
+  | otherwise =
       case HS.findIndexR (\(Kv k _) -> k == key) kvSeq of
-        P.Just idx ->
+        Just idx ->
           let upd (Kv k oldV) = Kv k (combine oldV newVal) in
           BloomKv f (HS.adjust' upd idx kvSeq)
-        P.Nothing ->
+        Nothing ->
           appendNew newFilter kvSeq
   where
     newFilter =
       let newSize = HS.length kvSeq + 1
-      in if P.not bloomFilter || newSize > threshold
+      in if not bloomFilter || newSize > threshold
          then Filt.disabled
          else Filt.insert f key
 
@@ -149,35 +241,10 @@ insert combine (BloomKv f kvSeq) key newVal
 -- | Merge two maps with combine function
 merge :: (Eq k, Ord k, Hashable k, Hashable v) => (v -> v -> v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
 merge combine xs ys
-  | P.not bloomFilter = merged
+  | not bloomFilter = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
       BloomKv (Filt.union (filt xs) (filt ys)) (kvs xs HS.>< kvs ys)
-  | P.otherwise = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
+  | otherwise = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
   where merged = BloomKv Filt.disabled (kvs xs HS.>< kvs ys)
 {-# INLINE merge #-}
-
--- | Equality with custom comparisons
-eqBy :: (k -> k -> Bool) -> (v -> v -> Bool) -> BloomKv k v -> BloomKv k v -> Bool
-eqBy cmpK cmpV x y =
-  if filt x /= filt y
-  then P.False
-  else F.and (Seq.zipWith (\(Kv k1 v1) (Kv k2 v2) -> cmpK k1 k2 && cmpV v1 v2) (HS.toSeq (kvs x)) (HS.toSeq (kvs y)))
-
--- | Ordering with custom comparisons
-ordBy :: (k -> k -> Ordering) -> (v -> v -> Ordering) -> BloomKv k v -> BloomKv k v -> Ordering
-ordBy cmpK cmpV x y =
-  case P.compare (filt x) (filt y) of
-    P.LT -> P.LT
-    P.GT -> P.GT
-    P.EQ -> HS.ordBy cmpKv (kvs x) (kvs y)
-  where
-    cmpKv (Kv k1 v1) (Kv k2 v2) =
-      case cmpK k1 k2 of
-        P.LT -> P.LT
-        P.GT -> P.GT
-        P.EQ -> cmpV v1 v2
-
--- | Hash instance - delegates to HashedSeq for O(1) hashing
-instance (Hashable k, Hashable v) => Hashable (BloomKv k v) where
-  hashWithSalt salt bkv = hashWithSalt salt (kvs bkv)

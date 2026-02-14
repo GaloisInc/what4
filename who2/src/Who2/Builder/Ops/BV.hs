@@ -97,8 +97,15 @@ bvLit alloc w bv =
 {-# INLINE bvLit #-}
 
 bvAdd ::
-  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f) =>
-  1 <= w =>
+  ( 1 <= w
+  , HasBaseType (f (Expr t f))
+  , Eq (Expr t f (BT.BaseBVType w))
+  , Ord (Expr t f (BT.BaseBVType w))
+  , Hashable (Expr t f (BT.BaseBVType w))
+  , PC.HashableF (Expr t f)
+  , PC.OrdF (Expr t f)
+  , EV.HasBVViews f
+  ) =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
   Expr t f (BT.BaseBVType w) ->
@@ -178,7 +185,7 @@ bvAddBloom alloc x y
 
 -- Hash-consed bvAdd implementation
 bvAddHC ::
-  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f, E.HasNonce (Expr t f)) =>
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), PC.HashableF (Expr t f), PC.OrdF (Expr t f), EV.HasBVViews f, E.HasId (Expr t f (BT.BaseBVType w))) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
@@ -374,7 +381,7 @@ bvMulBloom alloc x y
 
 -- Hash-consed bvMul implementation
 bvMulHC ::
-  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), EV.HasBVViews f, E.HasNonce (Expr t f)) =>
+  (HasBaseType (f (Expr t f)), Eq (Expr t f (BT.BaseBVType w)), Ord (Expr t f (BT.BaseBVType w)), Hashable (Expr t f (BT.BaseBVType w)), EV.HasBVViews f, E.HasId (Expr t f (BT.BaseBVType w))) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
@@ -417,10 +424,11 @@ bvMulHC alloc x y
 
 bvAndBits ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
-  , HasBaseType (f (Expr t f))
   , EV.HasBVViews f
+  , HasBaseType (f (Expr t f))
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
+  , PC.TestEquality (f (Expr t f))
   ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
@@ -460,10 +468,11 @@ bvAndBits alloc x y
 -- Bloom-based implementation
 bvAndBitsBloom ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
-  , HasBaseType (f (Expr t f))
   , EV.HasBVViews f
+  , HasBaseType (f (Expr t f))
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
+  , PC.TestEquality (f (Expr t f))
   ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
@@ -513,7 +522,7 @@ bvAndBitsHC ::
   , EV.HasBVViews f
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
-  , E.HasNonce (Expr t f)
+  , E.HasId (Expr t f (BT.BaseBVType w))
   ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
@@ -557,13 +566,14 @@ bvAndBitsHC alloc x y
 {-# INLINE bvAndBitsHC #-}
 
 bvOrBits ::
-  ( Eq (f (Expr t f) (BT.BaseBVType w))
-  , HasBaseType (f (Expr t f))
+  ( 1 <= w
+  , Eq (f (Expr t f) (BT.BaseBVType w))
   , EV.HasBVViews f
+  , HasBaseType (f (Expr t f))
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
+  , PC.TestEquality (f (Expr t f))
   ) =>
-  1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
   Expr t f (BT.BaseBVType w) ->
   Expr t f (BT.BaseBVType w) ->
@@ -601,10 +611,11 @@ bvOrBits alloc x y
 -- Bloom-based implementation
 bvOrBitsBloom ::
   ( Eq (f (Expr t f) (BT.BaseBVType w))
-  , HasBaseType (f (Expr t f))
   , EV.HasBVViews f
+  , HasBaseType (f (Expr t f))
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
+  , PC.TestEquality (f (Expr t f))
   ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
@@ -654,7 +665,7 @@ bvOrBitsHC ::
   , EV.HasBVViews f
   , Hashable (Expr t f (BT.BaseBVType w))
   , PC.HashableF (f (Expr t f))
-  , E.HasNonce (Expr t f)
+  , E.HasId (Expr t f (BT.BaseBVType w))
   ) =>
   1 <= w =>
   (forall tp. EBV.BVExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->

@@ -18,7 +18,7 @@ module Who2.Expr
   , eHash
   , eAbsVal
   , HasBaseType(baseType)
-  , HasNonce(getNonce, NonceBrand)
+  , HasId(getId)
   , maxByHash
   , minByHash
   , pretty
@@ -82,17 +82,12 @@ class HasBaseType f where
 instance HasBaseType (f (Expr t f)) => HasBaseType (Expr t f) where
   baseType = baseType . eApp
 
--- | Typeclass for types that have a unique nonce identifier.
--- This is used by hash-consed data structures to key elements by nonce.
--- The 't' parameter is an associated type to avoid ambiguity.
-class HasNonce f where
-  type NonceBrand f :: Type
-  getNonce :: f tp -> Nonce (NonceBrand f) tp
+class HasId a where
+  getId :: a -> Int
 
-instance HasNonce (Expr t f) where
-  type NonceBrand (Expr t f) = t
-  getNonce = eId
-  {-# INLINE getNonce #-}
+instance HasId (Expr t f bt) where
+  getId = fromIntegral . indexValue . eId
+  {-# INLINE getId #-}
 
 instance
   ( Eq (f (Expr t f) tp)

@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
@@ -22,7 +24,7 @@ module Who2.Expr.BV
 
 import Data.Kind (Type)
 import Data.Hashable (hashWithSalt)
-import Data.Type.Equality (type (:~:)(..))
+import Data.Type.Equality (type (:~:)(Refl))
 
 import qualified Data.BitVector.Sized as BV
 import qualified Prettyprinter as PP
@@ -37,7 +39,6 @@ import qualified What4.SemiRing as SR
 
 import Who2.Expr (Expr, HasBaseType(baseType))
 import qualified Who2.Expr as E
-import qualified Who2.Expr.Bloom.Kv as BKv
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.SemiRing.Product as SRP
@@ -46,8 +47,52 @@ import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
 import qualified Who2.Expr.HashConsed.SRSum as HCSR
 import qualified Who2.Expr.HashConsed.SRProd as HCPR
 
--- | 'Polarizable' wrapper for bitvector expressions used in both 'BVAndBits' and 'BVOrBits'
+-- | 'Polarizable' wrapper for bitvector expressions
+--
+-- Used in both 'BVAndBits' and 'BVOrBits'.
 newtype BVExprWrapper f w = BVExprWrapper { unBVExprWrapper :: f (BT.BaseBVType w) }
+
+instance PC.TestEquality f => PC.TestEquality (BVExprWrapper f) where
+  testEquality (BVExprWrapper x) (BVExprWrapper y) =
+    case PC.testEquality x y of
+      Nothing -> Nothing
+      Just Refl -> Just Refl
+
+instance PC.OrdF f => PC.OrdF (BVExprWrapper f) where
+  compareF (BVExprWrapper x) (BVExprWrapper y) =
+    case PC.compareF x y of
+      PC.LTF -> PC.LTF
+      PC.GTF -> PC.GTF
+      PC.EQF -> PC.EQF
+
+deriving instance Show (f (BT.BaseBVType w)) => Show (BVExprWrapper f w)
+
+instance PC.TestEquality f => Eq (BVExprWrapper f w) where
+  x == y = PC.isJust (PC.testEquality x y)
+
+-- -- Manual Ord instance that works when both sides have the same width
+-- -- Used by the Template Haskell generated code
+-- instance (Ord (f (BT.BaseBVType w)), 1 <= w) => Ord (BVExprWrapper f w) where
+--   compare (BVExprWrapper x) (BVExprWrapper y) = compare x y
+
+-- -- Hashable instance
+instance (BT.TestEquality f, PC.HashableF f, 1 <= w) => PC.Hashable (BVExprWrapper f w) where
+  hashWithSalt s (BVExprWrapper expr) = PC.hashWithSaltF s expr
+
+-- Polarizable instance for BVExprWrapper
+instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (BVExprWrapper (E.Expr t f) w) where
+  polarity (BVExprWrapper expr) = case EV.asBVNotBits expr of
+    Just inner -> PBS.Negative (BVExprWrapper inner)
+    Nothing -> PBS.Positive (BVExprWrapper expr)
+  {-# INLINE polarity #-}
+
+-- TODO: Why necessary?
+-- Polarizable instance for Expr for hash-consed PolarizedExprSet
+instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (E.Expr t f (BT.BaseBVType w)) where
+  polarity expr = case EV.asBVNotBits expr of
+    Just inner -> PBS.Negative inner
+    Nothing -> PBS.Positive expr
+  {-# INLINE polarity #-}
 
 data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   BVLit ::
@@ -203,13 +248,13 @@ data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   BVAndBitsHC ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(PES.PolarizedExprSet f (BT.BaseBVType w)) ->
+    !(PES.PolarizedExprSet (f (BT.BaseBVType w))) ->
     BVExpr f (BT.BaseBVType w)
 
   BVOrBitsHC ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(PES.PolarizedExprSet f (BT.BaseBVType w)) ->
+    !(PES.PolarizedExprSet (f (BT.BaseBVType w))) ->
     BVExpr f (BT.BaseBVType w)
 
   -- Hash-consed BV arithmetic using SRSum/SRProd
@@ -267,233 +312,44 @@ width e = case baseType e of BT.BaseBVRepr w -> w
 ------------------------------------------------------------------------
 -- Helper functions for Template Haskell instances
 
--- TestEquality helpers
+testEq :: PC.TestEquality f => f x -> f y -> Bool
+testEq x y = PC.isJust (PC.testEquality x y)
+{-# INLINE testEq #-}
 
-testEqPolarizedBloomSeq ::
+viaEq ::
+  Eq a =>
+  a ->
+  a ->
+  Maybe (b :~: b)
+viaEq x y = if x == y then Just Refl else Nothing
+{-# INLINE viaEq #-}
+
+viaEqBy ::
   PC.TestEquality f =>
-  PBS.PolarizedBloomSeq (BVExprWrapper f w) ->
-  PBS.PolarizedBloomSeq (BVExprWrapper f w) ->
-  Maybe (w :~: w)
-testEqPolarizedBloomSeq x y =
-  if PBS.eqBy (\(BVExprWrapper u) (BVExprWrapper v) -> PC.isJust (PC.testEquality u v)) x y
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqPolarizedBloomSeq #-}
+  ((f x -> f x -> Bool) -> g f -> g f -> Bool) ->
+  g f ->
+  g f ->
+  Maybe (b :~: b)
+viaEqBy eqBy x y = if eqBy testEq x y then Just Refl else Nothing
+{-# INLINE viaEqBy #-}
 
-testEqSRSum ::
-  PC.TestEquality f =>
-  SRS.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  SRS.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  Maybe (w :~: w)
-testEqSRSum x y =
-  if BKv.eqBy (\u v -> PC.isJust (PC.testEquality u v)) (SR.eq (SRS.sumRepr x)) (SRS.sumMap x) (SRS.sumMap y)
-     && SR.eq (SRS.sumRepr x) (SRS.sumOffset x) (SRS.sumOffset y)
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqSRSum #-}
+viaOrd ::
+  Ord a =>
+  a ->
+  a ->
+  PC.OrderingF b b
+viaOrd x y = PC.fromOrdering (compare x y)
+{-# INLINE viaOrd #-}
 
-testEqSRProd ::
-  PC.TestEquality f =>
-  SRP.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  SRP.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  Maybe (w :~: w)
-testEqSRProd x y =
-  if BKv.eqBy (\u v -> PC.isJust (PC.testEquality u v)) (==) (SRP.prodMap x) (SRP.prodMap y)
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqSRProd #-}
-
-testEqPolarizedExprSet ::
-  PC.TestEquality f =>
-  PES.PolarizedExprSet f (BT.BaseBVType w) ->
-  PES.PolarizedExprSet f (BT.BaseBVType w) ->
-  Maybe (w :~: w)
-testEqPolarizedExprSet x y =
-  if PES.eqBy (\u v -> PC.isJust (PC.testEquality u v)) x y
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqPolarizedExprSet #-}
-
-testEqHCSRSum ::
-  PC.TestEquality f =>
-  HCSR.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  HCSR.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  Maybe (w :~: w)
-testEqHCSRSum x y =
-  if SR.eq (HCSR.sumRepr x) (HCSR.sumOffset x) (HCSR.sumOffset y)
-     && all (\((k1,v1),(k2,v2)) -> PC.isJust (PC.testEquality k1 k2) && SR.eq (HCSR.sumRepr x) v1 v2)
-            (zip (HCSR.toTerms x) (HCSR.toTerms y))
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqHCSRSum #-}
-
-testEqHCSRProd ::
-  PC.TestEquality f =>
-  HCPR.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  HCPR.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  Maybe (w :~: w)
-testEqHCSRProd x y =
-  if HCPR.prodCoeff x == HCPR.prodCoeff y
-     && all (\((k1,v1),(k2,v2)) -> PC.isJust (PC.testEquality k1 k2) && v1 == v2)
-            (zip (HCPR.toTerms x) (HCPR.toTerms y))
-  then Just PC.Refl
-  else Nothing
-{-# INLINE testEqHCSRProd #-}
-
--- OrdF helpers
-
-comparePolarizedBloomSeq ::
+viaOrdBy ::
   PC.OrdF f =>
-  PBS.PolarizedBloomSeq (BVExprWrapper f w) ->
-  PBS.PolarizedBloomSeq (BVExprWrapper f w) ->
-  PC.OrderingF w w
-comparePolarizedBloomSeq pbs1 pbs2 =
-  PC.fromOrdering (PBS.ordBy (\(BVExprWrapper u) (BVExprWrapper v) -> PC.toOrdering (PC.compareF u v)) pbs1 pbs2)
-{-# INLINE comparePolarizedBloomSeq #-}
-
-compareSRSum ::
-  PC.OrdF f =>
-  SRS.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  SRS.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  PC.OrderingF w w
-compareSRSum x y =
-  case SR.sr_compare (SRS.sumRepr x) (SRS.sumOffset x) (SRS.sumOffset y) of
-    EQ -> PC.fromOrdering (BKv.ordBy (\u v -> PC.toOrdering (PC.compareF u v))
-                                     (SR.sr_compare (SRS.sumRepr x))
-                                     (SRS.sumMap x)
-                                     (SRS.sumMap y))
-    LT -> PC.LTF
-    GT -> PC.GTF
-{-# INLINE compareSRSum #-}
-
-compareSRProd ::
-  PC.OrdF f =>
-  SRP.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  SRP.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  PC.OrderingF w w
-compareSRProd x y =
-  PC.fromOrdering (BKv.ordBy (\u v -> PC.toOrdering (PC.compareF u v)) compare (SRP.prodMap x) (SRP.prodMap y))
-{-# INLINE compareSRProd #-}
-
-comparePolarizedExprSet ::
-  PC.OrdF f =>
-  PES.PolarizedExprSet f (BT.BaseBVType w) ->
-  PES.PolarizedExprSet f (BT.BaseBVType w) ->
-  PC.OrderingF w w
-comparePolarizedExprSet pset1 pset2 =
-  PC.fromOrdering (PES.ordBy (\u v -> PC.toOrdering (PC.compareF u v)) pset1 pset2)
-{-# INLINE comparePolarizedExprSet #-}
-
-compareHCSRSum ::
-  PC.OrdF f =>
-  HCSR.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  HCSR.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  PC.OrderingF w w
-compareHCSRSum x y =
-  let ordByTerms _ [] [] = EQ
-      ordByTerms _ [] _  = LT
-      ordByTerms _ _  [] = GT
-      ordByTerms f (a:as) (b:bs) =
-        case f a b of
-          LT -> LT
-          GT -> GT
-          EQ -> ordByTerms f as bs
-  in case SR.sr_compare (HCSR.sumRepr x) (HCSR.sumOffset x) (HCSR.sumOffset y) of
-       EQ -> PC.fromOrdering (ordByTerms (\(k1,v1) (k2,v2) ->
-                                            case PC.toOrdering (PC.compareF k1 k2) of
-                                              LT -> LT
-                                              GT -> GT
-                                              EQ -> SR.sr_compare (HCSR.sumRepr x) v1 v2)
-                                         (HCSR.toTerms x)
-                                         (HCSR.toTerms y))
-       LT -> PC.LTF
-       GT -> PC.GTF
-{-# INLINE compareHCSRSum #-}
-
-compareHCSRProd ::
-  PC.OrdF f =>
-  HCPR.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  HCPR.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  PC.OrderingF w w
-compareHCSRProd x y =
-  let ordByTerms _ [] [] = EQ
-      ordByTerms _ [] _  = LT
-      ordByTerms _ _  [] = GT
-      ordByTerms f (a:as) (b:bs) =
-        case f a b of
-          LT -> LT
-          GT -> GT
-          EQ -> ordByTerms f as bs
-  in PC.fromOrdering (ordByTerms (\(k1,v1) (k2,v2) ->
-                                    case PC.toOrdering (PC.compareF k1 k2) of
-                                      LT -> LT
-                                      GT -> GT
-                                      EQ -> compare v1 v2)
-                                 (HCPR.toTerms x)
-                                 (HCPR.toTerms y))
-{-# INLINE compareHCSRProd #-}
-
--- HashableF helpers
-
-hashPolarizedBloomSeq ::
-  PC.HashableF f =>
-  Int ->
-  PBS.PolarizedBloomSeq (BVExprWrapper f w) ->
-  Int
-hashPolarizedBloomSeq s pbs =
-  PBS.hashPBSWith (\s' (BVExprWrapper e) -> PC.hashWithSaltF s' e) s pbs
-{-# INLINE hashPolarizedBloomSeq #-}
-
-hashSRSum ::
-  PC.HashableF f =>
-  Int ->
-  SRS.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  Int
-hashSRSum s ws =
-  let s' = foldl (\s'' (k, v) -> SR.sr_hashWithSalt (SRS.sumRepr ws) (PC.hashWithSaltF s'' k) v)
-                s
-                (BKv.toList (SRS.sumMap ws))
-  in SR.sr_hashWithSalt (SRS.sumRepr ws) s' (SRS.sumOffset ws)
-{-# INLINE hashSRSum #-}
-
-hashSRProd ::
-  PC.HashableF f =>
-  Int ->
-  SRP.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  Int
-hashSRProd s wp =
-  foldl (\s' (k, v) -> PC.hashWithSaltF (hashWithSalt s' v) k) s (BKv.toList (SRP.prodMap wp))
-{-# INLINE hashSRProd #-}
-
-hashPolarizedExprSet ::
-  PC.HashableF f =>
-  Int ->
-  PES.PolarizedExprSet f (BT.BaseBVType w) ->
-  Int
-hashPolarizedExprSet s pset =
-  PES.hashPESWith (\s' e -> PC.hashWithSaltF s' e) s pset
-{-# INLINE hashPolarizedExprSet #-}
-
-hashHCSRSum ::
-  PC.HashableF f =>
-  Int ->
-  HCSR.SRSum (SR.SemiRingBV SR.BVArith w) f ->
-  Int
-hashHCSRSum s ws =
-  let s' = foldl (\s'' (k, v) -> SR.sr_hashWithSalt (HCSR.sumRepr ws) (PC.hashWithSaltF s'' k) v)
-                s
-                (HCSR.toTerms ws)
-  in SR.sr_hashWithSalt (HCSR.sumRepr ws) s' (HCSR.sumOffset ws)
-{-# INLINE hashHCSRSum #-}
-
-hashHCSRProd ::
-  PC.HashableF f =>
-  Int ->
-  HCPR.SRProd (SR.SemiRingBV SR.BVBits w) f ->
-  Int
-hashHCSRProd s wp =
-  foldl (\s' (k, v) -> PC.hashWithSaltF (hashWithSalt s' v) k) s (HCPR.toTerms wp)
-{-# INLINE hashHCSRProd #-}
+  ((f x -> f y -> Ordering) -> a -> b -> Ordering) ->
+  a ->
+  b ->
+  PC.OrderingF c c
+viaOrdBy cmp x y =
+  PC.fromOrdering (cmp (\u v -> PC.toOrdering (PC.compareF u v)) x y)
+{-# INLINE viaOrdBy #-}
 
 $(return [])
 
@@ -501,14 +357,30 @@ instance PC.TestEquality f => PC.TestEquality (BVExpr f) where
   testEquality =
     $(PTH.structuralTypeEquality
        [t|BVExpr|]
-       [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
-       , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.testEquality|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|testEqPolarizedBloomSeq|])
-       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|testEqSRSum|])
-       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|testEqSRProd|])
-       , (PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|testEqPolarizedExprSet|])
-       , (PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|testEqHCSRSum|])
-       , (PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|testEqHCSRProd|])
+       [ ( PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType
+         , [|PC.testEquality|]
+         )
+       , ( PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType
+         , [|PC.testEquality|]
+         )
+       , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType)
+         , [|viaEq|]
+         )
+       , ( PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaEqBy SRS.eqBy|]
+         )
+       , ( PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaEqBy SRP.eqBy|]
+         )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaEq|]
+         )
+       , ( PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaEqBy HCSR.eqBy|]
+         )
+       , ( PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaEqBy HCPR.eqBy|]
+         )
        ]
      )
 
@@ -516,57 +388,64 @@ instance PC.OrdF f => PC.OrdF (BVExpr f) where
   compareF =
     $(PTH.structuralTypeOrd
        [t|BVExpr|]
-       [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
-       , (PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType, [|PC.compareF|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|comparePolarizedBloomSeq|])
-       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|compareSRSum|])
-       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|compareSRProd|])
-       , (PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|comparePolarizedExprSet|])
-       , (PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|compareHCSRSum|])
-       , (PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|compareHCSRProd|])
+       [ ( PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType
+         , [|PC.compareF|]
+         )
+       , ( PTH.ConType [t|NatRepr|] `PTH.TypeApp` PTH.AnyType
+         , [|PC.compareF|]
+         )
+       , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType)
+         , [|viaOrdBy PBS.ordBy|]
+         )
+       , ( PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaOrdBy SRS.ordBy|]
+         )
+       , ( PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaOrdBy SRP.ordBy|]
+         )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType
+         , [|viaOrd|]
+         )
+       , ( PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaOrdBy HCSR.ordBy|]
+         )
+       , ( PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|viaOrdBy HCPR.ordBy|]
+         )
        ]
      )
 
-instance PC.HashableF f => PC.HashableF (BVExpr f) where
+instance
+  ( PC.HashableF f
+  , PC.TestEquality f
+  , forall w. (1 <= w) => PC.Hashable (f (BT.BaseBVType w))
+  ) => PC.HashableF (BVExpr f) where
   hashWithSaltF =
     $(PTH.structuralHashWithSalt
        [t|BVExpr|]
-       [ (PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType, [|PC.hashWithSaltF|])
-       , (PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType), [|hashPolarizedBloomSeq|])
-       , (PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|hashSRSum|])
-       , (PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|hashSRProd|])
-       , (PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|hashPolarizedExprSet|])
-       , (PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|hashHCSRSum|])
-       , (PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType, [|hashHCSRProd|])
+       [ ( PTH.DataArg 0 `PTH.TypeApp` PTH.AnyType
+         , [|PC.hashWithSaltF|]
+         )
+       , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BVExprWrapper|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType)
+         , [|hashWithSalt|]
+         )
+       , ( PTH.ConType [t|SRS.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
+         )
+       , ( PTH.ConType [t|SRP.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
+         )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
+         )
+       , ( PTH.ConType [t|HCSR.SRSum|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
+         )
+       , ( PTH.ConType [t|HCPR.SRProd|] `PTH.TypeApp` PTH.AnyType `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
+         )
        ]
      )
-
--- Derive instances for BVExprWrapper via StandaloneDeriving
-deriving instance Eq (f (BT.BaseBVType w)) => Eq (BVExprWrapper f w)
-deriving instance Show (f (BT.BaseBVType w)) => Show (BVExprWrapper f w)
-
--- Manual Ord instance that works when both sides have the same width
--- Used by the Template Haskell generated code
-instance (Ord (f (BT.BaseBVType w)), 1 <= w) => Ord (BVExprWrapper f w) where
-  compare (BVExprWrapper x) (BVExprWrapper y) = compare x y
-
--- Hashable instance
-instance (Eq (f (BT.BaseBVType w)), PC.HashableF f, 1 <= w) => PC.Hashable (BVExprWrapper f w) where
-  hashWithSalt s (BVExprWrapper expr) = PC.hashWithSaltF s expr
-
--- Polarizable instance for BVExprWrapper
-instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (BVExprWrapper (E.Expr t f) w) where
-  polarity (BVExprWrapper expr) = case EV.asBVNotBits expr of
-    Just inner -> PBS.Negative (BVExprWrapper inner)
-    Nothing -> PBS.Positive (BVExprWrapper expr)
-  {-# INLINE polarity #-}
-
--- Polarizable instance for Expr for hash-consed PolarizedExprSet
-instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (E.Expr t f (BT.BaseBVType w)) where
-  polarity expr = case EV.asBVNotBits expr of
-    Just inner -> PBS.Negative inner
-    Nothing -> PBS.Positive expr
-  {-# INLINE polarity #-}
 
 -- | Pretty-print a bitvector expression given a pretty-printer for the term functor
 pretty :: (forall tp'. f tp' -> PP.Doc ann) -> BVExpr f tp -> PP.Doc ann

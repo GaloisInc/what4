@@ -64,10 +64,10 @@ class HasBVViews f where
   -- Hash-consed constructor views
 
   -- | View: is this BVAndBitsHC? Returns the hash-consed polarized expression set.
-  asBVAndBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f) (BT.BaseBVType w))
+  asBVAndBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f (BT.BaseBVType w)))
 
   -- | View: is this BVOrBitsHC? Returns the hash-consed polarized expression set.
-  asBVOrBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f) (BT.BaseBVType w))
+  asBVOrBitsHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (PES.PolarizedExprSet (E.Expr t f (BT.BaseBVType w)))
 
   -- | View: is this BVAddHC? Returns the hash-consed weighted sum.
   asBVAddHC :: (1 <= w) => E.Expr t f (BT.BaseBVType w) -> Maybe (HCSR.SRSum (SR.SemiRingBV SR.BVArith w) (E.Expr t f))

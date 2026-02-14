@@ -6,7 +6,9 @@
 -- This is a normalizing datastructure for associative, idempotent operations,
 -- see "What4.Expr.App" for an overview of such data structures.
 module Who2.Expr.Bloom.Seq
-  ( BloomSeq(..)
+  ( BloomSeq
+  , eqBy
+  , ordBy
   , empty
   , singleton
   , fromTwo
@@ -20,16 +22,15 @@ module Who2.Expr.Bloom.Seq
   , insert
   , insertIfNotPresent
   , merge
-  , eqBy
-  , ordBy
 
   , -- * Configuration
     threshold
   ) where
 
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
+import qualified Data.Foldable as Fold
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Filter as Filt
 import Who2.Expr.Filter (Filter)
@@ -37,7 +38,9 @@ import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 import Who2.Config (bloomFilter)
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | A fast set-like data-structure.
 --
@@ -63,15 +66,71 @@ data BloomSeq a = BloomSeq
   { filt :: {-# UNPACK #-} !(Filter a)
   , elems :: !(HS.HashedSeq a)
   }
-  deriving (Eq, Ord, Show)
+  deriving (Show)
 
 instance Foldable BloomSeq where
-  foldMap f = foldMap f . elems
+  foldMap f = Fold.foldMap f . elems
   {-# INLINE foldMap #-}
 
 -- | Hash instance - delegates to HashedSeq for O(1) hashing
 instance Hashable a => Hashable (BloomSeq a) where
   hashWithSalt salt bs = hashWithSalt salt (elems bs)
+
+-- | Like 'liftEq', but without typeclass constraints
+eqBy ::
+  (a1 -> a2 -> Bool) ->
+  BloomSeq a1 ->
+  BloomSeq a2 ->
+  Bool
+eqBy eq x y =
+  let fx = filt x in
+  let fy = filt y in
+  if bloomFilter && (Filt.getFilter fx /= Filt.getFilter fy)
+  then False
+  else HS.eqBy eq (elems x) (elems y)
+{-# INLINE eqBy #-}
+
+-- | @'eqBy' (==)@
+instance Eq a => Eq (BloomSeq a) where
+  (==) = eqBy (==)
+  {-# INLINE (==) #-}
+
+-- | @'eqBy'@
+instance Eq1 BloomSeq where
+  liftEq = eqBy
+  {-# INLINE liftEq #-}
+
+-- | Like 'liftCompare', but without typeclass constraints
+ordBy ::
+  (a1 -> a2 -> Ordering) ->
+  BloomSeq a1 ->
+  BloomSeq a2 ->
+  Ordering
+ordBy cmp x y =
+  let fx = filt x in
+  let fy = filt y in
+  if bloomFilter
+  then
+    case compare (Filt.getFilter fx) (Filt.getFilter fy) of
+      EQ -> HS.ordBy cmp (elems x) (elems y)
+      r -> r
+  else HS.ordBy cmp (elems x) (elems y)
+{-# INLINE ordBy #-}
+
+-- | @'ordBy' 'compare'@
+instance Ord a => Ord (BloomSeq a) where
+  compare = ordBy compare
+  {-# INLINE compare #-}
+
+-- | @'ordBy'@
+instance Ord1 BloomSeq where
+  liftCompare = ordBy
+  {-# INLINE liftCompare #-}
+
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | Threshold for disabling filter.
 --
@@ -125,9 +184,9 @@ toList = F.toList . elems
 -- | Check membership using filter then linear search if needed
 _contains :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 _contains (BloomSeq f es) x
-  | not bloomFilter = x `elem` es
+  | not bloomFilter = x `Fold.elem` es
   | not (Filt.mightContain f x) = False
-  | otherwise = x `elem` es
+  | otherwise = x `Fold.elem` es
 {-# INLINE _contains #-}
 
 -- | Check membership using filter but only search if under threshold
@@ -135,7 +194,7 @@ containsFast :: (Eq a, Hashable a) => BloomSeq a -> a -> Bool
 containsFast (BloomSeq f es) x
   | not bloomFilter = False
   | f == Filt.disabled = False
-  | Filt.mightContain f x = x `elem` es
+  | Filt.mightContain f x = x `Fold.elem` es
   | otherwise = False
 {-# INLINE containsFast #-}
 
@@ -178,16 +237,3 @@ merge xs ys
   | otherwise = F.foldl' insertIfNotPresent xs (elems ys)
   where merged = BloomSeq Filt.disabled (elems xs HS.>< elems ys)
 {-# INLINE merge #-}
-
-eqBy :: (a -> a -> Bool) -> BloomSeq a -> BloomSeq a -> Bool
-eqBy cmp x y =
-  if filt x /= filt y
-  then False
-  else and (Seq.zipWith cmp (HS.toSeq (elems x)) (HS.toSeq (elems y)))
-
-ordBy :: (a -> a -> Ordering) -> BloomSeq a -> BloomSeq a -> Ordering
-ordBy cmp x y =
-  case compare (filt x) (filt y) of
-    LT -> LT
-    GT -> GT
-    EQ -> HS.ordBy cmp (elems x) (elems y)

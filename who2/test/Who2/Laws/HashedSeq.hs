@@ -11,6 +11,7 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Data.Functor.Classes (Ord1(liftCompare))
 
 import qualified Who2.Expr.Bloom.HashedSeq as HS
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
@@ -31,14 +32,14 @@ genHashedSeqInt = do
 propHashedSeqOrdByReflexive :: Property
 propHashedSeqOrdByReflexive = H.property $ do
   hs <- H.forAll genHashedSeqInt
-  HS.ordBy compare hs hs H.=== EQ
+  liftCompare compare hs hs H.=== EQ
 
 propHashedSeqOrdByAntisymmetric :: Property
 propHashedSeqOrdByAntisymmetric = H.property $ do
   hs1 <- H.forAll genHashedSeqInt
   hs2 <- H.forAll genHashedSeqInt
-  let ord1 = HS.ordBy compare hs1 hs2
-  let ord2 = HS.ordBy compare hs2 hs1
+  let ord1 = liftCompare compare hs1 hs2
+  let ord2 = liftCompare compare hs2 hs1
   unless (checkOrdAntisymmetry ord1 ord2) H.failure
 
 propHashedSeqOrdByTransitive :: Property
@@ -46,7 +47,7 @@ propHashedSeqOrdByTransitive = H.property $ do
   hs1 <- H.forAll genHashedSeqInt
   hs2 <- H.forAll genHashedSeqInt
   hs3 <- H.forAll genHashedSeqInt
-  let ord12 = HS.ordBy compare hs1 hs2
-  let ord23 = HS.ordBy compare hs2 hs3
-  let ord13 = HS.ordBy compare hs1 hs3
+  let ord12 = liftCompare compare hs1 hs2
+  let ord23 = liftCompare compare hs2 hs3
+  let ord13 = liftCompare compare hs1 hs3
   unless (checkOrdTransitivity ord12 ord23 ord13) H.failure

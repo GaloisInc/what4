@@ -11,6 +11,11 @@
 -- | Sums over semirings using BloomKv for efficient small maps
 module Who2.Expr.SemiRing.Sum
   ( SRSum(..)
+  , eqBy
+  , eqBy2
+  , ordBy
+  , ordBy2
+  , hashWith
   , constant
   , var
   , scaledVar
@@ -26,22 +31,24 @@ module Who2.Expr.SemiRing.Sum
   , isZero
   ) where
 
-import qualified Prelude as P
-import Prelude (Eq((==)), Ord(compare), Show(show), Bool, Maybe(Just, Nothing), (.), otherwise)
 import Data.Hashable (Hashable(hash, hashWithSalt))
-import Data.Bits (xor)
-import qualified Data.Parameterized.Classes as PC
+import Data.Kind (Type)
 
 import qualified What4.SemiRing as SR
+import qualified What4.BaseTypes as BT
 
 import qualified Who2.Expr.Bloom.Kv as BKv
+
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | A sum of semiring values using BloomKv.
 --
 -- Represents: offset + sum_i (coeff_i * term_i)
 --
 -- INVARIANT: Coefficients should not be zero (maintained by smart constructors)
-data SRSum (sr :: SR.SemiRing) f = SRSum
+data SRSum (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRSum
   { sumMap :: !(BKv.BloomKv (f (SR.SemiRingBase sr)) (SR.Coefficient sr))
     -- ^ Map from terms to their coefficients
   , sumOffset :: !(SR.Coefficient sr)
@@ -52,39 +59,83 @@ data SRSum (sr :: SR.SemiRing) f = SRSum
 
 -- Note: Manual Show instance to avoid needing Show for SemiRingRepr
 instance (Show (f (SR.SemiRingBase sr)), Show (SR.Coefficient sr)) => Show (SRSum sr f) where
-  show ws = "SRSum { sumMap = " P.++ P.show (sumMap ws) P.++
-            ", sumOffset = " P.++ P.show (sumOffset ws) P.++ " }"
+  show ws = "SRSum { sumMap = " ++ show (sumMap ws) ++
+            ", sumOffset = " ++ show (sumOffset ws) ++ " }"
 
-instance
-  ( PC.TestEquality f
-  , Eq (f (SR.SemiRingBase sr))
-  , Hashable (f (SR.SemiRingBase sr))
-  , Hashable (SR.Coefficient sr)
-  ) => Eq (SRSum sr f) where
-  ws1 == ws2 =
-    SR.eq (sumRepr ws1) (sumOffset ws1) (sumOffset ws2)
-    P.&& BKv.eqBy (==) (SR.eq (sumRepr ws1)) (sumMap ws1) (sumMap ws2)
+eqBy2 ::
+  (SR.Coefficient sr -> SR.Coefficient sr -> Bool) ->
+  (f (SR.SemiRingBase sr) -> f (SR.SemiRingBase sr) -> Bool) ->
+  SRSum sr f ->
+  SRSum sr f ->
+  Bool
+eqBy2 eqCoeff eqTerm x y =
+  eqCoeff (sumOffset x) (sumOffset y)
+  && BKv.eqBy2 eqTerm eqCoeff (sumMap x) (sumMap y)
+{-# INLINE eqBy2 #-}
 
+-- | Like 'liftEq', but without typeclass constraints (uses SR.eq for coefficient comparison)
+eqBy ::
+  (f (SR.SemiRingBase sr) -> f (SR.SemiRingBase sr) -> Bool) ->
+  SRSum sr f ->
+  SRSum sr f ->
+  Bool
+eqBy eqTerm x y = eqBy2 (SR.eq (sumRepr x)) eqTerm x y
+{-# INLINE eqBy #-}
+
+-- | @'eqBy' (==)@
+instance Eq (f (SR.SemiRingBase sr)) => Eq (SRSum sr f) where
+  x == y = eqBy (==) x y
+
+ordBy2 ::
+  (SR.Coefficient sr -> SR.Coefficient sr -> Ordering) ->
+  (f (SR.SemiRingBase sr) -> f (SR.SemiRingBase sr) -> Ordering) ->
+  SRSum sr f ->
+  SRSum sr f ->
+  Ordering
+ordBy2 cmpCoeff cmpTerm x y =
+  case cmpCoeff (sumOffset x) (sumOffset y) of
+    EQ -> BKv.ordBy2 cmpTerm cmpCoeff (sumMap x) (sumMap y)
+    c -> c
+{-# INLINE ordBy2 #-}
+
+-- | Like 'liftCompare', but without typeclass constraints (uses SR.compare for coefficient comparison)
+ordBy ::
+  (f (SR.SemiRingBase sr) -> f (SR.SemiRingBase sr) -> Ordering) ->
+  SRSum sr f ->
+  SRSum sr f ->
+  Ordering
+ordBy cmpTerm x y = ordBy2 (SR.sr_compare (sumRepr x)) cmpTerm x y
+{-# INLINE ordBy #-}
+
+-- | @'ordBy' 'compare'@
 instance
-  ( PC.TestEquality f
-  , Ord (f (SR.SemiRingBase sr))
+  ( Ord (f (SR.SemiRingBase sr))
   , Ord (SR.Coefficient sr)
-  , Hashable (f (SR.SemiRingBase sr))
-  , Hashable (SR.Coefficient sr)
   ) => Ord (SRSum sr f) where
-  compare ws1 ws2 =
-    case P.compare (sumOffset ws1) (sumOffset ws2) of
-      P.EQ -> BKv.ordBy compare (SR.sr_compare (sumRepr ws1)) (sumMap ws1) (sumMap ws2)
-      c -> c
+  compare = ordBy compare
+
+hashWith ::
+  Hashable (SR.Coefficient sr) =>
+  (BKv.BloomKv (f (SR.SemiRingBase sr)) (SR.Coefficient sr) -> Int) ->
+  Int ->
+  SRSum sr f ->
+  Int
+hashWith hashMap salt x =
+  hashMap (sumMap x) `hashWithSalt` salt `hashWithSalt` sumOffset x
+{-# INLINE hashWith #-}
 
 instance
-  ( PC.TestEquality f
-  , PC.HashableF f
-  , Hashable (f (SR.SemiRingBase sr))
+  ( Hashable (f (SR.SemiRingBase sr))
   , Hashable (SR.Coefficient sr)
   ) => Hashable (SRSum sr f) where
   hash ws = hash (sumOffset ws) `hashWithSalt` hash (sumMap ws)
-  hashWithSalt salt ws = salt `xor` hash ws
+  {-# INLINE hash #-}
+  hashWithSalt salt = hashWith hash salt
+  {-# INLINE hashWithSalt #-}
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | Create a constant sum
 constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRSum sr f
@@ -141,7 +192,7 @@ asWeightedVar ws
 -- | Check if the sum is zero
 isZero :: SRSum sr f -> Bool
 isZero ws =
-  BKv.isEmpty (sumMap ws) P.&& SR.eq (sumRepr ws) (sumOffset ws) (SR.zero (sumRepr ws))
+  BKv.isEmpty (sumMap ws) && SR.eq (sumRepr ws) (sumOffset ws) (SR.zero (sumRepr ws))
 
 -- | Add two sums
 add ::

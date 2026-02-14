@@ -11,6 +11,7 @@ module Who2.Laws.PolarizedBloomSeq
   ) where
 
 import Control.Monad (unless)
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
 import Hedgehog (Property)
 import qualified Hedgehog as H
@@ -45,14 +46,14 @@ instance PBS.Polarizable Int where
 propPolarizedBloomSeqEqByReflexive :: Property
 propPolarizedBloomSeqEqByReflexive = H.property $ do
   pbs <- H.forAll genPolarizedBloomSeqInt
-  H.assert $ PBS.eqBy (==) pbs pbs
+  H.assert $ liftEq (==) pbs pbs
 
 propPolarizedBloomSeqEqBySymmetric :: Property
 propPolarizedBloomSeqEqBySymmetric = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let eq1 = PBS.eqBy (==) pbs1 pbs2
-  let eq2 = PBS.eqBy (==) pbs2 pbs1
+  let eq1 = liftEq (==) pbs1 pbs2
+  let eq2 = liftEq (==) pbs2 pbs1
   eq1 H.=== eq2
 
 propPolarizedBloomSeqEqByTransitive :: Property
@@ -60,9 +61,9 @@ propPolarizedBloomSeqEqByTransitive = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   pbs3 <- H.forAll genPolarizedBloomSeqInt
-  let eq12 = PBS.eqBy (==) pbs1 pbs2
-  let eq23 = PBS.eqBy (==) pbs2 pbs3
-  let eq13 = PBS.eqBy (==) pbs1 pbs3
+  let eq12 = liftEq (==) pbs1 pbs2
+  let eq23 = liftEq (==) pbs2 pbs3
+  let eq13 = liftEq (==) pbs1 pbs3
   unless (not eq12 || not eq23 || eq13) H.failure
 
 -------------------------------------------------------------------------------
@@ -72,14 +73,14 @@ propPolarizedBloomSeqEqByTransitive = H.property $ do
 propPolarizedBloomSeqOrdByReflexive :: Property
 propPolarizedBloomSeqOrdByReflexive = H.property $ do
   pbs <- H.forAll genPolarizedBloomSeqInt
-  PBS.ordBy compare pbs pbs H.=== EQ
+  liftCompare compare pbs pbs H.=== EQ
 
 propPolarizedBloomSeqOrdByAntisymmetric :: Property
 propPolarizedBloomSeqOrdByAntisymmetric = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let ord1 = PBS.ordBy compare pbs1 pbs2
-  let ord2 = PBS.ordBy compare pbs2 pbs1
+  let ord1 = liftCompare compare pbs1 pbs2
+  let ord2 = liftCompare compare pbs2 pbs1
   unless (checkOrdAntisymmetry ord1 ord2) H.failure
 
 propPolarizedBloomSeqOrdByTransitive :: Property
@@ -87,17 +88,17 @@ propPolarizedBloomSeqOrdByTransitive = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   pbs3 <- H.forAll genPolarizedBloomSeqInt
-  let ord12 = PBS.ordBy compare pbs1 pbs2
-  let ord23 = PBS.ordBy compare pbs2 pbs3
-  let ord13 = PBS.ordBy compare pbs1 pbs3
+  let ord12 = liftCompare compare pbs1 pbs2
+  let ord23 = liftCompare compare pbs2 pbs3
+  let ord13 = liftCompare compare pbs1 pbs3
   unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
 
 propPolarizedBloomSeqOrdByConsistentWithEqBy :: Property
 propPolarizedBloomSeqOrdByConsistentWithEqBy = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let eq = PBS.eqBy (==) pbs1 pbs2
-  let ord = PBS.ordBy compare pbs1 pbs2
+  let eq = liftEq (==) pbs1 pbs2
+  let ord = liftCompare compare pbs1 pbs2
   let result = case (eq, ord) of
         (True, EQ) -> True
         (False, LT) -> True

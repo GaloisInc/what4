@@ -11,6 +11,7 @@ module Who2.Laws.BloomKv
   ) where
 
 import Control.Monad (unless)
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
 import Hedgehog (Property)
 import qualified Hedgehog as H
@@ -41,14 +42,14 @@ genBloomKvIntString = do
 propBloomKvEqByReflexive :: Property
 propBloomKvEqByReflexive = H.property $ do
   bkv <- H.forAll genBloomKvIntString
-  H.assert $ BKv.eqBy (==) (==) bkv bkv
+  H.assert $ liftEq (==) bkv bkv
 
 propBloomKvEqBySymmetric :: Property
 propBloomKvEqBySymmetric = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let eq1 = BKv.eqBy (==) (==) bkv1 bkv2
-  let eq2 = BKv.eqBy (==) (==) bkv2 bkv1
+  let eq1 = liftEq (==) bkv1 bkv2
+  let eq2 = liftEq (==) bkv2 bkv1
   eq1 H.=== eq2
 
 propBloomKvEqByTransitive :: Property
@@ -56,9 +57,9 @@ propBloomKvEqByTransitive = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
   bkv3 <- H.forAll genBloomKvIntString
-  let eq12 = BKv.eqBy (==) (==) bkv1 bkv2
-  let eq23 = BKv.eqBy (==) (==) bkv2 bkv3
-  let eq13 = BKv.eqBy (==) (==) bkv1 bkv3
+  let eq12 = liftEq (==) bkv1 bkv2
+  let eq23 = liftEq (==) bkv2 bkv3
+  let eq13 = liftEq (==) bkv1 bkv3
   unless (not eq12 || not eq23 || eq13) H.failure
 
 -------------------------------------------------------------------------------
@@ -68,14 +69,14 @@ propBloomKvEqByTransitive = H.property $ do
 propBloomKvOrdByReflexive :: Property
 propBloomKvOrdByReflexive = H.property $ do
   bkv <- H.forAll genBloomKvIntString
-  BKv.ordBy compare compare bkv bkv H.=== EQ
+  liftCompare compare bkv bkv H.=== EQ
 
 propBloomKvOrdByAntisymmetric :: Property
 propBloomKvOrdByAntisymmetric = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let ord1 = BKv.ordBy compare compare bkv1 bkv2
-  let ord2 = BKv.ordBy compare compare bkv2 bkv1
+  let ord1 = liftCompare compare bkv1 bkv2
+  let ord2 = liftCompare compare bkv2 bkv1
   unless (checkOrdAntisymmetry ord1 ord2) H.failure
 
 propBloomKvOrdByTransitive :: Property
@@ -83,17 +84,17 @@ propBloomKvOrdByTransitive = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
   bkv3 <- H.forAll genBloomKvIntString
-  let ord12 = BKv.ordBy compare compare bkv1 bkv2
-  let ord23 = BKv.ordBy compare compare bkv2 bkv3
-  let ord13 = BKv.ordBy compare compare bkv1 bkv3
+  let ord12 = liftCompare compare bkv1 bkv2
+  let ord23 = liftCompare compare bkv2 bkv3
+  let ord13 = liftCompare compare bkv1 bkv3
   unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
 
 propBloomKvOrdByConsistentWithEqBy :: Property
 propBloomKvOrdByConsistentWithEqBy = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let eq = BKv.eqBy (==) (==) bkv1 bkv2
-  let ord = BKv.ordBy compare compare bkv1 bkv2
+  let eq = liftEq (==) bkv1 bkv2
+  let ord = liftCompare compare bkv1 bkv2
   let result = case (eq, ord) of
         (True, EQ) -> True
         (False, LT) -> True

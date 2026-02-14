@@ -2,7 +2,8 @@
 
 -- | Bloom filter for fast negative membership tests
 module Who2.Expr.Filter
-  ( Filter(..)
+  ( Filter
+  , getFilter
   , empty
   , disabled
   , insert
@@ -11,17 +12,23 @@ module Who2.Expr.Filter
   , union
   ) where
 
-import Data.Word (Word64)
 import Data.Bits (testBit, setBit, complement, (.&.), (.|.))
 import Data.Hashable (Hashable(hash))
+import Data.Word (Word64)
 
 import Who2.Config (bloomFilter)
 
----------------------------------------------------------------------
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | A 64-bit bloom filter for fast negative membership tests
 newtype Filter a = Filter { getFilter :: Word64 }
   deriving (Eq, Ord, Show)
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | Disabled filter (all 1 bits) - used when filter is turned off
 disabled :: Filter a

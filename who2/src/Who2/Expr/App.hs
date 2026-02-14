@@ -64,6 +64,7 @@ and the more \"algebraic\" structures built on top of them:
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
@@ -101,7 +102,12 @@ data App t (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   LogicApp :: EL.LogicExpr f tp -> App t f tp
   FnApp :: ESF.SymFn t f args ret -> Ctx.Assignment f args -> App t f ret
 
-instance (PC.HashableF f, TestEquality f, PC.Hashable (f BT.BaseBoolType)) => PC.HashableF (App t f) where
+instance
+  ( PC.HashableF f
+  , TestEquality f
+  , PC.Hashable (f BT.BaseBoolType)
+  , forall w. (1 BT.<= w) => PC.Hashable (f (BT.BaseBVType w))
+  ) => PC.HashableF (App t f) where
   hashWithSaltF salt =
     \case
       BoundVarApp x -> PC.hashWithSaltF salt x

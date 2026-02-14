@@ -1,10 +1,4 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Who2.Expr.HashConsed.ExprSet
   ( ExprSet
@@ -19,70 +13,90 @@ module Who2.Expr.HashConsed.ExprSet
   , union
   , intersection
   , difference
-  , null
+  , Who2.Expr.HashConsed.ExprSet.null
   ) where
 
-import Prelude hiding (null)
+import Data.Hashable (Hashable)
 import qualified Data.IntMap.Strict as IM
-import Data.Parameterized.Nonce (Nonce, indexValue)
-import Data.Kind (Type)
-import qualified What4.BaseTypes as BT
 
-import Who2.Expr (HasNonce(getNonce))
+import Who2.Expr (HasId(getId))
+
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | Set of elements with nonces, keyed by nonce indices.
-newtype ExprSet (f :: BT.BaseType -> Type) (tp :: BT.BaseType) =
-  ExprSet (IM.IntMap (f tp))
+newtype ExprSet a = ExprSet (IM.IntMap a)
+  deriving (Hashable, Show)
 
--- | Internal helper: Convert nonce to Int key
-nonceToKey :: forall k t (tp :: k). Nonce t tp -> Int
-nonceToKey = fromIntegral . indexValue
-{-# INLINE nonceToKey #-}
+-- | By keys only, safe due to hash-consing
+eq :: ExprSet a -> ExprSet b -> Bool
+eq (ExprSet x) (ExprSet y) = IM.keys x == IM.keys y
+{-# INLINE eq #-}
 
-empty :: ExprSet f tp
+-- | By keys only, safe due to hash-consing
+instance Eq (ExprSet a) where
+  (==) = eq
+  {-# INLINE (==) #-}
+
+-- | By keys only, safe due to hash-consing
+cmp :: ExprSet a -> ExprSet b -> Ordering
+cmp (ExprSet x) (ExprSet y) = compare (IM.keys x) (IM.keys y)
+{-# INLINE cmp #-}
+
+-- | By keys only, safe due to hash-consing
+instance Ord (ExprSet a) where
+  compare = cmp
+  {-# INLINE compare #-}
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
+
+empty :: ExprSet a
 empty = ExprSet IM.empty
 {-# INLINE empty #-}
 
-singleton :: HasNonce f => f tp -> ExprSet f tp
-singleton e = ExprSet (IM.singleton (nonceToKey (getNonce e)) e)
+singleton :: HasId a => a -> ExprSet a
+singleton e = ExprSet (IM.singleton (getId e) e)
 {-# INLINE singleton #-}
 
-insert :: HasNonce f => f tp -> ExprSet f tp -> ExprSet f tp
-insert e (ExprSet m) = ExprSet (IM.insert (nonceToKey (getNonce e)) e m)
+insert :: HasId a => a -> ExprSet a -> ExprSet a
+insert e (ExprSet m) = ExprSet (IM.insert (getId e) e m)
 {-# INLINE insert #-}
 
-member :: HasNonce f => f tp -> ExprSet f tp -> Bool
-member e (ExprSet m) = IM.member (nonceToKey (getNonce e)) m
+member :: HasId a => a -> ExprSet a -> Bool
+member e (ExprSet m) = IM.member (getId e) m
 {-# INLINE member #-}
 
-delete :: HasNonce f => f tp -> ExprSet f tp -> ExprSet f tp
-delete e (ExprSet m) = ExprSet (IM.delete (nonceToKey (getNonce e)) m)
+delete :: HasId a => a -> ExprSet a -> ExprSet a
+delete e (ExprSet m) = ExprSet (IM.delete (getId e) m)
 {-# INLINE delete #-}
 
-size :: ExprSet f tp -> Int
+size :: ExprSet a -> Int
 size (ExprSet m) = IM.size m
 {-# INLINE size #-}
 
-toList :: ExprSet f tp -> [f tp]
+toList :: ExprSet a -> [a]
 toList (ExprSet m) = IM.elems m
 {-# INLINE toList #-}
 
-fromList :: HasNonce f => [f tp] -> ExprSet f tp
-fromList es = ExprSet (IM.fromList [(nonceToKey (getNonce e), e) | e <- es])
+fromList :: HasId a => [a] -> ExprSet a
+fromList es = ExprSet (IM.fromList [(getId e, e) | e <- es])
 {-# INLINE fromList #-}
 
-union :: ExprSet f tp -> ExprSet f tp -> ExprSet f tp
+union :: ExprSet a -> ExprSet a -> ExprSet a
 union (ExprSet m1) (ExprSet m2) = ExprSet (IM.union m1 m2)
 {-# INLINE union #-}
 
-intersection :: ExprSet f tp -> ExprSet f tp -> ExprSet f tp
+intersection :: ExprSet a -> ExprSet a -> ExprSet a
 intersection (ExprSet m1) (ExprSet m2) = ExprSet (IM.intersection m1 m2)
 {-# INLINE intersection #-}
 
-difference :: ExprSet f tp -> ExprSet f tp -> ExprSet f tp
+difference :: ExprSet a -> ExprSet a -> ExprSet a
 difference (ExprSet m1) (ExprSet m2) = ExprSet (IM.difference m1 m2)
 {-# INLINE difference #-}
 
-null :: ExprSet f tp -> Bool
+null :: ExprSet a -> Bool
 null (ExprSet m) = IM.null m
 {-# INLINE null #-}

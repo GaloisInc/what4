@@ -24,6 +24,8 @@ module Who2.Expr.Bloom.Polarized
   , Polarized(..)
   , Polarizable(..)
   , Simplified(..)
+  , eqBy
+  , ordBy
   , insertIfNotPresent
   , fromTwo
   , merge
@@ -35,17 +37,20 @@ module Who2.Expr.Bloom.Polarized
   , allElems
   , simplify
   , isEmpty
-  , eqBy
-  , ordBy
   , hashPBSWith
   , hashPBS
   , hashPBSF
   ) where
 
+import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Kind (Type)
 import qualified Data.Parameterized.Classes as PC
 import qualified Who2.Expr.Bloom.Seq as BS
+
+------------------------------------------------------------------------
+-- Class
+------------------------------------------------------------------------
 
 -- | A value tagged with its polarity
 data Polarized a = Positive a | Negative a
@@ -57,12 +62,68 @@ class Polarizable a where
   -- For expressions: NotPred/BVNotBits return Negative inner, others return Positive self
   polarity :: a -> Polarized a
 
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
+
 -- | A sequence split by polarity
 data PolarizedBloomSeq a = PolarizedBloomSeq
   { positive :: !(BS.BloomSeq a)  -- ^ Positive polarity elements
   , negative :: !(BS.BloomSeq a)  -- ^ Negative polarity elements
   }
-  deriving (Eq, Ord, Show, Foldable)
+  deriving (Show, Foldable)
+
+-- | Like 'liftEq', but without typeclass constraints
+eqBy ::
+  (a1 -> a2 -> Bool) ->
+  PolarizedBloomSeq a1 ->
+  PolarizedBloomSeq a2 ->
+  Bool
+eqBy cmp x y =
+  BS.eqBy cmp (positive x) (positive y) && BS.eqBy cmp (negative x) (negative y)
+{-# INLINE eqBy #-}
+
+-- | @'eqBy' (==)@
+instance Eq a => Eq (PolarizedBloomSeq a) where
+  (==) = eqBy (==)
+  {-# INLINE (==) #-}
+
+-- | @'eqBy'@
+instance Eq1 PolarizedBloomSeq where
+  liftEq = eqBy
+  {-# INLINE liftEq #-}
+
+-- | Like 'liftCompare', but without typeclass constraints
+ordBy ::
+  (a1 -> a2 -> Ordering) ->
+  PolarizedBloomSeq a1 ->
+  PolarizedBloomSeq a2 ->
+  Ordering
+ordBy cmp x y =
+  case BS.ordBy cmp (positive x) (positive y) of
+    LT -> LT
+    GT -> GT
+    EQ -> BS.ordBy cmp (negative x) (negative y)
+{-# INLINE ordBy #-}
+
+-- | @'ordBy' 'compare'@
+instance Ord a => Ord (PolarizedBloomSeq a) where
+  compare = ordBy compare
+  {-# INLINE compare #-}
+
+-- | @'ordBy'@
+instance Ord1 PolarizedBloomSeq where
+  liftCompare = ordBy
+  {-# INLINE liftCompare #-}
+
+instance Hashable a => Hashable (PolarizedBloomSeq a) where
+  hashWithSalt salt pbs =
+    let salt' = hashWithSalt salt (positive pbs)
+    in hashWithSalt salt' (negative pbs)
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 data Simplified a
   = -- | An item and its complement were found
@@ -157,23 +218,6 @@ allElems pbs = toListPos pbs ++ toListNeg pbs
 isEmpty :: PolarizedBloomSeq a -> Bool
 isEmpty pbs = BS.isEmpty (positive pbs) && BS.isEmpty (negative pbs)
 {-# INLINE isEmpty #-}
-
-eqBy :: (a -> a -> Bool) -> PolarizedBloomSeq a -> PolarizedBloomSeq a -> Bool
-eqBy cmp x y =
-  BS.eqBy cmp (positive x) (positive y) &&
-    BS.eqBy cmp (negative x) (negative y)
-
-ordBy :: (a -> a -> Ordering) -> PolarizedBloomSeq a -> PolarizedBloomSeq a -> Ordering
-ordBy cmp x y =
-  case BS.ordBy cmp (positive x) (positive y) of
-    LT -> LT
-    GT -> GT
-    EQ -> BS.ordBy cmp (negative x) (negative y)
-
-instance Hashable a => Hashable (PolarizedBloomSeq a) where
-  hashWithSalt salt pbs =
-    let salt' = hashWithSalt salt (positive pbs)
-    in hashWithSalt salt' (negative pbs)
 
 -- | Hash a PolarizedBloomSeq using a custom hashing function
 hashPBSWith :: (Int -> a -> Int) -> Int -> PolarizedBloomSeq a -> Int

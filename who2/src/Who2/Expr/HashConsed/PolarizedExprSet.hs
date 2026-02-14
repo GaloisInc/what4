@@ -1,10 +1,4 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Who2.Expr.HashConsed.PolarizedExprSet
   ( PolarizedExprSet(..)
@@ -21,41 +15,49 @@ module Who2.Expr.HashConsed.PolarizedExprSet
   , toListNeg
   , allElems
   , isEmpty
-  , eqBy
-  , ordBy
   , hashPESWith
   ) where
 
-import Prelude hiding (null)
-import Data.Kind (Type)
-import qualified What4.BaseTypes as BT
+import Data.Hashable (Hashable(hashWithSalt))
 
 import qualified Who2.Expr.HashConsed.ExprSet as ES
 import qualified Who2.Expr.Bloom.Polarized as PBS
-import Who2.Expr (HasNonce)
+import Who2.Expr (HasId)
+
+------------------------------------------------------------------------
+-- Type and instances
+------------------------------------------------------------------------
 
 -- | Polarized set storing positive and negative elements in ExprSets
-data PolarizedExprSet (f :: BT.BaseType -> Type) (tp :: BT.BaseType) = PolarizedExprSet
-  { posSet :: !(ES.ExprSet f tp)
-  , negSet :: !(ES.ExprSet f tp)
+data PolarizedExprSet a = PolarizedExprSet
+  { posSet :: !(ES.ExprSet a)
+  , negSet :: !(ES.ExprSet a)
   }
+  deriving (Eq, Ord, Show)
+
+instance Hashable a => Hashable (PolarizedExprSet a) where
+  hashWithSalt salt x = salt `hashWithSalt` posSet x `hashWithSalt` negSet x
+
+------------------------------------------------------------------------
+-- Operations
+------------------------------------------------------------------------
 
 -- | Simplified result
-data Simplified f tp
+data Simplified a
   = Inconsistent
-  | SinglePositive (f tp)
-  | SingleNegative (f tp)
-  | Merged (PolarizedExprSet f tp)
+  | SinglePositive a
+  | SingleNegative a
+  | Merged (PolarizedExprSet a)
 
-empty :: PolarizedExprSet f tp
+empty :: PolarizedExprSet a
 empty = PolarizedExprSet ES.empty ES.empty
 {-# INLINE empty #-}
 
 insertIfNotPresent ::
-  (HasNonce f, PBS.Polarizable (f tp)) =>
-  PolarizedExprSet f tp ->
-  f tp ->
-  Maybe (PolarizedExprSet f tp)
+  (HasId a, PBS.Polarizable a) =>
+  PolarizedExprSet a ->
+  a ->
+  Maybe (PolarizedExprSet a)
 insertIfNotPresent pset expr =
   case PBS.polarity expr of
     PBS.Positive inner ->
@@ -69,10 +71,10 @@ insertIfNotPresent pset expr =
 {-# INLINE insertIfNotPresent #-}
 
 fromTwo ::
-  (HasNonce f, PBS.Polarizable (f tp)) =>
-  f tp ->
-  f tp ->
-  Simplified f tp
+  (HasId a, PBS.Polarizable a) =>
+  a ->
+  a ->
+  Simplified a
 fromTwo e1 e2 =
   case flip insertIfNotPresent e2 =<< insertIfNotPresent empty e1 of
     Nothing -> Inconsistent
@@ -80,9 +82,9 @@ fromTwo e1 e2 =
 {-# INLINE fromTwo #-}
 
 merge ::
-  PolarizedExprSet f tp ->
-  PolarizedExprSet f tp ->
-  Maybe (PolarizedExprSet f tp)
+  PolarizedExprSet a ->
+  PolarizedExprSet a ->
+  Maybe (PolarizedExprSet a)
 merge pset1 pset2 =
   let mergedPos = ES.union (posSet pset1) (posSet pset2)
       mergedNeg = ES.union (negSet pset1) (negSet pset2)
@@ -92,7 +94,7 @@ merge pset1 pset2 =
      else Just $ PolarizedExprSet mergedPos mergedNeg
 {-# INLINE merge #-}
 
-simplify :: PolarizedExprSet f tp -> Simplified f tp
+simplify :: PolarizedExprSet a -> Simplified a
 simplify pset =
   case (ES.toList (posSet pset), ES.toList (negSet pset)) of
     ([], []) -> Inconsistent
@@ -101,71 +103,36 @@ simplify pset =
     _ -> Merged pset
 {-# INLINE simplify #-}
 
-toListPos :: PolarizedExprSet f tp -> [f tp]
+toListPos :: PolarizedExprSet a -> [a]
 toListPos pset = ES.toList (posSet pset)
 {-# INLINE toListPos #-}
 
-toListNeg :: PolarizedExprSet f tp -> [f tp]
+toListNeg :: PolarizedExprSet a -> [a]
 toListNeg pset = ES.toList (negSet pset)
 {-# INLINE toListNeg #-}
 
-allElems :: PolarizedExprSet f tp -> [f tp]
+allElems :: PolarizedExprSet a -> [a]
 allElems pset = toListPos pset ++ toListNeg pset
 {-# INLINE allElems #-}
 
-sizePos :: PolarizedExprSet f tp -> Int
+sizePos :: PolarizedExprSet a -> Int
 sizePos pset = ES.size (posSet pset)
 {-# INLINE sizePos #-}
 
-sizeNeg :: PolarizedExprSet f tp -> Int
+sizeNeg :: PolarizedExprSet a -> Int
 sizeNeg pset = ES.size (negSet pset)
 {-# INLINE sizeNeg #-}
 
-totalSize :: PolarizedExprSet f tp -> Int
+totalSize :: PolarizedExprSet a -> Int
 totalSize pset = sizePos pset + sizeNeg pset
 {-# INLINE totalSize #-}
 
-isEmpty :: PolarizedExprSet f tp -> Bool
+isEmpty :: PolarizedExprSet a -> Bool
 isEmpty pset = ES.null (posSet pset) && ES.null (negSet pset)
 {-# INLINE isEmpty #-}
 
-eqBy :: (f tp -> f tp -> Bool) ->
-        PolarizedExprSet f tp ->
-        PolarizedExprSet f tp ->
-        Bool
-eqBy cmp x y =
-  let posX = ES.toList (posSet x)
-      posY = ES.toList (posSet y)
-      negX = ES.toList (negSet x)
-      negY = ES.toList (negSet y)
-  in length posX == length posY && length negX == length negY &&
-     all (\(a, b) -> cmp a b) (zip posX posY) &&
-     all (\(a, b) -> cmp a b) (zip negX negY)
-
-ordBy :: (f tp -> f tp -> Ordering) ->
-         PolarizedExprSet f tp ->
-         PolarizedExprSet f tp ->
-         Ordering
-ordBy cmp x y =
-  let posX = ES.toList (posSet x)
-      posY = ES.toList (posSet y)
-  in case compareLists cmp posX posY of
-       LT -> LT
-       GT -> GT
-       EQ -> compareLists cmp (ES.toList (negSet x)) (ES.toList (negSet y))
-  where
-    compareLists :: (a -> a -> Ordering) -> [a] -> [a] -> Ordering
-    compareLists _ [] [] = EQ
-    compareLists _ [] _  = LT
-    compareLists _ _  [] = GT
-    compareLists f (a:as) (b:bs) =
-      case f a b of
-        LT -> LT
-        GT -> GT
-        EQ -> compareLists f as bs
-
 -- | Hash a PolarizedExprSet using a custom hashing function
-hashPESWith :: (Int -> f tp -> Int) -> Int -> PolarizedExprSet f tp -> Int
+hashPESWith :: (Int -> a -> Int) -> Int -> PolarizedExprSet a -> Int
 hashPESWith hashFn s pset =
   let posElems = toListPos pset
       negElems = toListNeg pset
