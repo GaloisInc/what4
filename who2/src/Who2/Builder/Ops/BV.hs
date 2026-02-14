@@ -111,10 +111,10 @@ bvAdd ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvAdd alloc x y
-  -- 0 + y = y
+  -- Cryptol> :prove \(y : [8]) -> 0 + y == y
   -- test: bvadd-zero-left
   | isZero x = pure y
-  -- x + 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x + 0 == x
   -- test: bvadd-zero-right
   | isZero y = pure x
   -- c1 + c2 = fold constants
@@ -122,7 +122,6 @@ bvAdd alloc x y
   | Just (w, c1) <- asBVLit x
   , Just (_, c2) <- asBVLit y =
       bvLit alloc w (BV.add w c1 c2)
-  -- Runtime dispatch based on config
   | Config.useHashConsedStructures = bvAddHC alloc x y
   | otherwise = bvAddBloom alloc x y
 {-# INLINE bvAdd #-}
@@ -147,6 +146,7 @@ bvAddBloom alloc x y
   , Just (_, c) <- asBVLit y =
       buildBVAdd alloc x y (SRS.addConstant xWs c)
   -- c + (y_ws) = add constant to weighted sum offset
+  -- test: bvadd-combine-constants-right
   | Just (_, c) <- asBVLit x
   , Just yWs <- EV.asBVAdd y =
       buildBVAdd alloc x y (SRS.addConstant yWs c)
@@ -250,19 +250,19 @@ bvNeg ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvNeg alloc x
-  -- -(x) = ~x + 1
+  -- Cryptol> :prove \(x : [8]) -> -x == ~x + 1
   | Config.normalizeBVNeg = do
       let w = EBV.width x
       notX <- bvNotBits alloc x
       one <- bvLit alloc w (BV.one w)
       bvAdd alloc notX one
-  -- -(0) = 0
+  -- Cryptol> :prove (- (0 : [8])) == (0 : [8])
   -- test: bvneg-zero
   | isZero x = pure x
   -- Constant folding
   -- test: bvneg-const
   | Just (w, bv) <- asBVLit x = bvLit alloc w (BV.negate w bv)
-  -- -(-y) = y
+  -- Cryptol> :prove \(y : [8]) -> -(-y) == y
   | Just inner <- EV.asBVNeg x = pure inner
   | otherwise =
       alloc
@@ -285,13 +285,13 @@ bvSub ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvSub alloc x y
-  -- x - 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x - 0 == x
   -- test: bvsub-zero
   | isZero y = pure x
-  -- 0 - x = -x
+  -- Cryptol> :prove \(x : [8]) -> 0 - x == -x
   -- test: bvsub-as-neg
   | isZero x = bvNeg alloc y
-  -- x - x = 0
+  -- Cryptol> :prove \(x : [8]) -> x - x == 0
   -- test: bvsub-self
   | x == y = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
   -- x - c = x + (-c)
@@ -310,19 +310,18 @@ bvMul ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvMul alloc x y
-  -- 0 * y = 0
+  -- Cryptol> :prove \(y : [8]) -> 0 * y == 0
   -- test: bvmul-zero-left
   | isZero x = pure x
-  -- x * 0 = 0
+  -- Cryptol> :prove \(x : [8]) -> x * 0 == 0
   -- test: bvmul-zero-right
   | isZero y = pure y
-  -- 1 * y = y
+  -- Cryptol> :prove \(y : [8]) -> 1 * y == y
   -- test: bvmul-one-left
   | isOne x = pure y
-  -- x * 1 = x
+  -- Cryptol> :prove \(x : [8]) -> x * 1 == x
   -- test: bvmul-one-right
   | isOne y = pure x
-  -- c1 * c2 = fold constants
   -- test: bvmul-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
@@ -362,7 +361,7 @@ bvMulBloom alloc x y
   -- x * (y_prod) = multiply product by variable
   | Just yProd <- EV.asBVMul y =
       buildBVMul alloc x y (SRP.mulVar yProd x)
-  -- x * y = create product
+  -- Cryptol> :prove \(x : [8]) (y : [8]) -> x * y == y * x
   -- test: bvmul-commutative
   | otherwise =
       let w = EBV.width x
@@ -436,27 +435,26 @@ bvAndBits ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvAndBits alloc x y
-  -- 0 & y = 0
+  -- Cryptol> :prove \(y : [8]) -> 0 && y == 0
   -- test: bvand-zero-left
   | isZero x = pure x
-  -- x & 0 = 0
+  -- Cryptol> :prove \(x : [8]) -> x && 0 == 0
   -- test: bvand-zero-right
   | isZero y = pure y
-  -- ~0 & y = y
+  -- Cryptol> :prove \(y : [8]) -> ~0 && y == y
   -- test: bvand-ones-left
   | isAllOnes x = pure y
-  -- x & ~0 = x
+  -- Cryptol> :prove \(x : [8]) -> x && ~0 == x
   -- test: bvand-ones-right
   | isAllOnes y = pure x
-  -- x & x = x
+  -- Cryptol> :prove \(x : [8]) -> x && x == x
   -- test: bvand-idem
   | x == y = pure x
-  -- x & (~x) = 0
+  -- Cryptol> :prove \(x : [8]) -> x && ~x == 0
   | Just nx <- EV.asBVNotBits y, x == nx =
       bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
   | Just nx <- EV.asBVNotBits x, nx == y =
       bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.and bvx bvy)
@@ -579,27 +577,26 @@ bvOrBits ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvOrBits alloc x y
-  -- 0 | y = y
+  -- Cryptol> :prove \(y : [8]) -> 0 || y == y
   -- test: bvor-zero-left
   | isZero x = pure y
-  -- x | 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x || 0 == x
   -- test: bvor-zero-right
   | isZero y = pure x
-  -- ~0 | y = ~0
+  -- Cryptol> :prove \(y : [8]) -> ~0 || y == ~0
   -- test: bvor-ones-left
   | isAllOnes x = pure x
-  -- x | ~0 = ~0
+  -- Cryptol> :prove \(x : [8]) -> x || ~0 == ~0
   -- test: bvor-ones-right
   | isAllOnes y = pure y
-  -- x | x = x
+  -- Cryptol> :prove \(x : [8]) -> x || x == x
   -- test: bvor-idem
   | x == y = pure x
-  -- x | (~x) = ~0
+  -- Cryptol> :prove \(x : [8]) -> x || ~x == ~0
   | Just nx <- EV.asBVNotBits y, x == nx =
       bvLit alloc (EBV.width x) (BV.maxUnsigned (EBV.width x))
   | Just nx <- EV.asBVNotBits x, nx == y =
       bvLit alloc (EBV.width x) (BV.maxUnsigned (EBV.width x))
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.or bvx bvy)
@@ -719,19 +716,18 @@ bvXorBits ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvXorBits alloc x y
-  -- 0 ^ y = y
+  -- Cryptol> :prove \(y : [8]) -> 0 ^ y == y
   -- test: bvxor-zero-left
   | isZero x = pure y
-  -- x ^ 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x ^ 0 == x
   -- test: bvxor-zero-right
   | isZero y = pure x
-  -- x ^ x = 0
+  -- Cryptol> :prove \(x : [8]) -> x ^ x == 0
   -- test: bvxor-self
   | x == y = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
-  -- x ^ ~0 = ~x
+  -- Cryptol> :prove \(x : [8]) -> x ^ ~0 == ~x
   | isAllOnes x = bvNotBits alloc y
   | isAllOnes y = bvNotBits alloc x
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.xor bvx bvy)
@@ -750,9 +746,8 @@ bvNotBits ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvNotBits alloc x
-  -- Constant folding
   | Just (w, bv) <- asBVLit x = bvLit alloc w (BV.complement w bv)
-  -- ~~x = x
+  -- Cryptol> :prove \(x : [8]) -> ~(~x) == x
   -- test: bvnot-double
   | Just inner <- EV.asBVNotBits x = pure inner
   | otherwise =
@@ -858,17 +853,16 @@ bvShl ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvShl alloc x y
-  -- x << 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x << 0 == x
   -- test: bvshl-zero
   | isZero y = pure x
-  -- 0 << n = 0
+  -- Cryptol> :prove \(n : [8]) -> (0 : [8]) << n == 0
   | isZero x = pure x
-  -- shift amount >= width
+  -- Cryptol> :prove \(x : [8]) -> x << 8 == 0
   -- test: bvshl-by-width
   | Just (w, shamt) <- asBVLit y
   , BV.asUnsigned shamt >= NR.intValue w =
       bvLit alloc w (BV.zero w)
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.shl wx bvx (fromInteger (BV.asUnsigned bvy)))
@@ -886,16 +880,15 @@ bvLshr ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvLshr alloc x y
-  -- x >> 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x >> 0 == x
   -- test: bvlshr-zero
   | isZero y = pure x
-  -- 0 >> n = 0
+  -- Cryptol> :prove \(n : [8]) -> (0 : [8]) >> n == 0
   | isZero x = pure x
-  -- shift amount >= width
+  -- Cryptol> :prove \(x : [8]) -> x >> 8 == 0
   | Just (w, shamt) <- asBVLit y
   , BV.asUnsigned shamt >= NR.intValue w =
       bvLit alloc w (BV.zero w)
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.lshr wx bvx (fromInteger (BV.asUnsigned bvy)))
@@ -913,12 +906,11 @@ bvAshr ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvAshr alloc x y
-  -- x >> 0 = x
+  -- Cryptol> :prove \(x : [8]) -> x >>$ 0 == x
   -- test: bvashr-zero
   | isZero y = pure x
-  -- 0 >> n = 0
+  -- Cryptol> :prove \(n : [8]) -> (0 : [8]) >>$ n == 0
   | isZero x = pure x
-  -- Constant folding
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.ashr wx bvx (fromInteger (BV.asUnsigned bvy)))
@@ -936,13 +928,12 @@ bvUdiv ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvUdiv alloc x y
-  -- x / 1 = x
+  -- Cryptol> :prove \(x : [8]) -> x / 1 == x
   -- test: bvudiv-one
   | isOne y = pure x
-  -- 0 / x = 0
+  -- Cryptol> :prove \(x : [8]) -> x != 0 ==> 0 / x == 0
   -- test: bvudiv-zero
   | isZero x = pure x
-  -- Constant folding
   -- test: bvudiv-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y
@@ -962,16 +953,15 @@ bvUrem ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvUrem alloc x y
-  -- x % 1 = 0
+  -- Cryptol> :prove \(x : [8]) -> x % 1 == 0
   -- test: bvurem-one
   | isOne y = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
-  -- Constant folding
   -- test: bvurem-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y
   , BV.asUnsigned bvy /= 0 =
       bvLit alloc wx (BV.urem bvx bvy)
-  -- if x < y (unsigned), return x
+  -- Cryptol> :prove \(x : [8]) (y : [8]) -> x < y ==> x % y == x
   -- test: bvurem-small
   | Just True <- BVD.ult (E.eAbsVal x) (E.eAbsVal y) = pure x
   | otherwise =
@@ -995,12 +985,12 @@ bvSdiv ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvSdiv alloc x y
-  -- x / 1 = x
+  -- Cryptol> :prove \(x : [8]) -> x /$ 1 == x
   -- test: bvsdiv-one
   | isOne y = pure x
-  -- 0 / x = 0
+  -- Cryptol> :prove \(x : [8]) -> x != 0 ==> 0 /$ x == 0
   | isZero x = pure x
-  -- x / -1 = -x
+  -- Cryptol> :prove \(x : [8]) -> x /$ (-1) == -x
   -- test: bvsdiv-neg-one
   | Just (w, bv) <- asBVLit y
   , bv == BV.maxUnsigned w =
@@ -1025,14 +1015,13 @@ bvSrem ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvSrem alloc x y
-  -- x % 1 = 0
+  -- Cryptol> :prove \(x : [8]) -> x %$ 1 == 0
   -- test: bvsrem-one
   | isOne y = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
-  -- x % -1 = 0
+  -- Cryptol> :prove \(x : [8]) -> x %$ (-1) == 0
   | Just (w, bv) <- asBVLit y
   , bv == BV.maxUnsigned w =
       bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
-  -- Constant folding
   -- test: bvsrem-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y
@@ -1052,18 +1041,16 @@ bvRol ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvRol alloc x y
-  -- Constant folding
   -- test: bvrol-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.rotateL wx bvx (fromInteger (BV.asUnsigned bvy)))
-  -- Normalize rotation amount modulo width
   | otherwise = do
       let w = EBV.width x
-      -- Compute y' = y % w to normalize rotation amount
+      -- Cryptol> :prove \(x : [8]) -> x <<< 8 == x
       -- test: bvrol-width
       y' <- bvUrem alloc y =<< bvLit alloc w (BV.mkBV w (NR.intValue w))
-      -- Check if rotation amount is zero after normalization
+      -- Cryptol> :prove \(x : [8]) -> x <<< 0 == x
       -- test: bvrol-zero
       if isZero y'
         then pure x
@@ -1080,18 +1067,16 @@ bvRor ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f (BT.BaseBVType w))
 bvRor alloc x y
-  -- Constant folding
   -- test: bvror-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.rotateR wx bvx (fromInteger (BV.asUnsigned bvy)))
-  -- Normalize rotation amount modulo width
   | otherwise = do
       let w = EBV.width x
-      -- Compute y' = y % w to normalize rotation amount
+      -- Cryptol> :prove \(x : [8]) -> x >>> 8 == x
       -- test: bvror-width
       y' <- bvUrem alloc y =<< bvLit alloc w (BV.mkBV w (NR.intValue w))
-      -- Check if rotation amount is zero after normalization
+      -- Cryptol> :prove \(x : [8]) -> x >>> 0 == x
       -- test: bvror-zero
       if isZero y'
         then pure x

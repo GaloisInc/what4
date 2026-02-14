@@ -31,6 +31,7 @@ import qualified Who2.Properties as Props
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
 import qualified Who2.TestAnnotations as TestAnnotations
+import qualified Who2.Cryptol as Cryptol
 
 main :: IO ()
 main = do
@@ -52,6 +53,7 @@ main = do
   smtLib2Tests <- SMTLib2.tests
   functionTests <- Functions.tests
   annotationTests <- TestAnnotations.tests
+  cryptolTests <- Cryptol.tests
 
   defaultMain $ testGroup "Who2 Tests"
     [ smt2FileTests simplTests z3Tests
@@ -59,6 +61,7 @@ main = do
     , smtLib2Tests
     , functionTests
     , annotationTests
+    , cryptolTests
     ]
 
 -- | SMT2 file-based tests

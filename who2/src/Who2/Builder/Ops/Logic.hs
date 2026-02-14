@@ -60,7 +60,7 @@ eq ::
   Expr t f tp ->
   IO (Expr t f BT.BaseBoolType)
 eq trueExpr falseExpr alloc x y
-    -- x == x = true
+    -- Cryptol> :prove \(x : Bit) -> x == x
     -- test: eq-reflexive-bool
     -- test: eq-reflexive-bv
     -- test: bvnonzero-zero
@@ -85,20 +85,20 @@ eqBool ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 eqBool trueExpr falseExpr alloc x y
-    -- (not a) == b = xor a b
+    -- Cryptol> :prove \(a : Bit) (b : Bit) -> (~a == b) == (a ^ b)
     -- test: eq-not-left
   | Just a <- EV.asNotPred x = xorPred trueExpr falseExpr alloc a y
-    -- a == (not b) = xor a b
+    -- Cryptol> :prove \(a : Bit) (b : Bit) -> (a == ~b) == (a ^ b)
   | Just b <- EV.asNotPred y = xorPred trueExpr falseExpr alloc x b
-    -- true == y = y
+    -- Cryptol> :prove \(y : Bit) -> (True == y) == y
     -- test: eq-true
   | isTrue x = pure y
-    -- x == true = x
+    -- Cryptol> :prove \(x : Bit) -> (x == True) == x
   | isTrue y = pure x
-    -- false == y = not y
+    -- Cryptol> :prove \(y : Bit) -> (False == y) == ~y
     -- test: eq-false
   | isFalse x = notPred trueExpr falseExpr alloc y
-    -- x == false = not x
+    -- Cryptol> :prove \(x : Bit) -> (x == False) == ~x
   | isFalse y = notPred trueExpr falseExpr alloc x
   | otherwise = alloc (EL.EqPred x y) Nothing
 {-# INLINE eqBool #-}
@@ -117,26 +117,26 @@ andPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 andPred trueExpr falseExpr alloc x y
-    -- true && y = y
+    -- Cryptol> :prove \(y : Bit) -> (True && y) == y
     -- test: and-true-left
   | isTrue x = pure y
-    -- x && true = x
+    -- Cryptol> :prove \(x : Bit) -> (x && True) == x
     -- test: and-true-right
   | isTrue y = pure x
-    -- false && y = false
+    -- Cryptol> :prove \(y : Bit) -> (False && y) == False
     -- test: and-false-left
   | isFalse x = pure falseExpr
-    -- x && false = false
+    -- Cryptol> :prove \(x : Bit) -> (x && False) == False
     -- test: and-false-right
   | isFalse y = pure falseExpr
-    -- x && x = x
+    -- Cryptol> :prove \(x : Bit) -> (x && x) == x
     -- test: and-idempotent
   | x == y = pure x
-    -- x && (not x) = false
+    -- Cryptol> :prove \(x : Bit) -> (x && ~x) == False
     -- test: and-contradiction
   | Just nx <- EV.asNotPred y, x == nx = pure falseExpr
   | Just nx <- EV.asNotPred x, nx == y = pure falseExpr
-    -- (not a) && (not b) = not (a || b)
+    -- Cryptol> :prove \(a : Bit) (b : Bit) -> (~a && ~b) == ~(a || b)
     -- test: and-demorgan
   | not Config.normalizeOr
   , Just a <- EV.asNotPred x
@@ -190,13 +190,13 @@ notPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 notPred trueExpr falseExpr alloc x
-    -- not true = false
+    -- Cryptol> :prove ~True == False
     -- test: not-true
   | isTrue x = pure falseExpr
-    -- not false = true
+    -- Cryptol> :prove ~False == True
     -- test: not-false
   | isFalse x = pure trueExpr
-    -- not (not x) = x
+    -- Cryptol> :prove \(x : Bit) -> ~(~x) == x
     -- test: not-not
   | Just inner <- EV.asNotPred x = pure inner
   | otherwise = alloc (EL.NotPred x) Nothing
@@ -216,32 +216,32 @@ orPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 orPred trueExpr falseExpr alloc x y
-    -- x || y = not (not x && not y)
+    -- Cryptol> :prove \(x : Bit) (y : Bit) -> (x || y) == ~(~x && ~y)
   | Config.normalizeOr = do
       nx <- notPred trueExpr falseExpr alloc x
       ny <- notPred trueExpr falseExpr alloc y
       andResult <- andPred trueExpr falseExpr alloc nx ny
       notPred trueExpr falseExpr alloc andResult
-    -- true || y = true
+    -- Cryptol> :prove \(y : Bit) -> (True || y) == True
     -- test: or-true-left
   | isTrue x = pure trueExpr
-    -- x || true = true
+    -- Cryptol> :prove \(x : Bit) -> (x || True) == True
     -- test: or-true-right
   | isTrue y = pure trueExpr
-    -- false || y = y
+    -- Cryptol> :prove \(y : Bit) -> (False || y) == y
     -- test: or-false-left
   | isFalse x = pure y
-    -- x || false = x
+    -- Cryptol> :prove \(x : Bit) -> (x || False) == x
     -- test: or-false-right
   | isFalse y = pure x
-    -- x || x = x
+    -- Cryptol> :prove \(x : Bit) -> (x || x) == x
     -- test: or-idempotent
   | x == y = pure x
-    -- x || (not x) = true
+    -- Cryptol> :prove \(x : Bit) -> (x || ~x) == True
     -- test: or-tautology
   | Just nx <- EV.asNotPred y, x == nx = pure trueExpr
   | Just nx <- EV.asNotPred x, nx == y = pure trueExpr
-    -- (not a) || (not b) = not (a && b)
+    -- Cryptol> :prove \(a : Bit) (b : Bit) -> (~a || ~b) == ~(a && b)
     -- test: or-demorgan
   | Just a <- EV.asNotPred x
   , Just b <- EV.asNotPred y = do
@@ -298,23 +298,23 @@ xorPred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 xorPred trueExpr falseExpr alloc x y
-    -- x `xor` y = not (x == y)
+    -- Cryptol> :prove \(x : Bit) (y : Bit) -> (x ^ y) == ~(x == y)
   | Config.normalizeXor = do
       eqResult <- eq trueExpr falseExpr alloc x y
       notPred trueExpr falseExpr alloc eqResult
-    -- false `xor` y = y
+    -- Cryptol> :prove \(y : Bit) -> (False ^ y) == y
     -- test: xor-false-left
   | isFalse x = pure y
-    -- x `xor` false = x
+    -- Cryptol> :prove \(x : Bit) -> (x ^ False) == x
     -- test: xor-false-right
   | isFalse y = pure x
-    -- true `xor` y = not y
+    -- Cryptol> :prove \(y : Bit) -> (True ^ y) == ~y
     -- test: xor-true-left
   | isTrue x = notPred trueExpr falseExpr alloc y
-    -- x `xor` true = not x
+    -- Cryptol> :prove \(x : Bit) -> (x ^ True) == ~x
     -- test: xor-true-right
   | isTrue y = notPred trueExpr falseExpr alloc x
-    -- x `xor` x = false
+    -- Cryptol> :prove \(x : Bit) -> (x ^ x) == False
     -- test: xor-idempotent
   | x == y = pure falseExpr
   | otherwise = alloc (EL.XorPred x y) Nothing
@@ -331,15 +331,15 @@ ite ::
   Expr t f tp ->
   IO (Expr t f tp)
 ite alloc c t f
-    -- ite true t f = t
+    -- Cryptol> :prove \(t : Bit) (f : Bit) -> (if True then t else f) == t
     -- test: ite-true
     -- test: bvite-true
   | isTrue c = pure t
-    -- ite false t f = f
+    -- Cryptol> :prove \(t : Bit) (f : Bit) -> (if False then t else f) == f
     -- test: ite-false
     -- test: bvite-false
   | isFalse c = pure f
-    -- ite c x x = x
+    -- Cryptol> :prove \(c : Bit) (x : Bit) -> (if c then x else x) == x
     -- test: ite-same
     -- test: bvite-same
   | t == f = pure t
@@ -361,33 +361,33 @@ itePred ::
   Expr t f BT.BaseBoolType ->
   IO (Expr t f BT.BaseBoolType)
 itePred trueExpr falseExpr alloc c t f
-    -- ite c true false = c
+    -- Cryptol> :prove \(c : Bit) -> (if c then True else False) == c
     -- test: ite-bool-id
   | isTrue t, isFalse f = pure c
-    -- ite c false true = not c
+    -- Cryptol> :prove \(c : Bit) -> (if c then False else True) == ~c
     -- test: ite-bool-not
   | isFalse t, isTrue f = notPred trueExpr falseExpr alloc c
-    -- ite c c y = c || y
+    -- Cryptol> :prove \(c : Bit) (y : Bit) -> (if c then c else y) == (c || y)
     -- test: ite-absorption-or
   | c == t = orPred trueExpr falseExpr alloc c f
-    -- ite c x c = c && x
+    -- Cryptol> :prove \(c : Bit) (x : Bit) -> (if c then x else c) == (c && x)
     -- test: ite-absorption-and
   | c == f = andPred trueExpr falseExpr alloc c t
-    -- ite c true y = c || y
+    -- Cryptol> :prove \(c : Bit) (y : Bit) -> (if c then True else y) == (c || y)
     -- test: ite-const-true-left
   | isTrue t = orPred trueExpr falseExpr alloc c f
-    -- ite c false y = (not c) && y
+    -- Cryptol> :prove \(c : Bit) (y : Bit) -> (if c then False else y) == (~c && y)
     -- test: ite-const-false-right
   | isFalse t = do
       nc <- notPred trueExpr falseExpr alloc c
       andPred trueExpr falseExpr alloc nc f
-    -- ite c x true = (not c) || x
+    -- Cryptol> :prove \(c : Bit) (x : Bit) -> (if c then x else True) == (~c || x)
   | isTrue f = do
       nc <- notPred trueExpr falseExpr alloc c
       orPred trueExpr falseExpr alloc nc t
-    -- ite c x false = c && x
+    -- Cryptol> :prove \(c : Bit) (x : Bit) -> (if c then x else False) == (c && x)
   | isFalse f = andPred trueExpr falseExpr alloc c t
-    -- ite (not c) x y = ite c y x
+    -- Cryptol> :prove \(c : Bit) (x : Bit) (y : Bit) -> (if ~c then x else y) == (if c then y else x)
   | Just nc <- EV.asNotPred c = ite alloc nc f t
   | otherwise = ite alloc c t f
 {-# INLINE itePred #-}
@@ -414,13 +414,13 @@ bvUlt ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvUlt trueExpr falseExpr alloc x y
-  -- x < x = false
+  -- Cryptol> :prove \(x : [8]) -> ~(x < x)
   -- test: bvult-irrefl
   | x == y = pure falseExpr
-  -- x < 0 = false
+  -- Cryptol> :prove \(x : [8]) -> ~(x < 0)
   -- test: bvult-zero
   | Just (_, yBV) <- asBVLit' y, yBV == BV.zero (bvWidth' y) = pure falseExpr
-  -- maxUnsigned < x = false
+  -- Cryptol> :prove ~(255 < (0 : [8]))
   | Just (w, xBV) <- asBVLit' x, xBV == BV.maxUnsigned w = pure falseExpr
   -- Constant folding
   | Just (_, xBV) <- asBVLit' x
@@ -450,17 +450,17 @@ bvUle ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvUle trueExpr falseExpr alloc x y
-  -- x <= y = (x < y) || (x == y)
+  -- Cryptol> :prove \(x : [8]) (y : [8]) -> (x <= y) == ((x < y) || (x == y))
   | Config.normalizeBVUle = do
       ltResult <- bvUlt trueExpr falseExpr alloc x y
       eqResult <- eq trueExpr falseExpr alloc x y
       orPred trueExpr falseExpr alloc ltResult eqResult
-  -- x <= x = true
+  -- Cryptol> :prove \(x : [8]) -> x <= x
   -- test: bvule-refl
   | x == y = pure trueExpr
-  -- 0 <= x = true
+  -- Cryptol> :prove \(x : [8]) -> 0 <= x
   | Just (_, xBV) <- asBVLit' x, xBV == BV.zero (bvWidth' x) = pure trueExpr
-  -- x <= maxUnsigned = true
+  -- Cryptol> :prove \(x : [8]) -> x <= 255
   | Just (w, yBV) <- asBVLit' y, yBV == BV.maxUnsigned w = pure trueExpr
   -- Constant folding
   | Just (_, xBV) <- asBVLit' x
@@ -482,7 +482,7 @@ bvSlt ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvSlt trueExpr falseExpr alloc x y
-  -- x < x = false
+  -- Cryptol> :prove \(x : [8]) -> ~(x <$ x)
   -- test: bvslt-irrefl
   | x == y = pure falseExpr
   -- Constant folding
@@ -513,12 +513,12 @@ bvSle ::
   Expr t f (BT.BaseBVType w) ->
   IO (Expr t f BT.BaseBoolType)
 bvSle trueExpr falseExpr alloc x y
-  -- x <=s y = (x <s y) || (x == y)
+  -- Cryptol> :prove \(x : [8]) (y : [8]) -> (x <=$ y) == ((x <$ y) || (x == y))
   | Config.normalizeBVSle = do
       sltResult <- bvSlt trueExpr falseExpr alloc x y
       eqResult <- eq trueExpr falseExpr alloc x y
       orPred trueExpr falseExpr alloc sltResult eqResult
-  -- x <= x = true
+  -- Cryptol> :prove \(x : [8]) -> x <=$ x
   -- test: bvsle-refl
   | x == y = pure trueExpr
   -- Constant folding

@@ -212,6 +212,7 @@ test-suite who2-tests
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Who2.Cryptol
     Who2.ExprBuilderAPI
     Who2.Filter
     Who2.Functions
