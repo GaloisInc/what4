@@ -1,7 +1,7 @@
 {-# LANGUAGE StrictData #-}
 
 -- | Bloom filter for fast negative membership tests
-module Who2.Expr.Filter
+module Who2.Expr.Bloom.Filter
   ( Filter
   , getFilter
   , empty

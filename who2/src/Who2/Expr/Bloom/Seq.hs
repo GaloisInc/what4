@@ -32,8 +32,8 @@ import qualified Data.Foldable as Fold
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Sequence (Seq)
 import qualified Data.Foldable as F
-import qualified Who2.Expr.Filter as Filt
-import Who2.Expr.Filter (Filter)
+import qualified Who2.Expr.Bloom.Filter as Filt
+import Who2.Expr.Bloom.Filter (Filter)
 import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 import Who2.Config (bloomFilter)

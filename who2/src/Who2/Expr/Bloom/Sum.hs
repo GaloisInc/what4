@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Sums over semirings using BloomKv for efficient small maps
-module Who2.Expr.SemiRing.Sum
+module Who2.Expr.Bloom.Sum
   ( SRSum(..)
   , eqBy
   , eqBy2

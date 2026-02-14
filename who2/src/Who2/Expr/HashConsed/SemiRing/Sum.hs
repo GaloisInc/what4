@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Who2.Expr.HashConsed.SRSum
+module Who2.Expr.HashConsed.SemiRing.Sum
   ( SRSum(..)
   , eqBy
   , eqBy2

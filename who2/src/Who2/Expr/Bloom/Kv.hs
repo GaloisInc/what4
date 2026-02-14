@@ -29,8 +29,8 @@ module Who2.Expr.Bloom.Kv
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare), Eq2(liftEq2), Ord2(liftCompare2))
 import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Foldable as F
-import qualified Who2.Expr.Filter as Filt
-import Who2.Expr.Filter (Filter)
+import qualified Who2.Expr.Bloom.Filter as Filt
+import Who2.Expr.Bloom.Filter (Filter)
 import qualified Who2.Expr.Bloom.HashedSeq as HS
 
 import Who2.Config (bloomFilter)

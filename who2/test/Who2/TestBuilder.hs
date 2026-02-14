@@ -29,8 +29,8 @@ import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.Bloom.Polarized as PBS
-import qualified Who2.Expr.SemiRing.Product as SRP
-import qualified Who2.Expr.SemiRing.Sum as SRS
+import qualified Who2.Expr.Bloom.Product as SRP
+import qualified Who2.Expr.Bloom.Sum as SRS
 
 -- | A naive builder that bypasses all simplifications by always using
 -- "top" (widest possible) abstract values and allocating every expression.

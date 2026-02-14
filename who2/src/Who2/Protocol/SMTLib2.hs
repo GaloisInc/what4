@@ -64,11 +64,11 @@ import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.SymExpr as ES
 import qualified Who2.Expr.SymFn as ESF
 import qualified Who2.Expr.Views as EV
-import qualified Who2.Expr.SemiRing.Product as SRP
-import qualified Who2.Expr.SemiRing.Sum as SRS
+import qualified Who2.Expr.Bloom.Product as SRP
+import qualified Who2.Expr.Bloom.Sum as SRS
 import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
-import qualified Who2.Expr.HashConsed.SRSum as HCSR
-import qualified Who2.Expr.HashConsed.SRProd as HCPR
+import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
+import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
 
 import Who2.Config (emitAbstractDomainConstraintsForBoundVars, emitAbstractDomainConstraintsForAllBV)
 

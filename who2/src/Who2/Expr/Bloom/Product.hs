@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Products over semirings using BloomKv for efficient small maps
-module Who2.Expr.SemiRing.Product
+module Who2.Expr.Bloom.Product
   ( SRProd(..)
   , eqBy
   , eqBy2

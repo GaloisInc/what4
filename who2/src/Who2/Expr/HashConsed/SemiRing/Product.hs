@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Who2.Expr.HashConsed.SRProd
+module Who2.Expr.HashConsed.SemiRing.Product
   ( SRProd
   , eqBy
   , eqBy2

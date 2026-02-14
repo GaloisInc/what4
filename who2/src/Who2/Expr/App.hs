@@ -13,6 +13,8 @@ by options in 'Who2.Config'.
 
 -- * Constant-time datastructures
 
+Modules: @Who2.Expr.Bloom@.
+
 The datastructures in What4 can be understood as extending local rewrites such
 as @x and ~x => false@ over arbitrarily many elements, i.e.,
 
@@ -33,10 +35,12 @@ These fundamental Bloom filter structures are then utilized in higher level
 structures that encode algebraic properties of operations, e.g.,
 
 * "Who2.Expr.Bloom.Polarized" for boolean and bitvector AND and OR
-* 'Who2.Expr.SemiRing.Sum.SRSum' for bitvector addition
-* 'Who2.Expr.SemiRing.Product.SRProd' for bitvector multiplication
+* 'Who2.Expr.Bloom.Sum.SRSum' for bitvector addition
+* 'Who2.Expr.Bloom.Product.SRProd' for bitvector multiplication
 
 -- * Log-time datastructures
+
+Modules: @Who2.Expr.HashConsed@.
 
 When 'Who2.Config.hashConsing' is enabled, Who2 can assume that structural
 equality of expressions is entirely determined by equality of their
@@ -54,8 +58,8 @@ As with the Bloom filter based structures, there are the basic set and map types
 and the more \"algebraic\" structures built on top of them:
 
 * "Who2.Expr.HashConsed.PolarizedExprSet"
-* "Who2.Expr.HashConsed.SRProd"
-* "Who2.Expr.HashConsed.SRSum"
+* "Who2.Expr.HashConsed.SemiRing.Product"
+* "Who2.Expr.HashConsed.SemiRing.Sum"
 -}
 
 
