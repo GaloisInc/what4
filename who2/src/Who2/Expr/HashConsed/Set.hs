@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Who2.Expr.HashConsed.ExprSet
+module Who2.Expr.HashConsed.Set
   ( ExprSet
   , empty
   , singleton
@@ -13,7 +13,7 @@ module Who2.Expr.HashConsed.ExprSet
   , union
   , intersection
   , difference
-  , Who2.Expr.HashConsed.ExprSet.null
+  , Who2.Expr.HashConsed.Set.null
   ) where
 
 import Data.Hashable (Hashable)

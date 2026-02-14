@@ -24,7 +24,7 @@ This comes at the cost of @O(n log n)@ construction, because What4 uses set-
 and map-like datastructures for this purpose.
 
 In contrast, by default Who2 uses datastructures based on Bloom filters that
-act like sets ("Who2.Expr.Bloom.Seq") or maps ("Who2.Expr.Bloom.Kv") for
+act like sets ("Who2.Expr.Bloom.Set") or maps ("Who2.Expr.Bloom.Map") for
 small numbers of elements, but eventually act more like lists (i.e., allowing
 duplicates and enabling constant-time appending). This can be thought of as
 extending local rewrites over some small (fixed) number of elements, while
@@ -35,8 +35,8 @@ These fundamental Bloom filter structures are then utilized in higher level
 structures that encode algebraic properties of operations, e.g.,
 
 * "Who2.Expr.Bloom.Polarized" for boolean and bitvector AND and OR
-* 'Who2.Expr.Bloom.Sum.SRSum' for bitvector addition
-* 'Who2.Expr.Bloom.Product.SRProd' for bitvector multiplication
+* 'Who2.Expr.Bloom.SemiRing.Sum.SRSum' for bitvector addition
+* 'Who2.Expr.Bloom.SemiRing.Product.SRProd' for bitvector multiplication
 
 -- * Log-time datastructures
 
@@ -52,12 +52,12 @@ patricia trees should be considerably faster in practice.
 
 As with the Bloom filter based structures, there are the basic set and map types:
 
-* "Who2.Expr.HashConsed.ExprSet"
-* "Who2.Expr.HashConsed.ExprMap"
+* "Who2.Expr.HashConsed.Set"
+* "Who2.Expr.HashConsed.Map"
 
 and the more \"algebraic\" structures built on top of them:
 
-* "Who2.Expr.HashConsed.PolarizedExprSet"
+* "Who2.Expr.HashConsed.Polarized"
 * "Who2.Expr.HashConsed.SemiRing.Product"
 * "Who2.Expr.HashConsed.SemiRing.Sum"
 -}

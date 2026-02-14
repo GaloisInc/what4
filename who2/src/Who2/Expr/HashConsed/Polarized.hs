@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Who2.Expr.HashConsed.PolarizedExprSet
+module Who2.Expr.HashConsed.Polarized
   ( PolarizedExprSet(..)
   , Simplified(..)
   , empty
@@ -20,7 +20,7 @@ module Who2.Expr.HashConsed.PolarizedExprSet
 
 import Data.Hashable (Hashable(hashWithSalt))
 
-import qualified Who2.Expr.HashConsed.ExprSet as ES
+import qualified Who2.Expr.HashConsed.Set as ES
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import Who2.Expr (HasId)
 

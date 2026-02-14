@@ -1,4 +1,4 @@
-module Who2.Laws.BloomKv
+module Who2.Laws.Bloom.Map
   ( -- eqBy properties
     propBloomKvEqByReflexive
   , propBloomKvEqBySymmetric
@@ -18,7 +18,7 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
-import qualified Who2.Expr.Bloom.Kv as BKv
+import qualified Who2.Expr.Bloom.Map as BKv
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------

@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Sums over semirings using BloomKv for efficient small maps
-module Who2.Expr.Bloom.Sum
+module Who2.Expr.Bloom.SemiRing.Sum
   ( SRSum(..)
   , eqBy
   , eqBy2
@@ -37,7 +37,7 @@ import Data.Kind (Type)
 import qualified What4.SemiRing as SR
 import qualified What4.BaseTypes as BT
 
-import qualified Who2.Expr.Bloom.Kv as BKv
+import qualified Who2.Expr.Bloom.Map as BKv
 
 ------------------------------------------------------------------------
 -- Type and instances

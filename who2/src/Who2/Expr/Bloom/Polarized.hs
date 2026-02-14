@@ -46,7 +46,7 @@ import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Kind (Type)
 import qualified Data.Parameterized.Classes as PC
-import qualified Who2.Expr.Bloom.Seq as BS
+import qualified Who2.Expr.Bloom.Set as BS
 
 ------------------------------------------------------------------------
 -- Class

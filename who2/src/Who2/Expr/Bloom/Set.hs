@@ -5,7 +5,7 @@
 --
 -- This is a normalizing datastructure for associative, idempotent operations,
 -- see "What4.Expr.App" for an overview of such data structures.
-module Who2.Expr.Bloom.Seq
+module Who2.Expr.Bloom.Set
   ( BloomSeq
   , eqBy
   , ordBy

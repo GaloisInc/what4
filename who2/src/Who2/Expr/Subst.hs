@@ -32,9 +32,9 @@ import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.SymExpr as ESE
 import qualified Who2.Expr.SymFn as ESF
-import qualified Who2.Expr.Bloom.Product as SRP
-import qualified Who2.Expr.Bloom.Sum as SRS
-import qualified Who2.Expr.HashConsed.PolarizedExprSet as PES
+import qualified Who2.Expr.Bloom.SemiRing.Product as SRP
+import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
+import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
 import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
 

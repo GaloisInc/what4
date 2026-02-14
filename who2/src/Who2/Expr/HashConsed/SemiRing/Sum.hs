@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -35,7 +36,7 @@ import Data.Kind (Type)
 import qualified What4.SemiRing as SR
 import qualified What4.BaseTypes as BT
 
-import qualified Who2.Expr.HashConsed.ExprMap as EM
+import qualified Who2.Expr.HashConsed.Map as EM
 import Who2.Expr (HasId)
 
 ------------------------------------------------------------------------
@@ -48,6 +49,11 @@ data SRSum (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRSum
   , sumOffsetHC :: !(SR.Coefficient sr)
   , sumReprHC :: !(SR.SemiRingRepr sr)
   }
+
+-- Note: Manual Show instance to avoid needing Show for SemiRingRepr
+instance (Show (f (SR.SemiRingBase sr)), Show (SR.Coefficient sr)) => Show (SRSum sr f) where
+  show ws = "SRSum { sumMap = " ++ show (sumMap ws) ++
+            ", sumOffset = " ++ show (sumOffsetHC ws) ++ " }"
 
 eqBy2 ::
   (SR.Coefficient sr -> SR.Coefficient sr -> Bool) ->

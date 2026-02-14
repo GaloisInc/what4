@@ -1,4 +1,4 @@
-module Who2.Laws.PolarizedBloomSeq
+module Who2.Laws.Bloom.Polarized
   ( -- eqBy properties
     propPolarizedBloomSeqEqByReflexive
   , propPolarizedBloomSeqEqBySymmetric

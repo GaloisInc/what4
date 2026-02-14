@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -34,7 +35,7 @@ import Numeric.Natural (Natural)
 import qualified What4.SemiRing as SR
 import qualified What4.BaseTypes as BT
 
-import qualified Who2.Expr.HashConsed.ExprMap as EM
+import qualified Who2.Expr.HashConsed.Map as EM
 import Who2.Expr (HasId)
 
 ------------------------------------------------------------------------
@@ -47,6 +48,11 @@ data SRProd (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRProd
   , prodCoeff :: !(SR.Coefficient sr)
   , prodRepr :: !(SR.SemiRingRepr sr)
   }
+
+-- Note: Manual Show instance to avoid needing Show for SemiRingRepr
+instance (Show (f (SR.SemiRingBase sr)), Show (SR.Coefficient sr)) => Show (SRProd sr f) where
+  show p = "SRProd { prodMap = " ++ show (prodMap p) ++
+           ", prodCoeff = " ++ show (prodCoeff p) ++ " }"
 
 eqBy2 ::
   (SR.Coefficient sr -> SR.Coefficient sr -> Bool) ->

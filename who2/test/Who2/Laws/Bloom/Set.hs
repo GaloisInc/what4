@@ -1,4 +1,4 @@
-module Who2.Laws.BloomSeq
+module Who2.Laws.Bloom.Set
   ( -- eqBy properties
     propBloomSeqEqByReflexive
   , propBloomSeqEqBySymmetric
@@ -18,7 +18,7 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
-import qualified Who2.Expr.Bloom.Seq as BS
+import qualified Who2.Expr.Bloom.Set as BS
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------

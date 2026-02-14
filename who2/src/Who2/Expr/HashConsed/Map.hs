@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Who2.Expr.HashConsed.ExprMap
+module Who2.Expr.HashConsed.Map
   ( ExprMap
   , eqBy2
   , ordBy2
@@ -8,14 +8,14 @@ module Who2.Expr.HashConsed.ExprMap
   , singleton
   , insert
   , insertWith
-  , Who2.Expr.HashConsed.ExprMap.lookup
+  , Who2.Expr.HashConsed.Map.lookup
   , delete
   , size
   , toList
   , fromList
   , union
   , unionWith
-  , Who2.Expr.HashConsed.ExprMap.map
+  , Who2.Expr.HashConsed.Map.map
   , mapWithKey
   , elems
   , keys
@@ -33,7 +33,7 @@ import Who2.Expr (HasId(getId))
 
 -- | Map from elements with nonces to values, keyed by nonce indices.
 newtype ExprMap k v = ExprMap (IM.IntMap (k, v))
-  deriving (Hashable)
+  deriving (Hashable, Show)
 
 eqBy2 ::
   (k1 -> k2 -> Bool) ->
@@ -42,7 +42,7 @@ eqBy2 ::
   ExprMap k2 v2 ->
   Bool
 eqBy2 eqK eqV (ExprMap x) (ExprMap y) =
-  liftEq (\(x, u) (y, v) -> eqK x y && eqV u v) x y
+  liftEq (\(k1, u) (k2, v) -> eqK k1 k2 && eqV u v) x y
 {-# INLINE eqBy2 #-}
 
 -- | Like 'liftCompare', but without typeclass constraints

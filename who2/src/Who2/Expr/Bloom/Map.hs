@@ -7,7 +7,7 @@
 -- 'BloomSeq'. Below a certain threshold, it maintains single-value-per-key
 -- semantics (last-wins). Above the threshold, it transitions to multimap mode
 -- where insertions are unconditional appends without searching for duplicates.
-module Who2.Expr.Bloom.Kv
+module Who2.Expr.Bloom.Map
   ( BloomKv(..)
   , eqBy2
   , ordBy2
