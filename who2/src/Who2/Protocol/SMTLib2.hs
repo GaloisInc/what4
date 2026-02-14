@@ -139,6 +139,13 @@ baseTypeToSort tp = error $ "Who2.Protocol.SMTLib2.baseTypeToSort: unsupported t
 ------------------------------------------------------------------------
 -- Main Entry Points
 
+-- | Helper: Choose appropriate BV literal representation based on width.
+-- Use hexadecimal for widths that are multiples of 4 (more compact), decimal otherwise.
+bvLitTerm :: 1 <= w => NatRepr w -> BV.BV w -> SMT2.Term
+bvLitTerm w bv
+  | natValue w `mod` 4 == 0 = SMT2.bvhexadecimal w bv
+  | otherwise = SMT2.bvdecimal w bv
+
 -- | Convert a Who2 SymExpr to an SMT-Lib2 Term.
 -- This is the main entry point for serialization.
 mkSMTTerm ::
@@ -278,7 +285,7 @@ mkBVExprWithCache cache = \case
   -- test-smt2: bvLit-8
   -- test-smt2: bvLit-16
   -- test-smt2: bvLit-32
-  EBV.BVLit w bv -> return $ SMT2.bvhexadecimal w bv
+  EBV.BVLit w bv -> return $ bvLitTerm w bv
 
   -- test-smt2: bvAdd
   EBV.BVAdd w ws -> do
@@ -288,19 +295,19 @@ mkBVExprWithCache cache = \case
     -- Start with the offset if non-zero
     let offsetTerm = if offset == BV.zero w
                      then Nothing
-                     else Just (SMT2.bvhexadecimal w offset)
+                     else Just (bvLitTerm w offset)
     -- Create terms for each coefficient * variable
     scaledTerms <- mapM (\(expr, coeff) -> do
                            exprTerm <- mkExprWithCache cache expr
                            if coeff == BV.mkBV w 1
                            then return exprTerm
                            else do
-                             let coeffTerm = SMT2.bvhexadecimal w coeff
+                             let coeffTerm = bvLitTerm w coeff
                              return $ SMT2.bvmul exprTerm [coeffTerm])
                         terms
     -- Combine all terms with bvadd
     case (offsetTerm, scaledTerms) of
-      (Nothing, []) -> return $ SMT2.bvhexadecimal w (BV.zero w)
+      (Nothing, []) -> return $ bvLitTerm w (BV.zero w)
       (Nothing, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) t ts
       (Just off, []) -> return off
       (Just off, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) off (t:ts)
@@ -493,17 +500,17 @@ mkBVExprWithCache cache = \case
         offset = HCSR.sumOffset ws
     let offsetTerm = if offset == BV.zero w
                      then Nothing
-                     else Just (SMT2.bvhexadecimal w offset)
+                     else Just (bvLitTerm w offset)
     scaledTerms <- mapM (\(expr, coeff) -> do
                            exprTerm <- mkExprWithCache cache expr
                            if coeff == BV.mkBV w 1
                            then return exprTerm
                            else do
-                             let coeffTerm = SMT2.bvhexadecimal w coeff
+                             let coeffTerm = bvLitTerm w coeff
                              return $ SMT2.bvmul exprTerm [coeffTerm])
                         terms
     case (offsetTerm, scaledTerms) of
-      (Nothing, []) -> return $ SMT2.bvhexadecimal w (BV.zero w)
+      (Nothing, []) -> return $ bvLitTerm w (BV.zero w)
       (Nothing, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) t ts
       (Just off, []) -> return off
       (Just off, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) off (t:ts)
@@ -557,8 +564,8 @@ applyBVAbstractConstraints w domain baseTerm
            -- Encode: (bvand (bvor baseTerm known1) known0_mask)
            -- The bvor forces known-1 bits to 1
            -- The bvand forces known-0 bits to 0
-           let known1_term = SMT2.bvhexadecimal w (BV.mkBV w known1)
-               known0_term = SMT2.bvhexadecimal w (BV.mkBV w known0_mask)
+           let known1_term = bvLitTerm w (BV.mkBV w known1)
+               known0_term = bvLitTerm w (BV.mkBV w known0_mask)
                withKnown1 = SMT2.bvor baseTerm [known1_term]
            in SMT2.bvand withKnown1 [known0_term]
 

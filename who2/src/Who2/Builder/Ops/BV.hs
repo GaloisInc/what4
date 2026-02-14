@@ -933,16 +933,18 @@ bvUdiv alloc x y
   | isOne y = pure x
   -- Cryptol> :prove \(x : [8]) -> x != 0 ==> 0 / x == 0
   -- test: bvudiv-zero
-  | isZero x = pure x
+  | isZero x, not (isZero y) = pure x
+  -- Constant folding
   -- test: bvudiv-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y
   , BV.asUnsigned bvy /= 0 =
       bvLit alloc wx (BV.uquot bvx bvy)
   | otherwise =
-      alloc
-        (EBV.BVUdiv (EBV.width x) x y)
-        (BVD.udiv (E.eAbsVal x) (BVD.union (BVD.singleton (EBV.width y) 1) (E.eAbsVal y)))
+      let absVal = if isZero y
+                   then BVD.any (EBV.width x)  -- Division by zero is undefined
+                   else BVD.udiv (E.eAbsVal x) (BVD.union (BVD.singleton (EBV.width y) 1) (E.eAbsVal y))
+      in alloc (EBV.BVUdiv (EBV.width x) x y) absVal
 {-# INLINE bvUdiv #-}
 
 bvUrem ::
@@ -965,9 +967,10 @@ bvUrem alloc x y
   -- test: bvurem-small
   | Just True <- BVD.ult (E.eAbsVal x) (E.eAbsVal y) = pure x
   | otherwise =
-      alloc
-        (EBV.BVUrem (EBV.width x) x y)
-        (BVD.urem (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = if isZero y
+                   then BVD.any (EBV.width x)  -- Remainder by zero is undefined
+                   else BVD.urem (E.eAbsVal x) (E.eAbsVal y)
+      in alloc (EBV.BVUrem (EBV.width x) x y) absVal
 {-# INLINE bvUrem #-}
 
 bvSdiv ::
@@ -989,7 +992,7 @@ bvSdiv alloc x y
   -- test: bvsdiv-one
   | isOne y = pure x
   -- Cryptol> :prove \(x : [8]) -> x != 0 ==> 0 /$ x == 0
-  | isZero x = pure x
+  | isZero x, not (isZero y) = pure x
   -- Cryptol> :prove \(x : [8]) -> x /$ (-1) == -x
   -- test: bvsdiv-neg-one
   | Just (w, bv) <- asBVLit y
@@ -1002,9 +1005,10 @@ bvSdiv alloc x y
   , BV.asUnsigned bvy /= 0 =
       bvLit alloc wx (BV.squot wx bvx bvy)
   | otherwise =
-      alloc
-        (EBV.BVSdiv (EBV.width x) x y)
-        (BVD.sdiv (EBV.width x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = if isZero y
+                   then BVD.any (EBV.width x)  -- Division by zero is undefined
+                   else BVD.sdiv (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
+      in alloc (EBV.BVSdiv (EBV.width x) x y) absVal
 {-# INLINE bvSdiv #-}
 
 bvSrem ::
@@ -1028,9 +1032,10 @@ bvSrem alloc x y
   , BV.asUnsigned bvy /= 0 =
       bvLit alloc wx (BV.srem wx bvx bvy)
   | otherwise =
-      alloc
-        (EBV.BVSrem (EBV.width x) x y)
-        (BVD.srem (EBV.width x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = if isZero y
+                   then BVD.any (EBV.width x)  -- Remainder by zero is undefined
+                   else BVD.srem (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
+      in alloc (EBV.BVSrem (EBV.width x) x y) absVal
 {-# INLINE bvSrem #-}
 
 bvRol ::

@@ -12,7 +12,7 @@ module Who2.ExprBuilderAPI
   , getResultType
   ) where
 
-import Data.Parameterized.NatRepr (NatRepr, natValue, type (<=))
+import Data.Parameterized.NatRepr (NatRepr, natValue, type (<=), type (+), addNat)
 import qualified Data.Parameterized.Classes as PC
 import Prettyprinter (Pretty(..), parens, (<+>), viaShow)
 import What4.BaseTypes
@@ -29,6 +29,10 @@ data ExprBuilderAPI (tp :: BaseType) where
   -- Boolean constants
   TruePred :: ExprBuilderAPI BaseBoolType
   FalsePred :: ExprBuilderAPI BaseBoolType
+
+  -- Bound variables (identified by Int index)
+  BoundVarBool :: Int -> ExprBuilderAPI BaseBoolType
+  BoundVarBV :: (1 <= w) => NatRepr w -> Int -> ExprBuilderAPI (BaseBVType w)
 
   -- Boolean operations
   NotPred :: ExprBuilderAPI BaseBoolType -> ExprBuilderAPI BaseBoolType
@@ -64,11 +68,29 @@ data ExprBuilderAPI (tp :: BaseType) where
   BVLshr :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
   BVAshr :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
 
+  -- BV division/remainder
+  BVUdiv :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+  BVUrem :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+  BVSdiv :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+  BVSrem :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+
+  -- BV rotation
+  BVRol :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+  BVRor :: (1 <= w) => ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType w)
+
+  -- BV manipulation
+  BVConcat :: (1 <= u, 1 <= v, 1 <= (u + v)) => ExprBuilderAPI (BaseBVType u) -> ExprBuilderAPI (BaseBVType v) -> ExprBuilderAPI (BaseBVType (u + v))
+  BVSelect :: (1 <= w, 1 <= idx, (idx + w) <= n) => NatRepr idx -> NatRepr w -> ExprBuilderAPI (BaseBVType n) -> ExprBuilderAPI (BaseBVType w)
+  BVZext :: (1 <= w, (w + 1) <= r, 1 <= r) => NatRepr r -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType r)
+  BVSext :: (1 <= w, (w + 1) <= r, 1 <= r) => NatRepr r -> ExprBuilderAPI (BaseBVType w) -> ExprBuilderAPI (BaseBVType r)
+
 -- | Get the result type of an expression
 getResultType :: ExprBuilderAPI tp -> BaseTypeRepr tp
 getResultType = \case
   TruePred -> BaseBoolRepr
   FalsePred -> BaseBoolRepr
+  BoundVarBool _ -> BaseBoolRepr
+  BoundVarBV w _ -> BaseBVRepr w
   NotPred _ -> BaseBoolRepr
   AndPred _ _ -> BaseBoolRepr
   OrPred _ _ -> BaseBoolRepr
@@ -91,12 +113,26 @@ getResultType = \case
   BVShl x _ -> getResultType x
   BVLshr x _ -> getResultType x
   BVAshr x _ -> getResultType x
+  BVUdiv x _ -> getResultType x
+  BVUrem x _ -> getResultType x
+  BVSdiv x _ -> getResultType x
+  BVSrem x _ -> getResultType x
+  BVRol x _ -> getResultType x
+  BVRor x _ -> getResultType x
+  BVConcat x y ->
+    case (getResultType x, getResultType y) of
+      (BaseBVRepr u, BaseBVRepr v) -> BaseBVRepr (addNat u v)
+  BVSelect _ w _ -> BaseBVRepr w
+  BVZext r _ -> BaseBVRepr r
+  BVSext r _ -> BaseBVRepr r
 
 -- | Pretty instance for expression rendering
 instance Pretty (ExprBuilderAPI tp) where
   pretty = \case
     TruePred -> pretty @String "true"
     FalsePred -> pretty @String "false"
+    BoundVarBool i -> pretty @String "bool_" <> viaShow i
+    BoundVarBV w i -> pretty @String "bv" <> viaShow (natValue w) <> pretty @String "_" <> viaShow i
     NotPred x -> parens $ pretty @String "not" <+> pretty x
     AndPred x y -> parens $ pretty @String "and" <+> pretty x <+> pretty y
     OrPred x y -> parens $ pretty @String "or" <+> pretty x <+> pretty y
@@ -119,6 +155,16 @@ instance Pretty (ExprBuilderAPI tp) where
     BVShl x y -> parens $ pretty @String "bvshl" <+> pretty x <+> pretty y
     BVLshr x y -> parens $ pretty @String "bvlshr" <+> pretty x <+> pretty y
     BVAshr x y -> parens $ pretty @String "bvashr" <+> pretty x <+> pretty y
+    BVUdiv x y -> parens $ pretty @String "bvudiv" <+> pretty x <+> pretty y
+    BVUrem x y -> parens $ pretty @String "bvurem" <+> pretty x <+> pretty y
+    BVSdiv x y -> parens $ pretty @String "bvsdiv" <+> pretty x <+> pretty y
+    BVSrem x y -> parens $ pretty @String "bvsrem" <+> pretty x <+> pretty y
+    BVRol x y -> parens $ pretty @String "bvrol" <+> pretty x <+> pretty y
+    BVRor x y -> parens $ pretty @String "bvror" <+> pretty x <+> pretty y
+    BVConcat x y -> parens $ pretty @String "concat" <+> pretty x <+> pretty y
+    BVSelect idx w x -> parens $ pretty @String "select" <+> viaShow (natValue idx) <+> viaShow (natValue w) <+> pretty x
+    BVZext r x -> parens $ pretty @String "zext" <+> viaShow (natValue r) <+> pretty x
+    BVSext r x -> parens $ pretty @String "sext" <+> viaShow (natValue r) <+> pretty x
 
 -- Show instance via Pretty
 instance Show (ExprBuilderAPI tp) where

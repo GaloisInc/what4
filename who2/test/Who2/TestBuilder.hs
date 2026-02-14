@@ -13,15 +13,20 @@ module Who2.TestBuilder
   ) where
 
 import Data.Parameterized.Nonce (NonceGenerator, Nonce)
+import qualified Data.Parameterized.Nonce as Nonce
 import qualified Data.BitVector.Sized as BVS
 
 import What4.BaseTypes (BaseBoolType)
 import What4.Interface (IsExprBuilder(..))
 import qualified What4.Interface as WI
 import qualified What4.Expr as WE
+import qualified What4.Expr.App as WEA
+import qualified What4.ProgramLoc as WPL
 import qualified What4.SemiRing as SR
 import What4.Utils.AbstractDomains (AbstractValue, avTop)
+import qualified What4.Utils.BVDomain as BVD
 
+import qualified Data.Parameterized.Classes as PC
 import Who2.Expr (Expr(..), HasBaseType(..), mkExpr)
 import Who2.Expr.App (App(..))
 import Who2.Expr.SymExpr (SymExpr(..))
@@ -444,3 +449,67 @@ instance IsExprBuilder (TestBuilder t) where
   stringSubstring = error "TestBuilder.stringSubstring: not implemented"
   stringConcat = error "TestBuilder.stringConcat: not implemented"
   stringLength = error "TestBuilder.stringLength: not implemented"
+
+-- | IsSymExprBuilder instance for TestBuilder
+instance WI.IsSymExprBuilder (TestBuilder t) where
+  freshConstant tb nm tp = do
+    n <- Nonce.freshNonce (tbNonceGen tb)
+    let absVal = case tp of
+          WI.BaseBVRepr w -> BVD.any w
+          WI.BaseBoolRepr -> Nothing
+          _ -> error "TestBuilder.freshConstant: unsupported type"
+        bvar = WEA.BVar
+          { WEA.bvarId = n
+          , WEA.bvarLoc = WPL.initializationLoc
+          , WEA.bvarName = nm
+          , WEA.bvarType = tp
+          , WEA.bvarKind = WEA.UninterpVarKind
+          , WEA.bvarAbstractValue = Just absVal
+          }
+    -- Create an expression wrapping the bound variable
+    result <- naiveAlloc tb (BoundVarApp bvar)
+    pure $ SymExpr result
+
+  freshLatch = error "TestBuilder.freshLatch: not implemented"
+  freshBoundedBV = error "TestBuilder.freshBoundedBV: not implemented"
+  freshBoundedSBV = error "TestBuilder.freshBoundedSBV: not implemented"
+  freshBoundedInt = error "TestBuilder.freshBoundedInt: not implemented"
+  freshBoundedReal = error "TestBuilder.freshBoundedReal: not implemented"
+  exprUninterpConstants = error "TestBuilder.exprUninterpConstants: not implemented"
+
+  freshBoundVar tb _symbol tp = do
+    n <- Nonce.freshNonce (tbNonceGen tb)
+    pure $ WEA.BVar
+      { WEA.bvarId = n
+      , WEA.bvarLoc = WPL.initializationLoc
+      , WEA.bvarName = _symbol
+      , WEA.bvarType = tp
+      , WEA.bvarKind = WEA.QuantifierVarKind
+      , WEA.bvarAbstractValue = Nothing
+      }
+
+  varExpr _tb var =
+    -- Get abstract value from the bound var, or use unconstrained if not provided
+    let absVal = case WEA.bvarAbstractValue var of
+          Just av -> av
+          Nothing -> avTop (WEA.bvarType var)
+        -- Create expression directly using the bound variable's nonce
+        app = BoundVarApp var
+        expr = RiskyExpr
+          { eId = WEA.bvarId var
+          , eHash = PC.hashWithSaltF 0 app
+          , eApp = app
+          , eAbsVal = absVal
+          }
+    in SymExpr expr
+
+  forallPred = error "TestBuilder.forallPred: not implemented"
+  existsPred = error "TestBuilder.existsPred: not implemented"
+  definedFn = error "TestBuilder.definedFn: not implemented"
+  freshTotalUninterpFn = error "TestBuilder.freshTotalUninterpFn: not implemented"
+  applySymFn = error "TestBuilder.applySymFn: not implemented"
+
+  substituteBoundVars = error "TestBuilder.substituteBoundVars: not implemented"
+  substituteSymFns = error "TestBuilder.substituteSymFns: not implemented"
+  transformPredBV2LIA = error "TestBuilder.transformPredBV2LIA: not implemented"
+  transformSymFnLIA2BV = error "TestBuilder.transformSymFnLIA2BV: not implemented"
