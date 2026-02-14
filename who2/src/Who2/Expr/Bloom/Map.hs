@@ -238,8 +238,13 @@ insert combine (BloomKv f kvSeq) key newVal
               let upd (Kv k _) = Kv k v' in
               BloomKv f (HS.adjust' upd idx kvSeq)
             Nothing ->
-              -- Bloom filters don't support deletion, so disable the filter
-              BloomKv Filt.disabled (HS.deleteAt idx kvSeq)
+              -- Recompute bloom filter after deletion
+              let newSeq = HS.deleteAt idx kvSeq
+                  newSize = HS.length newSeq
+                  newFilt = if not bloomFilter || newSize > threshold
+                           then Filt.disabled
+                           else F.foldl' (\flt (Kv k _) -> Filt.insert flt k) Filt.empty (HS.toSeq newSeq)
+              in BloomKv newFilt newSeq
         Nothing ->
           appendNew newFilter kvSeq
   where
