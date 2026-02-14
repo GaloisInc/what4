@@ -1,15 +1,26 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Who2.Laws.Helpers
-  ( checkOrdTransitivity
+  ( -- Ordering helpers
+    checkOrdTransitivity
   , checkOrdFTransitivity
   , checkOrdAntisymmetry
   , checkOrdFAntisymmetry
+    -- Mock types for testing
+  , MockExpr(..)
+  , MockExprBT(..)
   ) where
 
+import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Parameterized.Classes as PC
+import qualified What4.BaseTypes as BT
+
+import Who2.Expr (HasId(..))
+import qualified Who2.Expr.Bloom.Polarized as PBS
 
 -- | Check transitivity property for ordering relations
 -- Given three orderings (x `compare` y, y `compare` z, x `compare` z), returns True if transitivity holds
@@ -70,3 +81,32 @@ checkOrdFAntisymmetry ord12 ord21 = case (ord12, ord21) of
   (PC.EQF, PC.EQF) -> True
   (PC.GTF, PC.LTF) -> True
   _ -> False
+
+-------------------------------------------------------------------------------
+-- Mock Types for Testing
+-------------------------------------------------------------------------------
+
+-- | Mock expression type for testing non-parameterized data structures
+data MockExpr = MockExpr Int
+  deriving (Eq, Ord, Show)
+
+instance HasId MockExpr where
+  getId (MockExpr i) = i
+
+instance Hashable MockExpr where
+  hashWithSalt s (MockExpr i) = s `hashWithSalt` i
+
+instance PBS.Polarizable MockExpr where
+  polarity (MockExpr x)
+    | x < 0 = PBS.Negative (MockExpr (negate x))
+    | otherwise = PBS.Positive (MockExpr x)
+
+-- | Mock expression type for testing BaseType-parameterized data structures
+newtype MockExprBT (tp :: BT.BaseType) = MockExprBT Int
+  deriving (Eq, Ord, Show)
+
+instance HasId (MockExprBT tp) where
+  getId (MockExprBT i) = i
+
+instance Hashable (MockExprBT tp) where
+  hashWithSalt s (MockExprBT i) = s `hashWithSalt` i

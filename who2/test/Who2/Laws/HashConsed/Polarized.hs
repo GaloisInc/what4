@@ -1,39 +1,19 @@
 module Who2.Laws.HashConsed.Polarized
   ( -- Basic properties
     propPolarizedExprSetHashConsistency
+  , propPolarizedExprSetEqHashConsistency
   ) where
 
-import Control.Monad (when)
-import Data.Hashable (Hashable(hashWithSalt), hash)
+import Data.Hashable (hash)
 
-import Hedgehog (Property)
+import Hedgehog (Property, (==>))
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
 import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.Set as ES
-import qualified Who2.Expr.Bloom.Polarized as PBS
-import Who2.Expr (HasId(..))
-
--------------------------------------------------------------------------------
--- Generator
--------------------------------------------------------------------------------
-
--- Mock expression type with HasId instance
-data MockExpr = MockExpr Int
-  deriving (Eq, Ord, Show)
-
-instance HasId MockExpr where
-  getId (MockExpr i) = i
-
-instance Hashable MockExpr where
-  hashWithSalt s (MockExpr i) = s `hashWithSalt` i
-
-instance PBS.Polarizable MockExpr where
-  polarity (MockExpr x)
-    | x < 0 = PBS.Negative (MockExpr (negate x))
-    | otherwise = PBS.Positive (MockExpr x)
+import Who2.Laws.Helpers (MockExpr(..))
 
 genPolarizedExprSet :: H.Gen (PES.PolarizedExprSet MockExpr)
 genPolarizedExprSet = do
@@ -52,5 +32,12 @@ propPolarizedExprSetHashConsistency :: Property
 propPolarizedExprSetHashConsistency = H.property $ do
   pes1 <- H.forAll genPolarizedExprSet
   pes2 <- H.forAll genPolarizedExprSet
-  when (pes1 == pes2) $ do
-    hash pes1 H.=== hash pes2
+  (pes1 == pes2) ==> (hash pes1 H.=== hash pes2)
+
+-- | Eq should be consistent with hash: if x == y then hash x == hash y
+propPolarizedExprSetEqHashConsistency :: Property
+propPolarizedExprSetEqHashConsistency = H.property $ do
+  pes <- H.forAll genPolarizedExprSet
+  let h1 = hash pes
+  let h2 = hash pes
+  h1 H.=== h2

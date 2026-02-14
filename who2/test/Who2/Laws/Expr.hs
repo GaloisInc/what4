@@ -87,14 +87,14 @@ propTestEqualityHashConsistent :: Property
 propTestEqualityHashConsistent = H.property $ do
   expr1 <- H.forAll $ genBool defaultGenConfig
   expr2 <- H.forAll $ genBool defaultGenConfig
-  (hx, hy) <- liftIO $ withIONonceGenerator $ \gen -> do
+  result <- liftIO $ withIONonceGenerator $ \gen -> do
     builder <- newBuilder gen
     SymExpr x <- interp builder expr1
     SymExpr y <- interp builder expr2
-    case testEquality x y of
-      Just Refl -> pure (eHash x, eHash y)
-      Nothing -> pure (0, 0)
-  hx H.=== hy
+    pure (testEquality x y, eHash x, eHash y)
+  case result of
+    (Just Refl, hx, hy) -> hx H.=== hy
+    (Nothing, _, _) -> H.discard
 
 -------------------------------------------------------------------------------
 -- OrdF Properties
@@ -147,7 +147,9 @@ propOrdFConsistentWithTestEquality = H.property $ do
       (Just Refl, PC.EQF) -> True
       (Nothing, PC.LTF) -> True
       (Nothing, PC.GTF) -> True
-      _ -> False
+      (Just Refl, PC.LTF) -> False
+      (Just Refl, PC.GTF) -> False
+      (Nothing, PC.EQF) -> False
   unless result H.failure
 
 -------------------------------------------------------------------------------
@@ -201,5 +203,7 @@ propOrdConsistentWithEq = H.property $ do
       (True, EQ) -> True
       (False, LT) -> True
       (False, GT) -> True
-      _ -> False
+      (True, LT) -> False
+      (True, GT) -> False
+      (False, EQ) -> False
   unless result H.failure

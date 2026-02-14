@@ -22,29 +22,20 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.Parameterized.NatRepr (knownNat)
 
-import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
-import Who2.Expr (HasId(..))
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------
 -- Generator
 -------------------------------------------------------------------------------
 
--- Mock expression type for testing (kind: BaseType -> *)
-newtype MockExpr (tp :: BT.BaseType) = MockExpr Int
-  deriving (Eq, Ord, Show)
-
-instance HasId (MockExpr tp) where
-  getId (MockExpr i) = i
-
-genHashConsedProductBV8 :: H.Gen (HCPR.SRProd (SR.SemiRingBV SR.BVBits 8) MockExpr)
+genHashConsedProductBV8 :: H.Gen (HCPR.SRProd (SR.SemiRingBV SR.BVBits 8) MockExprBT)
 genHashConsedProductBV8 = do
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExpr <$> Gen.int (Range.linear 0 100)
+    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
     expnt <- Gen.integral (Range.linear 1 5)
     pure (key, expnt)
   pure $ HCPR.fromTerms (SR.SemiRingBVRepr SR.BVBitsRepr knownNat) terms
@@ -113,5 +104,7 @@ propHashConsedProductOrdByConsistentWithEqBy = H.property $ do
         (True, EQ) -> True
         (False, LT) -> True
         (False, GT) -> True
-        _ -> False
+        (True, LT) -> False
+        (True, GT) -> False
+        (False, EQ) -> False
   unless result H.failure

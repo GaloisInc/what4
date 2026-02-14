@@ -23,30 +23,21 @@ import qualified Hedgehog.Range as Range
 import qualified Data.BitVector.Sized as BV
 import Data.Parameterized.NatRepr (knownNat)
 
-import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
-import Who2.Expr (HasId(..))
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------
 -- Generator
 -------------------------------------------------------------------------------
 
--- Mock expression type for testing (kind: BaseType -> *)
-newtype MockExpr (tp :: BT.BaseType) = MockExpr Int
-  deriving (Eq, Ord, Show)
-
-instance HasId (MockExpr tp) where
-  getId (MockExpr i) = i
-
-genHashConsedSumBV8 :: H.Gen (HCSR.SRSum (SR.SemiRingBV SR.BVArith 8) MockExpr)
+genHashConsedSumBV8 :: H.Gen (HCSR.SRSum (SR.SemiRingBV SR.BVArith 8) MockExprBT)
 genHashConsedSumBV8 = do
   offset <- Gen.int (Range.linear 0 255)
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExpr <$> Gen.int (Range.linear 0 100)
+    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
     coeff <- Gen.int (Range.linear 0 255)
     pure (key, BV.mkBV knownNat (fromIntegral coeff))
   pure $ HCSR.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
@@ -115,5 +106,7 @@ propHashConsedSumOrdByConsistentWithEqBy = H.property $ do
         (True, EQ) -> True
         (False, LT) -> True
         (False, GT) -> True
-        _ -> False
+        (True, LT) -> False
+        (True, GT) -> False
+        (False, EQ) -> False
   unless result H.failure

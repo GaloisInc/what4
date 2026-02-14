@@ -99,5 +99,7 @@ propBloomKvOrdByConsistentWithEqBy = H.property $ do
         (True, EQ) -> True
         (False, LT) -> True
         (False, GT) -> True
-        _ -> False
+        (True, LT) -> False
+        (True, GT) -> False
+        (False, EQ) -> False
   unless result H.failure

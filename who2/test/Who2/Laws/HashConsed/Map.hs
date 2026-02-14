@@ -19,19 +19,11 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
 import qualified Who2.Expr.HashConsed.Map as EM
-import Who2.Expr (HasId(..))
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExpr(..), checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------
 -- Generator
 -------------------------------------------------------------------------------
-
--- Mock expression type with HasId instance
-data MockExpr = MockExpr Int
-  deriving (Eq, Ord, Show)
-
-instance HasId MockExpr where
-  getId (MockExpr i) = i
 
 genExprMapIntString :: H.Gen (EM.ExprMap MockExpr String)
 genExprMapIntString = do
@@ -105,5 +97,7 @@ propExprMapOrdByConsistentWithEqBy = H.property $ do
         (True, EQ) -> True
         (False, LT) -> True
         (False, GT) -> True
-        _ -> False
+        (True, LT) -> False
+        (True, GT) -> False
+        (False, EQ) -> False
   unless result H.failure

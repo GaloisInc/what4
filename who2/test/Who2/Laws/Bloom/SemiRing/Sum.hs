@@ -24,30 +24,21 @@ import qualified Data.BitVector.Sized as BV
 
 import Data.Parameterized.NatRepr (knownNat)
 
-import Data.Hashable (Hashable(hashWithSalt))
-import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
 
 -------------------------------------------------------------------------------
 -- Generator
 -------------------------------------------------------------------------------
 
--- Mock expression type for testing (kind: BaseType -> *)
-newtype MockExpr (tp :: BT.BaseType) = MockExpr Int
-  deriving (Eq, Ord, Show)
-
-instance Hashable (MockExpr tp) where
-  hashWithSalt s (MockExpr i) = s `hashWithSalt` i
-
-genBloomSumBV8 :: H.Gen (SRS.SRSum (SR.SemiRingBV SR.BVArith 8) MockExpr)
+genBloomSumBV8 :: H.Gen (SRS.SRSum (SR.SemiRingBV SR.BVArith 8) MockExprBT)
 genBloomSumBV8 = do
   offset <- Gen.int (Range.linear 0 255)
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExpr <$> Gen.int (Range.linear 0 100)
+    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
     coeff <- Gen.int (Range.linear 0 255)
     pure (key, BV.mkBV knownNat (fromIntegral coeff))
   pure $ SRS.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
@@ -116,5 +107,7 @@ propBloomSumOrdByConsistentWithEqBy = H.property $ do
         (True, EQ) -> True
         (False, LT) -> True
         (False, GT) -> True
-        _ -> False
+        (True, LT) -> False
+        (True, GT) -> False
+        (False, EQ) -> False
   unless result H.failure
