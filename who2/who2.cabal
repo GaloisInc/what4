@@ -229,6 +229,7 @@ test-suite who2-tests
     Who2.Laws.HashConsed.SemiRing.Sum
     Who2.Laws.HashConsed.Set
     Who2.Laws.Helpers
+    Who2.Invariants
     Who2.Properties
     Who2.SemiRing.Bloom.Product
     Who2.SemiRing.Bloom.Sum

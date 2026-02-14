@@ -26,6 +26,7 @@ import qualified Who2.SemiRing.HashConsed.Sum as SRHCSum
 import qualified Who2.SemiRing.HashConsed.Product as SRHCProduct
 import qualified Who2.SemiRing.Bloom.Sum as SRBloomSum
 import qualified Who2.SemiRing.Bloom.Product as SRBloomProduct
+import qualified Who2.Invariants as Invariants
 import qualified Who2.Properties as Props
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
@@ -80,6 +81,7 @@ propertyTests =
     , bloomTests
     , hashConsedTests
     , semiRingTests
+    , invariantTests
     ]
 
 -- | All Bloom module tests
@@ -496,4 +498,14 @@ bloomSemiRingTests =
         , testProperty "Scale Distributes Over Multiplication (below threshold)" $
             Hedgehog.withTests 1000 SRBloomProduct.propBloomProductScaleDistributesOverMul
         ]
+    ]
+
+-- | AST Invariant tests
+invariantTests :: TestTree
+invariantTests =
+  testGroup "AST Invariants"
+    [ testProperty "No empty or singleton structures (Bool)" $
+        Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructures
+    , testProperty "No empty or singleton structures (BV)" $
+        Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructuresBV
     ]
