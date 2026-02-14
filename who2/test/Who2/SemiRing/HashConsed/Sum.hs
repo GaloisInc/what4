@@ -8,6 +8,7 @@ module Who2.SemiRing.HashConsed.Sum
   , propHashConsedSumAddIdentity
   , propHashConsedSumAddConstantAssociative
   , propHashConsedSumScalarDistributivity
+  , propHashConsedSumCancellation
   ) where
 
 import Control.Monad (unless)
@@ -22,6 +23,7 @@ import Data.Parameterized.NatRepr (knownNat)
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
+import qualified Who2.Expr.HashConsed.Map as EM
 import Who2.Laws.Helpers (MockExprBT(..))
 
 -------------------------------------------------------------------------------
@@ -89,3 +91,13 @@ propHashConsedSumScalarDistributivity = H.property $ do
   let lhs = HCSR.scaledVar sr (SR.add sr c1 c2) x
   let rhs = HCSR.add (HCSR.scaledVar sr c1 x) (HCSR.scaledVar sr c2 x)
   lhs H.=== rhs
+
+propHashConsedSumCancellation :: Property
+propHashConsedSumCancellation = H.property $ do
+  c <- H.forAll genBV8Constant
+  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
+  let negC = BV.negate knownNat c  -- Compute -c for BV arithmetic
+  let result = HCSR.add (HCSR.scaledVar sr c x) (HCSR.scaledVar sr negC x)
+  -- After cancellation, the map should be empty (no zero-coefficient terms)
+  H.assert $ EM.size (HCSR.sumMap result) == 0

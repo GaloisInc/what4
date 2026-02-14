@@ -7,6 +7,7 @@ module Who2.SemiRing.Bloom.Sum
   , propBloomSumAddIdentity
   , propBloomSumAddConstantAssociative
   , propBloomSumScalarDistributivity
+  , propBloomSumCancellation
   ) where
 
 import Control.Monad (unless)
@@ -21,6 +22,7 @@ import Data.Parameterized.NatRepr (knownNat)
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as BSR
+import qualified Who2.Expr.Bloom.Map as BKv
 import Who2.Laws.Helpers (MockExprBT(..))
 
 -------------------------------------------------------------------------------
@@ -84,3 +86,13 @@ propBloomSumScalarDistributivity = H.property $ do
   let rhs = BSR.add (BSR.scaledVar sr c1 x) (BSR.scaledVar sr c2 x)
   unless (BSR.size lhs < BSR.threshold && BSR.size rhs < BSR.threshold) H.discard
   lhs H.=== rhs
+
+propBloomSumCancellation :: Property
+propBloomSumCancellation = H.property $ do
+  c <- H.forAll genBV8Constant
+  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
+  let negC = BV.negate knownNat c  -- Compute -c for BV arithmetic
+  let result = BSR.add (BSR.scaledVar sr c x) (BSR.scaledVar sr negC x)
+  -- After cancellation, the map should be empty (no zero-coefficient terms)
+  H.assert $ BKv.isEmpty (BSR.sumMap result)

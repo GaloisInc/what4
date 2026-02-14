@@ -455,6 +455,8 @@ hashConsedSemiRingTests =
             Hedgehog.withTests 1000 SRHCSum.propHashConsedSumAddConstantAssociative
         , testProperty "Scalar Distributivity" $
             Hedgehog.withTests 1000 SRHCSum.propHashConsedSumScalarDistributivity
+        , testProperty "Coefficient Cancellation" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumCancellation
         ]
     , testGroup "Product"
         [ testProperty "Multiplication Associativity" $
@@ -481,6 +483,8 @@ bloomSemiRingTests =
             Hedgehog.withTests 1000 SRBloomSum.propBloomSumAddConstantAssociative
         , testProperty "Scalar Distributivity (below threshold)" $
             Hedgehog.withTests 1000 SRBloomSum.propBloomSumScalarDistributivity
+        , testProperty "Coefficient Cancellation" $
+            Hedgehog.withTests 1000 SRBloomSum.propBloomSumCancellation
         ]
     , testGroup "Product"
         [ testProperty "Multiplication Associativity (below threshold)" $
