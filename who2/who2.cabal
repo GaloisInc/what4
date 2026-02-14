@@ -1,0 +1,263 @@
+Cabal-version: 2.4
+Name:          who2
+Version:       0.1.0.0
+Author:        Galois Inc.
+Maintainer:    langston@galois.com
+License:       BSD-3-Clause
+Build-type:    Simple
+Synopsis:      A faster, simpler expression builder for use with What4.
+
+-----------------------------------------------------------
+-- Configuration: see Who2.Config
+
+flag hash-consing
+  description: Enable hash-consing for structural sharing and term deduplication
+  manual: True
+  default: False
+
+flag bloom-filter
+  description: Enable bloom filtering for fast negative membership tests
+  manual: True
+  default: True
+
+flag hashed-sequence
+  description: Enable hash precomputation in sequences for O(1) hashing
+  manual: True
+  default: True
+
+flag fancy-hash
+  description: Use polynomial rolling hash instead of simple XOR
+  manual: True
+  default: False
+
+flag emit-ad-constraints-bound-vars
+  description: Emit abstract domain constraints for bound variables in SMT output
+  manual: True
+  default: False
+
+flag emit-ad-constraints-all-bv
+  description: Emit abstract domain constraints for all BV expressions in SMT output (expensive)
+  manual: True
+  default: False
+
+flag normalize-xor
+  description: Normalize xor: x ⊕ y = ¬(x = y)
+  manual: True
+  default: True
+
+flag normalize-or
+  description: Normalize or: x ∨ y = ¬(¬x ∧ ¬y) (De Morgan)
+  manual: True
+  default: True
+
+flag normalize-bvneg
+  description: Normalize bvneg: -(x) = ~x + 1 (two's complement)
+  manual: True
+  default: True
+
+flag normalize-bvule
+  description: Normalize bvule: x ≤ y = (x < y) ∨ (x = y)
+  manual: True
+  default: True
+
+flag normalize-bvsle
+  description: Normalize bvsle: x ≤ₛ y = (x <ₛ y) ∨ (x = y)
+  manual: True
+  default: True
+
+flag use-hash-consed-structures
+  description: Use hash-consed data structures (IntMap-based) for BVAndBits, BVOrBits, BVAdd, BVMul instead of bloom-based structures (requires hash-consing)
+  manual: True
+  default: False
+
+-----------------------------------------------------------
+
+common bldflags
+  default-language: Haskell2010
+
+  -- These warnings are a bit opinionated, in contrast to those below.
+  ghc-options:
+    -Wmissing-export-lists
+    -Wmissing-import-lists
+
+  ghc-options:
+    -Wall
+    -Werror=ambiguous-fields
+    -Werror=badly-staged-types
+    -Werror=compat-unqualified-imports
+    -Werror=data-kinds-tc
+    -Werror=deferred-type-errors
+    -Werror=deprecated-flags
+    -Werror=deprecations
+    -Werror=deriving-defaults
+    -Werror=dodgy-foreign-imports
+    -Werror=duplicate-exports
+    -Werror=empty-enumerations
+    -Werror=identities
+    -Werror=inaccessible-code
+    -Werror=incomplete-export-warnings
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-selectors
+    -Werror=incomplete-record-updates
+    -Werror=incomplete-uni-patterns
+    -Werror=inconsistent-flags
+    -Werror=inline-rule-shadowing
+    -Werror=misplaced-pragmas
+    -Werror=missed-extra-shared-lib
+    -Werror=missing-exported-signatures
+    -Werror=missing-fields
+    -Werror=missing-home-modules
+    -Werror=missing-methods
+    -Werror=operator-whitespace
+    -Werror=operator-whitespace-ext-conflict
+    -Werror=overflowed-literals
+    -Werror=overlapping-patterns
+    -Werror=partial-fields
+    -Werror=partial-type-signatures
+    -Werror=redundant-bang-patterns
+    -Werror=redundant-record-wildcards
+    -Werror=redundant-strictness-flags
+    -Werror=simplifiable-class-constraints
+    -Werror=star-binder
+    -Werror=star-is-type
+    -Werror=tabs
+    -Werror=type-equality-out-of-scope
+    -Werror=type-equality-requires-operators
+    -Werror=typed-holes
+    -Werror=unrecognised-pragmas
+    -Werror=unrecognised-warning-flags
+    -Werror=unsupported-calling-conventions
+    -Werror=unsupported-llvm-version
+    -Werror=unticked-promoted-constructors
+    -Werror=unused-imports
+    -Werror=unused-record-wildcards
+    -Werror=warnings-deprecations
+    -Werror=wrong-do-bind
+
+  -- TODO(#286): Enable these warnings when supporting these GHC versions.
+  -- -Werror=deprecated-type-abstractions
+  -- -Werror=view-pattern-signatures
+
+library
+  import: bldflags
+  hs-source-dirs: src
+
+  -- CPP macros for configuration flags
+  if flag(hash-consing)
+    cpp-options: -DHASH_CONSING
+  if flag(bloom-filter)
+    cpp-options: -DBLOOM_FILTER
+  if flag(hashed-sequence)
+    cpp-options: -DHASHED_SEQUENCE
+  if flag(fancy-hash)
+    cpp-options: -DFANCY_HASH
+  if flag(emit-ad-constraints-bound-vars)
+    cpp-options: -DEMIT_AD_CONSTRAINTS_BOUND_VARS
+  if flag(emit-ad-constraints-all-bv)
+    cpp-options: -DEMIT_AD_CONSTRAINTS_ALL_BV
+  if flag(normalize-xor)
+    cpp-options: -DNORMALIZE_XOR
+  if flag(normalize-or)
+    cpp-options: -DNORMALIZE_OR
+  if flag(normalize-bvneg)
+    cpp-options: -DNORMALIZE_BVNEG
+  if flag(normalize-bvule)
+    cpp-options: -DNORMALIZE_BVULE
+  if flag(normalize-bvsle)
+    cpp-options: -DNORMALIZE_BVSLE
+  if flag(use-hash-consed-structures)
+    cpp-options: -DUSE_HASH_CONSED_STRUCTURES
+
+  exposed-modules:
+    Who2.Builder
+    Who2.Builder.Ops.BV
+    Who2.Builder.Ops.Logic
+    Who2.Config
+    Who2.Expr
+    Who2.Expr.App
+    Who2.Expr.Bloom.Filter
+    Who2.Expr.Bloom.HashedSeq
+    Who2.Expr.Bloom.Map
+    Who2.Expr.Bloom.Polarized
+    Who2.Expr.Bloom.SemiRing.Product
+    Who2.Expr.Bloom.SemiRing.Sum
+    Who2.Expr.Bloom.Set
+    Who2.Expr.BV
+    Who2.Expr.Fn
+    Who2.Expr.HashConsed.Map
+    Who2.Expr.HashConsed.Polarized
+    Who2.Expr.HashConsed.SemiRing.Product
+    Who2.Expr.HashConsed.SemiRing.Sum
+    Who2.Expr.HashConsed.Set
+    Who2.Expr.Logic
+    Who2.Expr.Subst
+    Who2.Expr.SymExpr
+    Who2.Expr.SymFn
+    Who2.Expr.Views
+    Who2.Protocol.SMTLib2
+    Who2.Unsupported
+  build-depends:
+    base >= 4.10 && < 5,
+    bv-sized,
+    containers,
+    hashable,
+    parameterized-utils,
+    prettyprinter,
+    text,
+    what4
+
+test-suite who2-tests
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Who2.Cryptol
+    Who2.ExprBuilderAPI
+    Who2.Filter
+    Who2.Functions
+    Who2.Gen
+    Who2.Laws.Bloom.HashedSeq
+    Who2.Laws.Bloom.Map
+    Who2.Laws.Bloom.Polarized
+    Who2.Laws.Bloom.SemiRing.Product
+    Who2.Laws.Bloom.SemiRing.Sum
+    Who2.Laws.Bloom.Set
+    Who2.Laws.Expr
+    Who2.Laws.HashConsed.Map
+    Who2.Laws.HashConsed.Polarized
+    Who2.Laws.HashConsed.SemiRing.Product
+    Who2.Laws.HashConsed.SemiRing.Sum
+    Who2.Laws.HashConsed.Set
+    Who2.Laws.Helpers
+    Who2.Invariants
+    Who2.Properties
+    Who2.SemiRing.Bloom.Product
+    Who2.SemiRing.Bloom.Sum
+    Who2.SemiRing.HashConsed.Product
+    Who2.SemiRing.HashConsed.Sum
+    Who2.Simplification
+    Who2.SMTLib2
+    Who2.TestAnnotations
+    Who2.TestBuilder
+  build-depends:
+    base >= 4.10 && < 5,
+    bv-sized,
+    bytestring,
+    containers,
+    directory,
+    filepath,
+    hashable,
+    hedgehog >= 1.0.2,
+    parameterized-utils,
+    prettyprinter >= 1.7.0,
+    process,
+    tasty >= 1.2,
+    tasty-golden,
+    tasty-hedgehog >= 1.2,
+    tasty-hunit,
+    text,
+    w4smt2,
+    what4,
+    who2,
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
