@@ -194,19 +194,27 @@ isZero ws =
 add :: SRSum sr f -> SRSum sr f -> SRSum sr f
 add ws1 ws2 =
   SRSum
-    (EM.unionWith (SR.add sr) (sumMap ws1) (sumMap ws2))
+    (EM.unionWithMaybe addCoeff (sumMap ws1) (sumMap ws2))
     (SR.add sr (sumOffsetHC ws1) (sumOffsetHC ws2))
     sr
-  where sr = sumReprHC ws1
+  where
+    sr = sumReprHC ws1
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 {-# INLINE add #-}
 
 addVar :: HasId (f (SR.SemiRingBase sr)) => SRSum sr f -> f (SR.SemiRingBase sr) -> SRSum sr f
 addVar ws x =
   SRSum
-    (EM.insertWith (SR.add sr) x (SR.one sr) (sumMap ws))
+    (EM.insertWithMaybe addCoeff x (SR.one sr) (sumMap ws))
     (sumOffsetHC ws)
     sr
-  where sr = sumReprHC ws
+  where
+    sr = sumReprHC ws
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 {-# INLINE addVar #-}
 
 addConstant :: SRSum sr f -> SR.Coefficient sr -> SRSum sr f
@@ -222,9 +230,13 @@ fromTerms ::
   SRSum sr f
 fromTerms sr terms offset =
   SRSum
-    (foldr (\(k, v) m -> EM.insertWith (SR.add sr) k v m) EM.empty terms)
+    (foldr (\(k, v) m -> EM.insertWithMaybe addCoeff k v m) EM.empty terms)
     offset
     sr
+  where
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 {-# INLINE fromTerms #-}
 
 toTerms :: SRSum sr f -> [(f (SR.SemiRingBase sr), SR.Coefficient sr)]

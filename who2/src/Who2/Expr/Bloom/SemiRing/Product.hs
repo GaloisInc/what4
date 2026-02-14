@@ -26,6 +26,8 @@ module Who2.Expr.Bloom.SemiRing.Product
   , asConstant
   , asVar
   , contains
+  , size
+  , threshold
   ) where
 
 import Data.Bits (xor)
@@ -157,9 +159,11 @@ fromTerms ::
   SRProd sr f
 fromTerms sr terms =
   SRProd
-    (BKv.fromList (+) (filter (\(_, e) -> e /= 0) terms))
+    (BKv.fromList addExp (filter (\(_, e) -> e /= 0) terms))
     (SR.one sr)
     sr
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 
 -- | Convert a product to a list of terms and their exponents
 toTerms :: SRProd sr f -> [(f (SR.SemiRingBase sr), Natural)]
@@ -174,9 +178,11 @@ mul ::
 mul p1 p2 =
   let sr = prodRepr p1
   in SRProd
-       (BKv.merge (+) (prodMap p1) (prodMap p2))
+       (BKv.merge addExp (prodMap p1) (prodMap p2))
        (SR.mul sr (prodCoeff p1) (prodCoeff p2))
        sr
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 
 -- | Multiply by a variable
 mulVar ::
@@ -186,9 +192,11 @@ mulVar ::
   SRProd sr f
 mulVar p x =
   SRProd
-    (BKv.insert (+) (prodMap p) x 1)
+    (BKv.insert addExp (prodMap p) x 1)
     (prodCoeff p)
     (prodRepr p)
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 
 -- | Multiply by a constant (scale the coefficient)
 scale :: SRProd sr f -> SR.Coefficient sr -> SRProd sr f
@@ -220,4 +228,16 @@ contains ::
   SRProd sr f ->
   f (SR.SemiRingBase sr) ->
   Bool
-contains p x = not (BKv.isEmpty (BKv.insert (+) (prodMap p) x 1))
+contains p x = not (BKv.isEmpty (BKv.insert addExp (prodMap p) x 1))
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
+
+-- | Get the number of terms in the product
+size :: SRProd sr f -> Int
+size = BKv.size . prodMap
+{-# INLINE size #-}
+
+-- | The threshold for the underlying BloomKv
+threshold :: Int
+threshold = BKv.threshold
+{-# INLINE threshold #-}

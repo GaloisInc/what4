@@ -145,9 +145,11 @@ fromTerms ::
   SRProd sr f
 fromTerms sr terms =
   SRProd
-    (foldr (\(k, v) m -> if v /= 0 then EM.insertWith (+) k v m else m) EM.empty terms)
+    (foldr (\(k, v) m -> if v /= 0 then EM.insertWithMaybe addExp k v m else m) EM.empty terms)
     (SR.one sr)
     sr
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE fromTerms #-}
 
 toTerms :: SRProd sr f -> [(f (SR.SemiRingBase sr), Natural)]
@@ -158,17 +160,21 @@ mul :: SRProd sr f -> SRProd sr f -> SRProd sr f
 mul p1 p2 =
   let sr = prodRepr p1
   in SRProd
-       (EM.unionWith (+) (prodMap p1) (prodMap p2))
+       (EM.unionWithMaybe addExp (prodMap p1) (prodMap p2))
        (SR.mul sr (prodCoeff p1) (prodCoeff p2))
        sr
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE mul #-}
 
 mulVar :: HasId (f (SR.SemiRingBase sr)) => SRProd sr f -> f (SR.SemiRingBase sr) -> SRProd sr f
 mulVar p x =
   SRProd
-    (EM.insertWith (+) x 1 (prodMap p))
+    (EM.insertWithMaybe addExp x 1 (prodMap p))
     (prodCoeff p)
     (prodRepr p)
+  where
+    addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE mulVar #-}
 
 scale :: SRProd sr f -> SR.Coefficient sr -> SRProd sr f

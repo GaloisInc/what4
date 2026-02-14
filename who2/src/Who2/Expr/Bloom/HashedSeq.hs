@@ -16,6 +16,8 @@ module Who2.Expr.Bloom.HashedSeq
   , toList
   , findIndexR
   , adjust'
+  , deleteAt
+  , index
   ) where
 
 import Data.Bits (xor, shiftR, (.&.))
@@ -203,12 +205,23 @@ adjust' f i hs@(HashedSeq s _) =
   let newSeq = Seq.adjust' f i s
   in if s == newSeq  -- TODO: Just compare the one element
      then hs  -- No change
-     else
-      if hashedSequence
-      then HashedSeq newSeq (rehashSeq newSeq)
-      else HashedSeq newSeq 0
-  where
-    rehashSeq s' = F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s'
+     else mkHashedSeq newSeq
+
+-- | O(log(min(i,n-i))). Delete the element at the given index.
+-- The hash is recomputed (if hashedSequence) because we can't incrementally update
+-- when deleting an interior element.
+deleteAt :: Hashable a => Int -> HashedSeq a -> HashedSeq a
+deleteAt i (HashedSeq s _) = mkHashedSeq (Seq.deleteAt i s)
+
+-- | Create a HashedSeq from a Seq, computing the hash if needed
+mkHashedSeq :: Hashable a => Seq a -> HashedSeq a
+mkHashedSeq s
+  | hashedSequence = HashedSeq s (F.foldl' (\h x -> combineHashAppend h (hash x)) 0 s)
+  | otherwise = HashedSeq s 0
+
+-- | O(log(min(i,n-i))). Get the element at the given index.
+index :: HashedSeq a -> Int -> a
+index (HashedSeq s _) i = Seq.index s i
 
 ------------------------------------------------------------------------
 -- Hash helpers

@@ -22,6 +22,10 @@ import qualified Who2.Laws.HashConsed.Map as LawsExprMap
 import qualified Who2.Laws.HashConsed.Polarized as LawsPolarizedExprSet
 import qualified Who2.Laws.HashConsed.SemiRing.Sum as LawsHCSum
 import qualified Who2.Laws.HashConsed.SemiRing.Product as LawsHCProduct
+import qualified Who2.SemiRing.HashConsed.Sum as SRHCSum
+import qualified Who2.SemiRing.HashConsed.Product as SRHCProduct
+import qualified Who2.SemiRing.Bloom.Sum as SRBloomSum
+import qualified Who2.SemiRing.Bloom.Product as SRBloomProduct
 import qualified Who2.Properties as Props
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
@@ -75,6 +79,7 @@ propertyTests =
     , ordPropertyTests
     , bloomTests
     , hashConsedTests
+    , semiRingTests
     ]
 
 -- | All Bloom module tests
@@ -134,7 +139,7 @@ testEqualityPropertyTests =
     , testProperty "Transitivity" $
         Hedgehog.withTests 1000 LawsExpr.propTestEqualityTransitive
     , testProperty "Hash consistency (equal implies same hash)" $
-        Hedgehog.withTests 1000 LawsExpr.propTestEqualityHashConsistent
+        Hedgehog.withTests 1000 $ Hedgehog.withDiscards 10000 LawsExpr.propTestEqualityHashConsistent
     ]
 
 -- | OrdF instance property tests
@@ -375,8 +380,8 @@ exprMapTests =
 polarizedExprSetTests :: TestTree
 polarizedExprSetTests =
   testGroup "HashConsed.PolarizedExprSet"
-    [ testProperty "Hash consistency (equal implies same hash)" $
-        Hedgehog.withTests 1000 LawsPolarizedExprSet.propPolarizedExprSetHashConsistency
+    [ testProperty "Eq/Hash consistency (equal implies same hash)" $
+        Hedgehog.withTests 1000 $ Hedgehog.withDiscards 10000 LawsPolarizedExprSet.propPolarizedExprSetEqHashConsistency
     ]
 
 -- | HashConsed.SemiRing.Sum tests
@@ -424,5 +429,67 @@ hashConsedProductTests =
             Hedgehog.withTests 1000 LawsHCProduct.propHashConsedProductOrdByTransitive
         , testProperty "Consistency with eqBy" $
             Hedgehog.withTests 1000 LawsHCProduct.propHashConsedProductOrdByConsistentWithEqBy
+        ]
+    ]
+
+-- | SemiRing algebraic law tests
+semiRingTests :: TestTree
+semiRingTests =
+  testGroup "SemiRing Algebraic Laws"
+    [ hashConsedSemiRingTests
+    , bloomSemiRingTests
+    ]
+
+-- | HashConsed SemiRing tests
+hashConsedSemiRingTests :: TestTree
+hashConsedSemiRingTests =
+  testGroup "HashConsed SemiRing"
+    [ testGroup "Sum"
+        [ testProperty "Addition Associativity" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumAddAssociative
+        , testProperty "Addition Commutativity" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumAddCommutative
+        , testProperty "Addition Identity" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumAddIdentity
+        , testProperty "AddConstant Associativity" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumAddConstantAssociative
+        , testProperty "Scalar Distributivity" $
+            Hedgehog.withTests 1000 SRHCSum.propHashConsedSumScalarDistributivity
+        ]
+    , testGroup "Product"
+        [ testProperty "Multiplication Associativity" $
+            Hedgehog.withTests 1000 SRHCProduct.propHashConsedProductMulAssociative
+        , testProperty "Multiplication Identity" $
+            Hedgehog.withTests 1000 SRHCProduct.propHashConsedProductMulIdentity
+        , testProperty "Scale Associativity" $
+            Hedgehog.withTests 1000 SRHCProduct.propHashConsedProductScaleAssociative
+        , testProperty "Scale Distributes Over Multiplication" $
+            Hedgehog.withTests 1000 SRHCProduct.propHashConsedProductScaleDistributesOverMul
+        ]
+    ]
+
+-- | Bloom SemiRing tests
+bloomSemiRingTests :: TestTree
+bloomSemiRingTests =
+  testGroup "Bloom SemiRing"
+    [ testGroup "Sum"
+        [ testProperty "Addition Associativity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomSum.propBloomSumAddAssociative
+        , testProperty "Addition Identity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomSum.propBloomSumAddIdentity
+        , testProperty "AddConstant Associativity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomSum.propBloomSumAddConstantAssociative
+        , testProperty "Scalar Distributivity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomSum.propBloomSumScalarDistributivity
+        ]
+    , testGroup "Product"
+        [ testProperty "Multiplication Associativity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomProduct.propBloomProductMulAssociative
+        , testProperty "Multiplication Identity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomProduct.propBloomProductMulIdentity
+        , testProperty "Scale Associativity (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomProduct.propBloomProductScaleAssociative
+        , testProperty "Scale Distributes Over Multiplication (below threshold)" $
+            Hedgehog.withTests 1000 SRBloomProduct.propBloomProductScaleDistributesOverMul
         ]
     ]

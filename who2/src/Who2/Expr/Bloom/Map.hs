@@ -186,7 +186,7 @@ singleton :: (Eq k, Hashable k, Hashable v) => k -> v -> BloomKv k v
 singleton k v = BloomKv (Filt.insert Filt.empty k) (HS.singleton (Kv k v))
 
 -- | Create from list of key-value pairs
-fromList :: (Eq k, Hashable k, Hashable v) => (v -> v -> v) -> [(k, v)] -> BloomKv k v
+fromList :: (Eq k, Hashable k, Hashable v) => (v -> v -> Maybe v) -> [(k, v)] -> BloomKv k v
 fromList combine = F.foldl' (\acc (k, v) -> insert combine acc k v) empty
 {-# INLINE fromList #-}
 
@@ -221,7 +221,7 @@ values = map kvValue . HS.toList . kvs
 -- Above threshold: Unconditionally appends without searching (multimap mode).
 insert ::
   (Eq k, Hashable k, Hashable v) =>
-  (v -> v -> v) ->
+  (v -> v -> Maybe v) ->
   BloomKv k v ->
   k ->
   v ->
@@ -233,8 +233,13 @@ insert combine (BloomKv f kvSeq) key newVal
   | otherwise =
       case HS.findIndexR (\(Kv k _) -> k == key) kvSeq of
         Just idx ->
-          let upd (Kv k oldV) = Kv k (combine oldV newVal) in
-          BloomKv f (HS.adjust' upd idx kvSeq)
+          case combine (kvValue (HS.index kvSeq idx)) newVal of
+            Just v' ->
+              let upd (Kv k _) = Kv k v' in
+              BloomKv f (HS.adjust' upd idx kvSeq)
+            Nothing ->
+              -- Bloom filters don't support deletion, so disable the filter
+              BloomKv Filt.disabled (HS.deleteAt idx kvSeq)
         Nothing ->
           appendNew newFilter kvSeq
   where
@@ -248,12 +253,14 @@ insert combine (BloomKv f kvSeq) key newVal
 {-# INLINE insert #-}
 
 -- | Merge two maps with combine function
-merge :: (Eq k, Ord k, Hashable k, Hashable v) => (v -> v -> v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
+merge :: (Eq k, Ord k, Hashable k, Hashable v) => (v -> v -> Maybe v) -> BloomKv k v -> BloomKv k v -> BloomKv k v
 merge combine xs ys
   | not bloomFilter = merged
   | filt xs == Filt.disabled || filt ys == Filt.disabled = merged
   | Filt.disjoint (filt xs) (filt ys) =
       BloomKv (Filt.union (filt xs) (filt ys)) (kvs xs HS.>< kvs ys)
-  | otherwise = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
+  | otherwise =
+      let result = F.foldl' (\acc (Kv k v) -> insert combine acc k v) xs (kvs ys)
+      in if isEmpty result then empty else result
   where merged = BloomKv Filt.disabled (kvs xs HS.>< kvs ys)
 {-# INLINE merge #-}

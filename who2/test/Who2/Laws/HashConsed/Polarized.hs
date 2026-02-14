@@ -1,12 +1,12 @@
 module Who2.Laws.HashConsed.Polarized
   ( -- Basic properties
-    propPolarizedExprSetHashConsistency
-  , propPolarizedExprSetEqHashConsistency
+    propPolarizedExprSetEqHashConsistency
   ) where
 
+import Control.Monad (unless)
 import Data.Hashable (hash)
 
-import Hedgehog (Property, (==>))
+import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
@@ -27,17 +27,10 @@ genPolarizedExprSet = do
 -- Hash Properties
 -------------------------------------------------------------------------------
 
--- | PolarizedExprSet should maintain hash consistency: equal sets have equal hashes
-propPolarizedExprSetHashConsistency :: Property
-propPolarizedExprSetHashConsistency = H.property $ do
-  pes1 <- H.forAll genPolarizedExprSet
-  pes2 <- H.forAll genPolarizedExprSet
-  (pes1 == pes2) ==> (hash pes1 H.=== hash pes2)
-
--- | Eq should be consistent with hash: if x == y then hash x == hash y
+-- | PolarizedExprSet Eq/Hashable consistency: equal sets have equal hashes
 propPolarizedExprSetEqHashConsistency :: Property
 propPolarizedExprSetEqHashConsistency = H.property $ do
-  pes <- H.forAll genPolarizedExprSet
-  let h1 = hash pes
-  let h2 = hash pes
-  h1 H.=== h2
+  pes1 <- H.forAll genPolarizedExprSet
+  pes2 <- H.forAll genPolarizedExprSet
+  unless (pes1 == pes2) H.discard
+  hash pes1 H.=== hash pes2

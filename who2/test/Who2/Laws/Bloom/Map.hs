@@ -32,8 +32,8 @@ genBloomKvIntString = do
     v <- Gen.string (Range.linear 0 10) Gen.alpha
     pure (k, v)
   -- BloomKv.fromList requires a combine function for duplicate keys
-  -- We use const to keep the second value
-  pure $ BKv.fromList const list
+  -- We use \_ v -> Just v to keep the second value
+  pure $ BKv.fromList (\_ v -> Just v) list
 
 -------------------------------------------------------------------------------
 -- eqBy Properties

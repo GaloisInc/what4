@@ -230,6 +230,10 @@ test-suite who2-tests
     Who2.Laws.HashConsed.Set
     Who2.Laws.Helpers
     Who2.Properties
+    Who2.SemiRing.Bloom.Product
+    Who2.SemiRing.Bloom.Sum
+    Who2.SemiRing.HashConsed.Product
+    Who2.SemiRing.HashConsed.Sum
     Who2.Simplification
     Who2.SMTLib2
     Who2.TestAnnotations

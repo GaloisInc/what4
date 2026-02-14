@@ -8,6 +8,7 @@ module Who2.Expr.HashConsed.Map
   , singleton
   , insert
   , insertWith
+  , insertWithMaybe
   , Who2.Expr.HashConsed.Map.lookup
   , delete
   , size
@@ -15,6 +16,7 @@ module Who2.Expr.HashConsed.Map
   , fromList
   , union
   , unionWith
+  , unionWithMaybe
   , Who2.Expr.HashConsed.Map.map
   , mapWithKey
   , elems
@@ -117,6 +119,16 @@ insertWith f expr val (ExprMap m) =
   ExprMap (IM.insertWith (\(_, v1) (e2, v2) -> (e2, f v1 v2)) (getId expr) (expr, val) m)
 {-# INLINE insertWith #-}
 
+insertWithMaybe :: HasId k => (v -> v -> Maybe v) -> k -> v -> ExprMap k v -> ExprMap k v
+insertWithMaybe f expr val (ExprMap m) =
+  ExprMap (IM.alter g (getId expr) m)
+  where
+    g Nothing = Just (expr, val)
+    g (Just (e2, v2)) = case f val v2 of
+      Just v' -> Just (e2, v')
+      Nothing -> Nothing
+{-# INLINE insertWithMaybe #-}
+
 lookup :: HasId k => k -> ExprMap k v -> Maybe v
 lookup expr (ExprMap m) = snd <$> IM.lookup (getId expr) m
 {-# INLINE lookup #-}
@@ -145,6 +157,11 @@ unionWith :: (v -> v -> v) -> ExprMap k v -> ExprMap k v -> ExprMap k v
 unionWith f (ExprMap m1) (ExprMap m2) =
   ExprMap (IM.unionWith (\(_, v1) (e2, v2) -> (e2, f v1 v2)) m1 m2)
 {-# INLINE unionWith #-}
+
+unionWithMaybe :: (v -> v -> Maybe v) -> ExprMap k v -> ExprMap k v -> ExprMap k v
+unionWithMaybe f (ExprMap m1) (ExprMap m2) =
+  ExprMap (IM.mergeWithKey (\_ (_, v1) (e2, v2) -> (\v' -> (e2, v')) <$> f v1 v2) id id m1 m2)
+{-# INLINE unionWithMaybe #-}
 
 map :: (v -> w) -> ExprMap k v -> ExprMap k w
 map f (ExprMap m) = ExprMap (IM.map (\(e, v) -> (e, f v)) m)

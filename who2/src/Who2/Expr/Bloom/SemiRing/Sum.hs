@@ -29,6 +29,8 @@ module Who2.Expr.Bloom.SemiRing.Sum
   , fromTerms
   , toTerms
   , isZero
+  , size
+  , threshold
   ) where
 
 import Data.Hashable (Hashable(hash, hashWithSalt))
@@ -209,10 +211,14 @@ add ::
   SRSum sr f
 add ws1 ws2 =
   SRSum
-    (BKv.merge (SR.add sr) (sumMap ws1) (sumMap ws2))
+    (BKv.merge addCoeff (sumMap ws1) (sumMap ws2))
     (SR.add sr (sumOffset ws1) (sumOffset ws2))
     sr
-  where sr = sumRepr ws1
+  where
+    sr = sumRepr ws1
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 
 -- | Add a variable with coefficient 1 to a sum
 addVar ::
@@ -222,10 +228,14 @@ addVar ::
   SRSum sr f
 addVar ws x =
   SRSum
-    (BKv.insert (SR.add sr) (sumMap ws) x (SR.one sr))
+    (BKv.insert addCoeff (sumMap ws) x (SR.one sr))
     (sumOffset ws)
     sr
-  where sr = sumRepr ws
+  where
+    sr = sumRepr ws
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 
 -- | Add a constant to a sum
 addConstant :: SRSum sr f -> SR.Coefficient sr -> SRSum sr f
@@ -241,10 +251,24 @@ fromTerms ::
   SRSum sr f
 fromTerms sr terms offset =
   SRSum
-    (BKv.fromList (SR.add sr) terms)
+    (BKv.fromList addCoeff terms)
     offset
     sr
+  where
+    addCoeff v1 v2 =
+      let v' = SR.add sr v1 v2
+      in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 
 -- | Convert a sum to a list of terms
 toTerms :: SRSum sr f -> [(f (SR.SemiRingBase sr), SR.Coefficient sr)]
 toTerms = BKv.toList . sumMap
+
+-- | Get the number of terms in the sum
+size :: SRSum sr f -> Int
+size = BKv.size . sumMap
+{-# INLINE size #-}
+
+-- | The threshold for the underlying BloomKv
+threshold :: Int
+threshold = BKv.threshold
+{-# INLINE threshold #-}
