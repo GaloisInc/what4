@@ -75,6 +75,9 @@ eqBy ::
 eqBy eqTerm ws1 ws2 = eqBy2 (SR.eq (sumRepr ws1)) eqTerm ws1 ws2
 {-# INLINE eqBy #-}
 
+-- test-law: propHashConsedSumEqByReflexive
+-- test-law: propHashConsedSumEqBySymmetric
+-- test-law: propHashConsedSumEqByTransitive
 -- | @'eqBy' (==)@
 instance Eq (f (SR.SemiRingBase sr)) => Eq (SRSum sr f) where
   ws1 == ws2 = eqBy (==) ws1 ws2
@@ -101,6 +104,10 @@ ordBy ::
 ordBy cmpTerm ws1 ws2 = ordBy2 (SR.sr_compare (sumRepr ws1)) cmpTerm ws1 ws2
 {-# INLINE ordBy #-}
 
+-- test-law: propHashConsedSumOrdByReflexive
+-- test-law: propHashConsedSumOrdByAntisymmetric
+-- test-law: propHashConsedSumOrdByTransitive
+-- test-law: propHashConsedSumOrdByConsistentWithEqBy
 -- | @'ordBy' 'compare'@
 instance
   ( Ord (f (SR.SemiRingBase sr))

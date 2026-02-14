@@ -73,6 +73,8 @@ instance Foldable BloomSeq where
   {-# INLINE foldMap #-}
 
 -- | Hash instance - delegates to HashedSeq for O(1) hashing
+--
+-- No dedicated property tests - hash correctness is validated through Eq consistency.
 instance Hashable a => Hashable (BloomSeq a) where
   hashWithSalt salt bs = hashWithSalt salt (elems bs)
 
@@ -90,6 +92,9 @@ eqBy eq x y =
   else HS.eqBy eq (elems x) (elems y)
 {-# INLINE eqBy #-}
 
+-- test-law: propBloomSeqEqByReflexive
+-- test-law: propBloomSeqEqBySymmetric
+-- test-law: propBloomSeqEqByTransitive
 -- | @'eqBy' (==)@
 instance Eq a => Eq (BloomSeq a) where
   (==) = eqBy (==)
@@ -117,6 +122,10 @@ ordBy cmp x y =
   else HS.ordBy cmp (elems x) (elems y)
 {-# INLINE ordBy #-}
 
+-- test-law: propBloomSeqOrdByReflexive
+-- test-law: propBloomSeqOrdByAntisymmetric
+-- test-law: propBloomSeqOrdByTransitive
+-- test-law: propBloomSeqOrdByConsistentWithEqBy
 -- | @'ordBy' 'compare'@
 instance Ord a => Ord (BloomSeq a) where
   compare = ordBy compare

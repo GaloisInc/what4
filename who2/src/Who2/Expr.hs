@@ -146,6 +146,10 @@ instance PC.OrdF (f (Expr t f)) => PC.OrdF (Expr t f) where
           Just Refl -> PC.EQF
           Nothing -> PC.compareF (eApp x) (eApp y)
 
+-- test-law: propOrdReflexive
+-- test-law: propOrdAntisymmetric
+-- test-law: propOrdTransitive
+-- test-law: propOrdConsistentWithEq
 instance
   ( Eq (f (Expr t f) tp)
   , Ord (f (Expr t f) tp)

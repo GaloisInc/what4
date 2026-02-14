@@ -62,6 +62,7 @@ eqBy eq (HashedSeq s1 h1) (HashedSeq s2 h2) =
   else liftEq eq s1 s2
 {-# INLINE eqBy #-}
 
+-- test-law: propHashedSeqEqConsistency
 -- | @'eqBy' (==)@
 instance Eq a => Eq (HashedSeq a) where
   (==) = eqBy (==)
@@ -87,6 +88,9 @@ ordBy cmp (HashedSeq s1 h1) (HashedSeq s2 h2) =
   else liftCompare cmp s1 s2
 {-# INLINE ordBy #-}
 
+-- test-law: propHashedSeqOrdByReflexive
+-- test-law: propHashedSeqOrdByAntisymmetric
+-- test-law: propHashedSeqOrdByTransitive
 -- | @'ordBy' 'compare'@
 instance Ord a => Ord (HashedSeq a) where
   compare = ordBy compare
@@ -97,8 +101,9 @@ instance Ord1 HashedSeq where
   liftCompare = ordBy
   {-# INLINE liftCompare #-}
 
--- | Hashable instance uses precomputed hash for O(1) operations when hashedSequence,
--- otherwise computes hash on-demand
+-- test-law: propHashedSeqHashConsistency
+-- test-law: propHashedSeqAppendHashConsistency
+-- test-law: propHashedSeqMergeHashConsistency
 instance Hashable a => Hashable (HashedSeq a) where
   hash hs = if hashedSequence then hsHash hs else hash (hsSeq hs)
   {-# INLINE hash #-}

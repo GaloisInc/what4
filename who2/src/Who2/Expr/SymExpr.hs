@@ -29,8 +29,20 @@ newtype SymExpr t tp
 
 deriving instance AD.HasAbsValue (SymExpr t)
 deriving instance E.HasBaseType (SymExpr t)
+
+-- test-law: propTestEqualityHashConsistent
 deriving instance PC.HashableF (SymExpr t)
+
+-- test-law: propOrdFReflexive
+-- test-law: propOrdFAntisymmetric
+-- test-law: propOrdFTransitive
+-- test-law: propOrdFConsistentWithTestEquality
 deriving instance PC.OrdF (SymExpr t)
+
+-- test-law: propTestEqualityReflexive
+-- test-law: propTestEqualitySymmetric
+-- test-law: propTestEqualityTransitive
+-- test-law: propTestEqualityHashConsistent
 deriving instance PC.TestEquality (SymExpr t)
 
 instance PP.Pretty (SymExpr t tp) where

@@ -34,6 +34,9 @@ eq :: ExprSet a -> ExprSet b -> Bool
 eq (ExprSet x) (ExprSet y) = IM.keys x == IM.keys y
 {-# INLINE eq #-}
 
+-- test-law: propExprSetEqReflexive
+-- test-law: propExprSetEqSymmetric
+-- test-law: propExprSetEqTransitive
 -- | By keys only, safe due to hash-consing
 instance Eq (ExprSet a) where
   (==) = eq
@@ -44,6 +47,10 @@ cmp :: ExprSet a -> ExprSet b -> Ordering
 cmp (ExprSet x) (ExprSet y) = compare (IM.keys x) (IM.keys y)
 {-# INLINE cmp #-}
 
+-- test-law: propExprSetOrdReflexive
+-- test-law: propExprSetOrdAntisymmetric
+-- test-law: propExprSetOrdTransitive
+-- test-law: propExprSetOrdConsistentWithEq
 -- | By keys only, safe due to hash-consing
 instance Ord (ExprSet a) where
   compare = cmp

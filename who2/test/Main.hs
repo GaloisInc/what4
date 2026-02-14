@@ -16,7 +16,7 @@ import qualified Who2.Laws.Bloom.Polarized as LawsBloomPolarized
 import qualified Who2.Laws.Bloom.HashedSeq as LawsBloomHashedSeq
 import qualified Who2.Laws.Bloom.SemiRing.Sum as LawsBloomSum
 import qualified Who2.Laws.Bloom.SemiRing.Product as LawsBloomProduct
-import qualified Who2.Laws.Bloom.Filter as LawsBloomFilter
+import qualified Who2.Filter as Filter
 import qualified Who2.Laws.HashConsed.Set as LawsExprSet
 import qualified Who2.Laws.HashConsed.Map as LawsExprMap
 import qualified Who2.Laws.HashConsed.Polarized as LawsPolarizedExprSet
@@ -314,13 +314,13 @@ bloomFilterTests :: TestTree
 bloomFilterTests =
   testGroup "Bloom.Filter"
     [ testProperty "Empty filter might not contain" $
-        Hedgehog.withTests 1000 LawsBloomFilter.propFilterEmptyMightNotContain
+        Hedgehog.withTests 1000 Filter.propFilterEmptyMightNotContain
     , testProperty "Insert makes mightContain true" $
-        Hedgehog.withTests 1000 LawsBloomFilter.propFilterInsertMightContain
+        Hedgehog.withTests 1000 Filter.propFilterInsertMightContain
     , testProperty "Empty filters are disjoint" $
-        Hedgehog.withTests 1000 LawsBloomFilter.propFilterDisjointEmpty
+        Hedgehog.withTests 1000 Filter.propFilterDisjointEmpty
     , testProperty "Union contains both elements" $
-        Hedgehog.withTests 1000 LawsBloomFilter.propFilterUnionContains
+        Hedgehog.withTests 1000 Filter.propFilterUnionContains
     ]
 
 -- | HashConsed.ExprSet tests

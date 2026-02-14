@@ -11,16 +11,26 @@ import Data.Set qualified as Set
 import System.Directory (doesFileExist, listDirectory)
 import System.FilePath ((</>), takeExtension, takeBaseName)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, assertBool, assertFailure)
+import Test.Tasty.HUnit (testCase, assertFailure)
 
--- | Collect all test names from source files
-collectTestAnnotations :: FilePath -> IO (Set String)
-collectTestAnnotations srcDir = do
+-- | Collect all test annotations from source files with given prefix
+collectTestAnnotations :: String -> FilePath -> IO (Set String)
+collectTestAnnotations prefix srcDir = do
   files <- findHaskellFiles srcDir
   annotations <- forM files $ \file -> do
     content <- readFile file
-    return $ extractTestNames content
+    return $ extractTestNames prefix content
   return $ Set.unions annotations
+
+-- | Collect all property test names from test files
+-- Looks for lines like: propFooBar :: Property
+collectPropertyTests :: FilePath -> IO (Set String)
+collectPropertyTests testDir = do
+  files <- findHaskellFiles testDir
+  props <- forM files $ \file -> do
+    content <- readFile file
+    return $ extractPropertyNames content
+  return $ Set.unions props
 
 -- | Find all Haskell source files recursively
 findHaskellFiles :: FilePath -> IO [FilePath]
@@ -34,18 +44,37 @@ findHaskellFiles dir = do
       else Control.Exception.catch (findHaskellFiles path) (\(_ :: IOError) -> return [])
   return $ concat results
 
--- | Extract test names from file content
--- Looks for lines like: -- test: test-name
-extractTestNames :: String -> Set String
-extractTestNames content =
+-- | Extract test annotation names from file content with given prefix
+-- Looks for lines like: -- test: foo or -- test-law: propFoo
+extractTestNames :: String -> String -> Set String
+extractTestNames prefix content =
   Set.fromList [name | line <- lines content, Just name <- [parseTestLine line]]
   where
     parseTestLine :: String -> Maybe String
     parseTestLine line =
       let trimmed = dropWhile (== ' ') line
-      in if "-- test: " `isPrefixOf` trimmed
-         then Just $ drop (length "-- test: ") trimmed
+          fullPrefix = "-- " ++ prefix ++ ": "
+      in if fullPrefix `isPrefixOf` trimmed
+         then Just $ drop (length fullPrefix) trimmed
          else Nothing
+
+-- | Extract property test names from file content
+-- Looks for lines like: propFooBar :: Property
+extractPropertyNames :: String -> Set String
+extractPropertyNames content =
+  Set.fromList [name | line <- lines content, Just name <- [parsePropLine line]]
+  where
+    parsePropLine :: String -> Maybe String
+    parsePropLine line =
+      let trimmed = dropWhile (== ' ') line
+      in if "prop" `isPrefixOf` trimmed && " :: Property" `isInfixOf` trimmed
+         then Just $ takeWhile (/= ' ') trimmed
+         else Nothing
+    isInfixOf :: Eq a => [a] -> [a] -> Bool
+    isInfixOf needle haystack = any (isPrefixOf needle) (tails haystack)
+    tails :: [a] -> [[a]]
+    tails [] = [[]]
+    tails xs@(_:xs') = xs : tails xs'
 
 -- | Collect all test file names from test-data/simpl directory
 collectTestFiles :: FilePath -> IO (Set String)
@@ -58,31 +87,56 @@ tests :: IO TestTree
 tests = do
   let srcDir = "src"
       testDataDir = "test-data/simpl"
+      lawsDir = "test/Who2/Laws"
 
-  annotations <- collectTestAnnotations srcDir
+  -- SMT2 test annotations (uses "-- test:" prefix)
+  smt2Annotations <- collectTestAnnotations "test" srcDir
   testFiles <- collectTestFiles testDataDir
 
-  let annotationsOnly = Set.difference annotations testFiles
-      testFilesOnly = Set.difference testFiles annotations
+  let smt2AnnotationsOnly = Set.difference smt2Annotations testFiles
+      testFilesOnly = Set.difference testFiles smt2Annotations
+
+  -- Property test annotations (uses "-- test-law:" prefix)
+  propAnnotations <- collectTestAnnotations "test-law" $ srcDir </> "Who2"
+  propTests <- collectPropertyTests lawsDir
+
+  let annotationsOnly = Set.difference propAnnotations propTests
+      propsOnly = Set.difference propTests propAnnotations
 
   return $ testGroup "Test Annotations"
-    [ testCase "All test annotations have corresponding test files" $
-        if Set.null annotationsOnly
-          then return ()
-          else assertFailure $ unlines
-            [ "Found test annotations without corresponding test files:"
-            , unlines (map ("  - " ++) (sort $ Set.toList annotationsOnly))
-            ]
+    [ testGroup "SMT2 Tests"
+        [ testCase "All test annotations have corresponding test files" $
+            if Set.null smt2AnnotationsOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found test annotations without corresponding test files:"
+                , unlines (map ("  - " ++) (sort $ Set.toList smt2AnnotationsOnly))
+                ]
 
-    , testCase "All test files have corresponding annotations" $
-        if Set.null testFilesOnly
-          then return ()
-          else assertFailure $ unlines
-            [ "Found test files without corresponding annotations in source:"
-            , unlines (map ("  - " ++) (sort $ Set.toList testFilesOnly))
-            ]
+        , testCase "All test files have corresponding annotations" $
+            if Set.null testFilesOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found test files without corresponding annotations in source:"
+                , unlines (map ("  - " ++) (sort $ Set.toList testFilesOnly))
+                ]
+        ]
 
-    , testCase "Test annotation count" $
-        assertBool ("Should have test annotations, found " ++ show (Set.size annotations))
-          (Set.size annotations > 0)
+    , testGroup "Property Tests"
+        [ testCase "All test-law annotations refer to actual property tests" $
+            if Set.null annotationsOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found test-law annotations without corresponding property tests in test/Who2/Laws:"
+                , unlines (map ("  - " ++) (sort $ Set.toList annotationsOnly))
+                ]
+
+        , testCase "All property tests are referenced by test-law annotations" $
+            if Set.null propsOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found property tests without corresponding test-law annotations in src/:"
+                , unlines (map ("  - " ++) (sort $ Set.toList propsOnly))
+                ]
+        ]
     ]

@@ -59,11 +59,18 @@ ordBy2 cmpK cmpV (ExprMap x) (ExprMap y) = liftCompare cmp' x y
             r -> r
 {-# INLINE ordBy2 #-}
 
+-- test-law: propExprMapEqByReflexive
+-- test-law: propExprMapEqBySymmetric
+-- test-law: propExprMapEqByTransitive
 -- | @'eqBy2' (==) (==)@
 instance (Eq k, Eq v) => Eq (ExprMap k v) where
   (==) = eqBy2 (==) (==)
   {-# INLINE (==) #-}
 
+-- test-law: propExprMapOrdByReflexive
+-- test-law: propExprMapOrdByAntisymmetric
+-- test-law: propExprMapOrdByTransitive
+-- test-law: propExprMapOrdByConsistentWithEqBy
 -- | @'ordBy2' 'compare' 'compare'@
 instance (Ord k, Ord v) => Ord (ExprMap k v) where
   compare = ordBy2 compare compare

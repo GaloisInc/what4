@@ -35,6 +35,7 @@ data PolarizedExprSet a = PolarizedExprSet
   }
   deriving (Eq, Ord, Show)
 
+-- test-law: propPolarizedExprSetHashConsistency
 instance Hashable a => Hashable (PolarizedExprSet a) where
   hashWithSalt salt x = salt `hashWithSalt` posSet x `hashWithSalt` negSet x
 

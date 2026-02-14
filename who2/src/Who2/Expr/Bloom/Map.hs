@@ -104,6 +104,9 @@ eqBy2 eqK eqV x y =
   else HS.eqBy (eqBy2Kv eqK eqV) (kvs x) (kvs y)
 {-# INLINE eqBy2 #-}
 
+-- test-law: propBloomKvEqByReflexive
+-- test-law: propBloomKvEqBySymmetric
+-- test-law: propBloomKvEqByTransitive
 -- | @'eqBy2' (==) (==)@
 instance (Eq k, Eq v) => Eq (BloomKv k v) where
   (==) = eqBy2 (==) (==)
@@ -137,6 +140,10 @@ ordBy2 cmpK cmpV x y =
   else HS.ordBy (ordBy2Kv cmpK cmpV) (kvs x) (kvs y)
 {-# INLINE ordBy2 #-}
 
+-- test-law: propBloomKvOrdByReflexive
+-- test-law: propBloomKvOrdByAntisymmetric
+-- test-law: propBloomKvOrdByTransitive
+-- test-law: propBloomKvOrdByConsistentWithEqBy
 -- | @'ordBy2' 'compare' 'compare'@
 instance (Ord k, Ord v) => Ord (BloomKv k v) where
   compare = ordBy2 compare compare
@@ -153,6 +160,8 @@ instance Ord2 BloomKv where
   {-# INLINE liftCompare2 #-}
 
 -- | Hash instance - delegates to HashedSeq for O(1) hashing
+--
+-- No dedicated property tests - hash correctness is validated through Eq consistency.
 instance (Hashable k, Hashable v) => Hashable (BloomKv k v) where
   hashWithSalt salt bkv = hashWithSalt salt (kvs bkv)
 

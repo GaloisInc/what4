@@ -180,15 +180,15 @@ library
     Who2.Expr.Bloom.Map
     Who2.Expr.Bloom.Polarized
     Who2.Expr.Bloom.SemiRing.Product
-    Who2.Expr.Bloom.Set
     Who2.Expr.Bloom.SemiRing.Sum
+    Who2.Expr.Bloom.Set
     Who2.Expr.BV
     Who2.Expr.Fn
     Who2.Expr.HashConsed.Map
-    Who2.Expr.HashConsed.Set
     Who2.Expr.HashConsed.Polarized
     Who2.Expr.HashConsed.SemiRing.Product
     Who2.Expr.HashConsed.SemiRing.Sum
+    Who2.Expr.HashConsed.Set
     Who2.Expr.Logic
     Who2.Expr.Subst
     Who2.Expr.SymExpr
@@ -212,28 +212,28 @@ test-suite who2-tests
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
-    Who2.TestBuilder
     Who2.ExprBuilderAPI
+    Who2.Filter
     Who2.Functions
     Who2.Gen
-    Who2.Laws.Helpers
-    Who2.Laws.Expr
-    Who2.Laws.Bloom.Set
+    Who2.Laws.Bloom.HashedSeq
     Who2.Laws.Bloom.Map
     Who2.Laws.Bloom.Polarized
-    Who2.Laws.Bloom.HashedSeq
-    Who2.Laws.Bloom.SemiRing.Sum
     Who2.Laws.Bloom.SemiRing.Product
-    Who2.Laws.Bloom.Filter
-    Who2.Laws.HashConsed.Set
+    Who2.Laws.Bloom.SemiRing.Sum
+    Who2.Laws.Bloom.Set
+    Who2.Laws.Expr
     Who2.Laws.HashConsed.Map
     Who2.Laws.HashConsed.Polarized
-    Who2.Laws.HashConsed.SemiRing.Sum
     Who2.Laws.HashConsed.SemiRing.Product
+    Who2.Laws.HashConsed.SemiRing.Sum
+    Who2.Laws.HashConsed.Set
+    Who2.Laws.Helpers
     Who2.Properties
     Who2.Simplification
     Who2.SMTLib2
     Who2.TestAnnotations
+    Who2.TestBuilder
   build-depends:
     base >= 4.10 && < 5,
     bv-sized,

@@ -1,4 +1,4 @@
-module Who2.Laws.Bloom.Filter
+module Who2.Filter
   ( -- Basic Filter properties
     propFilterEmptyMightNotContain
   , propFilterInsertMightContain

@@ -82,6 +82,9 @@ eqBy ::
 eqBy eqTerm x y = eqBy2 (SR.eq (sumRepr x)) eqTerm x y
 {-# INLINE eqBy #-}
 
+-- test-law: propBloomSumEqByReflexive
+-- test-law: propBloomSumEqBySymmetric
+-- test-law: propBloomSumEqByTransitive
 -- | @'eqBy' (==)@
 instance Eq (f (SR.SemiRingBase sr)) => Eq (SRSum sr f) where
   x == y = eqBy (==) x y
@@ -107,6 +110,10 @@ ordBy ::
 ordBy cmpTerm x y = ordBy2 (SR.sr_compare (sumRepr x)) cmpTerm x y
 {-# INLINE ordBy #-}
 
+-- test-law: propBloomSumOrdByReflexive
+-- test-law: propBloomSumOrdByAntisymmetric
+-- test-law: propBloomSumOrdByTransitive
+-- test-law: propBloomSumOrdByConsistentWithEqBy
 -- | @'ordBy' 'compare'@
 instance
   ( Ord (f (SR.SemiRingBase sr))

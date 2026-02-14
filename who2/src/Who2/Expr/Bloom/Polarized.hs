@@ -83,6 +83,9 @@ eqBy cmp x y =
   BS.eqBy cmp (positive x) (positive y) && BS.eqBy cmp (negative x) (negative y)
 {-# INLINE eqBy #-}
 
+-- test-law: propPolarizedBloomSeqEqByReflexive
+-- test-law: propPolarizedBloomSeqEqBySymmetric
+-- test-law: propPolarizedBloomSeqEqByTransitive
 -- | @'eqBy' (==)@
 instance Eq a => Eq (PolarizedBloomSeq a) where
   (==) = eqBy (==)
@@ -106,6 +109,10 @@ ordBy cmp x y =
     EQ -> BS.ordBy cmp (negative x) (negative y)
 {-# INLINE ordBy #-}
 
+-- test-law: propPolarizedBloomSeqOrdByReflexive
+-- test-law: propPolarizedBloomSeqOrdByAntisymmetric
+-- test-law: propPolarizedBloomSeqOrdByTransitive
+-- test-law: propPolarizedBloomSeqOrdByConsistentWithEqBy
 -- | @'ordBy' 'compare'@
 instance Ord a => Ord (PolarizedBloomSeq a) where
   compare = ordBy compare

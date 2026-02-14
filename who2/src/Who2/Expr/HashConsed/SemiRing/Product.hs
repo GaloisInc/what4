@@ -74,6 +74,9 @@ eqBy ::
 eqBy eqTerm p1 p2 = eqBy2 (SR.eq (prodRepr p1)) eqTerm p1 p2
 {-# INLINE eqBy #-}
 
+-- test-law: propHashConsedProductEqByReflexive
+-- test-law: propHashConsedProductEqBySymmetric
+-- test-law: propHashConsedProductEqByTransitive
 -- | @'eqBy' (==)@
 instance Eq (f (SR.SemiRingBase sr)) => Eq (SRProd sr f) where
   x == y = eqBy (==) x y
@@ -100,6 +103,10 @@ ordBy ::
 ordBy cmpTerm p1 p2 = ordBy2 (SR.sr_compare (prodRepr p1)) cmpTerm p1 p2
 {-# INLINE ordBy #-}
 
+-- test-law: propHashConsedProductOrdByReflexive
+-- test-law: propHashConsedProductOrdByAntisymmetric
+-- test-law: propHashConsedProductOrdByTransitive
+-- test-law: propHashConsedProductOrdByConsistentWithEqBy
 -- | @'ordBy' 'compare'@
 instance
   ( Ord (f (SR.SemiRingBase sr))
