@@ -275,8 +275,12 @@ mkBVExprWithCache ::
   EBV.BVExpr (E.Expr t (EA.App t)) tp ->
   IO SMT2.Term
 mkBVExprWithCache cache = \case
+  -- test-smt2: bvLit-8
+  -- test-smt2: bvLit-16
+  -- test-smt2: bvLit-32
   EBV.BVLit w bv -> return $ SMT2.bvhexadecimal w bv
 
+  -- test-smt2: bvAdd
   EBV.BVAdd w ws -> do
     -- Serialize weighted sum as additions and multiplications
     let terms = SRS.toTerms ws
@@ -301,11 +305,13 @@ mkBVExprWithCache cache = \case
       (Just off, []) -> return off
       (Just off, t:ts) -> return $ foldl (\acc t' -> SMT2.bvadd acc [t']) off (t:ts)
 
+  -- test-smt2: bvSub
   EBV.BVSub _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvsub xTerm yTerm
 
+  -- test-smt2: bvMul
   EBV.BVMul _ wp -> do
     let terms = SRP.toTerms wp
     termList <- mapM (\(x, expn) -> do
@@ -315,10 +321,12 @@ mkBVExprWithCache cache = \case
       [] -> return $ SMT2.numeral 1  -- empty product = 1
       (t:ts) -> return $ SMT2.bvmul t ts
 
+  -- test-smt2: bvNeg
   EBV.BVNeg _ x -> do
     xTerm <- mkExprWithCache cache x
     return $ SMT2.bvneg xTerm
 
+  -- test-smt2: bvAndBits
   EBV.BVAndBits _ pbs -> do
     let posElems = coerce $ PBS.toListPos pbs
         negElems = coerce $ PBS.toListNeg pbs
@@ -330,6 +338,7 @@ mkBVExprWithCache cache = \case
       [] -> error "BVAndBits: empty PolarizedBloomSeq"
       (t:ts) -> return $ SMT2.bvand t ts
 
+  -- test-smt2: bvOrBits
   EBV.BVOrBits _ pbs -> do
     let posElems = coerce $ PBS.toListPos pbs
         negElems = coerce $ PBS.toListNeg pbs
@@ -341,72 +350,86 @@ mkBVExprWithCache cache = \case
       [] -> error "BVOrBits: empty PolarizedBloomSeq"
       (t:ts) -> return $ SMT2.bvor t ts
 
+  -- test-smt2: bvXorBits
   EBV.BVXorBits _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvxor xTerm [yTerm]
 
+  -- test-smt2: bvNotBits
   EBV.BVNotBits _ x -> do
     xTerm <- mkExprWithCache cache x
     return $ SMT2.bvnot xTerm
 
+  -- test-smt2: bvConcat
   EBV.BVConcat _ _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.concat xTerm yTerm
 
+  -- test-smt2: bvSelect
   EBV.BVSelect i n _ x -> do
     xTerm <- mkExprWithCache cache x
     let hi = natValue i + natValue n - 1
     let lo = natValue i
     return $ SMT2.extract hi lo xTerm
 
+  -- test-smt2: bvZext
   EBV.BVZext targetWidth sourceWidth x -> do
     xTerm <- mkExprWithCache cache x
     let extendBy = toInteger (natValue targetWidth - natValue sourceWidth)
     return $ SMT2.bvzeroExtend extendBy xTerm
 
+  -- test-smt2: bvSext
   EBV.BVSext targetWidth sourceWidth x -> do
     xTerm <- mkExprWithCache cache x
     let extendBy = toInteger (natValue targetWidth - natValue sourceWidth)
     return $ SMT2.bvsignExtend extendBy xTerm
 
+  -- test-smt2: bvShl
   EBV.BVShl _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvshl xTerm yTerm
 
+  -- test-smt2: bvLshr
   EBV.BVLshr _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvlshr xTerm yTerm
 
+  -- test-smt2: bvAshr
   EBV.BVAshr _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvashr xTerm yTerm
 
+  -- test-smt2: bvUdiv
   EBV.BVUdiv _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvudiv xTerm yTerm
 
+  -- test-smt2: bvUrem
   EBV.BVUrem _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvurem xTerm yTerm
 
+  -- test-smt2: bvSdiv
   EBV.BVSdiv _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvsdiv xTerm yTerm
 
+  -- test-smt2: bvSrem
   EBV.BVSrem _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvsrem xTerm yTerm
 
   -- Rotations: use native SMT-Lib2 rotate_left/rotate_right when amount is literal
+  -- test-smt2: bvRol
   EBV.BVRol w x y -> do
     xTerm <- mkExprWithCache cache x
     case EV.asBVLit y of
@@ -424,6 +447,7 @@ mkBVExprWithCache cache = \case
         let rightPart = SMT2.bvlshr xTerm shiftAmt
         return $ SMT2.bvor leftPart [rightPart]
 
+  -- test-smt2: bvRor
   EBV.BVRor w x y -> do
     xTerm <- mkExprWithCache cache x
     case EV.asBVLit y of
@@ -575,15 +599,20 @@ mkLogicExprWithCache ::
   EL.LogicExpr (E.Expr t (EA.App t)) tp ->
   IO SMT2.Term
 mkLogicExprWithCache cache = \case
+  -- test-smt2: truePred
   EL.TruePred -> return SMT2.true
 
+  -- test-smt2: falsePred
   EL.FalsePred -> return SMT2.false
 
+  -- test-smt2: eqPred
+  -- test-smt2: bvEq
   EL.EqPred x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.eq [xTerm, yTerm]
 
+  -- test-smt2: andPred
   EL.AndPred pbs -> do
     let posElems = coerce $ PBS.toListPos pbs
         negElems = coerce $ PBS.toListNeg pbs
@@ -595,15 +624,18 @@ mkLogicExprWithCache cache = \case
       [] -> return SMT2.true
       _ -> return $ SMT2.and allTerms
 
+  -- test-smt2: notPred
   EL.NotPred x -> do
     xTerm <- mkExprWithCache cache x
     return $ SMT2.not xTerm
 
+  -- test-smt2: xorPred
   EL.XorPred x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.xor [xTerm, yTerm]
 
+  -- test-smt2: orPred
   EL.OrPred pbs -> do
     let posElems = coerce $ PBS.toListPos pbs
         negElems = coerce $ PBS.toListNeg pbs
@@ -615,27 +647,33 @@ mkLogicExprWithCache cache = \case
       [] -> return SMT2.false
       _ -> return $ SMT2.or allTerms
 
+  -- test-smt2: itePred
+  -- test-smt2: bvIte
   EL.Ite c t f -> do
     cTerm <- mkExprWithCache cache c
     tTerm <- mkExprWithCache cache t
     fTerm <- mkExprWithCache cache f
     return $ SMT2.ite cTerm tTerm fTerm
 
+  -- test-smt2: bvUlt
   EL.BVUlt _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvult xTerm yTerm
 
+  -- test-smt2: bvUle
   EL.BVUle _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvule xTerm yTerm
 
+  -- test-smt2: bvSlt
   EL.BVSlt _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y
     return $ SMT2.bvslt xTerm yTerm
 
+  -- test-smt2: bvSle
   EL.BVSle _ x y -> do
     xTerm <- mkExprWithCache cache x
     yTerm <- mkExprWithCache cache y

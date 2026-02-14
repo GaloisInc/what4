@@ -86,12 +86,13 @@ collectTestFiles testDir = do
 tests :: IO TestTree
 tests = do
   let srcDir = "src"
-      testDataDir = "test-data/simpl"
+      testDataDirSimpl = "test-data/simpl"
+      testDataDirSMT2 = "test-data/smt2"
       lawsDir = "test/Who2/Laws"
 
-  -- SMT2 test annotations (uses "-- test:" prefix)
+  -- SMT2 simplification test annotations (uses "-- test:" prefix)
   smt2Annotations <- collectTestAnnotations "test" srcDir
-  testFiles <- collectTestFiles testDataDir
+  testFiles <- collectTestFiles testDataDirSimpl
 
   let smt2AnnotationsOnly = Set.difference smt2Annotations testFiles
       testFilesOnly = Set.difference testFiles smt2Annotations
@@ -103,8 +104,15 @@ tests = do
   let annotationsOnly = Set.difference propAnnotations propTests
       propsOnly = Set.difference propTests propAnnotations
 
+  -- SMT2 golden test annotations (uses "-- test-smt2:" prefix)
+  smt2GoldenAnnotations <- collectTestAnnotations "test-smt2" srcDir
+  smt2GoldenFiles <- collectTestFiles testDataDirSMT2
+
+  let smt2GoldenAnnotationsOnly = Set.difference smt2GoldenAnnotations smt2GoldenFiles
+      smt2GoldenFilesOnly = Set.difference smt2GoldenFiles smt2GoldenAnnotations
+
   return $ testGroup "Test Annotations"
-    [ testGroup "SMT2 Tests"
+    [ testGroup "SMT2 Simplification Tests"
         [ testCase "All test annotations have corresponding test files" $
             if Set.null smt2AnnotationsOnly
               then return ()
@@ -137,6 +145,24 @@ tests = do
               else assertFailure $ unlines
                 [ "Found property tests without corresponding test-law annotations in src/:"
                 , unlines (map ("  - " ++) (sort $ Set.toList propsOnly))
+                ]
+        ]
+
+    , testGroup "SMT2 Golden Tests"
+        [ testCase "All test-smt2 annotations have corresponding golden files" $
+            if Set.null smt2GoldenAnnotationsOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found test-smt2 annotations without corresponding golden files:"
+                , unlines (map ("  - " ++) (sort $ Set.toList smt2GoldenAnnotationsOnly))
+                ]
+
+        , testCase "All smt2 golden files have corresponding test-smt2 annotations" $
+            if Set.null smt2GoldenFilesOnly
+              then return ()
+              else assertFailure $ unlines
+                [ "Found test-data/smt2 golden files without corresponding test-smt2 annotations:"
+                , unlines (map ("  - " ++) (sort $ Set.toList smt2GoldenFilesOnly))
                 ]
         ]
     ]
