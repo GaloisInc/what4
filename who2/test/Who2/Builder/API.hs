@@ -3,24 +3,33 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.ExprBuilderAPI
+module Who2.Builder.API
   ( ExprBuilderAPI(..)
   , getResultType
+  , interp
+  , SomeBVVar(..)
   ) where
 
+import Data.IORef (IORef, newIORef, readIORef, modifyIORef')
+import qualified Data.IntMap as IntMap
+import qualified Data.Map as Map
 import Data.Parameterized.NatRepr (NatRepr, natValue, type (<=), type (+), addNat)
 import qualified Data.Parameterized.Classes as PC
+import Numeric.Natural (Natural)
 import Prettyprinter (Pretty(..), parens, (<+>), viaShow)
+import qualified What4.BaseTypes as BT
 import What4.BaseTypes
   ( BaseType
   , BaseTypeRepr(..)
   , BaseBoolType
   , BaseBVType
   )
+import qualified What4.Interface as WI
 import qualified Data.BitVector.Sized as BV
 
 -- | GADT representing Who2 builder operations as data
@@ -173,3 +182,183 @@ instance Show (ExprBuilderAPI tp) where
 -- ShowF instance for Hedgehog's forAll
 instance PC.ShowF ExprBuilderAPI where
   showF = show
+
+------------------------------------------------------------------------
+-- Interpreter
+
+-- | Existential wrapper for typed BV SymExpr
+data SomeBVVar sym where
+  SomeBVVar :: (1 <= w) => BT.NatRepr w -> WI.SymExpr sym (BT.BaseBVType w) -> SomeBVVar sym
+
+-- | Interpret an ExprBuilderAPI expression with any IsExprBuilder instance
+-- Creates fresh bound variables on demand and caches them
+interp ::
+  WI.IsSymExprBuilder sym =>
+  sym ->
+  ExprBuilderAPI tp ->
+  IO (WI.SymExpr sym tp)
+interp sym expr = do
+  boolVarsRef <- newIORef IntMap.empty
+  bvVarsRef <- newIORef Map.empty
+  interpWithVars sym boolVarsRef bvVarsRef expr
+
+-- | Internal interpreter that tracks bound variables
+interpWithVars ::
+  WI.IsSymExprBuilder sym =>
+  sym ->
+  IORef (IntMap.IntMap (WI.SymExpr sym BT.BaseBoolType)) ->
+  IORef (Map.Map (Natural, Int) (SomeBVVar sym)) ->
+  ExprBuilderAPI tp ->
+  IO (WI.SymExpr sym tp)
+interpWithVars sym boolVarsRef bvVarsRef = \case
+  TruePred -> pure $ WI.truePred sym
+  FalsePred -> pure $ WI.falsePred sym
+
+  BoundVarBool idx -> do
+    boolVars <- readIORef boolVarsRef
+    case IntMap.lookup idx boolVars of
+      Just v -> pure v
+      Nothing -> do
+        let varName = WI.safeSymbol $ "bool_" ++ show idx
+        bv <- WI.freshBoundVar sym varName BT.BaseBoolRepr
+        let v = WI.varExpr sym bv
+        modifyIORef' boolVarsRef (IntMap.insert idx v)
+        pure v
+
+  BoundVarBV w idx -> do
+    bvVars <- readIORef bvVarsRef
+    -- Use composite key: (width, idx) to distinguish different widths
+    let key = (natValue w, idx)
+    case Map.lookup key bvVars of
+      Just (SomeBVVar w' v)
+        | Just WI.Refl <- WI.testEquality w w' -> pure v
+        | otherwise -> error $ "BoundVarBV type mismatch for index " ++ show idx ++ " (internal error)"
+      Nothing -> do
+        let varName = WI.safeSymbol $ "bv" ++ show (natValue w) ++ "_" ++ show idx
+        bv <- WI.freshBoundVar sym varName (BT.BaseBVRepr w)
+        let v = WI.varExpr sym bv
+        modifyIORef' bvVarsRef (Map.insert key (SomeBVVar w v))
+        pure v
+
+  NotPred x -> WI.notPred sym =<< interpWithVars sym boolVarsRef bvVarsRef x
+  AndPred x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.andPred sym ex ey
+  OrPred x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.orPred sym ex ey
+  XorPred x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.xorPred sym ex ey
+  EqPred x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.isEq sym ex ey
+  ItePred c t e -> do
+    ec <- interpWithVars sym boolVarsRef bvVarsRef c
+    et <- interpWithVars sym boolVarsRef bvVarsRef t
+    ee <- interpWithVars sym boolVarsRef bvVarsRef e
+    WI.itePred sym ec et ee
+
+  BVLit w bv -> WI.bvLit sym w bv
+  BVAdd x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvAdd sym ex ey
+  BVSub x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvSub sym ex ey
+  BVMul x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvMul sym ex ey
+  BVNeg x -> WI.bvNeg sym =<< interpWithVars sym boolVarsRef bvVarsRef x
+  BVIte c t e -> do
+    ec <- interpWithVars sym boolVarsRef bvVarsRef c
+    et <- interpWithVars sym boolVarsRef bvVarsRef t
+    ee <- interpWithVars sym boolVarsRef bvVarsRef e
+    WI.bvIte sym ec et ee
+
+  BVAndBits x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvAndBits sym ex ey
+  BVOrBits x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvOrBits sym ex ey
+  BVXorBits x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvXorBits sym ex ey
+  BVNotBits x -> WI.bvNotBits sym =<< interpWithVars sym boolVarsRef bvVarsRef x
+
+  BVUlt x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvUlt sym ex ey
+  BVSlt x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvSlt sym ex ey
+  BVEq x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.isEq sym ex ey
+
+  BVShl x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvShl sym ex ey
+  BVLshr x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvLshr sym ex ey
+  BVAshr x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvAshr sym ex ey
+
+  BVUdiv x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvUdiv sym ex ey
+  BVUrem x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvUrem sym ex ey
+  BVSdiv x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvSdiv sym ex ey
+  BVSrem x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvSrem sym ex ey
+
+  BVRol x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvRol sym ex ey
+  BVRor x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvRor sym ex ey
+
+  BVConcat x y -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    ey <- interpWithVars sym boolVarsRef bvVarsRef y
+    WI.bvConcat sym ex ey
+  BVSelect idx w x -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    WI.bvSelect sym idx w ex
+  BVZext r x -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    WI.bvZext sym r ex
+  BVSext r x -> do
+    ex <- interpWithVars sym boolVarsRef bvVarsRef x
+    WI.bvSext sym r ex

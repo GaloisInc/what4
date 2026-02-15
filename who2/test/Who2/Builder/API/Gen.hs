@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.Gen
+module Who2.Builder.API.Gen
   ( GenConfig(..)
   , SomeWidth(..)
   , defaultGenConfig
@@ -24,7 +24,7 @@ import qualified Hedgehog.Range as Range
 
 import What4.BaseTypes (BaseBoolType, BaseBVType)
 import qualified What4.Interface as WI
-import Who2.ExprBuilderAPI (ExprBuilderAPI(..))
+import Who2.Builder.API (ExprBuilderAPI(..))
 
 -- | A bitvector width with its constraint
 data SomeWidth where

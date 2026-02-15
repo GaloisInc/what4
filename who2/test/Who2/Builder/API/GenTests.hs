@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Who2.GenTests
+module Who2.Builder.API.GenTests
   ( tests
   ) where
 
@@ -16,8 +16,8 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, assertBool)
 
 import Who2.Builder (newBuilder)
-import Who2.Gen (defaultGenConfig, gcEnableDivisionOps, genBool, genBVAtWidth, SomeWidth(SomeWidth), gcBVWidths)
-import Who2.Properties (interp)
+import Who2.Builder.API (interp)
+import Who2.Builder.API.Gen (defaultGenConfig, gcEnableDivisionOps, genBool, genBVAtWidth, SomeWidth(SomeWidth), gcBVWidths)
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
 import qualified Who2.Expr.Logic as EL

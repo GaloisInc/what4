@@ -212,11 +212,15 @@ test-suite who2-tests
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Who2.Builder.API
+    Who2.Builder.API.Gen
+    Who2.Builder.API.GenTests
+    Who2.Builder.Invariants
+    Who2.Builder.Simplification
+    Who2.Builder.TestBuilder
     Who2.Cryptol
-    Who2.ExprBuilderAPI
     Who2.Filter
     Who2.Functions
-    Who2.Gen
     Who2.Laws.Bloom.HashedSeq
     Who2.Laws.Bloom.Map
     Who2.Laws.Bloom.Polarized
@@ -230,9 +234,6 @@ test-suite who2-tests
     Who2.Laws.HashConsed.SemiRing.Sum
     Who2.Laws.HashConsed.Set
     Who2.Laws.Helpers
-    Who2.GenTests
-    Who2.Invariants
-    Who2.Properties
     Who2.SemiRing.Bloom.Product
     Who2.SemiRing.Bloom.Sum
     Who2.SemiRing.HashConsed.Product
@@ -240,7 +241,6 @@ test-suite who2-tests
     Who2.Simplification
     Who2.SMTLib2
     Who2.TestAnnotations
-    Who2.TestBuilder
   build-depends:
     base >= 4.10 && < 5,
     bv-sized,

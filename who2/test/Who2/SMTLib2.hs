@@ -28,7 +28,7 @@ import Test.Tasty.HUnit (testCase, assertBool)
 import qualified What4.Interface as WI
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
 
-import qualified Who2.TestBuilder as TB
+import qualified Who2.Builder.TestBuilder as TB
 import qualified Who2.Protocol.SMTLib2 as SMTWho2
 
 -- | Main test entry point

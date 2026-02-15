@@ -3,10 +3,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 
-module Who2.Invariants
+module Who2.Builder.Invariants
   ( propNoEmptyOrSingletonStructures
   , propNoEmptyOrSingletonStructuresBV
+  , propSingletonAbstractDomainIffLiteral
   ) where
 
 import Control.Monad.IO.Class (liftIO)
@@ -14,12 +16,14 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Parameterized.Nonce (withIONonceGenerator)
 import Data.Parameterized.Some (Some(Some))
 import Data.Parameterized.TraversableFC (toListFC)
-import Hedgehog (Property)
+import Hedgehog (Property, property, forAll, assert)
 import qualified Hedgehog as H
 
+import qualified What4.BaseTypes as BT
+import qualified What4.Utils.BVDomain as BVD
 import Who2.Builder (newBuilder)
-import Who2.Gen (GenConfig(gcBVWidths, gcMaxDepth), SomeWidth(SomeWidth), defaultGenConfig, genBool, genBVAtWidth)
-import Who2.Properties (interp)
+import Who2.Builder.API (interp)
+import Who2.Builder.API.Gen (GenConfig(gcBVWidths, gcMaxDepth), SomeWidth(SomeWidth), defaultGenConfig, genBool, genBVAtWidth)
 import qualified Hedgehog.Gen as Gen
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
@@ -192,3 +196,41 @@ propNoEmptyOrSingletonStructuresBV = H.withDiscards 10000 $ H.property $ do
       Just msg -> do
         H.annotate msg
         H.failure
+
+-------------------------------------------------------------------------------
+-- Singleton Abstract Domain Property
+-------------------------------------------------------------------------------
+
+-- | Property: A built expression is a literal if and only if its abstract domain is a singleton
+propSingletonAbstractDomainIffLiteral :: Property
+propSingletonAbstractDomainIffLiteral = property $ do
+  SomeWidth w <- forAll $ Gen.element (gcBVWidths defaultGenConfig)
+  expr <- forAll $ genBVAtWidth defaultGenConfig w
+  (isLit, isSingleton) <- liftIO $ withIONonceGenerator $ \gen -> do
+    builder <- newBuilder gen
+    SE.SymExpr e <- interp builder expr
+    let isLit' = checkExprIsLiteral e
+    let isSingleton' = checkExprSingleton e
+    pure (isLit', isSingleton')
+  assert (isLit == isSingleton)
+  where
+    checkExprIsLiteral ::
+      forall t tp.
+      E.Expr t (App.App t) tp ->
+      Bool
+    checkExprIsLiteral expr =
+      case E.eApp expr of
+        App.LogicApp EL.TruePred -> True
+        App.LogicApp EL.FalsePred -> True
+        App.BVApp (EBV.BVLit _ _) -> True
+        _ -> False
+
+    checkExprSingleton ::
+      forall t tp.
+      E.Expr t (App.App t) tp ->
+      Bool
+    checkExprSingleton expr =
+      case (E.baseType expr, E.eAbsVal expr) of
+        (BT.BaseBoolRepr, Just _) -> True
+        (BT.BaseBVRepr _, BVD.asSingleton -> Just {}) -> True
+        _ -> False

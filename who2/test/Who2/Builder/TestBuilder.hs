@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.TestBuilder
+module Who2.Builder.TestBuilder
   ( TestBuilder
   , newTestBuilder
   ) where

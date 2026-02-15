@@ -26,9 +26,9 @@ import qualified Who2.SemiRing.HashConsed.Sum as SRHCSum
 import qualified Who2.SemiRing.HashConsed.Product as SRHCProduct
 import qualified Who2.SemiRing.Bloom.Sum as SRBloomSum
 import qualified Who2.SemiRing.Bloom.Product as SRBloomProduct
-import qualified Who2.GenTests as GenTests
-import qualified Who2.Invariants as Invariants
-import qualified Who2.Properties as Props
+import qualified Who2.Builder.API.GenTests as GenTests
+import qualified Who2.Builder.Invariants as Invariants
+import qualified Who2.Builder.Simplification as Props
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
 import qualified Who2.TestAnnotations as TestAnnotations
@@ -125,8 +125,6 @@ simplificationCorrectnessTests =
     --     Hedgehog.withTests 128 Props.propBoolSimplifications
     -- , testProperty "BV arithmetic expressions (100 tests)" $
     --     Hedgehog.withTests 128 Props.propBvArithSimplifications
-    -- , testProperty "Singleton abstract domain iff literal" $
-    --     Hedgehog.withTests 20000 Props.propSingletonAbstractDomainIffLiteral
       testProperty "No variables reduces to literal" $
         Hedgehog.withTests 1000 Props.propNoVariablesReducesToLiteral
     ]
@@ -509,4 +507,7 @@ invariantTests =
         Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructures
     , testProperty "No empty or singleton structures (BV)" $
         Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructuresBV
+    -- TODO: fails :-(
+    -- , testProperty "Singleton abstract domain iff literal" $
+    --     Hedgehog.withTests 20000 Invariants.propSingletonAbstractDomainIffLiteral
     ]

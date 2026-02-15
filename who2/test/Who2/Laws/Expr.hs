@@ -34,9 +34,9 @@ import qualified Hedgehog as H
 import Who2.Builder (newBuilder)
 import Who2.Expr (eHash)
 import Who2.Expr.SymExpr (SymExpr(SymExpr))
-import Who2.Gen (defaultGenConfig, genBool)
+import Who2.Builder.API (interp)
+import Who2.Builder.API.Gen (defaultGenConfig, genBool)
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdFTransitivity, checkOrdAntisymmetry, checkOrdFAntisymmetry)
-import Who2.Properties (interp)
 
 -------------------------------------------------------------------------------
 -- TestEquality Properties
