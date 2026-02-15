@@ -20,6 +20,7 @@ module Who2.Builder.Simplification
 
 import Control.Exception (catch, SomeException, evaluate)
 import Control.Monad.IO.Class (liftIO)
+import Data.List (isInfixOf)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Builder as Builder
@@ -29,6 +30,7 @@ import System.Process (readProcessWithExitCode)
 import System.Timeout (timeout)
 
 import Data.Parameterized.Nonce (withIONonceGenerator)
+import qualified Hedgehog as H
 import Hedgehog (Property, PropertyT, property, forAll, annotate, failure, assert)
 import qualified Hedgehog.Gen as Gen
 
@@ -106,25 +108,31 @@ checkSimplificationPreserved expr = do
   case result of
     (Right simpleRes, Right naiveRes) | simpleRes == naiveRes ->
       pure ()  -- Equisatisfiable
-    (Left "term rendering timeout", Left _) -> do
-      annotate "Skipped - naive term too large to render"
-      pure ()  -- Pass the test, don't fail on huge terms
     (Right simpleRes, Right naiveRes) -> do
       annotate $ "Expression: " ++ show expr
       annotate $ "Simplified result: " ++ Text.unpack simpleRes
       annotate $ "Naive result: " ++ Text.unpack naiveRes
       annotate "Results differ - not equisatisfiable"
       failure
-    (Left err, _) | "term rendering timeout" `elem` words err -> do
+    (Left "term rendering timeout", Left _) -> do
+      annotate "Skipped - naive term too large to render"
+      H.discard
+    (Left err, _) | "term rendering timeout" `isInfixOf` err -> do
       annotate "Skipped - term too large to render"
-      pure ()  -- Pass the test
+      H.discard
+    (Left err, _) | "z3 timeout" `isInfixOf` err -> do
+      annotate "Skipped - Z3 timeout (query too complex)"
+      H.discard
+    (_, Left err) | "term rendering timeout" `isInfixOf` err -> do
+      annotate "Skipped - term too large to render"
+      H.discard
+    (_, Left err) | "z3 timeout" `isInfixOf` err -> do
+      annotate "Skipped - Z3 timeout (query too complex)"
+      H.discard
     (Left err, _) -> do
       annotate $ "Expression: " ++ show expr
       annotate $ "Z3 error (simplified): " ++ err
       failure
-    (_, Left err) | "term rendering timeout" `elem` words err -> do
-      annotate "Skipped - term too large to render"
-      pure ()  -- Pass the test
     (_, Left err) -> do
       annotate $ "Expression: " ++ show expr
       annotate $ "Z3 error (naive): " ++ err

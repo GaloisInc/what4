@@ -1049,7 +1049,7 @@ bvRol alloc x y
   -- test: bvrol-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
-      bvLit alloc wx (BV.rotateL wx bvx (fromInteger (BV.asUnsigned bvy)))
+      bvLit alloc wx (BV.rotateL wx bvx (fromInteger (BV.asUnsigned bvy `mod` NR.intValue wx)))
   | otherwise = do
       let w = EBV.width x
       -- Cryptol> :prove \(x : [8]) -> x <<< 8 == x
@@ -1075,7 +1075,7 @@ bvRor alloc x y
   -- test: bvror-const
   | Just (wx, bvx) <- asBVLit x
   , Just (_, bvy) <- asBVLit y =
-      bvLit alloc wx (BV.rotateR wx bvx (fromInteger (BV.asUnsigned bvy)))
+      bvLit alloc wx (BV.rotateR wx bvx (fromInteger (BV.asUnsigned bvy `mod` NR.intValue wx)))
   | otherwise = do
       let w = EBV.width x
       -- Cryptol> :prove \(x : [8]) -> x >>> 8 == x

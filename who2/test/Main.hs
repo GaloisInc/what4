@@ -116,16 +116,15 @@ hashConsedTests =
 simplificationCorrectnessTests :: TestTree
 simplificationCorrectnessTests =
   testGroup "Simplification Correctness"
-    [ -- TODO: These all fail :-(
-    -- [ testProperty "General simplifications (depth 5)" $
-    --     Hedgehog.withTests 32 Props.propSimplificationCorrect  -- TODO: increase
-    -- , testProperty "Deep expressions (depth 10)" $
-    --     Hedgehog.withTests 32 Props.propDeepSimplifications  -- TODO: increase
-    --   testProperty "Boolean-only expressions (100 tests)" $
-    --     Hedgehog.withTests 128 Props.propBoolSimplifications
-    -- , testProperty "BV arithmetic expressions (100 tests)" $
-    --     Hedgehog.withTests 128 Props.propBvArithSimplifications
-      testProperty "No variables reduces to literal" $
+    [ testProperty "General simplifications (depth 5)" $
+        Hedgehog.withTests 32 Props.propSimplificationCorrect  -- TODO: increase
+    , testProperty "Deep expressions (depth 10)" $
+        Hedgehog.withTests 32 Props.propDeepSimplifications  -- TODO: increase
+    , testProperty "Boolean-only expressions (100 tests)" $
+        Hedgehog.withTests 128 Props.propBoolSimplifications
+    , testProperty "BV arithmetic expressions (100 tests)" $
+        Hedgehog.withTests 128 Props.propBvArithSimplifications
+    , testProperty "No variables reduces to literal" $
         Hedgehog.withTests 1000 Props.propNoVariablesReducesToLiteral
     ]
 

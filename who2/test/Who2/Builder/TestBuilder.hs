@@ -14,6 +14,7 @@ module Who2.Builder.TestBuilder
 
 import Data.Parameterized.Nonce (NonceGenerator, Nonce)
 import qualified Data.Parameterized.Nonce as Nonce
+import Data.Parameterized.NatRepr (natValue)
 import qualified Data.BitVector.Sized as BVS
 
 import What4.BaseTypes (BaseBoolType)
@@ -33,6 +34,7 @@ import Who2.Expr.SymExpr (SymExpr(..))
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL
+import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.Bloom.SemiRing.Product as SRP
 import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
@@ -282,13 +284,31 @@ instance IsExprBuilder (TestBuilder t) where
   bvRol tb x y = do
     let SymExpr ex = x
         SymExpr ey = y
-    result <- naiveAlloc tb (BVApp (EBV.BVRol (EBV.width ex) ex ey))
+        w = EBV.width ex
+    -- Normalize rotation amount modulo width (same as Builder)
+    -- But only if it's not already a literal < width
+    y' <- case EV.asBVLit ey of
+      Just (_, bv) | BVS.asUnsigned bv < toInteger (natValue w) -> pure y  -- Already normalized
+      _ -> do
+        widthLit <- bvLit tb w (BVS.mkBV w (toInteger (natValue w)))
+        bvUrem tb y widthLit
+    let SymExpr ey' = y'
+    result <- naiveAlloc tb (BVApp (EBV.BVRol w ex ey'))
     pure (SymExpr result)
 
   bvRor tb x y = do
     let SymExpr ex = x
         SymExpr ey = y
-    result <- naiveAlloc tb (BVApp (EBV.BVRor (EBV.width ex) ex ey))
+        w = EBV.width ex
+    -- Normalize rotation amount modulo width (same as Builder)
+    -- But only if it's not already a literal < width
+    y' <- case EV.asBVLit ey of
+      Just (_, bv) | BVS.asUnsigned bv < toInteger (natValue w) -> pure y  -- Already normalized
+      _ -> do
+        widthLit <- bvLit tb w (BVS.mkBV w (toInteger (natValue w)))
+        bvUrem tb y widthLit
+    let SymExpr ey' = y'
+    result <- naiveAlloc tb (BVApp (EBV.BVRor w ex ey'))
     pure (SymExpr result)
 
   bvConcat tb x y = do
