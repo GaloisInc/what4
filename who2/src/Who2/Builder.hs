@@ -24,6 +24,8 @@ import Data.Parameterized.Nonce (Nonce, NonceGenerator)
 import qualified Data.Parameterized.Nonce as Nonce
 import Data.Parameterized.TraversableFC (fmapFC)
 
+import qualified Data.BitVector.Sized as BV
+import qualified What4.BaseTypes as BT
 import qualified What4.Expr as WE
 import qualified What4.Expr.App as WEA
 import qualified What4.Interface as WI
@@ -38,6 +40,7 @@ import Who2.Expr (Expr)
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as EA
 import Who2.Expr.App (App)
+import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Fn as EFn
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.SymFn as ESF
@@ -113,9 +116,22 @@ alloc ::
   AbstractValue tp ->
   IO (Expr t (App t) tp)
 alloc b app absVal =
-  if hashConsing
-  then allocWithHashCons b app absVal
-  else E.mkExpr (bNonceGen b) app absVal
+  -- TODO: Turn this check into an assertion that this case is handled already
+  -- Check if abstract interpretation concludes this is a constant
+  case E.baseType app of
+    BT.BaseBoolRepr
+      | Just boolVal <- absVal ->
+          -- Singleton boolean domain - return True or False literal
+          return $ getSymExpr $ if boolVal then bTrue b else bFalse b
+    BT.BaseBVRepr w
+      | Just x <- BVD.asSingleton absVal ->
+          -- Singleton bitvector domain - return BV literal
+          E.mkExpr (bNonceGen b) (EA.BVApp (EBV.BVLit w (BV.mkBV w x))) absVal
+    _ ->
+      -- Not a singleton - proceed with normal allocation
+      if hashConsing
+      then allocWithHashCons b app absVal
+      else E.mkExpr (bNonceGen b) app absVal
 {-# INLINE alloc #-}
 
 allocWithHashCons ::
