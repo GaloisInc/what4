@@ -114,6 +114,7 @@ jobs:
             9.6.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.05 ;;
             9.8.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-23.11 ;;
             9.10.1) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-24.05 ;;
+            9.12.2) GHC_NIXPKGS=github:nixos/nixpkgs/nixos-25.05 ;;
             *)     GHC_NIXPKGS=github:nixos/nixpkgs/21.11 ;;
           esac
           echo "GHC_NIXPKGS=${GHC_NIXPKGS}" >> $GITHUB_ENV
