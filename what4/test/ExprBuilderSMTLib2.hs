@@ -1231,7 +1231,7 @@ testUnsafeSetAbstractValue2 = testCase "test unsafeSetAbstractValue2" $
     e2A <- freshConstant sym (userSymbol' "x2A") (BaseBVRepr w)
     e2B <- freshConstant sym (userSymbol' "x2B") (BaseBVRepr w)
     e2C <- bvAdd sym e2A e2B
-    (_, e2C') <- annotateTerm sym $ unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e2C
+    e2C' <- opacify sym $ unsafeSetAbstractValue (WUB.BVDArith (WUBA.range w 2 2)) e2C
     unsignedBVBounds e2C' @?= Just (2, 2)
     e2D <- bvAdd sym e2C' =<< bvOne sym w
     case asBV e2D of

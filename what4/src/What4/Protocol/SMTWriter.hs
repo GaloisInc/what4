@@ -1961,6 +1961,7 @@ predSMTExpr e0 = do
   liftIO $ updateProgramLoc h (nonceExprLoc e0)
   case nonceExprApp e0 of
     Annotation _tpr _n e -> mkExpr e
+    Opaque _tpr e -> mkExpr e
     Forall var e -> do
       checkQuantifierSupport "universal quantifier" i
 
