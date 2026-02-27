@@ -5,11 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Who2.Builder.Invariants
-  ( propNoEmptyOrSingletonStructures
-  , propNoEmptyOrSingletonStructuresBV
-  , propSingletonAbstractDomainIffLiteral
-  ) where
+module Who2.Builder.Invariants (tests) where
 
 import Control.Monad.IO.Class (liftIO)
 
@@ -18,6 +14,8 @@ import Data.Parameterized.Some (Some(Some))
 import Data.Parameterized.TraversableFC (toListFC)
 import Hedgehog (Property, property, forAll, assert)
 import qualified Hedgehog as H
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.BaseTypes as BT
 import qualified What4.Utils.BVDomain as BVD
@@ -234,3 +232,17 @@ propSingletonAbstractDomainIffLiteral = property $ do
         (BT.BaseBoolRepr, Just _) -> True
         (BT.BaseBVRepr _, BVD.asSingleton -> Just {}) -> True
         _ -> False
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Builder Invariants"
+  [ testProperty "No empty or singleton structures (Bool)" $
+      H.withTests 1000 propNoEmptyOrSingletonStructures
+  , testProperty "No empty or singleton structures (BV)" $
+      H.withTests 1000 propNoEmptyOrSingletonStructuresBV
+  , testProperty "Singleton abstract domain iff literal" $
+      H.withTests 1000 propSingletonAbstractDomainIffLiteral
+  ]

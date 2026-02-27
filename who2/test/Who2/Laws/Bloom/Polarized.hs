@@ -1,14 +1,4 @@
-module Who2.Laws.Bloom.Polarized
-  ( -- eqBy properties
-    propPolarizedBloomSeqEqByReflexive
-  , propPolarizedBloomSeqEqBySymmetric
-  , propPolarizedBloomSeqEqByTransitive
-  -- ordBy properties
-  , propPolarizedBloomSeqOrdByReflexive
-  , propPolarizedBloomSeqOrdByAntisymmetric
-  , propPolarizedBloomSeqOrdByTransitive
-  , propPolarizedBloomSeqOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.Bloom.Polarized (tests) where
 
 import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
@@ -17,6 +7,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
@@ -107,3 +99,29 @@ propPolarizedBloomSeqOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Polarized"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propPolarizedBloomSeqEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propPolarizedBloomSeqEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propPolarizedBloomSeqEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propPolarizedBloomSeqOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propPolarizedBloomSeqOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propPolarizedBloomSeqOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propPolarizedBloomSeqOrdByConsistentWithEqBy
+      ]
+  ]

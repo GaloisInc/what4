@@ -4,23 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Who2.Laws.Expr
-  ( -- TestEquality properties
-    propTestEqualityReflexive
-  , propTestEqualitySymmetric
-  , propTestEqualityTransitive
-  , propTestEqualityHashConsistent
-  -- OrdF properties
-  , propOrdFReflexive
-  , propOrdFAntisymmetric
-  , propOrdFTransitive
-  , propOrdFConsistentWithTestEquality
-  -- Ord properties
-  , propOrdReflexive
-  , propOrdAntisymmetric
-  , propOrdTransitive
-  , propOrdConsistentWithEq
-  ) where
+module Who2.Laws.Expr (tests) where
 
 import Control.Monad (unless)
 import Control.Monad.IO.Class (liftIO)
@@ -30,6 +14,8 @@ import qualified Data.Parameterized.Classes as PC
 import Data.Type.Equality (TestEquality(testEquality), (:~:)(Refl))
 import Hedgehog (Property)
 import qualified Hedgehog as H
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import Who2.Builder (newBuilder)
 import Who2.Expr (eHash)
@@ -207,3 +193,38 @@ propOrdConsistentWithEq = H.property $ do
       (True, GT) -> False
       (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Expr Properties"
+  [ testGroup "TestEquality Properties"
+      [ testProperty "Reflexivity (testEquality x x == Just Refl)" propTestEqualityReflexive
+      , testProperty "Symmetry (testEquality x y == testEquality y x)" propTestEqualitySymmetric
+      , testProperty "Transitivity" propTestEqualityTransitive
+      , testProperty "Hash consistency (equal implies same hash)" $
+          H.withTests 100 $ H.withDiscards 10000 propTestEqualityHashConsistent
+      ]
+  , testGroup "OrdF Properties"
+      [ testProperty "Reflexivity (compareF x x == EQF)" $
+          H.withTests 1000 propOrdFReflexive
+      , testProperty "Antisymmetry (compareF x y opposite of compareF y x)" $
+          H.withTests 1000 propOrdFAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propOrdFTransitive
+      , testProperty "Consistency with TestEquality" $
+          H.withTests 1000 propOrdFConsistentWithTestEquality
+      ]
+  , testGroup "Ord Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propOrdReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propOrdAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propOrdTransitive
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propOrdConsistentWithEq
+      ]
+  ]

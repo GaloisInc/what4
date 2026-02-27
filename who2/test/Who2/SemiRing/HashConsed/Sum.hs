@@ -2,14 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.SemiRing.HashConsed.Sum
-  ( propHashConsedSumAddAssociative
-  , propHashConsedSumAddCommutative
-  , propHashConsedSumAddIdentity
-  , propHashConsedSumAddConstantAssociative
-  , propHashConsedSumScalarDistributivity
-  , propHashConsedSumCancellation
-  ) where
+module Who2.SemiRing.HashConsed.Sum (tests) where
 
 import Control.Monad (unless)
 
@@ -19,6 +12,8 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Data.BitVector.Sized as BV
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -101,3 +96,23 @@ propHashConsedSumCancellation = H.property $ do
   let result = HCSR.add (HCSR.scaledVar sr c x) (HCSR.scaledVar sr negC x)
   -- After cancellation, the map should be empty (no zero-coefficient terms)
   H.assert $ EM.size (HCSR.sumMap result) == 0
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "SemiRing Algebraic Laws (HashConsed Sum)"
+  [ testProperty "Addition is associative" $
+      H.withTests 1000 propHashConsedSumAddAssociative
+  , testProperty "Addition is commutative" $
+      H.withTests 1000 propHashConsedSumAddCommutative
+  , testProperty "Zero is additive identity" $
+      H.withTests 1000 propHashConsedSumAddIdentity
+  , testProperty "Adding constants is associative" $
+      H.withTests 1000 propHashConsedSumAddConstantAssociative
+  , testProperty "Scalar multiplication distributes over addition" $
+      H.withTests 1000 propHashConsedSumScalarDistributivity
+  , testProperty "Adding opposite scalars cancels" $
+      H.withTests 1000 propHashConsedSumCancellation
+  ]

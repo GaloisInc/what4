@@ -1,15 +1,11 @@
-module Who2.Filter
-  ( -- Basic Filter properties
-    propFilterEmptyMightNotContain
-  , propFilterInsertMightContain
-  , propFilterDisjointEmpty
-  , propFilterUnionContains
-  ) where
+module Who2.Filter (tests) where
 
 import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Filter as Filt
 
@@ -54,3 +50,19 @@ propFilterUnionContains = H.property $ do
   let union = Filt.union filt1 filt2
   H.assert $ Filt.mightContain union x
   H.assert $ Filt.mightContain union y
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Filter"
+  [ testProperty "Empty filter might not contain" $
+      H.withTests 1000 propFilterEmptyMightNotContain
+  , testProperty "Insert makes mightContain true" $
+      H.withTests 1000 propFilterInsertMightContain
+  , testProperty "Empty filters are disjoint" $
+      H.withTests 1000 propFilterDisjointEmpty
+  , testProperty "Union contains both elements" $
+      H.withTests 1000 propFilterUnionContains
+  ]

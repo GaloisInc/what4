@@ -2,12 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.SemiRing.HashConsed.Product
-  ( propHashConsedProductMulAssociative
-  , propHashConsedProductMulIdentity
-  , propHashConsedProductScaleAssociative
-  , propHashConsedProductScaleDistributesOverMul
-  ) where
+module Who2.SemiRing.HashConsed.Product (tests) where
 
 import Control.Monad (unless)
 
@@ -17,6 +12,8 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -78,3 +75,19 @@ propHashConsedProductScaleDistributesOverMul = H.property $ do
   let lhs = HCPR.scale (HCPR.mul p1 p2) c
   let rhs = HCPR.mul (HCPR.scale p1 c) p2
   lhs H.=== rhs
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "SemiRing Algebraic Laws (HashConsed Product)"
+  [ testProperty "Multiplication is associative" $
+      H.withTests 1000 propHashConsedProductMulAssociative
+  , testProperty "One is multiplicative identity" $
+      H.withTests 1000 propHashConsedProductMulIdentity
+  , testProperty "Scaling is associative" $
+      H.withTests 1000 propHashConsedProductScaleAssociative
+  , testProperty "Scaling distributes over multiplication" $
+      H.withTests 1000 propHashConsedProductScaleDistributesOverMul
+  ]

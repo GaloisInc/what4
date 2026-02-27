@@ -1,14 +1,4 @@
-module Who2.Laws.HashConsed.Set
-  ( -- Eq properties
-    propExprSetEqReflexive
-  , propExprSetEqSymmetric
-  , propExprSetEqTransitive
-  -- Ord properties
-  , propExprSetOrdReflexive
-  , propExprSetOrdAntisymmetric
-  , propExprSetOrdTransitive
-  , propExprSetOrdConsistentWithEq
-  ) where
+module Who2.Laws.HashConsed.Set (tests) where
 
 import Control.Monad (unless)
 
@@ -16,6 +6,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Set as ES
 import Who2.Laws.Helpers (MockExpr(..), checkOrdTransitivity, checkOrdAntisymmetry)
@@ -97,3 +89,29 @@ propExprSetOrdConsistentWithEq = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "HashConsed.ExprSet"
+  [ testGroup "Eq Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propExprSetEqReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propExprSetEqSymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propExprSetEqTransitive
+      ]
+  , testGroup "Ord Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propExprSetOrdReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propExprSetOrdAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propExprSetOrdTransitive
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propExprSetOrdConsistentWithEq
+      ]
+  ]

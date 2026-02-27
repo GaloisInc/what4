@@ -2,17 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.Laws.HashConsed.SemiRing.Sum
-  ( -- eqBy properties
-    propHashConsedSumEqByReflexive
-  , propHashConsedSumEqBySymmetric
-  , propHashConsedSumEqByTransitive
-  -- ordBy properties
-  , propHashConsedSumOrdByReflexive
-  , propHashConsedSumOrdByAntisymmetric
-  , propHashConsedSumOrdByTransitive
-  , propHashConsedSumOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.HashConsed.SemiRing.Sum (tests) where
 
 import Control.Monad (unless)
 
@@ -22,6 +12,8 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Data.BitVector.Sized as BV
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -110,3 +102,29 @@ propHashConsedSumOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "HashConsed.Sum"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propHashConsedSumEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propHashConsedSumEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashConsedSumEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propHashConsedSumOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propHashConsedSumOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashConsedSumOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propHashConsedSumOrdByConsistentWithEqBy
+      ]
+  ]

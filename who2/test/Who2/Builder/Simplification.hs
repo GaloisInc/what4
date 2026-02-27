@@ -10,11 +10,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Who2.Builder.Simplification
-  ( propSimplificationCorrect
-  , propDeepSimplifications
-  , propBoolSimplifications
-  , propBvArithSimplifications
-  , propNoVariablesReducesToLiteral
+  ( tests
   , checkZ3Available
   ) where
 
@@ -33,6 +29,8 @@ import Data.Parameterized.Nonce (withIONonceGenerator)
 import qualified Hedgehog as H
 import Hedgehog (Property, PropertyT, property, forAll, annotate, failure, assert)
 import qualified Hedgehog.Gen as Gen
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.BaseTypes as BT
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
@@ -221,3 +219,21 @@ propNoVariablesReducesToLiteral = property $ do
         App.LogicApp EL.FalsePred -> True
         App.BVApp (EBV.BVLit _ _) -> True
         _ -> False
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Simplification Correctness"
+  [ testProperty "General simplifications (depth 5)" $
+      H.withTests 32 propSimplificationCorrect
+  , testProperty "Deep expressions (depth 10)" $
+      H.withTests 32 propDeepSimplifications
+  , testProperty "Boolean-only expressions (100 tests)" $
+      H.withTests 128 propBoolSimplifications
+  , testProperty "BV arithmetic expressions (100 tests)" $
+      H.withTests 128 propBvArithSimplifications
+  , testProperty "No variables reduces to literal" $
+      H.withTests 1000 propNoVariablesReducesToLiteral
+  ]

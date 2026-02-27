@@ -2,13 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.SemiRing.Bloom.Sum
-  ( propBloomSumAddAssociative
-  , propBloomSumAddIdentity
-  , propBloomSumAddConstantAssociative
-  , propBloomSumScalarDistributivity
-  , propBloomSumCancellation
-  ) where
+module Who2.SemiRing.Bloom.Sum (tests) where
 
 import Control.Monad (unless)
 
@@ -18,6 +12,8 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Data.BitVector.Sized as BV
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -96,3 +92,21 @@ propBloomSumCancellation = H.property $ do
   let result = BSR.add (BSR.scaledVar sr c x) (BSR.scaledVar sr negC x)
   -- After cancellation, the map should be empty (no zero-coefficient terms)
   H.assert $ BKv.isEmpty (BSR.sumMap result)
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "SemiRing Algebraic Laws (Bloom Sum)"
+  [ testProperty "Addition is associative" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomSumAddAssociative
+  , testProperty "Zero is additive identity" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomSumAddIdentity
+  , testProperty "Adding constants is associative" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomSumAddConstantAssociative
+  , testProperty "Scalar multiplication distributes over addition" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomSumScalarDistributivity
+  , testProperty "Adding opposite scalars cancels" $
+      H.withTests 1000 propBloomSumCancellation
+  ]

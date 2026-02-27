@@ -1,14 +1,4 @@
-module Who2.Laws.Bloom.HashedSeq
-  ( -- Eq and Hash properties
-    propHashedSeqHashConsistency
-  , propHashedSeqEqConsistency
-  , propHashedSeqAppendHashConsistency
-  , propHashedSeqMergeHashConsistency
-    -- ordBy properties (no eqBy in HashedSeq)
-  , propHashedSeqOrdByReflexive
-  , propHashedSeqOrdByAntisymmetric
-  , propHashedSeqOrdByTransitive
-  ) where
+module Who2.Laws.Bloom.HashedSeq (tests) where
 
 import Control.Monad (unless, when)
 
@@ -18,6 +8,8 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.Functor.Classes (Ord1(liftCompare))
 import Data.Hashable (hash)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.HashedSeq as HS
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
@@ -98,3 +90,29 @@ propHashedSeqOrdByTransitive = H.property $ do
   let ord23 = liftCompare compare hs2 hs3
   let ord13 = liftCompare compare hs1 hs3
   unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.HashedSeq"
+  [ testGroup "Hash and Eq Properties"
+      [ testProperty "Hash consistency (equal implies same hash)" $
+          H.withTests 1000 propHashedSeqHashConsistency
+      , testProperty "Eq consistency with list" $
+          H.withTests 1000 propHashedSeqEqConsistency
+      , testProperty "Append maintains hash consistency" $
+          H.withTests 1000 propHashedSeqAppendHashConsistency
+      , testProperty "Merge maintains hash consistency" $
+          H.withTests 1000 propHashedSeqMergeHashConsistency
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propHashedSeqOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propHashedSeqOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashedSeqOrdByTransitive
+      ]
+  ]

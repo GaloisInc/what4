@@ -1,14 +1,4 @@
-module Who2.Laws.Bloom.Map
-  ( -- eqBy properties
-    propBloomKvEqByReflexive
-  , propBloomKvEqBySymmetric
-  , propBloomKvEqByTransitive
-  -- ordBy properties
-  , propBloomKvOrdByReflexive
-  , propBloomKvOrdByAntisymmetric
-  , propBloomKvOrdByTransitive
-  , propBloomKvOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.Bloom.Map (tests) where
 
 import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
@@ -17,6 +7,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Map as BKv
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
@@ -103,3 +95,29 @@ propBloomKvOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Kv"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomKvEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propBloomKvEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomKvEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomKvOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propBloomKvOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomKvOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propBloomKvOrdByConsistentWithEqBy
+      ]
+  ]

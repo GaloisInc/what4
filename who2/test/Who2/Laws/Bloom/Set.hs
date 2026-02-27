@@ -1,14 +1,4 @@
-module Who2.Laws.Bloom.Set
-  ( -- eqBy properties
-    propBloomSeqEqByReflexive
-  , propBloomSeqEqBySymmetric
-  , propBloomSeqEqByTransitive
-  -- ordBy properties
-  , propBloomSeqOrdByReflexive
-  , propBloomSeqOrdByAntisymmetric
-  , propBloomSeqOrdByTransitive
-  , propBloomSeqOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.Bloom.Set (tests) where
 
 import Control.Monad (unless)
 
@@ -17,6 +7,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Set as BS
 import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
@@ -98,3 +90,29 @@ propBloomSeqOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Seq"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomSeqEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propBloomSeqEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomSeqEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomSeqOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propBloomSeqOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomSeqOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propBloomSeqOrdByConsistentWithEqBy
+      ]
+  ]

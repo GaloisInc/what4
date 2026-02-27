@@ -2,17 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.Laws.Bloom.SemiRing.Product
-  ( -- eqBy properties
-    propBloomProductEqByReflexive
-  , propBloomProductEqBySymmetric
-  , propBloomProductEqByTransitive
-  -- ordBy properties
-  , propBloomProductOrdByReflexive
-  , propBloomProductOrdByAntisymmetric
-  , propBloomProductOrdByTransitive
-  , propBloomProductOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.Bloom.SemiRing.Product (tests) where
 
 import Control.Monad (unless)
 
@@ -21,6 +11,8 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.BitVector.Sized()
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import Data.Parameterized.NatRepr (knownNat)
 
@@ -110,3 +102,29 @@ propBloomProductOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Product"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomProductEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propBloomProductEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomProductEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomProductOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propBloomProductOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomProductOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propBloomProductOrdByConsistentWithEqBy
+      ]
+  ]

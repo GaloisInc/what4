@@ -2,17 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.Laws.HashConsed.SemiRing.Product
-  ( -- eqBy properties
-    propHashConsedProductEqByReflexive
-  , propHashConsedProductEqBySymmetric
-  , propHashConsedProductEqByTransitive
-  -- ordBy properties
-  , propHashConsedProductOrdByReflexive
-  , propHashConsedProductOrdByAntisymmetric
-  , propHashConsedProductOrdByTransitive
-  , propHashConsedProductOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.HashConsed.SemiRing.Product (tests) where
 
 import Control.Monad (unless)
 
@@ -21,6 +11,8 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -108,3 +100,29 @@ propHashConsedProductOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "HashConsed.Product"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propHashConsedProductEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propHashConsedProductEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashConsedProductEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propHashConsedProductOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propHashConsedProductOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashConsedProductOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propHashConsedProductOrdByConsistentWithEqBy
+      ]
+  ]

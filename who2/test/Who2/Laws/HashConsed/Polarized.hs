@@ -1,7 +1,4 @@
-module Who2.Laws.HashConsed.Polarized
-  ( -- Basic properties
-    propPolarizedExprSetEqHashConsistency
-  ) where
+module Who2.Laws.HashConsed.Polarized (tests) where
 
 import Control.Monad (unless)
 import Data.Hashable (hash)
@@ -10,6 +7,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.Set as ES
@@ -34,3 +33,13 @@ propPolarizedExprSetEqHashConsistency = H.property $ do
   pes2 <- H.forAll genPolarizedExprSet
   unless (pes1 == pes2) H.discard
   hash pes1 H.=== hash pes2
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "HashConsed.PolarizedExprSet"
+  [ testProperty "Eq/Hash consistency (equal implies same hash)" $
+      H.withTests 1000 $ H.withDiscards 10000 propPolarizedExprSetEqHashConsistency
+  ]

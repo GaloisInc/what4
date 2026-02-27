@@ -1,14 +1,4 @@
-module Who2.Laws.HashConsed.Map
-  ( -- eqBy properties
-    propExprMapEqByReflexive
-  , propExprMapEqBySymmetric
-  , propExprMapEqByTransitive
-  -- ordBy properties
-  , propExprMapOrdByReflexive
-  , propExprMapOrdByAntisymmetric
-  , propExprMapOrdByTransitive
-  , propExprMapOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.HashConsed.Map (tests) where
 
 import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
@@ -17,6 +7,8 @@ import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Map as EM
 import Who2.Laws.Helpers (MockExpr(..), checkOrdTransitivity, checkOrdAntisymmetry)
@@ -101,3 +93,29 @@ propExprMapOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "HashConsed.ExprMap"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propExprMapEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propExprMapEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propExprMapEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propExprMapOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propExprMapOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propExprMapOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propExprMapOrdByConsistentWithEqBy
+      ]
+  ]

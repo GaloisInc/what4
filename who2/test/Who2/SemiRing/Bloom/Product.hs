@@ -2,12 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.SemiRing.Bloom.Product
-  ( propBloomProductMulAssociative
-  , propBloomProductMulIdentity
-  , propBloomProductScaleAssociative
-  , propBloomProductScaleDistributesOverMul
-  ) where
+module Who2.SemiRing.Bloom.Product (tests) where
 
 import Control.Monad (unless)
 
@@ -17,6 +12,8 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Data.Parameterized.NatRepr (knownNat)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import qualified What4.SemiRing as SR
 
@@ -82,3 +79,19 @@ propBloomProductScaleDistributesOverMul = H.property $ do
   let rhs = BPR.mul (BPR.scale p1 c) p2
   unless (BPR.size lhs < BPR.threshold && BPR.size rhs < BPR.threshold) H.discard
   lhs H.=== rhs
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "SemiRing Algebraic Laws (Bloom Product)"
+  [ testProperty "Multiplication is associative" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomProductMulAssociative
+  , testProperty "One is multiplicative identity" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomProductMulIdentity
+  , testProperty "Scaling is associative" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomProductScaleAssociative
+  , testProperty "Scaling distributes over multiplication" $
+      H.withTests 1000 $ H.withDiscards 10000 propBloomProductScaleDistributesOverMul
+  ]

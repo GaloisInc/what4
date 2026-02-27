@@ -2,17 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Who2.Laws.Bloom.SemiRing.Sum
-  ( -- eqBy properties
-    propBloomSumEqByReflexive
-  , propBloomSumEqBySymmetric
-  , propBloomSumEqByTransitive
-  -- ordBy properties
-  , propBloomSumOrdByReflexive
-  , propBloomSumOrdByAntisymmetric
-  , propBloomSumOrdByTransitive
-  , propBloomSumOrdByConsistentWithEqBy
-  ) where
+module Who2.Laws.Bloom.SemiRing.Sum (tests) where
 
 import Control.Monad (unless)
 
@@ -21,6 +11,8 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Data.BitVector.Sized as BV
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
 
 import Data.Parameterized.NatRepr (knownNat)
 
@@ -111,3 +103,29 @@ propBloomSumOrdByConsistentWithEqBy = H.property $ do
         (True, GT) -> False
         (False, EQ) -> False
   unless result H.failure
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Sum"
+  [ testGroup "eqBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomSumEqByReflexive
+      , testProperty "Symmetry" $
+          H.withTests 1000 propBloomSumEqBySymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomSumEqByTransitive
+      ]
+  , testGroup "ordBy Properties"
+      [ testProperty "Reflexivity" $
+          H.withTests 1000 propBloomSumOrdByReflexive
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propBloomSumOrdByAntisymmetric
+      , testProperty "Transitivity" $
+          H.withTests 1000 propBloomSumOrdByTransitive
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propBloomSumOrdByConsistentWithEqBy
+      ]
+  ]
