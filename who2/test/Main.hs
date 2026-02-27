@@ -512,7 +512,6 @@ invariantTests =
         Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructures
     , testProperty "No empty or singleton structures (BV)" $
         Hedgehog.withTests 1000 Invariants.propNoEmptyOrSingletonStructuresBV
-    -- TODO: fails :-(
-    -- , testProperty "Singleton abstract domain iff literal" $
-    --     Hedgehog.withTests 20000 Invariants.propSingletonAbstractDomainIffLiteral
+    , testProperty "Singleton abstract domain iff literal" $
+        Hedgehog.withTests 20000 Invariants.propSingletonAbstractDomainIffLiteral
     ]
