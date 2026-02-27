@@ -179,11 +179,11 @@ instance EV.HasBVViews (App t) where
 
   -- Hash-consed constructor views
   asBVAndBitsHC e = case E.eApp e of
-    BVApp (EBV.BVAndBitsHC _ pset) -> Just pset
+    BVApp (EBV.BVAndBitsHC _ pset) -> Just (coerce pset)
     _ -> Nothing
 
   asBVOrBitsHC e = case E.eApp e of
-    BVApp (EBV.BVOrBitsHC _ pset) -> Just pset
+    BVApp (EBV.BVOrBitsHC _ pset) -> Just (coerce pset)
     _ -> Nothing
 
   asBVAddHC e = case E.eApp e of

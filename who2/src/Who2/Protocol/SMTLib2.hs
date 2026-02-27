@@ -474,8 +474,8 @@ mkBVExprWithCache cache = \case
 
   -- Hash-consed constructors
   EBV.BVAndBitsHC _ pset -> do
-    let posElems = PES.toListPos pset
-        negElems = PES.toListNeg pset
+    let posElems = coerce (PES.toListPos pset)
+        negElems = coerce (PES.toListNeg pset)
     posTerms <- mapM (mkExprWithCache cache) posElems
     negTerms <- mapM (mkExprWithCache cache) negElems
     let negTerms' = map SMT2.bvnot negTerms
@@ -485,8 +485,8 @@ mkBVExprWithCache cache = \case
       (t:ts) -> return $ SMT2.bvand t ts
 
   EBV.BVOrBitsHC _ pset -> do
-    let posElems = PES.toListPos pset
-        negElems = PES.toListNeg pset
+    let posElems = coerce (PES.toListPos pset)
+        negElems = coerce (PES.toListNeg pset)
     posTerms <- mapM (mkExprWithCache cache) posElems
     negTerms <- mapM (mkExprWithCache cache) negElems
     let negTerms' = map SMT2.bvnot negTerms

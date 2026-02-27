@@ -556,15 +556,15 @@ bvAndBitsHC ::
 bvAndBitsHC alloc x y
   -- (x1 & ... & xn) & (y1 & ... & yn) = x1 & ... & xn & y1 & ... & yn
   | Just xs <- EV.asBVAndBitsHC x
-  , Just ys <- EV.asBVAndBitsHC y = fromMerged (PES.merge xs ys)
+  , Just ys <- EV.asBVAndBitsHC y = fromMerged (PES.merge (coerce xs) (coerce ys))
   -- (x1 & ... & xn) & y = x1 & ... & xn & y
-  | Just xs <- EV.asBVAndBitsHC x = insertIntoBVAndBitsHC xs y x
+  | Just xs <- EV.asBVAndBitsHC x = insertIntoBVAndBitsHC (coerce xs) y x
   -- x & (y1 & ... & yn) = y1 & ... & yn & x
-  | Just ys <- EV.asBVAndBitsHC y = insertIntoBVAndBitsHC ys x y
+  | Just ys <- EV.asBVAndBitsHC y = insertIntoBVAndBitsHC (coerce ys) x y
   | otherwise =
       let x' = E.minByHash x y
           y' = E.maxByHash x y
-      in fromSimplified (PES.fromTwo x' y')
+      in fromSimplified (PES.fromTwo (EBV.BVExprWrapper x') (EBV.BVExprWrapper y'))
   where
     collapsed = bvLit alloc (EBV.width x) (BV.zero (EBV.width x))
     newAbsVal = BVD.and (E.eAbsVal x) (E.eAbsVal y)
@@ -579,15 +579,15 @@ bvAndBitsHC alloc x y
     fromSimplified =
       \case
         PES.Inconsistent -> collapsed
-        PES.SinglePositive e -> pure e
-        PES.SingleNegative e -> bvNotBits alloc e
+        PES.SinglePositive (EBV.BVExprWrapper e) -> pure e
+        PES.SingleNegative (EBV.BVExprWrapper e) -> bvNotBits alloc e
         PES.Merged pset ->
           case BVD.asSingleton newAbsVal of
             Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
             Nothing -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
     -- Insert a single element into an existing BVAndBitsHC
     insertIntoBVAndBitsHC pset newElem unchanged =
-      case PES.insertIfNotPresent pset newElem of
+      case PES.insertIfNotPresent pset (EBV.BVExprWrapper newElem) of
         Nothing -> collapsed
         Just newPset ->
           if PES.totalSize newPset == PES.totalSize pset
@@ -716,15 +716,15 @@ bvOrBitsHC ::
 bvOrBitsHC alloc x y
   -- (x1 | ... | xn) | (y1 | ... | yn) = x1 | ... | xn | y1 | ... | yn
   | Just xPset <- EV.asBVOrBitsHC x
-  , Just yPset <- EV.asBVOrBitsHC y = fromMerged (PES.merge xPset yPset)
+  , Just yPset <- EV.asBVOrBitsHC y = fromMerged (PES.merge (coerce xPset) (coerce yPset))
   -- (x1 | ... | xn) | y = x1 | ... | xn | y
-  | Just xPset <- EV.asBVOrBitsHC x = insertIntoBVOrBitsHC xPset y x
+  | Just xPset <- EV.asBVOrBitsHC x = insertIntoBVOrBitsHC (coerce xPset) y x
   -- x | (y1 | ... | yn) = y1 | ... | yn | x
-  | Just yPset <- EV.asBVOrBitsHC y = insertIntoBVOrBitsHC yPset x y
+  | Just yPset <- EV.asBVOrBitsHC y = insertIntoBVOrBitsHC (coerce yPset) x y
   | otherwise =
       let x' = E.minByHash x y
           y' = E.maxByHash x y
-      in fromSimplified (PES.fromTwo x' y')
+      in fromSimplified (PES.fromTwo (EBV.BVExprWrapper x') (EBV.BVExprWrapper y'))
   where
     collapsed = bvLit alloc (EBV.width x) (BV.maxUnsigned (EBV.width x))
     newAbsVal = BVD.or (E.eAbsVal x) (E.eAbsVal y)
@@ -739,15 +739,15 @@ bvOrBitsHC alloc x y
     fromSimplified =
       \case
         PES.Inconsistent -> collapsed
-        PES.SinglePositive e -> pure e
-        PES.SingleNegative e -> bvNotBits alloc e
+        PES.SinglePositive (EBV.BVExprWrapper e) -> pure e
+        PES.SingleNegative (EBV.BVExprWrapper e) -> bvNotBits alloc e
         PES.Merged pset ->
           case BVD.asSingleton newAbsVal of
             Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
             Nothing -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
     -- Insert a single element into an existing BVOrBitsHC
     insertIntoBVOrBitsHC pset newElem unchanged =
-      case PES.insertIfNotPresent pset newElem of
+      case PES.insertIfNotPresent pset (EBV.BVExprWrapper newElem) of
         Nothing -> collapsed
         Just newPset ->
           if PES.totalSize newPset == PES.totalSize pset

@@ -79,19 +79,16 @@ instance PC.TestEquality f => Eq (BVExprWrapper f w) where
 instance (BT.TestEquality f, PC.HashableF f, 1 <= w) => PC.Hashable (BVExprWrapper f w) where
   hashWithSalt s (BVExprWrapper expr) = PC.hashWithSaltF s expr
 
+-- HasId instance for BVExprWrapper
+instance E.HasId (E.Expr t f (BT.BaseBVType w)) => E.HasId (BVExprWrapper (E.Expr t f) w) where
+  getId (BVExprWrapper expr) = E.getId expr
+  {-# INLINE getId #-}
+
 -- Polarizable instance for BVExprWrapper
 instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (BVExprWrapper (E.Expr t f) w) where
   polarity (BVExprWrapper expr) = case EV.asBVNotBits expr of
     Just inner -> PBS.Negative (BVExprWrapper inner)
     Nothing -> PBS.Positive (BVExprWrapper expr)
-  {-# INLINE polarity #-}
-
--- TODO: Why necessary?
--- Polarizable instance for Expr for hash-consed PolarizedExprSet
-instance (EV.HasBVViews f, 1 <= w) => PBS.Polarizable (E.Expr t f (BT.BaseBVType w)) where
-  polarity expr = case EV.asBVNotBits expr of
-    Just inner -> PBS.Negative inner
-    Nothing -> PBS.Positive expr
   {-# INLINE polarity #-}
 
 data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
@@ -248,13 +245,13 @@ data BVExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   BVAndBitsHC ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(PES.PolarizedExprSet (f (BT.BaseBVType w))) ->
+    !(PES.PolarizedExprSet (BVExprWrapper f w)) ->
     BVExpr f (BT.BaseBVType w)
 
   BVOrBitsHC ::
     (1 <= w) =>
     !(NatRepr w) ->
-    !(PES.PolarizedExprSet (f (BT.BaseBVType w))) ->
+    !(PES.PolarizedExprSet (BVExprWrapper f w)) ->
     BVExpr f (BT.BaseBVType w)
 
   -- Hash-consed BV arithmetic using SRSum/SRProd

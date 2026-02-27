@@ -12,6 +12,7 @@ module Who2.Expr.Subst
   ) where
 
 import           Control.Monad (foldM)
+import           Data.Coerce (coerce)
 import qualified Data.BitVector.Sized as BV
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Parameterized.Classes as PC
@@ -201,15 +202,15 @@ substituteBoundVars sym = go
         binOp (WI.bvRor sym) e1' e2'
       -- Hash-consed constructors
       EBV.BVAndBitsHC w pset -> do
-        posElems' <- mapM (`go` substMap) (PES.toListPos pset)
-        negElems' <- mapM (`go` substMap) (PES.toListNeg pset)
+        posElems' <- mapM (`go` substMap) (coerce (PES.toListPos pset))
+        negElems' <- mapM (`go` substMap) (coerce (PES.toListNeg pset))
         negElems'' <- mapM (unOp (WI.bvNotBits sym)) negElems'
         case posElems' ++ negElems'' of
           [] -> ESE.getSymExpr <$> WI.bvLit sym w (BV.maxUnsigned w)
           (x:xs) -> foldM (\a b -> binOp (WI.bvAndBits sym) a b) x xs
       EBV.BVOrBitsHC w pset -> do
-        posElems' <- mapM (`go` substMap) (PES.toListPos pset)
-        negElems' <- mapM (`go` substMap) (PES.toListNeg pset)
+        posElems' <- mapM (`go` substMap) (coerce (PES.toListPos pset))
+        negElems' <- mapM (`go` substMap) (coerce (PES.toListNeg pset))
         negElems'' <- mapM (unOp (WI.bvNotBits sym)) negElems'
         case posElems' ++ negElems'' of
           [] -> ESE.getSymExpr <$> WI.bvZero sym w
