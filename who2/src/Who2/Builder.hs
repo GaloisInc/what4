@@ -14,6 +14,7 @@ module Who2.Builder
 
 import Control.Monad (when)
 import Control.Monad.ST (stToIO)
+import qualified Control.Exception as X
 import Data.Coerce (coerce)
 import qualified Data.IntMap.Strict as IntMap
 
@@ -30,6 +31,7 @@ import qualified What4.Expr as WE
 import qualified What4.Expr.App as WEA
 import qualified What4.Interface as WI
 import What4.Utils.AbstractDomains (AbstractValue, avTop)
+import qualified What4.Utils.AbstractDomains as AD
 import qualified What4.ProgramLoc as WPL
 import qualified What4.Utils.BVDomain as BVD
 
@@ -142,7 +144,11 @@ allocWithHashCons ::
 allocWithHashCons b app absVal = do
   me <- stToIO $ PH.lookup (bTermCache b) app
   case me of
-    Just e -> return e
+    Just e -> do
+      -- Assert that cached expression has compatible abstract value
+      let baseTypeRep = E.baseType app
+      return $ AD.withAbstractable baseTypeRep $
+        X.assert (AD.avCheckEq baseTypeRep (E.eAbsVal e) absVal /= Just False) e
     Nothing -> do
       newTerm <- E.mkExpr (bNonceGen b) app absVal
       -- Force evaluation before insertion to prevent thunk accumulation

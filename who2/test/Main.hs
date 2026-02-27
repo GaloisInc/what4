@@ -5,10 +5,12 @@ module Main (main) where
 import Control.Monad (unless)
 import System.IO (hPutStrLn, stderr)
 import Test.Tasty (TestTree, defaultMain, testGroup)
+import Test.Tasty.HUnit (testCase, assertBool)
 import Test.Tasty.Hedgehog (testProperty)
 import qualified Hedgehog
 
 import qualified Who2.Functions as Functions
+import Who2.Internal (assertionsEnabled)
 import qualified Who2.Laws.Expr as LawsExpr
 import qualified Who2.Laws.Bloom.Set as LawsBloomSeq
 import qualified Who2.Laws.Bloom.Map as LawsBloomKv
@@ -57,7 +59,11 @@ main = do
   cryptolTests <- Cryptol.tests
 
   defaultMain $ testGroup "Who2 Tests"
-    [ smt2FileTests simplTests z3Tests
+    [ -- See Note [Asserts] in who2
+      testCase "assertions enabled" $ do
+        assertsEnabled <- assertionsEnabled
+        assertBool "assertions should be enabled" assertsEnabled
+    , smt2FileTests simplTests z3Tests
     , propertyTests z3Available
     , smtLib2Tests
     , functionTests

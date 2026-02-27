@@ -174,6 +174,7 @@ library
     Who2.Builder.Ops.Logic
     Who2.Config
     Who2.Expr
+    Who2.Internal
     Who2.Expr.App
     Who2.Expr.Bloom.Filter
     Who2.Expr.Bloom.HashedSeq
