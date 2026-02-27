@@ -180,7 +180,11 @@ bvAddBloom alloc x y
       let w = EBV.width x'
       in case SRS.asConstant ws of
            Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
-           Nothing -> alloc' (EBV.BVAdd w ws) (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
+           Nothing ->
+             let absVal = BVD.add (E.eAbsVal x') (E.eAbsVal y')
+             in case BVD.asSingleton absVal of
+                  Just val -> alloc' (EBV.BVLit w (BV.mkBV w val)) (BVD.singleton w val)
+                  Nothing -> alloc' (EBV.BVAdd w ws) absVal
 {-# INLINE bvAddBloom #-}
 
 -- Hash-consed bvAdd implementation
@@ -233,7 +237,11 @@ bvAddHC alloc x y
       let w = EBV.width x'
       in case HCSR.asConstant ws of
            Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
-           Nothing -> alloc' (EBV.BVAddHC w ws) (BVD.add (E.eAbsVal x') (E.eAbsVal y'))
+           Nothing ->
+             let absVal = BVD.add (E.eAbsVal x') (E.eAbsVal y')
+             in case BVD.asSingleton absVal of
+                  Just val -> alloc' (EBV.BVLit w (BV.mkBV w val)) (BVD.singleton w val)
+                  Nothing -> alloc' (EBV.BVAddHC w ws) absVal
 {-# INLINE bvAddHC #-}
 
 bvNeg ::
@@ -297,9 +305,10 @@ bvSub alloc x y
   -- x - c = x + (-c)
   | Just (w, bv) <- asBVLit y = bvAdd alloc x =<< bvLit alloc w (BV.negate w bv)
   | otherwise =
-      alloc
-        (EBV.BVSub (EBV.width x) x y)
-        (BVD.add (E.eAbsVal x) (BVD.negate (E.eAbsVal y)))
+      let absVal = BVD.add (E.eAbsVal x) (BVD.negate (E.eAbsVal y))
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVSub (EBV.width x) x y) absVal
 {-# INLINE bvSub #-}
 
 bvMul ::
@@ -375,7 +384,11 @@ bvMulBloom alloc x y
       let w = EBV.width x'
       in case SRP.asConstant wp of
            Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
-           Nothing -> alloc' (EBV.BVMul w wp) (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
+           Nothing ->
+             let absVal = BVD.mul (E.eAbsVal x') (E.eAbsVal y')
+             in case BVD.asSingleton absVal of
+                  Just val -> alloc' (EBV.BVLit w (BV.mkBV w val)) (BVD.singleton w val)
+                  Nothing -> alloc' (EBV.BVMul w wp) absVal
 {-# INLINE bvMulBloom #-}
 
 -- Hash-consed bvMul implementation
@@ -418,7 +431,11 @@ bvMulHC alloc x y
       let w = EBV.width x'
       in case HCPR.asConstant wp of
            Just c -> alloc' (EBV.BVLit w c) (BVD.singleton w (BV.asUnsigned c))
-           Nothing -> alloc' (EBV.BVMulHC w wp) (BVD.mul (E.eAbsVal x') (E.eAbsVal y'))
+           Nothing ->
+             let absVal = BVD.mul (E.eAbsVal x') (E.eAbsVal y')
+             in case BVD.asSingleton absVal of
+                  Just val -> alloc' (EBV.BVLit w (BV.mkBV w val)) (BVD.singleton w val)
+                  Nothing -> alloc' (EBV.BVMulHC w wp) absVal
 {-# INLINE bvMulHC #-}
 
 bvAndBits ::
@@ -494,7 +511,10 @@ bvAndBitsBloom alloc x y
     newAbsVal = BVD.and (E.eAbsVal x) (E.eAbsVal y)
     fromMerged =
       \case
-        Just pbs -> alloc (EBV.BVAndBits (EBV.width x) pbs) newAbsVal
+        Just pbs ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVAndBits (EBV.width x) pbs) newAbsVal
         -- (x1 & ... & xn) & (y1 & ... & ~xi & ... & yn) = false
         Nothing -> collapsed
     fromSimplified =
@@ -502,7 +522,10 @@ bvAndBitsBloom alloc x y
         PBS.Inconsistent -> collapsed
         PBS.SinglePositive (EBV.BVExprWrapper e) -> pure e
         PBS.SingleNegative (EBV.BVExprWrapper e) -> bvNotBits alloc e
-        PBS.Merged pbs -> alloc (EBV.BVAndBits (EBV.width x) pbs) newAbsVal
+        PBS.Merged pbs ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVAndBits (EBV.width x) pbs) newAbsVal
     -- Insert a single element into an existing BVAndBits
     insertIntoBVAndBits pol newElem unchanged =
       case PBS.insertIfNotPresent pol (EBV.BVExprWrapper newElem) of
@@ -510,7 +533,10 @@ bvAndBitsBloom alloc x y
         Just newPol ->
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
-          else alloc (EBV.BVAndBits (EBV.width unchanged) newPol) newAbsVal
+          else
+            case BVD.asSingleton newAbsVal of
+              Just val -> bvLit alloc (EBV.width unchanged) (BV.mkBV (EBV.width unchanged) val)
+              Nothing -> alloc (EBV.BVAndBits (EBV.width unchanged) newPol) newAbsVal
 {-# INLINE bvAndBitsBloom #-}
 
 -- Hash-consed implementation
@@ -544,7 +570,10 @@ bvAndBitsHC alloc x y
     newAbsVal = BVD.and (E.eAbsVal x) (E.eAbsVal y)
     fromMerged =
       \case
-        Just pset -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
+        Just pset ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
         -- (x1 & ... & xn) & (y1 & ... & ~xi & ... & yn) = false
         Nothing -> collapsed
     fromSimplified =
@@ -552,7 +581,10 @@ bvAndBitsHC alloc x y
         PES.Inconsistent -> collapsed
         PES.SinglePositive e -> pure e
         PES.SingleNegative e -> bvNotBits alloc e
-        PES.Merged pset -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
+        PES.Merged pset ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVAndBitsHC (EBV.width x) pset) newAbsVal
     -- Insert a single element into an existing BVAndBitsHC
     insertIntoBVAndBitsHC pset newElem unchanged =
       case PES.insertIfNotPresent pset newElem of
@@ -560,7 +592,10 @@ bvAndBitsHC alloc x y
         Just newPset ->
           if PES.totalSize newPset == PES.totalSize pset
           then pure unchanged
-          else alloc (EBV.BVAndBitsHC (EBV.width unchanged) newPset) newAbsVal
+          else
+            case BVD.asSingleton newAbsVal of
+              Just val -> bvLit alloc (EBV.width unchanged) (BV.mkBV (EBV.width unchanged) val)
+              Nothing -> alloc (EBV.BVAndBitsHC (EBV.width unchanged) newPset) newAbsVal
 {-# INLINE bvAndBitsHC #-}
 
 bvOrBits ::
@@ -636,7 +671,10 @@ bvOrBitsBloom alloc x y
     newAbsVal = BVD.or (E.eAbsVal x) (E.eAbsVal y)
     fromMerged =
       \case
-        Just pbs -> alloc (EBV.BVOrBits (EBV.width x) pbs) newAbsVal
+        Just pbs ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVOrBits (EBV.width x) pbs) newAbsVal
         -- (x1 | ... | xn) | (y1 | ... | ~xi | ... | yn) = true
         Nothing -> collapsed
     fromSimplified =
@@ -644,7 +682,10 @@ bvOrBitsBloom alloc x y
         PBS.Inconsistent -> collapsed
         PBS.SinglePositive (EBV.BVExprWrapper e) -> pure e
         PBS.SingleNegative (EBV.BVExprWrapper e) -> bvNotBits alloc e
-        PBS.Merged pbs -> alloc (EBV.BVOrBits (EBV.width x) pbs) newAbsVal
+        PBS.Merged pbs ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVOrBits (EBV.width x) pbs) newAbsVal
     -- Insert a single element into an existing BVOrBits
     insertIntoBVOrBits pol newElem unchanged =
       case PBS.insertIfNotPresent pol (EBV.BVExprWrapper newElem) of
@@ -652,7 +693,10 @@ bvOrBitsBloom alloc x y
         Just newPol ->
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
-          else alloc (EBV.BVOrBits (EBV.width unchanged) newPol) newAbsVal
+          else
+            case BVD.asSingleton newAbsVal of
+              Just val -> bvLit alloc (EBV.width unchanged) (BV.mkBV (EBV.width unchanged) val)
+              Nothing -> alloc (EBV.BVOrBits (EBV.width unchanged) newPol) newAbsVal
 {-# INLINE bvOrBitsBloom #-}
 
 -- Hash-consed implementation
@@ -686,7 +730,10 @@ bvOrBitsHC alloc x y
     newAbsVal = BVD.or (E.eAbsVal x) (E.eAbsVal y)
     fromMerged =
       \case
-        Just pset -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
+        Just pset ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
         -- (x1 | ... | xn) | (y1 | ... | ~xi | ... | yn) = true
         Nothing -> collapsed
     fromSimplified =
@@ -694,7 +741,10 @@ bvOrBitsHC alloc x y
         PES.Inconsistent -> collapsed
         PES.SinglePositive e -> pure e
         PES.SingleNegative e -> bvNotBits alloc e
-        PES.Merged pset -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
+        PES.Merged pset ->
+          case BVD.asSingleton newAbsVal of
+            Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+            Nothing -> alloc (EBV.BVOrBitsHC (EBV.width x) pset) newAbsVal
     -- Insert a single element into an existing BVOrBitsHC
     insertIntoBVOrBitsHC pset newElem unchanged =
       case PES.insertIfNotPresent pset newElem of
@@ -702,7 +752,10 @@ bvOrBitsHC alloc x y
         Just newPset ->
           if PES.totalSize newPset == PES.totalSize pset
           then pure unchanged
-          else alloc (EBV.BVOrBitsHC (EBV.width unchanged) newPset) newAbsVal
+          else
+            case BVD.asSingleton newAbsVal of
+              Just val -> bvLit alloc (EBV.width unchanged) (BV.mkBV (EBV.width unchanged) val)
+              Nothing -> alloc (EBV.BVOrBitsHC (EBV.width unchanged) newPset) newAbsVal
 {-# INLINE bvOrBitsHC #-}
 
 bvXorBits ::
@@ -734,9 +787,10 @@ bvXorBits alloc x y
   | otherwise =
       let x' = E.minByHash x y
           y' = E.maxByHash x y
-      in alloc
-           (EBV.BVXorBits (EBV.width x) x' y')
-           (BVD.xor (E.eAbsVal x) (E.eAbsVal y))
+          absVal = BVD.xor (E.eAbsVal x) (E.eAbsVal y)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVXorBits (EBV.width x) x' y') absVal
 {-# INLINE bvXorBits #-}
 
 bvNotBits ::
@@ -751,9 +805,10 @@ bvNotBits alloc x
   -- test: bvnot-double
   | Just inner <- EV.asBVNotBits x = pure inner
   | otherwise =
-      alloc
-        (EBV.BVNotBits (EBV.width x) x)
-        (BVD.not (E.eAbsVal x))
+      let absVal = BVD.not (E.eAbsVal x)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVNotBits (EBV.width x) x) absVal
 {-# INLINE bvNotBits #-}
 
 bvConcat ::
@@ -773,9 +828,10 @@ bvConcat alloc x y =
        , Just (_, bvy) <- asBVLit y ->
            bvLit alloc (addNat wx wy) (BV.concat wx wy bvx bvy)
        | otherwise ->
-           alloc
-             (EBV.BVConcat wx wy x y)
-             (BVD.concat wx (E.eAbsVal x) wy (E.eAbsVal y))
+           let absVal = BVD.concat wx (E.eAbsVal x) wy (E.eAbsVal y)
+           in case BVD.asSingleton absVal of
+                Just val -> bvLit alloc (addNat wx wy) (BV.mkBV (addNat wx wy) val)
+                Nothing -> alloc (EBV.BVConcat wx wy x y) absVal
 {-# INLINE bvConcat #-}
 
 bvSelect ::
@@ -796,9 +852,10 @@ bvSelect alloc i n x
   , Just NR.Refl <- NR.testEquality n (EBV.width x) =
       pure x
   | otherwise =
-      alloc
-        (EBV.BVSelect i n (EBV.width x) x)
-        (BVD.select i n (E.eAbsVal x))
+      let absVal = BVD.select i n (E.eAbsVal x)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc n (BV.mkBV n val)
+           Nothing -> alloc (EBV.BVSelect i n (EBV.width x) x) absVal
 {-# INLINE bvSelect #-}
 
 bvZext ::
@@ -818,9 +875,10 @@ bvZext alloc w' x =
     if | Just (_, bv) <- asBVLit x ->
            bvLit alloc w' (BV.zext w' bv)
        | otherwise ->
-           alloc
-             (EBV.BVZext w' wx x)
-             (BVD.zext (E.eAbsVal x) w')
+           let absVal = BVD.zext (E.eAbsVal x) w'
+           in case BVD.asSingleton absVal of
+                Just val -> bvLit alloc w' (BV.mkBV w' val)
+                Nothing -> alloc (EBV.BVZext w' wx x) absVal
 {-# INLINE bvZext #-}
 
 bvSext ::
@@ -840,9 +898,10 @@ bvSext alloc w' x =
     if | Just (_, bv) <- asBVLit x ->
            bvLit alloc w' (BV.sext wx w' bv)
        | otherwise ->
-           alloc
-             (EBV.BVSext w' wx x)
-             (BVD.sext wx (E.eAbsVal x) w')
+           let absVal = BVD.sext wx (E.eAbsVal x) w'
+           in case BVD.asSingleton absVal of
+                Just val -> bvLit alloc w' (BV.mkBV w' val)
+                Nothing -> alloc (EBV.BVSext w' wx x) absVal
 {-# INLINE bvSext #-}
 
 bvShl ::
@@ -867,9 +926,10 @@ bvShl alloc x y
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.shl wx bvx (fromInteger (BV.asUnsigned bvy)))
   | otherwise =
-      alloc
-        (EBV.BVShl (EBV.width x) x y)
-        (BVD.shl (EBV.width x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = BVD.shl (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVShl (EBV.width x) x y) absVal
 {-# INLINE bvShl #-}
 
 bvLshr ::
@@ -893,9 +953,10 @@ bvLshr alloc x y
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.lshr wx bvx (fromInteger (BV.asUnsigned bvy)))
   | otherwise =
-      alloc
-        (EBV.BVLshr (EBV.width x) x y)
-        (BVD.lshr (EBV.width x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = BVD.lshr (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVLshr (EBV.width x) x y) absVal
 {-# INLINE bvLshr #-}
 
 bvAshr ::
@@ -915,9 +976,10 @@ bvAshr alloc x y
   , Just (_, bvy) <- asBVLit y =
       bvLit alloc wx (BV.ashr wx bvx (fromInteger (BV.asUnsigned bvy)))
   | otherwise =
-      alloc
-        (EBV.BVAshr (EBV.width x) x y)
-        (BVD.ashr (EBV.width x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = BVD.ashr (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVAshr (EBV.width x) x y) absVal
 {-# INLINE bvAshr #-}
 
 bvUdiv ::
@@ -944,7 +1006,9 @@ bvUdiv alloc x y
       let absVal = if isZero y
                    then BVD.any (EBV.width x)  -- Division by zero is undefined
                    else BVD.udiv (E.eAbsVal x) (BVD.union (BVD.singleton (EBV.width y) 1) (E.eAbsVal y))
-      in alloc (EBV.BVUdiv (EBV.width x) x y) absVal
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVUdiv (EBV.width x) x y) absVal
 {-# INLINE bvUdiv #-}
 
 bvUrem ::
@@ -970,7 +1034,9 @@ bvUrem alloc x y
       let absVal = if isZero y
                    then BVD.any (EBV.width x)  -- Remainder by zero is undefined
                    else BVD.urem (E.eAbsVal x) (E.eAbsVal y)
-      in alloc (EBV.BVUrem (EBV.width x) x y) absVal
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVUrem (EBV.width x) x y) absVal
 {-# INLINE bvUrem #-}
 
 bvSdiv ::
@@ -1008,7 +1074,9 @@ bvSdiv alloc x y
       let absVal = if isZero y
                    then BVD.any (EBV.width x)  -- Division by zero is undefined
                    else BVD.sdiv (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
-      in alloc (EBV.BVSdiv (EBV.width x) x y) absVal
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVSdiv (EBV.width x) x y) absVal
 {-# INLINE bvSdiv #-}
 
 bvSrem ::
@@ -1035,7 +1103,9 @@ bvSrem alloc x y
       let absVal = if isZero y
                    then BVD.any (EBV.width x)  -- Remainder by zero is undefined
                    else BVD.srem (EBV.width x) (E.eAbsVal x) (E.eAbsVal y)
-      in alloc (EBV.BVSrem (EBV.width x) x y) absVal
+      in case BVD.asSingleton absVal of
+           Just val -> bvLit alloc (EBV.width x) (BV.mkBV (EBV.width x) val)
+           Nothing -> alloc (EBV.BVSrem (EBV.width x) x y) absVal
 {-# INLINE bvSrem #-}
 
 bvRol ::
@@ -1059,9 +1129,11 @@ bvRol alloc x y
       -- test: bvrol-zero
       if isZero y'
         then pure x
-        else alloc
-               (EBV.BVRol w x y')
-               (BVD.rol w (E.eAbsVal x) (E.eAbsVal y'))
+        else
+          let absVal = BVD.rol w (E.eAbsVal x) (E.eAbsVal y')
+          in case BVD.asSingleton absVal of
+               Just val -> bvLit alloc w (BV.mkBV w val)
+               Nothing -> alloc (EBV.BVRol w x y') absVal
 {-# INLINE bvRol #-}
 
 bvRor ::
@@ -1085,7 +1157,9 @@ bvRor alloc x y
       -- test: bvror-zero
       if isZero y'
         then pure x
-        else alloc
-               (EBV.BVRor w x y')
-               (BVD.ror w (E.eAbsVal x) (E.eAbsVal y'))
+        else
+          let absVal = BVD.ror w (E.eAbsVal x) (E.eAbsVal y')
+          in case BVD.asSingleton absVal of
+               Just val -> bvLit alloc w (BV.mkBV w val)
+               Nothing -> alloc (EBV.BVRor w x y') absVal
 {-# INLINE bvRor #-}

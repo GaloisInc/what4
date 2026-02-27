@@ -69,7 +69,7 @@ eq trueExpr falseExpr alloc x y
       pure $ if b then trueExpr else falseExpr
   | otherwise = case E.baseType x of
       BT.BaseBoolRepr -> eqBool trueExpr falseExpr alloc x y
-      _ -> alloc (EL.EqPred x y) Nothing
+      _ -> alloc (EL.EqPred x y) Nothing  -- For non-bool types, abstract value is unknown
 {-# INLINE eq #-}
 
 -- | Equality on boolean expressions with additional simplifications
@@ -427,9 +427,11 @@ bvUlt trueExpr falseExpr alloc x y
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.ult xBV yBV then trueExpr else falseExpr
   | otherwise =
-      alloc
-        (EL.BVUlt (bvWidth' x) x y)
-        (BVD.ult (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = BVD.ult (E.eAbsVal x) (E.eAbsVal y)
+      in case absVal of
+           Just True -> pure trueExpr
+           Just False -> pure falseExpr
+           Nothing -> alloc (EL.BVUlt (bvWidth' x) x y) absVal
 {-# INLINE bvUlt #-}
 
 bvUle ::
@@ -467,9 +469,11 @@ bvUle trueExpr falseExpr alloc x y
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.ule xBV yBV then trueExpr else falseExpr
   | otherwise =
-      alloc
-        (EL.BVUle (bvWidth' x) x y)
-        (fmap not (BVD.ult (E.eAbsVal y) (E.eAbsVal x)))
+      let absVal = fmap not (BVD.ult (E.eAbsVal y) (E.eAbsVal x))
+      in case absVal of
+           Just True -> pure trueExpr
+           Just False -> pure falseExpr
+           Nothing -> alloc (EL.BVUle (bvWidth' x) x y) absVal
 {-# INLINE bvUle #-}
 
 bvSlt ::
@@ -490,9 +494,11 @@ bvSlt trueExpr falseExpr alloc x y
   , Just (_, yBV) <- asBVLit' y =
       pure $ if BV.slt w xBV yBV then trueExpr else falseExpr
   | otherwise =
-      alloc
-        (EL.BVSlt (bvWidth' x) x y)
-        (BVD.slt (bvWidth' x) (E.eAbsVal x) (E.eAbsVal y))
+      let absVal = BVD.slt (bvWidth' x) (E.eAbsVal x) (E.eAbsVal y)
+      in case absVal of
+           Just True -> pure trueExpr
+           Just False -> pure falseExpr
+           Nothing -> alloc (EL.BVSlt (bvWidth' x) x y) absVal
 {-# INLINE bvSlt #-}
 
 bvSle ::
@@ -527,9 +533,11 @@ bvSle trueExpr falseExpr alloc x y
       pure $ if BV.sle w xBV yBV then trueExpr else falseExpr
   -- x <= y iff not (y < x)
   | otherwise =
-      alloc
-        (EL.BVSle (bvWidth' x) x y)
-        (fmap not (BVD.slt (bvWidth' x) (E.eAbsVal y) (E.eAbsVal x)))
+      let absVal = fmap not (BVD.slt (bvWidth' x) (E.eAbsVal y) (E.eAbsVal x))
+      in case absVal of
+           Just True -> pure trueExpr
+           Just False -> pure falseExpr
+           Nothing -> alloc (EL.BVSle (bvWidth' x) x y) absVal
 {-# INLINE bvSle #-}
 
 bvIsNonzero ::

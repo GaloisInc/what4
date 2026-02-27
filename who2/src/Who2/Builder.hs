@@ -118,23 +118,35 @@ alloc ::
   AbstractValue tp ->
   IO (Expr t (App t) tp)
 alloc b app absVal =
-  -- TODO: Turn this check into an assertion that this case is handled already
-  -- Check if abstract interpretation concludes this is a constant
-  case E.baseType app of
-    BT.BaseBoolRepr
-      | Just boolVal <- absVal ->
-          -- Singleton boolean domain - return True or False literal
-          return $ getSymExpr $ if boolVal then bTrue b else bFalse b
-    BT.BaseBVRepr w
-      | Just x <- BVD.asSingleton absVal ->
-          -- Singleton bitvector domain - return BV literal
-          E.mkExpr (bNonceGen b) (EA.BVApp (EBV.BVLit w (BV.mkBV w x))) absVal
-    _ ->
-      -- Not a singleton - proceed with normal allocation
-      if hashConsing
-      then allocWithHashCons b app absVal
-      else E.mkExpr (bNonceGen b) app absVal
+  X.assert (checkSingleton app absVal) $
+    if hashConsing
+    then allocWithHashCons b app absVal
+    else E.mkExpr (bNonceGen b) app absVal
 {-# INLINE alloc #-}
+
+-- | Check that if absVal is a singleton, app is the corresponding literal
+checkSingleton ::
+  (WI.TestEquality f, E.HasBaseType f) =>
+  App t f tp ->
+  AbstractValue tp ->
+  Bool
+checkSingleton app absVal = case E.baseType app of
+  BT.BaseBoolRepr -> case (app, absVal) of
+    (EA.LogicApp EL.TruePred, Just True) -> True
+    (EA.LogicApp EL.FalsePred, Just False) -> True
+    (EA.LogicApp EL.TruePred, Nothing) -> True
+    (EA.LogicApp EL.FalsePred, Nothing) -> True
+    (EA.LogicApp EL.TruePred, Just False) -> False
+    (EA.LogicApp EL.FalsePred, Just True) -> False
+    (_, Just _) -> False  -- Non-literal with singleton value
+    _ -> True
+  BT.BaseBVRepr _ -> case (app, BVD.asSingleton absVal) of
+    (EA.BVApp (EBV.BVLit _ bv), Just x) -> BV.asUnsigned bv == x
+    (EA.BVApp (EBV.BVLit _ _), Nothing) -> True
+    (_, Just _) -> False  -- Non-literal with singleton value
+    _ -> True
+  _ -> True  -- Other types don't have singleton optimizations
+{-# INLINE checkSingleton #-}
 
 allocWithHashCons ::
   Builder t ->

@@ -95,9 +95,9 @@ instance
   , HasBaseType (f (Expr t f))
   ) => Eq (Expr t f tp) where
   x == y
-    | hashConsing = eId x == eId y
     | eId x == eId y = True
     | Just b <- AD.avCheckEq (baseType x) (eAbsVal x) (eAbsVal y) = b
+    | hashConsing = False
     | eHash x /= eHash y = False
     | otherwise = eApp x == eApp y
 
