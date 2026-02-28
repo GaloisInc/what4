@@ -1,6 +1,5 @@
 module Who2.Laws.HashConsed.Map (tests) where
 
-import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
 import Hedgehog (Property)
@@ -11,7 +10,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Map as EM
-import Who2.Laws.Helpers (MockExpr(..), checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExpr(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -26,73 +25,84 @@ genExprMapIntString = do
   pure $ foldr (\(k, v) m -> EM.insert k v m) EM.empty list
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Eq Laws
 -------------------------------------------------------------------------------
 
-propExprMapEqByReflexive :: Property
-propExprMapEqByReflexive = H.property $ do
+propExprMapEqReflexivity :: Property
+propExprMapEqReflexivity = H.property $ do
   em <- H.forAll genExprMapIntString
-  H.assert $ liftEq (==) em em
+  H.assert $ checkEqReflexivity (==) em
 
-propExprMapEqBySymmetric :: Property
-propExprMapEqBySymmetric = H.property $ do
+propExprMapEqSymmetry :: Property
+propExprMapEqSymmetry = H.property $ do
   em1 <- H.forAll genExprMapIntString
   em2 <- H.forAll genExprMapIntString
-  let eq1 = liftEq (==) em1 em2
-  let eq2 = liftEq (==) em2 em1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (==) (==) em1 em2
 
-propExprMapEqByTransitive :: Property
-propExprMapEqByTransitive = H.property $ do
+propExprMapEqTransitivity :: Property
+propExprMapEqTransitivity = H.property $ do
   em1 <- H.forAll genExprMapIntString
   em2 <- H.forAll genExprMapIntString
   em3 <- H.forAll genExprMapIntString
-  let eq12 = liftEq (==) em1 em2
-  let eq23 = liftEq (==) em2 em3
-  let eq13 = liftEq (==) em1 em3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  let eq12 = em1 == em2
+  let eq23 = em2 == em3
+  let eq13 = em1 == em3
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Eq1 Consistency
 -------------------------------------------------------------------------------
 
-propExprMapOrdByReflexive :: Property
-propExprMapOrdByReflexive = H.property $ do
-  em <- H.forAll genExprMapIntString
-  liftCompare compare em em H.=== EQ
-
-propExprMapOrdByAntisymmetric :: Property
-propExprMapOrdByAntisymmetric = H.property $ do
+propExprMapEq1Consistency :: Property
+propExprMapEq1Consistency = H.property $ do
   em1 <- H.forAll genExprMapIntString
   em2 <- H.forAll genExprMapIntString
-  let ord1 = liftCompare compare em1 em2
-  let ord2 = liftCompare compare em2 em1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  liftEq (==) em1 em2 H.=== (em1 == em2)
 
-propExprMapOrdByTransitive :: Property
-propExprMapOrdByTransitive = H.property $ do
+-------------------------------------------------------------------------------
+-- Ord Laws
+-------------------------------------------------------------------------------
+
+propExprMapOrdReflexivity :: Property
+propExprMapOrdReflexivity = H.property $ do
+  em <- H.forAll genExprMapIntString
+  compare em em H.=== EQ
+
+propExprMapOrdAntisymmetry :: Property
+propExprMapOrdAntisymmetry = H.property $ do
+  em1 <- H.forAll genExprMapIntString
+  em2 <- H.forAll genExprMapIntString
+  let ord1 = compare em1 em2
+  let ord2 = compare em2 em1
+  H.assert $ checkOrdAntisymmetry ord1 ord2
+
+propExprMapOrdTransitivity :: Property
+propExprMapOrdTransitivity = H.property $ do
   em1 <- H.forAll genExprMapIntString
   em2 <- H.forAll genExprMapIntString
   em3 <- H.forAll genExprMapIntString
-  let ord12 = liftCompare compare em1 em2
-  let ord23 = liftCompare compare em2 em3
-  let ord13 = liftCompare compare em1 em3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  let ord12 = compare em1 em2
+  let ord23 = compare em2 em3
+  let ord13 = compare em1 em3
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propExprMapOrdByConsistentWithEqBy :: Property
-propExprMapOrdByConsistentWithEqBy = H.property $ do
+propExprMapOrdEqConsistency :: Property
+propExprMapOrdEqConsistency = H.property $ do
   em1 <- H.forAll genExprMapIntString
   em2 <- H.forAll genExprMapIntString
-  let eq = liftEq (==) em1 em2
-  let ord = liftCompare compare em1 em2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  let eq = em1 == em2
+  let ord = compare em1 em2
+  H.assert $ checkOrdEqConsistency eq ord
+
+-------------------------------------------------------------------------------
+-- Ord1 Consistency
+-------------------------------------------------------------------------------
+
+propExprMapOrd1Consistency :: Property
+propExprMapOrd1Consistency = H.property $ do
+  em1 <- H.forAll genExprMapIntString
+  em2 <- H.forAll genExprMapIntString
+  liftCompare compare em1 em2 H.=== compare em1 em2
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -100,22 +110,30 @@ propExprMapOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "HashConsed.ExprMap"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propExprMapEqByReflexive
-      , testProperty "Symmetry" $
-          H.withTests 1000 propExprMapEqBySymmetric
+  [ testGroup "Eq Laws"
+      [ testProperty "Reflexivity (x == x)" $
+          H.withTests 1000 propExprMapEqReflexivity
+      , testProperty "Symmetry (x == y <==> y == x)" $
+          H.withTests 1000 propExprMapEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propExprMapEqByTransitive
+          H.withTests 1000 propExprMapEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propExprMapOrdByReflexive
+  , testGroup "Eq1 Consistency"
+      [ testProperty "liftEq (==) behaves like (==)" $
+          H.withTests 1000 propExprMapEq1Consistency
+      ]
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
+          H.withTests 1000 propExprMapOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propExprMapOrdByAntisymmetric
+          H.withTests 1000 propExprMapOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propExprMapOrdByTransitive
-      , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propExprMapOrdByConsistentWithEqBy
+          H.withTests 1000 propExprMapOrdTransitivity
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propExprMapOrdEqConsistency
+      ]
+  , testGroup "Ord1 Consistency"
+      [ testProperty "liftCompare compare behaves like compare" $
+          H.withTests 1000 propExprMapOrd1Consistency
       ]
   ]

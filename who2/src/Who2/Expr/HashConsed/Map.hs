@@ -61,23 +61,24 @@ ordBy2 cmpK cmpV (ExprMap x) (ExprMap y) = liftCompare cmp' x y
             r -> r
 {-# INLINE ordBy2 #-}
 
--- test-law: propExprMapEqByReflexive
--- test-law: propExprMapEqBySymmetric
--- test-law: propExprMapEqByTransitive
+-- test-law: propExprMapEqReflexivity
+-- test-law: propExprMapEqSymmetry
+-- test-law: propExprMapEqTransitivity
 -- | @'eqBy2' (==) (==)@
 instance (Eq k, Eq v) => Eq (ExprMap k v) where
   (==) = eqBy2 (==) (==)
   {-# INLINE (==) #-}
 
--- test-law: propExprMapOrdByReflexive
--- test-law: propExprMapOrdByAntisymmetric
--- test-law: propExprMapOrdByTransitive
--- test-law: propExprMapOrdByConsistentWithEqBy
+-- test-law: propExprMapOrdReflexivity
+-- test-law: propExprMapOrdAntisymmetry
+-- test-law: propExprMapOrdTransitivity
+-- test-law: propExprMapOrdEqConsistency
 -- | @'ordBy2' 'compare' 'compare'@
 instance (Ord k, Ord v) => Ord (ExprMap k v) where
   compare = ordBy2 compare compare
   {-# INLINE compare #-}
 
+-- test-law: propExprMapEq1Consistency
 -- | @'eqBy2' (==)@
 instance Eq k => Eq1 (ExprMap k) where
   liftEq eq = eqBy2 (==) eq
@@ -88,6 +89,7 @@ instance Eq2 ExprMap where
   liftEq2 = eqBy2
   {-# INLINE liftEq2 #-}
 
+-- test-law: propExprMapOrd1Consistency
 -- | @'ordBy2' 'compare'@
 instance Ord k => Ord1 (ExprMap k) where
   liftCompare cmp = ordBy2 compare cmp

@@ -1,6 +1,6 @@
 module Who2.Laws.Bloom.HashedSeq (tests) where
 
-import Control.Monad (unless, when)
+import Control.Monad (when)
 
 import Hedgehog (Property)
 import qualified Hedgehog as H
@@ -12,7 +12,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.HashedSeq as HS
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -24,7 +24,32 @@ genHashedSeqInt = do
   pure $ HS.fromList list
 
 -------------------------------------------------------------------------------
--- Eq and Hash Properties
+-- Eq Laws
+-------------------------------------------------------------------------------
+
+propHashedSeqEqReflexivity :: Property
+propHashedSeqEqReflexivity = H.property $ do
+  hs <- H.forAll genHashedSeqInt
+  H.assert $ checkEqReflexivity (==) hs
+
+propHashedSeqEqSymmetry :: Property
+propHashedSeqEqSymmetry = H.property $ do
+  hs1 <- H.forAll genHashedSeqInt
+  hs2 <- H.forAll genHashedSeqInt
+  H.assert $ checkEqSymmetry (==) (==) hs1 hs2
+
+propHashedSeqEqTransitivity :: Property
+propHashedSeqEqTransitivity = H.property $ do
+  hs1 <- H.forAll genHashedSeqInt
+  hs2 <- H.forAll genHashedSeqInt
+  hs3 <- H.forAll genHashedSeqInt
+  let eq12 = hs1 == hs2
+  let eq23 = hs2 == hs3
+  let eq13 = hs1 == hs3
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
+
+-------------------------------------------------------------------------------
+-- Hashable Laws
 -------------------------------------------------------------------------------
 
 -- | HashedSeq should maintain hash consistency: equal sequences have equal hashes
@@ -65,31 +90,49 @@ propHashedSeqMergeHashConsistency = H.property $ do
   hash hs' H.=== hash fromList
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Ord Laws
 -------------------------------------------------------------------------------
 
-propHashedSeqOrdByReflexive :: Property
-propHashedSeqOrdByReflexive = H.property $ do
+propHashedSeqOrdReflexivity :: Property
+propHashedSeqOrdReflexivity = H.property $ do
   hs <- H.forAll genHashedSeqInt
-  liftCompare compare hs hs H.=== EQ
+  compare hs hs H.=== EQ
 
-propHashedSeqOrdByAntisymmetric :: Property
-propHashedSeqOrdByAntisymmetric = H.property $ do
+propHashedSeqOrdAntisymmetry :: Property
+propHashedSeqOrdAntisymmetry = H.property $ do
   hs1 <- H.forAll genHashedSeqInt
   hs2 <- H.forAll genHashedSeqInt
-  let ord1 = liftCompare compare hs1 hs2
-  let ord2 = liftCompare compare hs2 hs1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  let ord1 = compare hs1 hs2
+  let ord2 = compare hs2 hs1
+  H.assert $ checkOrdAntisymmetry ord1 ord2
 
-propHashedSeqOrdByTransitive :: Property
-propHashedSeqOrdByTransitive = H.property $ do
+propHashedSeqOrdTransitivity :: Property
+propHashedSeqOrdTransitivity = H.property $ do
   hs1 <- H.forAll genHashedSeqInt
   hs2 <- H.forAll genHashedSeqInt
   hs3 <- H.forAll genHashedSeqInt
-  let ord12 = liftCompare compare hs1 hs2
-  let ord23 = liftCompare compare hs2 hs3
-  let ord13 = liftCompare compare hs1 hs3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  let ord12 = compare hs1 hs2
+  let ord23 = compare hs2 hs3
+  let ord13 = compare hs1 hs3
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+
+propHashedSeqOrdEqConsistency :: Property
+propHashedSeqOrdEqConsistency = H.property $ do
+  hs1 <- H.forAll genHashedSeqInt
+  hs2 <- H.forAll genHashedSeqInt
+  let eq = hs1 == hs2
+  let ord = compare hs1 hs2
+  H.assert $ checkOrdEqConsistency eq ord
+
+-------------------------------------------------------------------------------
+-- Ord1 Consistency
+-------------------------------------------------------------------------------
+
+propHashedSeqOrd1Consistency :: Property
+propHashedSeqOrd1Consistency = H.property $ do
+  hs1 <- H.forAll genHashedSeqInt
+  hs2 <- H.forAll genHashedSeqInt
+  liftCompare compare hs1 hs2 H.=== compare hs1 hs2
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -97,8 +140,16 @@ propHashedSeqOrdByTransitive = H.property $ do
 
 tests :: TestTree
 tests = testGroup "Bloom.HashedSeq"
-  [ testGroup "Hash and Eq Properties"
-      [ testProperty "Hash consistency (equal implies same hash)" $
+  [ testGroup "Eq Laws"
+      [ testProperty "Reflexivity (x == x)" $
+          H.withTests 1000 propHashedSeqEqReflexivity
+      , testProperty "Symmetry (x == y <==> y == x)" $
+          H.withTests 1000 propHashedSeqEqSymmetry
+      , testProperty "Transitivity" $
+          H.withTests 1000 propHashedSeqEqTransitivity
+      ]
+  , testGroup "Hashable Laws"
+      [ testProperty "Consistency with Eq (equal implies same hash)" $
           H.withTests 1000 propHashedSeqHashConsistency
       , testProperty "Eq consistency with list" $
           H.withTests 1000 propHashedSeqEqConsistency
@@ -107,12 +158,18 @@ tests = testGroup "Bloom.HashedSeq"
       , testProperty "Merge maintains hash consistency" $
           H.withTests 1000 propHashedSeqMergeHashConsistency
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propHashedSeqOrdByReflexive
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
+          H.withTests 1000 propHashedSeqOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propHashedSeqOrdByAntisymmetric
+          H.withTests 1000 propHashedSeqOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propHashedSeqOrdByTransitive
+          H.withTests 1000 propHashedSeqOrdTransitivity
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propHashedSeqOrdEqConsistency
+      ]
+  , testGroup "Ord1 Consistency"
+      [ testProperty "liftCompare compare behaves like compare" $
+          H.withTests 1000 propHashedSeqOrd1Consistency
       ]
   ]

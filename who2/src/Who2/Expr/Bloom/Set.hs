@@ -92,14 +92,15 @@ eqBy eq x y =
   else HS.eqBy eq (elems x) (elems y)
 {-# INLINE eqBy #-}
 
--- test-law: propBloomSeqEqByReflexive
--- test-law: propBloomSeqEqBySymmetric
--- test-law: propBloomSeqEqByTransitive
+-- test-law: propBloomSeqEqReflexivity
+-- test-law: propBloomSeqEqSymmetry
+-- test-law: propBloomSeqEqTransitivity
 -- | @'eqBy' (==)@
 instance Eq a => Eq (BloomSeq a) where
   (==) = eqBy (==)
   {-# INLINE (==) #-}
 
+-- test-law: propBloomSeqEq1Consistency
 -- | @'eqBy'@
 instance Eq1 BloomSeq where
   liftEq = eqBy
@@ -122,15 +123,16 @@ ordBy cmp x y =
   else HS.ordBy cmp (elems x) (elems y)
 {-# INLINE ordBy #-}
 
--- test-law: propBloomSeqOrdByReflexive
--- test-law: propBloomSeqOrdByAntisymmetric
--- test-law: propBloomSeqOrdByTransitive
--- test-law: propBloomSeqOrdByConsistentWithEqBy
+-- test-law: propBloomSeqOrdReflexivity
+-- test-law: propBloomSeqOrdAntisymmetry
+-- test-law: propBloomSeqOrdTransitivity
+-- test-law: propBloomSeqOrdEqConsistency
 -- | @'ordBy' 'compare'@
 instance Ord a => Ord (BloomSeq a) where
   compare = ordBy compare
   {-# INLINE compare #-}
 
+-- test-law: propBloomSeqOrd1Consistency
 -- | @'ordBy'@
 instance Ord1 BloomSeq where
   liftCompare = ordBy

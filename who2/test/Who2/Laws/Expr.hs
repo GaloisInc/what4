@@ -199,15 +199,15 @@ propOrdConsistentWithEq = H.property $ do
 -------------------------------------------------------------------------------
 
 tests :: TestTree
-tests = testGroup "Expr Properties"
-  [ testGroup "TestEquality Properties"
+tests = testGroup "Expr"
+  [ testGroup "TestEquality Laws"
       [ testProperty "Reflexivity (testEquality x x == Just Refl)" propTestEqualityReflexive
       , testProperty "Symmetry (testEquality x y == testEquality y x)" propTestEqualitySymmetric
       , testProperty "Transitivity" propTestEqualityTransitive
       , testProperty "Hash consistency (equal implies same hash)" $
           H.withTests 100 $ H.withDiscards 10000 propTestEqualityHashConsistent
       ]
-  , testGroup "OrdF Properties"
+  , testGroup "OrdF Laws"
       [ testProperty "Reflexivity (compareF x x == EQF)" $
           H.withTests 1000 propOrdFReflexive
       , testProperty "Antisymmetry (compareF x y opposite of compareF y x)" $
@@ -217,8 +217,8 @@ tests = testGroup "Expr Properties"
       , testProperty "Consistency with TestEquality" $
           H.withTests 1000 propOrdFConsistentWithTestEquality
       ]
-  , testGroup "Ord Properties"
-      [ testProperty "Reflexivity" $
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
           H.withTests 1000 propOrdReflexive
       , testProperty "Antisymmetry" $
           H.withTests 1000 propOrdAntisymmetric

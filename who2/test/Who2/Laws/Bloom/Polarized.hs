@@ -1,6 +1,5 @@
 module Who2.Laws.Bloom.Polarized (tests) where
 
-import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
 import Hedgehog (Property)
@@ -11,7 +10,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Polarized as PBS
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator and Instance
@@ -32,73 +31,84 @@ instance PBS.Polarizable Int where
     | otherwise = PBS.Positive x
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Eq Laws
 -------------------------------------------------------------------------------
 
-propPolarizedBloomSeqEqByReflexive :: Property
-propPolarizedBloomSeqEqByReflexive = H.property $ do
+propPolarizedBloomSeqEqReflexivity :: Property
+propPolarizedBloomSeqEqReflexivity = H.property $ do
   pbs <- H.forAll genPolarizedBloomSeqInt
-  H.assert $ liftEq (==) pbs pbs
+  H.assert $ checkEqReflexivity (==) pbs
 
-propPolarizedBloomSeqEqBySymmetric :: Property
-propPolarizedBloomSeqEqBySymmetric = H.property $ do
+propPolarizedBloomSeqEqSymmetry :: Property
+propPolarizedBloomSeqEqSymmetry = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let eq1 = liftEq (==) pbs1 pbs2
-  let eq2 = liftEq (==) pbs2 pbs1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (==) (==) pbs1 pbs2
 
-propPolarizedBloomSeqEqByTransitive :: Property
-propPolarizedBloomSeqEqByTransitive = H.property $ do
+propPolarizedBloomSeqEqTransitivity :: Property
+propPolarizedBloomSeqEqTransitivity = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   pbs3 <- H.forAll genPolarizedBloomSeqInt
-  let eq12 = liftEq (==) pbs1 pbs2
-  let eq23 = liftEq (==) pbs2 pbs3
-  let eq13 = liftEq (==) pbs1 pbs3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  let eq12 = pbs1 == pbs2
+  let eq23 = pbs2 == pbs3
+  let eq13 = pbs1 == pbs3
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Eq1 Consistency
 -------------------------------------------------------------------------------
 
-propPolarizedBloomSeqOrdByReflexive :: Property
-propPolarizedBloomSeqOrdByReflexive = H.property $ do
-  pbs <- H.forAll genPolarizedBloomSeqInt
-  liftCompare compare pbs pbs H.=== EQ
-
-propPolarizedBloomSeqOrdByAntisymmetric :: Property
-propPolarizedBloomSeqOrdByAntisymmetric = H.property $ do
+propPolarizedBloomSeqEq1Consistency :: Property
+propPolarizedBloomSeqEq1Consistency = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let ord1 = liftCompare compare pbs1 pbs2
-  let ord2 = liftCompare compare pbs2 pbs1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  liftEq (==) pbs1 pbs2 H.=== (pbs1 == pbs2)
 
-propPolarizedBloomSeqOrdByTransitive :: Property
-propPolarizedBloomSeqOrdByTransitive = H.property $ do
+-------------------------------------------------------------------------------
+-- Ord Laws
+-------------------------------------------------------------------------------
+
+propPolarizedBloomSeqOrdReflexivity :: Property
+propPolarizedBloomSeqOrdReflexivity = H.property $ do
+  pbs <- H.forAll genPolarizedBloomSeqInt
+  compare pbs pbs H.=== EQ
+
+propPolarizedBloomSeqOrdAntisymmetry :: Property
+propPolarizedBloomSeqOrdAntisymmetry = H.property $ do
+  pbs1 <- H.forAll genPolarizedBloomSeqInt
+  pbs2 <- H.forAll genPolarizedBloomSeqInt
+  let ord1 = compare pbs1 pbs2
+  let ord2 = compare pbs2 pbs1
+  H.assert $ checkOrdAntisymmetry ord1 ord2
+
+propPolarizedBloomSeqOrdTransitivity :: Property
+propPolarizedBloomSeqOrdTransitivity = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   pbs3 <- H.forAll genPolarizedBloomSeqInt
-  let ord12 = liftCompare compare pbs1 pbs2
-  let ord23 = liftCompare compare pbs2 pbs3
-  let ord13 = liftCompare compare pbs1 pbs3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  let ord12 = compare pbs1 pbs2
+  let ord23 = compare pbs2 pbs3
+  let ord13 = compare pbs1 pbs3
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propPolarizedBloomSeqOrdByConsistentWithEqBy :: Property
-propPolarizedBloomSeqOrdByConsistentWithEqBy = H.property $ do
+propPolarizedBloomSeqOrdEqConsistency :: Property
+propPolarizedBloomSeqOrdEqConsistency = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  let eq = liftEq (==) pbs1 pbs2
-  let ord = liftCompare compare pbs1 pbs2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  let eq = pbs1 == pbs2
+  let ord = compare pbs1 pbs2
+  H.assert $ checkOrdEqConsistency eq ord
+
+-------------------------------------------------------------------------------
+-- Ord1 Consistency
+-------------------------------------------------------------------------------
+
+propPolarizedBloomSeqOrd1Consistency :: Property
+propPolarizedBloomSeqOrd1Consistency = H.property $ do
+  pbs1 <- H.forAll genPolarizedBloomSeqInt
+  pbs2 <- H.forAll genPolarizedBloomSeqInt
+  liftCompare compare pbs1 pbs2 H.=== compare pbs1 pbs2
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -106,22 +116,30 @@ propPolarizedBloomSeqOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "Bloom.Polarized"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propPolarizedBloomSeqEqByReflexive
-      , testProperty "Symmetry" $
-          H.withTests 1000 propPolarizedBloomSeqEqBySymmetric
+  [ testGroup "Eq Laws"
+      [ testProperty "Reflexivity (x == x)" $
+          H.withTests 1000 propPolarizedBloomSeqEqReflexivity
+      , testProperty "Symmetry (x == y <==> y == x)" $
+          H.withTests 1000 propPolarizedBloomSeqEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propPolarizedBloomSeqEqByTransitive
+          H.withTests 1000 propPolarizedBloomSeqEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propPolarizedBloomSeqOrdByReflexive
+  , testGroup "Eq1 Consistency"
+      [ testProperty "liftEq (==) behaves like (==)" $
+          H.withTests 1000 propPolarizedBloomSeqEq1Consistency
+      ]
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
+          H.withTests 1000 propPolarizedBloomSeqOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propPolarizedBloomSeqOrdByAntisymmetric
+          H.withTests 1000 propPolarizedBloomSeqOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propPolarizedBloomSeqOrdByTransitive
-      , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propPolarizedBloomSeqOrdByConsistentWithEqBy
+          H.withTests 1000 propPolarizedBloomSeqOrdTransitivity
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propPolarizedBloomSeqOrdEqConsistency
+      ]
+  , testGroup "Ord1 Consistency"
+      [ testProperty "liftCompare compare behaves like compare" $
+          H.withTests 1000 propPolarizedBloomSeqOrd1Consistency
       ]
   ]

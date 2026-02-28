@@ -33,6 +33,9 @@ data PolarizedExprSet a = PolarizedExprSet
   { posSet :: !(ES.ExprSet a)
   , negSet :: !(ES.ExprSet a)
   }
+  -- test-law: propPolarizedExprSetEqReflexivity
+  -- test-law: propPolarizedExprSetEqSymmetry
+  -- test-law: propPolarizedExprSetEqTransitivity
   deriving (Eq, Ord, Show)
 
 -- test-law: propPolarizedExprSetEqHashConsistency

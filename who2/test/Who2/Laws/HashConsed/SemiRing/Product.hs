@@ -4,8 +4,6 @@
 
 module Who2.Laws.HashConsed.SemiRing.Product (tests) where
 
-import Control.Monad (unless)
-
 import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
@@ -17,7 +15,7 @@ import Test.Tasty.Hedgehog (testProperty)
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
-import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -33,73 +31,66 @@ genHashConsedProductBV8 = do
   pure $ HCPR.fromTerms (SR.SemiRingBVRepr SR.BVBitsRepr knownNat) terms
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Custom Equality (eqBy)
+-- Note: SRProd uses semiring-specific equality, not Eq/Eq1 typeclass instances
 -------------------------------------------------------------------------------
 
-propHashConsedProductEqByReflexive :: Property
-propHashConsedProductEqByReflexive = H.property $ do
+propSRProductCustomEqReflexivity :: Property
+propSRProductCustomEqReflexivity = H.property $ do
   p <- H.forAll genHashConsedProductBV8
-  H.assert $ HCPR.eqBy (==) p p
+  H.assert $ checkEqReflexivity (HCPR.eqBy (==)) p
 
-propHashConsedProductEqBySymmetric :: Property
-propHashConsedProductEqBySymmetric = H.property $ do
+propSRProductCustomEqSymmetry :: Property
+propSRProductCustomEqSymmetry = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
-  let eq1 = HCPR.eqBy (==) p1 p2
-  let eq2 = HCPR.eqBy (==) p2 p1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (HCPR.eqBy (==)) (HCPR.eqBy (==)) p1 p2
 
-propHashConsedProductEqByTransitive :: Property
-propHashConsedProductEqByTransitive = H.property $ do
+propSRProductCustomEqTransitivity :: Property
+propSRProductCustomEqTransitivity = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
   p3 <- H.forAll genHashConsedProductBV8
   let eq12 = HCPR.eqBy (==) p1 p2
   let eq23 = HCPR.eqBy (==) p2 p3
   let eq13 = HCPR.eqBy (==) p1 p3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Custom Ordering (ordBy)
+-- Note: SRProd uses semiring-specific ordering, not Ord/Ord1 typeclass instances
 -------------------------------------------------------------------------------
 
-propHashConsedProductOrdByReflexive :: Property
-propHashConsedProductOrdByReflexive = H.property $ do
+propSRProductCustomOrdReflexivity :: Property
+propSRProductCustomOrdReflexivity = H.property $ do
   p <- H.forAll genHashConsedProductBV8
   HCPR.ordBy compare p p H.=== EQ
 
-propHashConsedProductOrdByAntisymmetric :: Property
-propHashConsedProductOrdByAntisymmetric = H.property $ do
+propSRProductCustomOrdAntisymmetry :: Property
+propSRProductCustomOrdAntisymmetry = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
   let ord1 = HCPR.ordBy compare p1 p2
   let ord2 = HCPR.ordBy compare p2 p1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  H.assert $ checkOrdAntisymmetry ord1 ord2
 
-propHashConsedProductOrdByTransitive :: Property
-propHashConsedProductOrdByTransitive = H.property $ do
+propSRProductCustomOrdTransitivity :: Property
+propSRProductCustomOrdTransitivity = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
   p3 <- H.forAll genHashConsedProductBV8
   let ord12 = HCPR.ordBy compare p1 p2
   let ord23 = HCPR.ordBy compare p2 p3
   let ord13 = HCPR.ordBy compare p1 p3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propHashConsedProductOrdByConsistentWithEqBy :: Property
-propHashConsedProductOrdByConsistentWithEqBy = H.property $ do
+propSRProductCustomOrdEqConsistency :: Property
+propSRProductCustomOrdEqConsistency = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
   let eq = HCPR.eqBy (==) p1 p2
   let ord = HCPR.ordBy compare p1 p2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  H.assert $ checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -107,22 +98,22 @@ propHashConsedProductOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "HashConsed.Product"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propHashConsedProductEqByReflexive
+  [ testGroup "Custom Equality (eqBy)"
+      [ testProperty "Reflexivity (eqBy (==) x x)" $
+          H.withTests 1000 propSRProductCustomEqReflexivity
       , testProperty "Symmetry" $
-          H.withTests 1000 propHashConsedProductEqBySymmetric
+          H.withTests 1000 propSRProductCustomEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propHashConsedProductEqByTransitive
+          H.withTests 1000 propSRProductCustomEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propHashConsedProductOrdByReflexive
+  , testGroup "Custom Ordering (ordBy)"
+      [ testProperty "Reflexivity (ordBy compare x x == EQ)" $
+          H.withTests 1000 propSRProductCustomOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propHashConsedProductOrdByAntisymmetric
+          H.withTests 1000 propSRProductCustomOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propHashConsedProductOrdByTransitive
+          H.withTests 1000 propSRProductCustomOrdTransitivity
       , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propHashConsedProductOrdByConsistentWithEqBy
+          H.withTests 1000 propSRProductCustomOrdEqConsistency
       ]
   ]

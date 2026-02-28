@@ -104,14 +104,15 @@ eqBy2 eqK eqV x y =
   else HS.eqBy (eqBy2Kv eqK eqV) (kvs x) (kvs y)
 {-# INLINE eqBy2 #-}
 
--- test-law: propBloomKvEqByReflexive
--- test-law: propBloomKvEqBySymmetric
--- test-law: propBloomKvEqByTransitive
+-- test-law: propBloomKvEqReflexivity
+-- test-law: propBloomKvEqSymmetry
+-- test-law: propBloomKvEqTransitivity
 -- | @'eqBy2' (==) (==)@
 instance (Eq k, Eq v) => Eq (BloomKv k v) where
   (==) = eqBy2 (==) (==)
   {-# INLINE (==) #-}
 
+-- test-law: propBloomKvEq1Consistency
 -- | @'eqBy2' (==)@
 instance Eq k => Eq1 (BloomKv k) where
   liftEq = eqBy2 (==)
@@ -140,15 +141,16 @@ ordBy2 cmpK cmpV x y =
   else HS.ordBy (ordBy2Kv cmpK cmpV) (kvs x) (kvs y)
 {-# INLINE ordBy2 #-}
 
--- test-law: propBloomKvOrdByReflexive
--- test-law: propBloomKvOrdByAntisymmetric
--- test-law: propBloomKvOrdByTransitive
--- test-law: propBloomKvOrdByConsistentWithEqBy
+-- test-law: propBloomKvOrdReflexivity
+-- test-law: propBloomKvOrdAntisymmetry
+-- test-law: propBloomKvOrdTransitivity
+-- test-law: propBloomKvOrdEqConsistency
 -- | @'ordBy2' 'compare' 'compare'@
 instance (Ord k, Ord v) => Ord (BloomKv k v) where
   compare = ordBy2 compare compare
   {-# INLINE compare #-}
 
+-- test-law: propBloomKvOrd1Consistency
 -- | @'ordBy2' 'compare'@
 instance Ord k => Ord1 (BloomKv k) where
   liftCompare = ordBy2 compare

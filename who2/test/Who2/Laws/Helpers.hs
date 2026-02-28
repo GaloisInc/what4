@@ -5,11 +5,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Who2.Laws.Helpers
-  ( -- Ordering helpers
-    checkOrdTransitivity
+  ( -- Equality helpers
+    checkEqReflexivity
+  , checkEqSymmetry
+  , checkEqTransitivity
+    -- Ordering helpers
+  , checkOrdTransitivity
   , checkOrdFTransitivity
   , checkOrdAntisymmetry
   , checkOrdFAntisymmetry
+  , checkOrdEqConsistency
     -- Mock types for testing
   , MockExpr(..)
   , MockExprBT(..)
@@ -21,6 +26,33 @@ import qualified What4.BaseTypes as BT
 
 import Who2.Expr (HasId(..))
 import qualified Who2.Expr.Bloom.Polarized as PBS
+
+-------------------------------------------------------------------------------
+-- Equality Law Helpers
+-------------------------------------------------------------------------------
+
+-- | Check reflexivity property for equality relations
+-- Given an equality function and a value, returns True if eq x x holds
+checkEqReflexivity :: (a -> a -> Bool) -> a -> Bool
+checkEqReflexivity eq x = eq x x
+
+-- | Check symmetry property for equality relations
+-- Given two equality functions (for both directions) and two values,
+-- returns True if (x `eq` y) == (y `eq` x)
+checkEqSymmetry :: (a -> b -> Bool) -> (b -> a -> Bool) -> a -> b -> Bool
+checkEqSymmetry eqAB eqBA x y = eqAB x y == eqBA y x
+
+-- | Check transitivity property for equality relations
+-- Given three equality results (x == y, y == z, x == z), returns True if transitivity holds
+-- That is: if x == y and y == z, then x == z must hold
+checkEqTransitivity :: Bool -> Bool -> Bool -> Bool
+checkEqTransitivity eqXY eqYZ eqXZ
+  | eqXY && eqYZ = eqXZ  -- If x == y and y == z, then x == z must be True
+  | otherwise = True     -- No constraint when precondition doesn't hold
+
+-------------------------------------------------------------------------------
+-- Ordering Law Helpers
+-------------------------------------------------------------------------------
 
 -- | Check transitivity property for ordering relations
 -- Given three orderings (x `compare` y, y `compare` z, x `compare` z), returns True if transitivity holds
@@ -81,6 +113,16 @@ checkOrdFAntisymmetry ord12 ord21 = case (ord12, ord21) of
   (PC.EQF, PC.EQF) -> True
   (PC.GTF, PC.LTF) -> True
   _ -> False
+
+-- | Check consistency between Eq and Ord
+-- Given an equality result and a comparison result, returns True if they are consistent
+-- That is: (x == y) if and only if (compare x y == EQ)
+checkOrdEqConsistency :: Bool -> Ordering -> Bool
+checkOrdEqConsistency isEq ord = case (isEq, ord) of
+  (True, EQ) -> True    -- Equal values must compare as EQ
+  (False, EQ) -> False  -- Non-equal values cannot compare as EQ
+  (True, _) -> False    -- Equal values cannot compare as LT or GT
+  (False, _) -> True    -- Non-equal values can compare as LT or GT
 
 -------------------------------------------------------------------------------
 -- Mock Types for Testing

@@ -1,7 +1,5 @@
 module Who2.Laws.HashConsed.Set (tests) where
 
-import Control.Monad (unless)
-
 import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
@@ -10,7 +8,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Set as ES
-import Who2.Laws.Helpers (MockExpr(..), checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExpr(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -22,73 +20,64 @@ genExprSetInt = do
   pure $ ES.fromList list
 
 -------------------------------------------------------------------------------
--- Eq Properties
+-- Eq Laws
 -------------------------------------------------------------------------------
 
-propExprSetEqReflexive :: Property
-propExprSetEqReflexive = H.property $ do
+propExprSetEqReflexivity :: Property
+propExprSetEqReflexivity = H.property $ do
   es <- H.forAll genExprSetInt
-  H.assert $ es == es
+  H.assert $ checkEqReflexivity (==) es
 
-propExprSetEqSymmetric :: Property
-propExprSetEqSymmetric = H.property $ do
+propExprSetEqSymmetry :: Property
+propExprSetEqSymmetry = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
-  let eq1 = es1 == es2
-  let eq2 = es2 == es1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (==) (==) es1 es2
 
-propExprSetEqTransitive :: Property
-propExprSetEqTransitive = H.property $ do
+propExprSetEqTransitivity :: Property
+propExprSetEqTransitivity = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
   es3 <- H.forAll genExprSetInt
   let eq12 = es1 == es2
   let eq23 = es2 == es3
   let eq13 = es1 == es3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- Ord Properties
+-- Ord Laws
 -------------------------------------------------------------------------------
 
-propExprSetOrdReflexive :: Property
-propExprSetOrdReflexive = H.property $ do
+propExprSetOrdReflexivity :: Property
+propExprSetOrdReflexivity = H.property $ do
   es <- H.forAll genExprSetInt
   compare es es H.=== EQ
 
-propExprSetOrdAntisymmetric :: Property
-propExprSetOrdAntisymmetric = H.property $ do
+propExprSetOrdAntisymmetry :: Property
+propExprSetOrdAntisymmetry = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
   let ord1 = compare es1 es2
   let ord2 = compare es2 es1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  H.assert $ checkOrdAntisymmetry ord1 ord2
 
-propExprSetOrdTransitive :: Property
-propExprSetOrdTransitive = H.property $ do
+propExprSetOrdTransitivity :: Property
+propExprSetOrdTransitivity = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
   es3 <- H.forAll genExprSetInt
   let ord12 = compare es1 es2
   let ord23 = compare es2 es3
   let ord13 = compare es1 es3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propExprSetOrdConsistentWithEq :: Property
-propExprSetOrdConsistentWithEq = H.property $ do
+propExprSetOrdEqConsistency :: Property
+propExprSetOrdEqConsistency = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
   let eq = es1 == es2
   let ord = compare es1 es2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  H.assert $ checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -96,22 +85,22 @@ propExprSetOrdConsistentWithEq = H.property $ do
 
 tests :: TestTree
 tests = testGroup "HashConsed.ExprSet"
-  [ testGroup "Eq Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propExprSetEqReflexive
-      , testProperty "Symmetry" $
-          H.withTests 1000 propExprSetEqSymmetric
+  [ testGroup "Eq Laws"
+      [ testProperty "Reflexivity (x == x)" $
+          H.withTests 1000 propExprSetEqReflexivity
+      , testProperty "Symmetry (x == y <==> y == x)" $
+          H.withTests 1000 propExprSetEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propExprSetEqTransitive
+          H.withTests 1000 propExprSetEqTransitivity
       ]
-  , testGroup "Ord Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propExprSetOrdReflexive
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
+          H.withTests 1000 propExprSetOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propExprSetOrdAntisymmetric
+          H.withTests 1000 propExprSetOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propExprSetOrdTransitive
+          H.withTests 1000 propExprSetOrdTransitivity
       , testProperty "Consistency with Eq" $
-          H.withTests 1000 propExprSetOrdConsistentWithEq
+          H.withTests 1000 propExprSetOrdEqConsistency
       ]
   ]

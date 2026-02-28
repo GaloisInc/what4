@@ -4,8 +4,6 @@
 
 module Who2.Laws.Bloom.SemiRing.Sum (tests) where
 
-import Control.Monad (unless)
-
 import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
@@ -19,7 +17,7 @@ import Data.Parameterized.NatRepr (knownNat)
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
-import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -36,73 +34,66 @@ genBloomSumBV8 = do
   pure $ SRS.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Custom Equality (eqBy)
+-- Note: SRSum uses semiring-specific equality, not Eq/Eq1 typeclass instances
 -------------------------------------------------------------------------------
 
-propBloomSumEqByReflexive :: Property
-propBloomSumEqByReflexive = H.property $ do
+propSRSumCustomEqReflexivity :: Property
+propSRSumCustomEqReflexivity = H.property $ do
   s <- H.forAll genBloomSumBV8
-  H.assert $ SRS.eqBy (==) s s
+  H.assert $ checkEqReflexivity (SRS.eqBy (==)) s
 
-propBloomSumEqBySymmetric :: Property
-propBloomSumEqBySymmetric = H.property $ do
+propSRSumCustomEqSymmetry :: Property
+propSRSumCustomEqSymmetry = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
-  let eq1 = SRS.eqBy (==) s1 s2
-  let eq2 = SRS.eqBy (==) s2 s1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (SRS.eqBy (==)) (SRS.eqBy (==)) s1 s2
 
-propBloomSumEqByTransitive :: Property
-propBloomSumEqByTransitive = H.property $ do
+propSRSumCustomEqTransitivity :: Property
+propSRSumCustomEqTransitivity = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
   s3 <- H.forAll genBloomSumBV8
   let eq12 = SRS.eqBy (==) s1 s2
   let eq23 = SRS.eqBy (==) s2 s3
   let eq13 = SRS.eqBy (==) s1 s3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Custom Ordering (ordBy)
+-- Note: SRSum uses semiring-specific ordering, not Ord/Ord1 typeclass instances
 -------------------------------------------------------------------------------
 
-propBloomSumOrdByReflexive :: Property
-propBloomSumOrdByReflexive = H.property $ do
+propSRSumCustomOrdReflexivity :: Property
+propSRSumCustomOrdReflexivity = H.property $ do
   s <- H.forAll genBloomSumBV8
   SRS.ordBy compare s s H.=== EQ
 
-propBloomSumOrdByAntisymmetric :: Property
-propBloomSumOrdByAntisymmetric = H.property $ do
+propSRSumCustomOrdAntisymmetry :: Property
+propSRSumCustomOrdAntisymmetry = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
   let ord1 = SRS.ordBy compare s1 s2
   let ord2 = SRS.ordBy compare s2 s1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  H.assert $ checkOrdAntisymmetry ord1 ord2
 
-propBloomSumOrdByTransitive :: Property
-propBloomSumOrdByTransitive = H.property $ do
+propSRSumCustomOrdTransitivity :: Property
+propSRSumCustomOrdTransitivity = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
   s3 <- H.forAll genBloomSumBV8
   let ord12 = SRS.ordBy compare s1 s2
   let ord23 = SRS.ordBy compare s2 s3
   let ord13 = SRS.ordBy compare s1 s3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propBloomSumOrdByConsistentWithEqBy :: Property
-propBloomSumOrdByConsistentWithEqBy = H.property $ do
+propSRSumCustomOrdEqConsistency :: Property
+propSRSumCustomOrdEqConsistency = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
   let eq = SRS.eqBy (==) s1 s2
   let ord = SRS.ordBy compare s1 s2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  H.assert $ checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -110,22 +101,22 @@ propBloomSumOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "Bloom.Sum"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propBloomSumEqByReflexive
+  [ testGroup "Custom Equality (eqBy)"
+      [ testProperty "Reflexivity (eqBy (==) x x)" $
+          H.withTests 1000 propSRSumCustomEqReflexivity
       , testProperty "Symmetry" $
-          H.withTests 1000 propBloomSumEqBySymmetric
+          H.withTests 1000 propSRSumCustomEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propBloomSumEqByTransitive
+          H.withTests 1000 propSRSumCustomEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propBloomSumOrdByReflexive
+  , testGroup "Custom Ordering (ordBy)"
+      [ testProperty "Reflexivity (ordBy compare x x == EQ)" $
+          H.withTests 1000 propSRSumCustomOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propBloomSumOrdByAntisymmetric
+          H.withTests 1000 propSRSumCustomOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propBloomSumOrdByTransitive
+          H.withTests 1000 propSRSumCustomOrdTransitivity
       , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propBloomSumOrdByConsistentWithEqBy
+          H.withTests 1000 propSRSumCustomOrdEqConsistency
       ]
   ]

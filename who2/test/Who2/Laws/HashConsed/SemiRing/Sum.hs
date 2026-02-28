@@ -4,8 +4,6 @@
 
 module Who2.Laws.HashConsed.SemiRing.Sum (tests) where
 
-import Control.Monad (unless)
-
 import Hedgehog (Property)
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
@@ -18,7 +16,7 @@ import Test.Tasty.Hedgehog (testProperty)
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
-import Who2.Laws.Helpers (MockExprBT(..), checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (MockExprBT(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -35,73 +33,66 @@ genHashConsedSumBV8 = do
   pure $ HCSR.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Custom Equality (eqBy)
+-- Note: SRSum uses semiring-specific equality, not Eq/Eq1 typeclass instances
 -------------------------------------------------------------------------------
 
-propHashConsedSumEqByReflexive :: Property
-propHashConsedSumEqByReflexive = H.property $ do
+propSRSumCustomEqReflexivity :: Property
+propSRSumCustomEqReflexivity = H.property $ do
   s <- H.forAll genHashConsedSumBV8
-  H.assert $ HCSR.eqBy (==) s s
+  H.assert $ checkEqReflexivity (HCSR.eqBy (==)) s
 
-propHashConsedSumEqBySymmetric :: Property
-propHashConsedSumEqBySymmetric = H.property $ do
+propSRSumCustomEqSymmetry :: Property
+propSRSumCustomEqSymmetry = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
-  let eq1 = HCSR.eqBy (==) s1 s2
-  let eq2 = HCSR.eqBy (==) s2 s1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (HCSR.eqBy (==)) (HCSR.eqBy (==)) s1 s2
 
-propHashConsedSumEqByTransitive :: Property
-propHashConsedSumEqByTransitive = H.property $ do
+propSRSumCustomEqTransitivity :: Property
+propSRSumCustomEqTransitivity = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
   s3 <- H.forAll genHashConsedSumBV8
   let eq12 = HCSR.eqBy (==) s1 s2
   let eq23 = HCSR.eqBy (==) s2 s3
   let eq13 = HCSR.eqBy (==) s1 s3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Custom Ordering (ordBy)
+-- Note: SRSum uses semiring-specific ordering, not Ord/Ord1 typeclass instances
 -------------------------------------------------------------------------------
 
-propHashConsedSumOrdByReflexive :: Property
-propHashConsedSumOrdByReflexive = H.property $ do
+propSRSumCustomOrdReflexivity :: Property
+propSRSumCustomOrdReflexivity = H.property $ do
   s <- H.forAll genHashConsedSumBV8
   HCSR.ordBy compare s s H.=== EQ
 
-propHashConsedSumOrdByAntisymmetric :: Property
-propHashConsedSumOrdByAntisymmetric = H.property $ do
+propSRSumCustomOrdAntisymmetry :: Property
+propSRSumCustomOrdAntisymmetry = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
   let ord1 = HCSR.ordBy compare s1 s2
   let ord2 = HCSR.ordBy compare s2 s1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  H.assert $ checkOrdAntisymmetry ord1 ord2
 
-propHashConsedSumOrdByTransitive :: Property
-propHashConsedSumOrdByTransitive = H.property $ do
+propSRSumCustomOrdTransitivity :: Property
+propSRSumCustomOrdTransitivity = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
   s3 <- H.forAll genHashConsedSumBV8
   let ord12 = HCSR.ordBy compare s1 s2
   let ord23 = HCSR.ordBy compare s2 s3
   let ord13 = HCSR.ordBy compare s1 s3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propHashConsedSumOrdByConsistentWithEqBy :: Property
-propHashConsedSumOrdByConsistentWithEqBy = H.property $ do
+propSRSumCustomOrdEqConsistency :: Property
+propSRSumCustomOrdEqConsistency = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
   let eq = HCSR.eqBy (==) s1 s2
   let ord = HCSR.ordBy compare s1 s2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  H.assert $ checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -109,22 +100,22 @@ propHashConsedSumOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "HashConsed.Sum"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propHashConsedSumEqByReflexive
+  [ testGroup "Custom Equality (eqBy)"
+      [ testProperty "Reflexivity (eqBy (==) x x)" $
+          H.withTests 1000 propSRSumCustomEqReflexivity
       , testProperty "Symmetry" $
-          H.withTests 1000 propHashConsedSumEqBySymmetric
+          H.withTests 1000 propSRSumCustomEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propHashConsedSumEqByTransitive
+          H.withTests 1000 propSRSumCustomEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propHashConsedSumOrdByReflexive
+  , testGroup "Custom Ordering (ordBy)"
+      [ testProperty "Reflexivity (ordBy compare x x == EQ)" $
+          H.withTests 1000 propSRSumCustomOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propHashConsedSumOrdByAntisymmetric
+          H.withTests 1000 propSRSumCustomOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propHashConsedSumOrdByTransitive
+          H.withTests 1000 propSRSumCustomOrdTransitivity
       , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propHashConsedSumOrdByConsistentWithEqBy
+          H.withTests 1000 propSRSumCustomOrdEqConsistency
       ]
   ]

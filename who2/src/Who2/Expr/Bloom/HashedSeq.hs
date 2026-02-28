@@ -64,6 +64,9 @@ eqBy eq (HashedSeq s1 h1) (HashedSeq s2 h2) =
   else liftEq eq s1 s2
 {-# INLINE eqBy #-}
 
+-- test-law: propHashedSeqEqReflexivity
+-- test-law: propHashedSeqEqSymmetry
+-- test-law: propHashedSeqEqTransitivity
 -- test-law: propHashedSeqEqConsistency
 -- | @'eqBy' (==)@
 instance Eq a => Eq (HashedSeq a) where
@@ -90,14 +93,16 @@ ordBy cmp (HashedSeq s1 h1) (HashedSeq s2 h2) =
   else liftCompare cmp s1 s2
 {-# INLINE ordBy #-}
 
--- test-law: propHashedSeqOrdByReflexive
--- test-law: propHashedSeqOrdByAntisymmetric
--- test-law: propHashedSeqOrdByTransitive
+-- test-law: propHashedSeqOrdReflexivity
+-- test-law: propHashedSeqOrdAntisymmetry
+-- test-law: propHashedSeqOrdTransitivity
+-- test-law: propHashedSeqOrdEqConsistency
 -- | @'ordBy' 'compare'@
 instance Ord a => Ord (HashedSeq a) where
   compare = ordBy compare
   {-# INLINE compare #-}
 
+-- test-law: propHashedSeqOrd1Consistency
 -- | @'ordBy'@
 instance Ord1 HashedSeq where
   liftCompare = ordBy

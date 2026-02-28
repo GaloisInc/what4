@@ -1,6 +1,5 @@
 module Who2.Laws.Bloom.Map (tests) where
 
-import Control.Monad (unless)
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
 import Hedgehog (Property)
@@ -11,7 +10,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Map as BKv
-import Who2.Laws.Helpers (checkOrdTransitivity, checkOrdAntisymmetry)
+import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -28,73 +27,84 @@ genBloomKvIntString = do
   pure $ BKv.fromList (\_ v -> Just v) list
 
 -------------------------------------------------------------------------------
--- eqBy Properties
+-- Eq Laws
 -------------------------------------------------------------------------------
 
-propBloomKvEqByReflexive :: Property
-propBloomKvEqByReflexive = H.property $ do
+propBloomKvEqReflexivity :: Property
+propBloomKvEqReflexivity = H.property $ do
   bkv <- H.forAll genBloomKvIntString
-  H.assert $ liftEq (==) bkv bkv
+  H.assert $ checkEqReflexivity (==) bkv
 
-propBloomKvEqBySymmetric :: Property
-propBloomKvEqBySymmetric = H.property $ do
+propBloomKvEqSymmetry :: Property
+propBloomKvEqSymmetry = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let eq1 = liftEq (==) bkv1 bkv2
-  let eq2 = liftEq (==) bkv2 bkv1
-  eq1 H.=== eq2
+  H.assert $ checkEqSymmetry (==) (==) bkv1 bkv2
 
-propBloomKvEqByTransitive :: Property
-propBloomKvEqByTransitive = H.property $ do
+propBloomKvEqTransitivity :: Property
+propBloomKvEqTransitivity = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
   bkv3 <- H.forAll genBloomKvIntString
-  let eq12 = liftEq (==) bkv1 bkv2
-  let eq23 = liftEq (==) bkv2 bkv3
-  let eq13 = liftEq (==) bkv1 bkv3
-  unless (not eq12 || not eq23 || eq13) H.failure
+  let eq12 = bkv1 == bkv2
+  let eq23 = bkv2 == bkv3
+  let eq13 = bkv1 == bkv3
+  H.assert $ checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
--- ordBy Properties
+-- Eq1 Consistency
 -------------------------------------------------------------------------------
 
-propBloomKvOrdByReflexive :: Property
-propBloomKvOrdByReflexive = H.property $ do
-  bkv <- H.forAll genBloomKvIntString
-  liftCompare compare bkv bkv H.=== EQ
-
-propBloomKvOrdByAntisymmetric :: Property
-propBloomKvOrdByAntisymmetric = H.property $ do
+propBloomKvEq1Consistency :: Property
+propBloomKvEq1Consistency = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let ord1 = liftCompare compare bkv1 bkv2
-  let ord2 = liftCompare compare bkv2 bkv1
-  unless (checkOrdAntisymmetry ord1 ord2) H.failure
+  liftEq (==) bkv1 bkv2 H.=== (bkv1 == bkv2)
 
-propBloomKvOrdByTransitive :: Property
-propBloomKvOrdByTransitive = H.property $ do
+-------------------------------------------------------------------------------
+-- Ord Laws
+-------------------------------------------------------------------------------
+
+propBloomKvOrdReflexivity :: Property
+propBloomKvOrdReflexivity = H.property $ do
+  bkv <- H.forAll genBloomKvIntString
+  compare bkv bkv H.=== EQ
+
+propBloomKvOrdAntisymmetry :: Property
+propBloomKvOrdAntisymmetry = H.property $ do
+  bkv1 <- H.forAll genBloomKvIntString
+  bkv2 <- H.forAll genBloomKvIntString
+  let ord1 = compare bkv1 bkv2
+  let ord2 = compare bkv2 bkv1
+  H.assert $ checkOrdAntisymmetry ord1 ord2
+
+propBloomKvOrdTransitivity :: Property
+propBloomKvOrdTransitivity = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
   bkv3 <- H.forAll genBloomKvIntString
-  let ord12 = liftCompare compare bkv1 bkv2
-  let ord23 = liftCompare compare bkv2 bkv3
-  let ord13 = liftCompare compare bkv1 bkv3
-  unless (checkOrdTransitivity ord12 ord23 ord13) H.failure
+  let ord12 = compare bkv1 bkv2
+  let ord23 = compare bkv2 bkv3
+  let ord13 = compare bkv1 bkv3
+  H.assert $ checkOrdTransitivity ord12 ord23 ord13
 
-propBloomKvOrdByConsistentWithEqBy :: Property
-propBloomKvOrdByConsistentWithEqBy = H.property $ do
+propBloomKvOrdEqConsistency :: Property
+propBloomKvOrdEqConsistency = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  let eq = liftEq (==) bkv1 bkv2
-  let ord = liftCompare compare bkv1 bkv2
-  let result = case (eq, ord) of
-        (True, EQ) -> True
-        (False, LT) -> True
-        (False, GT) -> True
-        (True, LT) -> False
-        (True, GT) -> False
-        (False, EQ) -> False
-  unless result H.failure
+  let eq = bkv1 == bkv2
+  let ord = compare bkv1 bkv2
+  H.assert $ checkOrdEqConsistency eq ord
+
+-------------------------------------------------------------------------------
+-- Ord1 Consistency
+-------------------------------------------------------------------------------
+
+propBloomKvOrd1Consistency :: Property
+propBloomKvOrd1Consistency = H.property $ do
+  bkv1 <- H.forAll genBloomKvIntString
+  bkv2 <- H.forAll genBloomKvIntString
+  liftCompare compare bkv1 bkv2 H.=== compare bkv1 bkv2
 
 -------------------------------------------------------------------------------
 -- Test Tree
@@ -102,22 +112,30 @@ propBloomKvOrdByConsistentWithEqBy = H.property $ do
 
 tests :: TestTree
 tests = testGroup "Bloom.Kv"
-  [ testGroup "eqBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propBloomKvEqByReflexive
-      , testProperty "Symmetry" $
-          H.withTests 1000 propBloomKvEqBySymmetric
+  [ testGroup "Eq Laws"
+      [ testProperty "Reflexivity (x == x)" $
+          H.withTests 1000 propBloomKvEqReflexivity
+      , testProperty "Symmetry (x == y <==> y == x)" $
+          H.withTests 1000 propBloomKvEqSymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propBloomKvEqByTransitive
+          H.withTests 1000 propBloomKvEqTransitivity
       ]
-  , testGroup "ordBy Properties"
-      [ testProperty "Reflexivity" $
-          H.withTests 1000 propBloomKvOrdByReflexive
+  , testGroup "Eq1 Consistency"
+      [ testProperty "liftEq (==) behaves like (==)" $
+          H.withTests 1000 propBloomKvEq1Consistency
+      ]
+  , testGroup "Ord Laws"
+      [ testProperty "Reflexivity (compare x x == EQ)" $
+          H.withTests 1000 propBloomKvOrdReflexivity
       , testProperty "Antisymmetry" $
-          H.withTests 1000 propBloomKvOrdByAntisymmetric
+          H.withTests 1000 propBloomKvOrdAntisymmetry
       , testProperty "Transitivity" $
-          H.withTests 1000 propBloomKvOrdByTransitive
-      , testProperty "Consistency with eqBy" $
-          H.withTests 1000 propBloomKvOrdByConsistentWithEqBy
+          H.withTests 1000 propBloomKvOrdTransitivity
+      , testProperty "Consistency with Eq" $
+          H.withTests 1000 propBloomKvOrdEqConsistency
+      ]
+  , testGroup "Ord1 Consistency"
+      [ testProperty "liftCompare compare behaves like compare" $
+          H.withTests 1000 propBloomKvOrd1Consistency
       ]
   ]
