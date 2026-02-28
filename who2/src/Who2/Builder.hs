@@ -376,6 +376,18 @@ instance WI.IsExprBuilder (Builder t) where
   cplxGetParts = unsupported "Who2.Builder.cplxGetParts"
 
 instance WI.IsSymExprBuilder (Builder t) where
+  substituteSymFns = unsupported "Who2.Builder.substituteSymFns"
+  transformPredBV2LIA = unsupported "Who2.Builder.transformPredBV2LIA"
+  transformSymFnLIA2BV = unsupported "Who2.Builder.transformSymFnLIA2BV"
+  freshLatch = unsupported "Who2.Builder.freshLatch"
+  freshBoundedBV = unsupported "Who2.Builder.freshBoundedBV"
+  freshBoundedSBV = unsupported "Who2.Builder.freshBoundedSBV"
+  freshBoundedInt = unsupported "Who2.Builder.freshBoundedInt"
+  freshBoundedReal = unsupported "Who2.Builder.freshBoundedReal"
+  exprUninterpConstants = unsupported "Who2.Builder.exprUninterpConstants"
+  forallPred = unsupported "Who2.Builder.forallPred"
+  existsPred = unsupported "Who2.Builder.existsPred"
+
   freshConstant b nm tp = do
     n <- Nonce.freshNonce (bNonceGen b)
     let bvar = WEA.BVar
@@ -392,13 +404,6 @@ instance WI.IsSymExprBuilder (Builder t) where
       WI.BaseBoolRepr -> return Nothing
       _ -> unsupported "Who2.Builder.freshConstant: unsupported type"
     toSymExpr $ alloc b (EA.BoundVarApp bvar) absVal
-  freshLatch = unsupported "Who2.Builder.freshLatch"
-
-  freshBoundedBV = unsupported "Who2.Builder.freshBoundedBV"
-  freshBoundedSBV = unsupported "Who2.Builder.freshBoundedSBV"
-  freshBoundedInt = unsupported "Who2.Builder.freshBoundedInt"
-  freshBoundedReal = unsupported "Who2.Builder.freshBoundedReal"
-  exprUninterpConstants = unsupported "Who2.Builder.exprUninterpConstants"
   freshBoundVar b _emptySymbol tp = do
     n <- Nonce.freshNonce (bNonceGen b)
     return $ WEA.BVar
@@ -409,6 +414,7 @@ instance WI.IsSymExprBuilder (Builder t) where
       , WEA.bvarKind = WEA.QuantifierVarKind  -- For function parameters
       , WEA.bvarAbstractValue = Nothing
       }
+
   varExpr _b var =
     -- Get abstract value from the bound var, or use unconstrained if not provided
     let absVal = case WEA.bvarAbstractValue var of
@@ -424,8 +430,7 @@ instance WI.IsSymExprBuilder (Builder t) where
           , E.eAbsVal = absVal
           }
     in SymExpr expr
-  forallPred = unsupported "Who2.Builder.forallPred"
-  existsPred = unsupported "Who2.Builder.existsPred"
+
   definedFn b nm vars body policy = do
     n <- Nonce.freshNonce (bNonceGen b)
     let bodyExpr = getSymExpr body
@@ -442,6 +447,7 @@ instance WI.IsSymExprBuilder (Builder t) where
           , ESF.symFnLoc = WPL.initializationLoc
           }
     return fn
+
   freshTotalUninterpFn b nm argTypes retType = do
     -- Generate a fresh nonce for this function
     n <- Nonce.freshNonce (bNonceGen b)
@@ -453,21 +459,20 @@ instance WI.IsSymExprBuilder (Builder t) where
           , ESF.symFnLoc = WPL.initializationLoc
           }
     return fn
+
   applySymFn b fn args = do
     -- Unwrap SymExpr arguments to get the underlying Expr values
     let unwrappedArgs = fmapFC getSymExpr args
     -- Call the pure expression-level function
     -- Pass both alloc (for uninterpreted functions) and builder (for defined functions)
     toSymExpr $ EFn.applyFn (alloc b) b fn unwrappedArgs
+
   substituteBoundVars b subst expr = do
     -- Convert MapF to IntMap for the Subst module
     let substMap = convertMapFToIntMap subst
     -- Use the Subst module to perform substitution
     -- Pass builder to use IsExprBuilder methods
     toSymExpr $ Subst.substituteBoundVars b (getSymExpr expr) substMap
-  substituteSymFns = unsupported "Who2.Builder.substituteSymFns"
-  transformPredBV2LIA = unsupported "Who2.Builder.transformPredBV2LIA"
-  transformSymFnLIA2BV = unsupported "Who2.Builder.transformSymFnLIA2BV"
 
 -- | Convert MapF to IntMap for substitution
 convertMapFToIntMap :: MapF.MapF (WE.ExprBoundVar t) (SymExpr t) -> IntMap.IntMap (Subst.SomeExpr t)
