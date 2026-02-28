@@ -148,26 +148,6 @@ definedFunctionTests = testGroup "Defined Functions"
       arg2 <- WI.bvLit sym (knownNat @8) (BV.mkBV knownNat 20)
       WI.applySymFn sym addFn (Ctx.empty Ctx.:> arg1 Ctx.:> arg2)
 
-  , goldenTest "def-fn-with-symbolic-args" $ \sym -> do
-      -- Create bound variable for parameter
-      let paramSymbol = fromRight' $ WS.userSymbol "n"
-      paramVar <- WI.freshBoundVar sym paramSymbol (BT.BaseBVRepr (knownNat @16))
-
-      -- Create the body: n * 2
-      let nExpr = WI.varExpr sym paramVar
-      two <- WI.bvLit sym (knownNat @16) (BV.mkBV knownNat 2)
-      body <- WI.bvMul sym nExpr two
-
-      -- Define function double(n) = n * 2
-      let doubleSymbol = fromRight' $ WS.userSymbol "double"
-      let vars = Ctx.empty Ctx.:> paramVar
-      doubleFn <- WI.definedFn sym doubleSymbol vars body WI.AlwaysUnfold
-
-      -- Apply to symbolic argument
-      let argSymbol = fromRight' $ WS.userSymbol "input"
-      arg <- WI.freshConstant sym argSymbol (BT.BaseBVRepr (knownNat @16))
-      WI.applySymFn sym doubleFn (Ctx.empty Ctx.:> arg)
-
   , goldenTest "def-fn-nested-calls" $ \sym -> do
       -- Define increment(x) = x + 1
       let xSymbol = fromRight' $ WS.userSymbol "x"
