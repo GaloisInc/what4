@@ -631,6 +631,30 @@ mkLogicExprWithCache cache = \case
       [] -> return SMT2.true
       _ -> return $ SMT2.and allTerms
 
+  -- test-smt2: andPredHC
+  EL.AndPredHC pset -> do
+    let posElems = coerce $ PES.toListPos pset
+        negElems = coerce $ PES.toListNeg pset
+    posTerms <- mapM (mkExprWithCache cache) posElems
+    negTerms <- mapM (mkExprWithCache cache) negElems
+    let negTerms' = map SMT2.not negTerms
+        allTerms  = posTerms ++ negTerms'
+    case allTerms of
+      [] -> return SMT2.true
+      _  -> return $ SMT2.and allTerms
+
+  -- test-smt2: orPredHC
+  EL.OrPredHC pset -> do
+    let posElems = coerce $ PES.toListPos pset
+        negElems = coerce $ PES.toListNeg pset
+    posTerms <- mapM (mkExprWithCache cache) posElems
+    negTerms <- mapM (mkExprWithCache cache) negElems
+    let negTerms' = map SMT2.not negTerms
+        allTerms  = posTerms ++ negTerms'
+    case allTerms of
+      [] -> return SMT2.false
+      _  -> return $ SMT2.or allTerms
+
   -- test-smt2: notPred
   EL.NotPred x -> do
     xTerm <- mkExprWithCache cache x

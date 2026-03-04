@@ -37,9 +37,11 @@ data LogicConstructor
   | FalsePredCons
   | EqPredCons
   | AndPredCons
+  | AndPredHCCons
   | NotPredCons
   | XorPredCons
   | OrPredCons
+  | OrPredHCCons
   | IteCons
   | BVUltCons
   | BVUleCons
@@ -90,9 +92,11 @@ classifyLogic = \case
   EL.FalsePred -> FalsePredCons
   EL.EqPred _ _ -> EqPredCons
   EL.AndPred _ -> AndPredCons
+  EL.AndPredHC _ -> AndPredHCCons
   EL.NotPred _ -> NotPredCons
   EL.XorPred _ _ -> XorPredCons
   EL.OrPred _ -> OrPredCons
+  EL.OrPredHC _ -> OrPredHCCons
   EL.Ite _ _ _ -> IteCons
   EL.BVUlt _ _ _ -> BVUltCons
   EL.BVUle _ _ _ -> BVUleCons

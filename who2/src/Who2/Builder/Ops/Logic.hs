@@ -37,6 +37,7 @@ import qualified Who2.Expr as E
 import qualified Who2.Expr.Logic as EL
 import qualified Who2.Expr.Views as EV
 import qualified Who2.Expr.Bloom.Polarized as PBS
+import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Config as Config
 
 isTrue :: Expr t f BT.BaseBoolType -> Bool
@@ -109,6 +110,7 @@ andPred ::
   , Eq (Expr t f BT.BaseBoolType)
   , Hashable (Expr t f BT.BaseBoolType)
   , PC.HashableF (f (Expr t f))
+  , E.HasId (Expr t f BT.BaseBoolType)
   ) =>
   Expr t f BT.BaseBoolType ->
   Expr t f BT.BaseBoolType ->
@@ -143,6 +145,24 @@ andPred trueExpr falseExpr alloc x y
   , Just b <- EV.asNotPred y = do
       orResult <- orPred trueExpr falseExpr alloc a b
       notPred trueExpr falseExpr alloc orResult
+  | Config.useHashConsedStructures = andPredHC trueExpr falseExpr alloc x y
+  | otherwise = andPredBloom trueExpr falseExpr alloc x y
+{-# INLINE andPred #-}
+
+andPredBloom ::
+  ( HasBaseType (f (Expr t f))
+  , EV.HasLogicViews f
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  ) =>
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  (forall tp. EL.LogicExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  IO (Expr t f BT.BaseBoolType)
+andPredBloom trueExpr falseExpr alloc x y
     -- (x1 && ... && xn) && (y1 && ... && yn) = x1 && ... && xn && y1 && ... && yn
     -- test: and-nested-contradiction
     -- test: and-three-way-contradiction
@@ -180,7 +200,49 @@ andPred trueExpr falseExpr alloc x y
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
           else alloc (EL.AndPred newPol) Nothing
-{-# INLINE andPred #-}
+{-# INLINE andPredBloom #-}
+
+andPredHC ::
+  ( HasBaseType (f (Expr t f))
+  , EV.HasLogicViews f
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  , E.HasId (Expr t f BT.BaseBoolType)
+  ) =>
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  (forall tp. EL.LogicExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  IO (Expr t f BT.BaseBoolType)
+andPredHC trueExpr falseExpr alloc x y
+  | Just xs <- EV.asAndPredHC x
+  , Just ys <- EV.asAndPredHC y = fromMerged (PES.merge (coerce xs) (coerce ys))
+  | Just xs <- EV.asAndPredHC x = insertIntoAndPredHC (coerce xs) y x
+  | Just ys <- EV.asAndPredHC y = insertIntoAndPredHC (coerce ys) x y
+  | otherwise =
+      let x' = E.minByHash x y
+          y' = E.maxByHash x y
+      in fromSimplified (PES.fromTwo (EL.BoolExprWrapper x') (EL.BoolExprWrapper y'))
+  where
+    collapsed = pure falseExpr
+    fromMerged = \case
+      Just pset -> alloc (EL.AndPredHC pset) Nothing
+      Nothing   -> collapsed
+    fromSimplified = \case
+      PES.Inconsistent                        -> collapsed
+      PES.SinglePositive (EL.BoolExprWrapper e) -> pure e
+      PES.SingleNegative (EL.BoolExprWrapper e) -> notPred trueExpr falseExpr alloc e
+      PES.Merged pset                         -> alloc (EL.AndPredHC pset) Nothing
+    insertIntoAndPredHC pset newElem unchanged =
+      case PES.insertIfNotPresent pset (EL.BoolExprWrapper newElem) of
+        Nothing -> collapsed
+        Just newPset ->
+          if PES.totalSize newPset == PES.totalSize pset
+          then pure unchanged
+          else alloc (EL.AndPredHC newPset) Nothing
+{-# INLINE andPredHC #-}
 
 notPred ::
   (HasBaseType (f (Expr t f)), EV.HasLogicViews f) =>
@@ -208,6 +270,7 @@ orPred ::
   , Eq (Expr t f BT.BaseBoolType)
   , Hashable (Expr t f BT.BaseBoolType)
   , PC.HashableF (f (Expr t f))
+  , E.HasId (Expr t f BT.BaseBoolType)
   ) =>
   Expr t f BT.BaseBoolType ->
   Expr t f BT.BaseBoolType ->
@@ -247,6 +310,24 @@ orPred trueExpr falseExpr alloc x y
   , Just b <- EV.asNotPred y = do
       andResult <- andPred trueExpr falseExpr alloc a b
       notPred trueExpr falseExpr alloc andResult
+  | Config.useHashConsedStructures = orPredHC trueExpr falseExpr alloc x y
+  | otherwise = orPredBloom trueExpr falseExpr alloc x y
+{-# INLINE orPred #-}
+
+orPredBloom ::
+  ( HasBaseType (f (Expr t f))
+  , EV.HasLogicViews f
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  ) =>
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  (forall tp. EL.LogicExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  IO (Expr t f BT.BaseBoolType)
+orPredBloom trueExpr falseExpr alloc x y
     -- (x1 || ... || xn) || (y1 || ... || yn) = x1 || ... || xn || y1 || ... || yn
     -- test: or-nested-tautology
     -- test: or-three-way-tautology
@@ -284,7 +365,49 @@ orPred trueExpr falseExpr alloc x y
           if PBS.totalSize newPol == PBS.totalSize pol
           then pure unchanged
           else alloc (EL.OrPred newPol) Nothing
-{-# INLINE orPred #-}
+{-# INLINE orPredBloom #-}
+
+orPredHC ::
+  ( HasBaseType (f (Expr t f))
+  , EV.HasLogicViews f
+  , Eq (Expr t f BT.BaseBoolType)
+  , Hashable (Expr t f BT.BaseBoolType)
+  , PC.HashableF (f (Expr t f))
+  , E.HasId (Expr t f BT.BaseBoolType)
+  ) =>
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  (forall tp. EL.LogicExpr (Expr t f) tp -> AD.AbstractValue tp -> IO (Expr t f tp)) ->
+  Expr t f BT.BaseBoolType ->
+  Expr t f BT.BaseBoolType ->
+  IO (Expr t f BT.BaseBoolType)
+orPredHC trueExpr falseExpr alloc x y
+  | Just xs <- EV.asOrPredHC x
+  , Just ys <- EV.asOrPredHC y = fromMerged (PES.merge (coerce xs) (coerce ys))
+  | Just xs <- EV.asOrPredHC x = insertIntoOrPredHC (coerce xs) y x
+  | Just ys <- EV.asOrPredHC y = insertIntoOrPredHC (coerce ys) x y
+  | otherwise =
+      let x' = E.minByHash x y
+          y' = E.maxByHash x y
+      in fromSimplified (PES.fromTwo (EL.BoolExprWrapper x') (EL.BoolExprWrapper y'))
+  where
+    collapsed = pure trueExpr
+    fromMerged = \case
+      Just pset -> alloc (EL.OrPredHC pset) Nothing
+      Nothing   -> collapsed
+    fromSimplified = \case
+      PES.Inconsistent                        -> collapsed
+      PES.SinglePositive (EL.BoolExprWrapper e) -> pure e
+      PES.SingleNegative (EL.BoolExprWrapper e) -> notPred trueExpr falseExpr alloc e
+      PES.Merged pset                         -> alloc (EL.OrPredHC pset) Nothing
+    insertIntoOrPredHC pset newElem unchanged =
+      case PES.insertIfNotPresent pset (EL.BoolExprWrapper newElem) of
+        Nothing -> collapsed
+        Just newPset ->
+          if PES.totalSize newPset == PES.totalSize pset
+          then pure unchanged
+          else alloc (EL.OrPredHC newPset) Nothing
+{-# INLINE orPredHC #-}
 
 xorPred ::
   ( Eq (Expr t f BT.BaseBoolType)

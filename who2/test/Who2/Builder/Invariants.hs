@@ -40,9 +40,8 @@ import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
 -------------------------------------------------------------------------------
 
 data CheckResult = CheckResult
-  { crCheckedAny :: !Bool  -- True if we checked any Polarized*/semiring structure
-  , crError :: !(Maybe String)  -- Just err if invariant violated
-  }
+  !Bool         -- True if we checked any Polarized*/semiring structure
+  !(Maybe String)  -- Just err if invariant violated
 
 instance Semigroup CheckResult where
   CheckResult a1 e1 <> CheckResult a2 e2 =
@@ -77,9 +76,11 @@ checkLogicExpr = \case
   EL.FalsePred -> ok
   EL.EqPred x y -> checkSubExpr x <> checkSubExpr y
   EL.AndPred pbs -> checkPolarizedBloomSeq pbs "AndPred"
+  EL.AndPredHC pes -> checkPolarizedExprSet pes "AndPredHC"
   EL.NotPred x -> checkSubExpr x
   EL.XorPred x y -> checkSubExpr x <> checkSubExpr y
   EL.OrPred pbs -> checkPolarizedBloomSeq pbs "OrPred"
+  EL.OrPredHC pes -> checkPolarizedExprSet pes "OrPredHC"
   EL.Ite c t f -> checkSubExpr c <> checkSubExpr t <> checkSubExpr f
   EL.BVUlt _ x y -> checkSubExpr x <> checkSubExpr y
   EL.BVUle _ x y -> checkSubExpr x <> checkSubExpr y
@@ -89,7 +90,7 @@ checkLogicExpr = \case
 checkBVExpr :: forall t tp. EBV.BVExpr (E.Expr t (App.App t)) tp -> CheckResult
 checkBVExpr = \case
   EBV.BVLit {} -> ok
-  EBV.BVAdd _ sum -> checkBloomSum sum "BVAdd"
+  EBV.BVAdd _ bvSum -> checkBloomSum bvSum "BVAdd"
   EBV.BVNeg _ x -> checkSubExpr x
   EBV.BVSub _ x y -> checkSubExpr x <> checkSubExpr y
   EBV.BVMul _ prod -> checkBloomProduct prod "BVMul"
@@ -113,7 +114,7 @@ checkBVExpr = \case
   -- Hash-consed variants
   EBV.BVAndBitsHC _ pes -> checkPolarizedExprSet pes "BVAndBitsHC"
   EBV.BVOrBitsHC _ pes -> checkPolarizedExprSet pes "BVOrBitsHC"
-  EBV.BVAddHC _ sum -> checkHashConsedSum sum "BVAddHC"
+  EBV.BVAddHC _ bvSum -> checkHashConsedSum bvSum "BVAddHC"
   EBV.BVMulHC _ prod -> checkHashConsedProduct prod "BVMulHC"
 
 -- | Check subexpression (handles wrapped Expr types)

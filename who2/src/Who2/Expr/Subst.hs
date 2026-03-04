@@ -271,6 +271,20 @@ substituteBoundVars sym = go
         case posElems' ++ negElems'' of
           [] -> pure $ ESE.getSymExpr (WI.falsePred sym)
           (x:xs) -> foldM (\a b -> binOp (WI.orPred sym) a b) x xs
+      EL.AndPredHC pset -> do
+        posElems' <- mapM ((`go` substMap) . EL.unBoolExprWrapper) (PES.toListPos pset)
+        negElems' <- mapM ((`go` substMap) . EL.unBoolExprWrapper) (PES.toListNeg pset)
+        negElems'' <- mapM (unOp (WI.notPred sym)) negElems'
+        case posElems' ++ negElems'' of
+          []     -> pure $ ESE.getSymExpr (WI.truePred sym)
+          (x:xs) -> foldM (\a b -> binOp (WI.andPred sym) a b) x xs
+      EL.OrPredHC pset -> do
+        posElems' <- mapM ((`go` substMap) . EL.unBoolExprWrapper) (PES.toListPos pset)
+        negElems' <- mapM ((`go` substMap) . EL.unBoolExprWrapper) (PES.toListNeg pset)
+        negElems'' <- mapM (unOp (WI.notPred sym)) negElems'
+        case posElems' ++ negElems'' of
+          []     -> pure $ ESE.getSymExpr (WI.falsePred sym)
+          (x:xs) -> foldM (\a b -> binOp (WI.orPred sym) a b) x xs
       EL.Ite c t f -> do
         c' <- go c substMap
         t' <- go t substMap

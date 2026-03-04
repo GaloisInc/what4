@@ -35,6 +35,14 @@ class HasLogicViews f where
   -- | View: is this an OrPred? Returns the polarized bloom sequence.
   asOrPred :: E.Expr t f BT.BaseBoolType -> Maybe (PBS.PolarizedBloomSeq (E.Expr t f BT.BaseBoolType))
 
+  -- | View: is this AndPredHC? Returns the hash-consed polarized set.
+  asAndPredHC :: E.Expr t f BT.BaseBoolType
+              -> Maybe (PES.PolarizedExprSet (E.Expr t f BT.BaseBoolType))
+
+  -- | View: is this OrPredHC? Returns the hash-consed polarized set.
+  asOrPredHC  :: E.Expr t f BT.BaseBoolType
+              -> Maybe (PES.PolarizedExprSet (E.Expr t f BT.BaseBoolType))
+
   -- | View: is this (ite c t f)? Returns (c, t, f) if so.
   asIte :: E.Expr t f BT.BaseBoolType -> Maybe (E.Expr t f BT.BaseBoolType, E.Expr t f BT.BaseBoolType, E.Expr t f BT.BaseBoolType)
 

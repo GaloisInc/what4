@@ -144,6 +144,14 @@ instance EV.HasLogicViews (App t) where
     LogicApp (EL.OrPred pbs) -> Just (coerce pbs)
     _ -> Nothing
 
+  asAndPredHC e = case E.eApp e of
+    LogicApp (EL.AndPredHC pset) -> Just (coerce pset)
+    _ -> Nothing
+
+  asOrPredHC e = case E.eApp e of
+    LogicApp (EL.OrPredHC pset) -> Just (coerce pset)
+    _ -> Nothing
+
   asIte e = case E.eApp e of
     LogicApp (EL.Ite c t f) -> Just (c, t, f)
     _ -> Nothing

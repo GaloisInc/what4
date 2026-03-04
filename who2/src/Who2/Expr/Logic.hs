@@ -17,6 +17,7 @@ module Who2.Expr.Logic
   ) where
 
 import Data.Kind (Type)
+import Data.Hashable (hashWithSalt)
 import Data.Type.Equality (type (:~:))
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
 
@@ -31,6 +32,7 @@ import qualified What4.BaseTypes as BT
 import Who2.Expr (HasBaseType(baseType))
 import qualified Who2.Expr as E
 import qualified Who2.Expr.Bloom.Polarized as PBS
+import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.Views as EV
 
 -- | 'Polarizable' wrapper for boolean expressions used in both 'AndPred' and 'OrPred'
@@ -47,6 +49,10 @@ instance EV.HasLogicViews f => PBS.Polarizable (BoolExprWrapper (E.Expr t f)) wh
     Just inner -> PBS.Negative (BoolExprWrapper inner)
     Nothing -> PBS.Positive (BoolExprWrapper expr)
   {-# INLINE polarity #-}
+
+instance E.HasId (BoolExprWrapper (E.Expr t f)) where
+  getId (BoolExprWrapper e) = E.getId e
+  {-# INLINE getId #-}
 
 data LogicExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
   TruePred :: LogicExpr f BT.BaseBoolType
@@ -72,6 +78,14 @@ data LogicExpr (f :: BT.BaseType -> Type) (tp :: BT.BaseType) where
 
   OrPred ::
     !(PBS.PolarizedBloomSeq (BoolExprWrapper f)) ->
+    LogicExpr f BT.BaseBoolType
+
+  AndPredHC ::
+    !(PES.PolarizedExprSet (BoolExprWrapper f)) ->
+    LogicExpr f BT.BaseBoolType
+
+  OrPredHC ::
+    !(PES.PolarizedExprSet (BoolExprWrapper f)) ->
     LogicExpr f BT.BaseBoolType
 
   Ite ::
@@ -118,6 +132,8 @@ instance HasBaseType f => HasBaseType (LogicExpr f) where
       NotPred _ -> BT.BaseBoolRepr
       XorPred _ _ -> BT.BaseBoolRepr
       OrPred _ -> BT.BaseBoolRepr
+      AndPredHC _ -> BT.BaseBoolRepr
+      OrPredHC  _ -> BT.BaseBoolRepr
       Ite _ t _ -> baseType t
       BVUlt {} -> BT.BaseBoolRepr
       BVUle {} -> BT.BaseBoolRepr
@@ -148,6 +164,24 @@ comparePolarizedBloomSeqBool pbs1 pbs2 =
   PC.fromOrdering (liftCompare (\(BoolExprWrapper u) (BoolExprWrapper v) -> compare u v) pbs1 pbs2)
 {-# INLINE comparePolarizedBloomSeqBool #-}
 
+-- PES TestEquality helper
+
+testEqPolarizedExprSetBool ::
+  PES.PolarizedExprSet (BoolExprWrapper f) ->
+  PES.PolarizedExprSet (BoolExprWrapper f) ->
+  Maybe (BT.BaseBoolType :~: BT.BaseBoolType)
+testEqPolarizedExprSetBool x y = if x == y then Just PC.Refl else Nothing
+{-# INLINE testEqPolarizedExprSetBool #-}
+
+-- PES OrdF helper
+
+comparePolarizedExprSetBool ::
+  PES.PolarizedExprSet (BoolExprWrapper f) ->
+  PES.PolarizedExprSet (BoolExprWrapper f) ->
+  PC.OrderingF BT.BaseBoolType BT.BaseBoolType
+comparePolarizedExprSetBool x y = PC.fromOrdering (compare x y)
+{-# INLINE comparePolarizedExprSetBool #-}
+
 -- HashableF helper
 
 hashPolarizedBloomSeqBool ::
@@ -174,6 +208,9 @@ instance (PC.TestEquality f) => PC.TestEquality (LogicExpr f) where
        , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
          , [|testEqPolarizedBloomSeqBool|]
          )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
+         , [|testEqPolarizedExprSetBool|]
+         )
        ]
      )
 
@@ -190,6 +227,9 @@ instance (PC.OrdF f, Ord (f BT.BaseBoolType)) => PC.OrdF (LogicExpr f) where
        , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
          , [|comparePolarizedBloomSeqBool|]
          )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
+         , [|comparePolarizedExprSetBool|]
+         )
        ]
      )
 
@@ -202,6 +242,9 @@ instance (PC.HashableF f, Eq (f BT.BaseBoolType), PC.Hashable (f BT.BaseBoolType
          )
        , ( PTH.ConType [t|PBS.PolarizedBloomSeq|] `PTH.TypeApp` PTH.ConType [t|BoolExprWrapper|]
          , [|hashPolarizedBloomSeqBool|]
+         )
+       , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` PTH.AnyType
+         , [|hashWithSalt|]
          )
        ]
      )
@@ -216,6 +259,8 @@ pretty ppF = \case
   NotPred x -> PP.parens $ PP.pretty "not" PP.<+> ppF x
   XorPred x y -> PP.parens $ PP.pretty "xor" PP.<+> ppF x PP.<+> ppF y
   OrPred _pbs -> PP.pretty "or"
+  AndPredHC _pset -> PP.pretty "and"
+  OrPredHC  _pset -> PP.pretty "or"
   Ite c t f -> PP.parens $ PP.pretty "ite" PP.<+> ppF c PP.<+> ppF t PP.<+> ppF f
   BVUlt _w x y -> PP.parens $ PP.pretty "bvult" PP.<+> ppF x PP.<+> ppF y
   BVUle _w x y -> PP.parens $ PP.pretty "bvule" PP.<+> ppF x PP.<+> ppF y
