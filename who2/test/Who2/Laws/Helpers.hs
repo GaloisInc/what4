@@ -1,8 +1,14 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Who2.Laws.Helpers
   ( -- Equality helpers
@@ -18,11 +24,16 @@ module Who2.Laws.Helpers
     -- Mock types for testing
   , MockExpr(..)
   , MockExprBT(..)
+  , genMockExprBT
   ) where
 
 import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Parameterized.Classes as PC
 import qualified What4.BaseTypes as BT
+import qualified What4.Utils.AbstractDomains as AD
+import Hedgehog (Gen)
+import qualified Hedgehog.Gen as Gen
+import qualified Hedgehog.Range as Range
 
 import Who2.Expr (HasId(..))
 import qualified Who2.Expr.Bloom.Polarized as PBS
@@ -144,11 +155,33 @@ instance PBS.Polarizable MockExpr where
     | otherwise = PBS.Positive (MockExpr x)
 
 -- | Mock expression type for testing BaseType-parameterized data structures
-newtype MockExprBT (tp :: BT.BaseType) = MockExprBT Int
-  deriving (Eq, Ord, Show)
+data MockExprBT (tp :: BT.BaseType) = MockExprBT Int (BT.BaseTypeRepr tp)
+
+instance Eq (MockExprBT tp) where
+  MockExprBT i _ == MockExprBT j _ = i == j
+
+instance Ord (MockExprBT tp) where
+  compare (MockExprBT i _) (MockExprBT j _) = compare i j
+
+instance Show (MockExprBT tp) where
+  show (MockExprBT i _) = "MockExprBT " ++ show i
 
 instance HasId (MockExprBT tp) where
-  getId (MockExprBT i) = i
+  getId (MockExprBT i _) = i
 
 instance Hashable (MockExprBT tp) where
-  hashWithSalt s (MockExprBT i) = s `hashWithSalt` i
+  hashWithSalt s (MockExprBT i _) = s `hashWithSalt` i
+
+instance AD.HasAbsValue MockExprBT where
+  getAbsValue (MockExprBT _ repr) = AD.avTop repr
+
+-------------------------------------------------------------------------------
+-- Mock Generator Helpers
+-------------------------------------------------------------------------------
+
+-- | Generate a MockExprBT for a specific BaseType using TypeApplications.
+--
+-- Example usage:
+--   @genMockExprBT \@(BT.BaseBVType 8)@
+genMockExprBT :: forall tp. PC.KnownRepr BT.BaseTypeRepr tp => Gen (MockExprBT tp)
+genMockExprBT = MockExprBT <$> Gen.int (Range.linear 0 100) <*> pure PC.knownRepr

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Who2.SemiRing.Bloom.Sum (tests) where
 
@@ -15,11 +16,12 @@ import Data.Parameterized.NatRepr (knownNat)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
+import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as BSR
 import qualified Who2.Expr.Bloom.Map as BKv
-import Who2.Laws.Helpers (MockExprBT(..))
+import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -30,7 +32,7 @@ genBloomSumBV8 = do
   offset <- Gen.int (Range.linear 0 255)
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
+    key <- genMockExprBT @(BT.BaseBVType 8)
     coeff <- Gen.int (Range.linear 0 255)
     pure (key, BV.mkBV knownNat (fromIntegral coeff))
   pure $ BSR.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
@@ -76,7 +78,7 @@ propBloomSumScalarDistributivity :: Property
 propBloomSumScalarDistributivity = H.property $ do
   c1 <- H.forAll genBV8Constant
   c2 <- H.forAll genBV8Constant
-  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  x <- H.forAll (genMockExprBT @(BT.BaseBVType 8))
   let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
   let lhs = BSR.scaledVar sr (SR.add sr c1 c2) x
   let rhs = BSR.add (BSR.scaledVar sr c1 x) (BSR.scaledVar sr c2 x)
@@ -86,7 +88,7 @@ propBloomSumScalarDistributivity = H.property $ do
 propBloomSumCancellation :: Property
 propBloomSumCancellation = H.property $ do
   c <- H.forAll genBV8Constant
-  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  x <- H.forAll (genMockExprBT @(BT.BaseBVType 8))
   let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
   let negC = BV.negate knownNat c  -- Compute -c for BV arithmetic
   let result = BSR.add (BSR.scaledVar sr c x) (BSR.scaledVar sr negC x)

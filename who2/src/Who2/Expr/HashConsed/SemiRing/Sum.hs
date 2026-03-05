@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
@@ -30,11 +31,16 @@ module Who2.Expr.HashConsed.SemiRing.Sum
   , sumRepr
   ) where
 
+import qualified Control.Exception as Ex
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Kind (Type)
+import qualified Data.Maybe as Maybe
+import qualified Data.BitVector.Sized as BV
 
 import qualified What4.SemiRing as SR
 import qualified What4.BaseTypes as BT
+import qualified What4.Utils.AbstractDomains as AD
+import qualified What4.Utils.BVDomain as BVD
 
 import qualified Who2.Expr.HashConsed.Map as EM
 import Who2.Expr (HasId)
@@ -44,10 +50,17 @@ import Who2.Expr (HasId)
 ------------------------------------------------------------------------
 
 -- | A hash-consed sum of semiring values using ExprMap.
+--
+-- INVARIANT: Coefficients should not be zero and terms should not be
+-- constants (i.e., according to 'exprIsConst'). This is not a safety
+-- invariant, but helps ensure normalized terms.
 data SRSum (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRSum
   { sumMap :: !(EM.ExprMap (f (SR.SemiRingBase sr)) (SR.Coefficient sr))
+    -- ^ Map from terms to their coefficients
   , sumOffsetHC :: !(SR.Coefficient sr)
+    -- ^ Constant offset
   , sumReprHC :: !(SR.SemiRingRepr sr)
+    -- ^ Runtime representation of the semiring
   }
 
 -- Note: Manual Show instance to avoid needing Show for SemiRingRepr
@@ -127,6 +140,28 @@ instance
 -- Operations
 ------------------------------------------------------------------------
 
+-- | Returns 'Just' when the abstract value is a singleton.
+asCoeff ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Maybe (SR.Coefficient sr)
+asCoeff =
+  \case
+    SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
+    SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
+    SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+{-# INLINE asCoeff #-}
+
+-- | Check if an expression is a constant based on abstract value
+exprIsConst ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Bool
+exprIsConst sr x = Maybe.isJust (asCoeff sr x)
+{-# INLINE exprIsConst #-}
+
 sumOffset :: SRSum sr f -> SR.Coefficient sr
 sumOffset = sumOffsetHC
 {-# INLINE sumOffset #-}
@@ -139,12 +174,20 @@ constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRSum sr f
 constant sr c = SRSum EM.empty c sr
 {-# INLINE constant #-}
 
-var :: HasId (f (SR.SemiRingBase sr)) => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRSum sr f
-var sr x = SRSum (EM.singleton x (SR.one sr)) (SR.zero sr) sr
+var ::
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  SRSum sr f
+var sr x = affineVar sr (SR.one sr) x (SR.zero sr)
 {-# INLINE var #-}
 
 affineVar ::
-  HasId (f (SR.SemiRingBase sr)) =>
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
   SR.SemiRingRepr sr ->
   SR.Coefficient sr ->
   f (SR.SemiRingBase sr) ->
@@ -152,11 +195,13 @@ affineVar ::
   SRSum sr f
 affineVar sr coeff x offset
   | SR.eq sr coeff (SR.zero sr) = constant sr offset
+  | Just c <- asCoeff sr x = constant sr (SR.add sr (SR.mul sr coeff c) offset)
   | otherwise = SRSum (EM.singleton x coeff) offset sr
-{-# INLINE affineVar #-}
 
 scaledVar ::
-  HasId (f (SR.SemiRingBase sr)) =>
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
   SR.SemiRingRepr sr ->
   SR.Coefficient sr ->
   f (SR.SemiRingBase sr) ->
@@ -191,7 +236,7 @@ isZero ws =
   EM.size (sumMap ws) == 0 && SR.eq (sumReprHC ws) (sumOffsetHC ws) (SR.zero (sumReprHC ws))
 {-# INLINE isZero #-}
 
-add :: SRSum sr f -> SRSum sr f -> SRSum sr f
+add :: AD.HasAbsValue f => SRSum sr f -> SRSum sr f -> SRSum sr f
 add ws1 ws2 =
   SRSum
     (EM.unionWithMaybe addCoeff (sumMap ws1) (sumMap ws2))
@@ -204,18 +249,24 @@ add ws1 ws2 =
       in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
 {-# INLINE add #-}
 
-addVar :: HasId (f (SR.SemiRingBase sr)) => SRSum sr f -> f (SR.SemiRingBase sr) -> SRSum sr f
+addVar ::
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
+  SRSum sr f ->
+  f (SR.SemiRingBase sr) ->
+  SRSum sr f
 addVar ws x =
-  SRSum
-    (EM.insertWithMaybe addCoeff x (SR.one sr) (sumMap ws))
-    (sumOffsetHC ws)
-    sr
+  Ex.assert (not (exprIsConst sr x)) $
+    SRSum
+      (EM.insertWithMaybe addCoeff x (SR.one sr) (sumMap ws))
+      (sumOffsetHC ws)
+      sr
   where
     sr = sumReprHC ws
     addCoeff v1 v2 =
       let v' = SR.add sr v1 v2
       in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
-{-# INLINE addVar #-}
 
 addConstant :: SRSum sr f -> SR.Coefficient sr -> SRSum sr f
 addConstant ws c =
@@ -223,21 +274,29 @@ addConstant ws c =
 {-# INLINE addConstant #-}
 
 fromTerms ::
-  HasId (f (SR.SemiRingBase sr)) =>
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
   SR.SemiRingRepr sr ->
   [(f (SR.SemiRingBase sr), SR.Coefficient sr)] ->
   SR.Coefficient sr ->
   SRSum sr f
 fromTerms sr terms offset =
-  SRSum
-    (foldr (\(k, v) m -> EM.insertWithMaybe addCoeff k v m) EM.empty terms)
-    offset
-    sr
+  let (nonConstTerms, constOffset) = foldr go ([], SR.zero sr) terms
+      go (x, c) (ts, acc) =
+        if SR.eq sr c (SR.zero sr)
+        then (ts, acc)
+        else case asCoeff sr x of
+          Just xc -> (ts, SR.add sr (SR.mul sr c xc) acc)
+          Nothing -> ((x, c) : ts, acc)
+  in SRSum
+      (foldr (\(k, v) m -> EM.insertWithMaybe addCoeff k v m) EM.empty nonConstTerms)
+      (SR.add sr offset constOffset)
+      sr
   where
     addCoeff v1 v2 =
       let v' = SR.add sr v1 v2
       in if SR.eq sr v' (SR.zero sr) then Nothing else Just v'
-{-# INLINE fromTerms #-}
 
 toTerms :: SRSum sr f -> [(f (SR.SemiRingBase sr), SR.Coefficient sr)]
 toTerms = EM.toList . sumMap

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Who2.SemiRing.HashConsed.Sum (tests) where
 
@@ -15,11 +16,12 @@ import Data.Parameterized.NatRepr (knownNat)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
+import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
 import qualified Who2.Expr.HashConsed.Map as EM
-import Who2.Laws.Helpers (MockExprBT(..))
+import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -30,7 +32,7 @@ genHashConsedSumBV8 = do
   offset <- Gen.int (Range.linear 0 255)
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
+    key <- genMockExprBT @(BT.BaseBVType 8)
     coeff <- Gen.int (Range.linear 0 255)
     pure (key, BV.mkBV knownNat (fromIntegral coeff))
   pure $ HCSR.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
@@ -81,7 +83,7 @@ propHashConsedSumScalarDistributivity :: Property
 propHashConsedSumScalarDistributivity = H.property $ do
   c1 <- H.forAll genBV8Constant
   c2 <- H.forAll genBV8Constant
-  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  x <- H.forAll (genMockExprBT @(BT.BaseBVType 8))
   let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
   let lhs = HCSR.scaledVar sr (SR.add sr c1 c2) x
   let rhs = HCSR.add (HCSR.scaledVar sr c1 x) (HCSR.scaledVar sr c2 x)
@@ -90,7 +92,7 @@ propHashConsedSumScalarDistributivity = H.property $ do
 propHashConsedSumCancellation :: Property
 propHashConsedSumCancellation = H.property $ do
   c <- H.forAll genBV8Constant
-  x <- MockExprBT <$> H.forAll (Gen.int (Range.linear 0 100))
+  x <- H.forAll (genMockExprBT @(BT.BaseBVType 8))
   let sr = SR.SemiRingBVRepr SR.BVArithRepr knownNat
   let negC = BV.negate knownNat c  -- Compute -c for BV arithmetic
   let result = HCSR.add (HCSR.scaledVar sr c x) (HCSR.scaledVar sr negC x)

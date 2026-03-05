@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Who2.Laws.Bloom.SemiRing.Product (tests) where
 
@@ -14,10 +15,11 @@ import Test.Tasty.Hedgehog (testProperty)
 
 import Data.Parameterized.NatRepr (knownNat)
 
+import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Product as SRP
-import Who2.Laws.Helpers (MockExprBT(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -27,7 +29,7 @@ genBloomProductBV8 :: H.Gen (SRP.SRProd (SR.SemiRingBV SR.BVBits 8) MockExprBT)
 genBloomProductBV8 = do
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
+    key <- genMockExprBT @(BT.BaseBVType 8)
     expnt <- Gen.integral (Range.linear 1 5)
     pure (key, expnt)
   pure $ SRP.fromTerms (SR.SemiRingBVRepr SR.BVBitsRepr knownNat) terms

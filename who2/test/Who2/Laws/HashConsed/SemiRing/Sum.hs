@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Who2.Laws.HashConsed.SemiRing.Sum (tests) where
 
@@ -13,10 +14,11 @@ import Data.Parameterized.NatRepr (knownNat)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
+import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
-import Who2.Laws.Helpers (MockExprBT(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -27,7 +29,7 @@ genHashConsedSumBV8 = do
   offset <- Gen.int (Range.linear 0 255)
   numTerms <- Gen.int (Range.linear 0 3)
   terms <- Gen.list (Range.singleton numTerms) $ do
-    key <- MockExprBT <$> Gen.int (Range.linear 0 100)
+    key <- genMockExprBT @(BT.BaseBVType 8)
     coeff <- Gen.int (Range.linear 0 255)
     pure (key, BV.mkBV knownNat (fromIntegral coeff))
   pure $ HCSR.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))

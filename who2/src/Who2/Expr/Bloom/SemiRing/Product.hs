@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -30,13 +31,16 @@ module Who2.Expr.Bloom.SemiRing.Product
   , threshold
   ) where
 
-import Data.Bits (xor)
+import Data.Bits (xor, (.&.))
 import Data.Hashable (Hashable(hash, hashWithSalt))
 import Data.Kind (Type)
 import Numeric.Natural (Natural)
 
+import qualified Data.BitVector.Sized as BV
 import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
+import qualified What4.Utils.AbstractDomains as AD
+import qualified What4.Utils.BVDomain as BVD
 
 import qualified Who2.Expr.Bloom.Map as BKv
 
@@ -48,7 +52,9 @@ import qualified Who2.Expr.Bloom.Map as BKv
 --
 -- Represents: coeff * product_i (term_i ^ exponent_i)
 --
--- INVARIANT: Exponents should not be zero (maintained by smart constructors)
+-- INVARIANT: Exponents should not be zero and terms should not be
+-- constants (i.e., their abstract value is a singleton). This is not a safety
+-- invariant, but helps ensure normalized terms.
 data SRProd (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRProd
   { prodMap :: !(BKv.BloomKv (f (SR.SemiRingBase sr)) Natural)
     -- ^ Map from terms to their exponents
@@ -138,6 +144,28 @@ instance
 -- Operations
 ------------------------------------------------------------------------
 
+-- | Returns 'Just' when the abstract value is a singleton.
+asCoeff ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Maybe (SR.Coefficient sr)
+asCoeff =
+  \case
+    SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
+    SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
+    SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+{-# INLINE asCoeff #-}
+
+-- | Raise a coefficient to a Natural power using exponentiation by squaring
+pow :: SR.SemiRingRepr sr -> SR.Coefficient sr -> Natural -> SR.Coefficient sr
+pow sr c n
+  | n == 0 = SR.one sr
+  | n == 1 = c
+  | n .&. 1 == 0 = let h = pow sr c (n `div` 2) in SR.mul sr h h  -- even
+  | otherwise = SR.mul sr c (pow sr c (n - 1))  -- odd
+{-# INLINE pow #-}
+
 -- | Create a constant product
 constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRProd sr f
 constant sr c = SRProd BKv.empty c sr
@@ -147,21 +175,41 @@ one :: SR.SemiRingRepr sr -> SRProd sr f
 one sr = SRProd BKv.empty (SR.one sr) sr
 
 -- | Create a product from a single variable (coefficient 1)
-var :: (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
-       SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRProd sr f
-var sr x = SRProd (BKv.singleton x 1) (SR.one sr) sr
+var ::
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable Natural
+  ) =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  SRProd sr f
+var sr x
+  | Just c <- asCoeff sr x = constant sr c  -- x^1 = c
+  | otherwise = SRProd (BKv.singleton x 1) (SR.one sr) sr
 
 -- | Create a product from a list of terms and their exponents (coefficient 1)
 fromTerms ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable Natural
+  ) =>
   SR.SemiRingRepr sr ->
   [(f (SR.SemiRingBase sr), Natural)] ->
   SRProd sr f
 fromTerms sr terms =
-  SRProd
-    (BKv.fromList addExp (filter (\(_, e) -> e /= 0) terms))
-    (SR.one sr)
-    sr
+  let (nonConstTerms, constCoeff) = foldr go ([], SR.one sr) terms
+      go (x, e) (ts, coeff) =
+        if e == 0
+        then (ts, coeff)
+        else case asCoeff sr x of
+          Just c -> (ts, SR.mul sr coeff (pow sr c e))  -- fold c^e into coefficient
+          Nothing -> ((x, e) : ts, coeff)
+  in SRProd
+      (BKv.fromList addExp nonConstTerms)
+      constCoeff
+      sr
   where
     addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 
@@ -186,16 +234,23 @@ mul p1 p2 =
 
 -- | Multiply by a variable
 mulVar ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable Natural) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable Natural
+  ) =>
   SRProd sr f ->
   f (SR.SemiRingBase sr) ->
   SRProd sr f
-mulVar p x =
-  SRProd
-    (BKv.insert addExp (prodMap p) x 1)
-    (prodCoeff p)
-    (prodRepr p)
+mulVar p x
+  | Just c <- asCoeff sr x = scale p c  -- multiply coeff by c^1
+  | otherwise =
+      SRProd
+        (BKv.insert addExp (prodMap p) x 1)
+        (prodCoeff p)
+        sr
   where
+    sr = prodRepr p
     addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 
 -- | Multiply by a constant (scale the coefficient)

@@ -6,6 +6,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Who2.Expr.HashConsed.SemiRing.Product
   ( SRProd
@@ -28,6 +29,10 @@ module Who2.Expr.HashConsed.SemiRing.Product
   , prodRepr
   ) where
 
+import Data.Bits ((.&.))
+import qualified Data.BitVector.Sized as BV
+import qualified What4.Utils.AbstractDomains as AD
+import qualified What4.Utils.BVDomain as BVD
 import Data.Hashable (Hashable(hashWithSalt))
 import Data.Kind (Type)
 import Numeric.Natural (Natural)
@@ -124,6 +129,28 @@ instance
 
 ------------------------------------------------------------------------
 -- Operations
+-- | Returns 'Just' when the abstract value is a singleton.
+asCoeff ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Maybe (SR.Coefficient sr)
+asCoeff =
+  \case
+    SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
+    SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
+    SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+{-# INLINE asCoeff #-}
+
+-- | Raise a coefficient to a Natural power using exponentiation by squaring
+pow :: SR.SemiRingRepr sr -> SR.Coefficient sr -> Natural -> SR.Coefficient sr
+pow sr c n
+  | n == 0 = SR.one sr
+  | n == 1 = c
+  | n .&. 1 == 0 = let h = pow sr c (n `div` 2) in SR.mul sr h h  -- even
+  | otherwise = SR.mul sr c (pow sr c (n - 1))  -- odd
+{-# INLINE pow #-}
+
 ------------------------------------------------------------------------
 
 constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRProd sr f
@@ -134,20 +161,37 @@ one :: SR.SemiRingRepr sr -> SRProd sr f
 one sr = SRProd EM.empty (SR.one sr) sr
 {-# INLINE one #-}
 
-var :: HasId (f (SR.SemiRingBase sr)) => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRProd sr f
-var sr x = SRProd (EM.singleton x 1) (SR.one sr) sr
+var ::
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  SRProd sr f
+var sr x
+  | Just c <- asCoeff sr x = constant sr c  -- x^1 = c
+  | otherwise = SRProd (EM.singleton x 1) (SR.one sr) sr
 {-# INLINE var #-}
 
 fromTerms ::
-  HasId (f (SR.SemiRingBase sr)) =>
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
   SR.SemiRingRepr sr ->
   [(f (SR.SemiRingBase sr), Natural)] ->
   SRProd sr f
 fromTerms sr terms =
-  SRProd
-    (foldr (\(k, v) m -> if v /= 0 then EM.insertWithMaybe addExp k v m else m) EM.empty terms)
-    (SR.one sr)
-    sr
+  let (nonConstTerms, constCoeff) = foldr go ([], SR.one sr) terms
+      go (x, e) (ts, coeff) =
+        if e == 0
+        then (ts, coeff)
+        else case asCoeff sr x of
+          Just c -> (ts, SR.mul sr coeff (pow sr c e))  -- fold c^e into coefficient
+          Nothing -> ((x, e) : ts, coeff)
+  in SRProd
+      (foldr (\(k, v) m -> EM.insertWithMaybe addExp k v m) EM.empty nonConstTerms)
+      constCoeff
+      sr
   where
     addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE fromTerms #-}
@@ -167,13 +211,22 @@ mul p1 p2 =
     addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE mul #-}
 
-mulVar :: HasId (f (SR.SemiRingBase sr)) => SRProd sr f -> f (SR.SemiRingBase sr) -> SRProd sr f
-mulVar p x =
-  SRProd
-    (EM.insertWithMaybe addExp x 1 (prodMap p))
-    (prodCoeff p)
-    (prodRepr p)
+mulVar ::
+  ( AD.HasAbsValue f
+  , HasId (f (SR.SemiRingBase sr))
+  ) =>
+  SRProd sr f ->
+  f (SR.SemiRingBase sr) ->
+  SRProd sr f
+mulVar p x
+  | Just c <- asCoeff sr x = scale p c  -- multiply coeff by c^1
+  | otherwise =
+      SRProd
+        (EM.insertWithMaybe addExp x 1 (prodMap p))
+        (prodCoeff p)
+        sr
   where
+    sr = prodRepr p
     addExp e1 e2 = let e' = e1 + e2 in if e' == 0 then Nothing else Just e'
 {-# INLINE mulVar #-}
 

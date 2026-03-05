@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -33,11 +34,16 @@ module Who2.Expr.Bloom.SemiRing.Sum
   , threshold
   ) where
 
+import qualified Control.Exception as Ex
 import Data.Hashable (Hashable(hash, hashWithSalt))
 import Data.Kind (Type)
+import qualified Data.Maybe as Maybe
 
+import qualified Data.BitVector.Sized as BV
 import qualified What4.SemiRing as SR
 import qualified What4.BaseTypes as BT
+import qualified What4.Utils.AbstractDomains as AD
+import qualified What4.Utils.BVDomain as BVD
 
 import qualified Who2.Expr.Bloom.Map as BKv
 
@@ -49,7 +55,9 @@ import qualified Who2.Expr.Bloom.Map as BKv
 --
 -- Represents: offset + sum_i (coeff_i * term_i)
 --
--- INVARIANT: Coefficients should not be zero (maintained by smart constructors)
+-- INVARIANT: Coefficients should not be zero and terms should not be
+-- constants (i.e., according to 'exprIsConst'). This is not a safety
+-- invariant, but helps ensure normalized terms.
 data SRSum (sr :: SR.SemiRing) (f :: BT.BaseType -> Type) = SRSum
   { sumMap :: !(BKv.BloomKv (f (SR.SemiRingBase sr)) (SR.Coefficient sr))
     -- ^ Map from terms to their coefficients
@@ -90,6 +98,7 @@ eqBy eqTerm x y = eqBy2 (SR.eq (sumRepr x)) eqTerm x y
 -- | @'eqBy' (==)@
 instance Eq (f (SR.SemiRingBase sr)) => Eq (SRSum sr f) where
   x == y = eqBy (==) x y
+  {-# INLINE (==) #-}
 
 ordBy2 ::
   (SR.Coefficient sr -> SR.Coefficient sr -> Ordering) ->
@@ -122,6 +131,7 @@ instance
   , Ord (SR.Coefficient sr)
   ) => Ord (SRSum sr f) where
   compare = ordBy compare
+  {-# INLINE compare #-}
 
 hashWith ::
   Hashable (SR.Coefficient sr) =>
@@ -146,18 +156,53 @@ instance
 -- Operations
 ------------------------------------------------------------------------
 
+-- | Returns 'Just' when the abstract value is a singleton.
+asCoeff ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Maybe (SR.Coefficient sr)
+asCoeff =
+  \case
+    SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
+    SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
+    SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+{-# INLINE asCoeff #-}
+
+-- | Check if an expression is a constant based on abstract value
+exprIsConst ::
+  AD.HasAbsValue f =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  Bool
+exprIsConst sr x = Maybe.isJust (asCoeff sr x)
+{-# INLINE exprIsConst #-}
+
 -- | Create a constant sum
 constant :: SR.SemiRingRepr sr -> SR.Coefficient sr -> SRSum sr f
 constant sr c = SRSum BKv.empty c sr
+{-# INLINE constant #-}
 
 -- | Create a sum from a single variable
-var :: (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
-       SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRSum sr f
-var sr x = SRSum (BKv.singleton x (SR.one sr)) (SR.zero sr) sr
+var ::
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
+  SR.SemiRingRepr sr ->
+  f (SR.SemiRingBase sr) ->
+  SRSum sr f
+var sr x = affineVar sr (SR.one sr) x (SR.zero sr)
+{-# INLINE var #-}
 
 -- | Create a sum from a scaled variable with offset: @coeff * var + offset@
 affineVar ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
   SR.SemiRingRepr sr ->
   SR.Coefficient sr ->  -- ^ Coefficient
   f (SR.SemiRingBase sr) ->  -- ^ Variable
@@ -165,16 +210,22 @@ affineVar ::
   SRSum sr f
 affineVar sr coeff x offset
   | SR.eq sr coeff (SR.zero sr) = constant sr offset
+  | Just c <- asCoeff sr x = constant sr (SR.add sr (SR.mul sr coeff c) offset)
   | otherwise = SRSum (BKv.singleton x coeff) offset sr
 
 -- | Create a sum from a scaled variable: @coeff * var@
 scaledVar ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
   SR.SemiRingRepr sr ->
   SR.Coefficient sr ->
   f (SR.SemiRingBase sr) ->
   SRSum sr f
 scaledVar sr coeff x = affineVar sr coeff x (SR.zero sr)
+{-# INLINE scaledVar #-}
 
 -- | Check if the sum is a constant
 asConstant :: SRSum sr f -> Maybe (SR.Coefficient sr)
@@ -205,7 +256,12 @@ isZero ws =
 
 -- | Add two sums
 add ::
-  (Eq (f (SR.SemiRingBase sr)), Ord (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Ord (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
   SRSum sr f ->
   SRSum sr f ->
   SRSum sr f
@@ -222,15 +278,20 @@ add ws1 ws2 =
 
 -- | Add a variable with coefficient 1 to a sum
 addVar ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
   SRSum sr f ->
   f (SR.SemiRingBase sr) ->
   SRSum sr f
 addVar ws x =
-  SRSum
-    (BKv.insert addCoeff (sumMap ws) x (SR.one sr))
-    (sumOffset ws)
-    sr
+  Ex.assert (not (exprIsConst sr x)) $
+    SRSum
+      (BKv.insert addCoeff (sumMap ws) x (SR.one sr))
+      (sumOffset ws)
+      sr
   where
     sr = sumRepr ws
     addCoeff v1 v2 =
@@ -244,16 +305,27 @@ addConstant ws c =
 
 -- | Create a sum from a list of terms and an offset
 fromTerms ::
-  (Eq (f (SR.SemiRingBase sr)), Hashable (f (SR.SemiRingBase sr)), Hashable (SR.Coefficient sr)) =>
+  ( AD.HasAbsValue f
+  , Eq (f (SR.SemiRingBase sr))
+  , Hashable (f (SR.SemiRingBase sr))
+  , Hashable (SR.Coefficient sr)
+  ) =>
   SR.SemiRingRepr sr ->
   [(f (SR.SemiRingBase sr), SR.Coefficient sr)] ->
   SR.Coefficient sr ->
   SRSum sr f
 fromTerms sr terms offset =
-  SRSum
-    (BKv.fromList addCoeff terms)
-    offset
-    sr
+  let (nonConstTerms, constOffset) = foldr go ([], SR.zero sr) terms
+      go (x, c) (ts, acc) =
+        if SR.eq sr c (SR.zero sr)
+        then (ts, acc)
+        else case asCoeff sr x of
+          Just xc -> (ts, SR.add sr (SR.mul sr c xc) acc)
+          Nothing -> ((x, c) : ts, acc)
+  in SRSum
+      (BKv.fromList addCoeff nonConstTerms)
+      (SR.add sr offset constOffset)
+      sr
   where
     addCoeff v1 v2 =
       let v' = SR.add sr v1 v2
