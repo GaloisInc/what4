@@ -91,7 +91,7 @@ cacheInitialSize = 10000
 newBuilder :: NonceGenerator IO t -> IO (Builder t)
 newBuilder g = do
   -- Create sized hash table for better performance
-  cache <- stToIO $ PH.newSized cacheInitialSize
+  cache <- stToIO $ if hashConsing then PH.newSized cacheInitialSize else PH.new
 
   trueExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.TruePred) (Just True)
   falseExpr <- toSymExpr $ E.mkExpr g (EA.LogicApp EL.FalsePred) (Just False)
