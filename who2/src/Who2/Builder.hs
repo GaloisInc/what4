@@ -84,7 +84,7 @@ data Builder t
 -- Similar to What4's cacheStartSizeOption (default 100,000)
 -- Start smaller for Who2's lightweight design
 cacheInitialSize :: Int
-cacheInitialSize = 10000
+cacheInitialSize = 32
 {-# INLINE cacheInitialSize #-}
 
 -- | Create a new 'Builder'
