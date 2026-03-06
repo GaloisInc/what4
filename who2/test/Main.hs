@@ -1,10 +1,13 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
+-- | Who2 test suite
+--
+-- TODO
 module Main (main) where
 
-import Control.Monad (unless)
+import System.Directory (findExecutable)
 import System.IO (hPutStrLn, stderr)
-import Test.Tasty (defaultMain, testGroup)
+import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (testCase, assertBool)
 
 import Who2.Internal (assertionsEnabled)
@@ -34,23 +37,28 @@ import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
 import qualified Who2.TestAnnotations as TestAnnotations
 
+-- | Check if Z3 is available
+checkZ3Available :: IO Bool
+checkZ3Available = do
+  result <- findExecutable "z3"
+  case result of
+    Just _ -> pure True
+    Nothing -> do
+      hPutStrLn stderr "WARNING: z3 not found in PATH. Semantic checks will be skipped."
+      hPutStrLn stderr "Install z3 with: brew install z3 (macOS) or apt install z3 (Linux)"
+      pure False
+
+z3ValidationTests :: Bool -> IO [TestTree]
+z3ValidationTests z3Available =
+  if z3Available
+  then Simpl.discoverZ3ValidationTests "test-data/simpl"
+  else return []
+
 main :: IO ()
 main = do
-  -- Check if z3 is available
-  z3Available <- Props.checkZ3Available
-  unless z3Available $ do
-    hPutStrLn stderr "WARNING: z3 not found in PATH. Semantic checks will be skipped."
-    hPutStrLn stderr "Install z3 with: brew install z3 (macOS) or apt install z3 (Linux)"
-
-  -- Discover SMT2 file tests
+  z3Available <- checkZ3Available
   simplTests <- Simpl.discoverSimplificationTests "test-data/simpl"
-
-  z3Tests <- if z3Available
-    then Simpl.discoverZ3ValidationTests "test-data/simpl"
-    else do
-      putStrLn "Warning: z3 not found in PATH. Skipping z3 validation tests."
-      return []
-
+  z3Tests <- z3ValidationTests z3Available
   smtLib2Tests <- SMTLib2.tests
   functionTests <- Functions.tests
   annotationTests <- TestAnnotations.tests

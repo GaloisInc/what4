@@ -11,7 +11,6 @@
 
 module Who2.Builder.Simplification
   ( tests
-  , checkZ3Available
   ) where
 
 import Control.Exception (catch, SomeException, evaluate)
@@ -20,7 +19,6 @@ import Data.List (isInfixOf)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Builder as Builder
-import System.Directory (findExecutable)
 import System.Exit (ExitCode(ExitSuccess))
 import System.Process (readProcessWithExitCode)
 import System.Timeout (timeout)
@@ -45,13 +43,6 @@ import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
 import qualified Who2.Expr.SymExpr as SE
--- | Check if Z3 is available
-checkZ3Available :: IO Bool
-checkZ3Available = do
-  result <- findExecutable "z3"
-  case result of
-    Just _ -> pure True
-    Nothing -> pure False
 
 -- | Helper function to compare simplified and naive interpretations using Z3
 -- Checks equisatisfiability: both should have the same SAT/UNSAT result
