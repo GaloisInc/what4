@@ -21,7 +21,7 @@ import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as BSR
 import qualified Who2.Expr.Bloom.Map as BKv
-import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
 
 -------------------------------------------------------------------------------
 -- Generator

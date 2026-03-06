@@ -16,7 +16,7 @@ module Who2.Builder.API.Gen
   ) where
 
 import Data.Parameterized.NatRepr (NatRepr, knownNat, natValue, type (<=), addNat, someNat, withKnownNat)
-import Data.Parameterized.Some (Some(..))
+import Data.Parameterized.Some (Some(Some))
 import qualified Data.BitVector.Sized as BV
 import Hedgehog (Gen)
 import qualified Hedgehog.Gen as Gen
@@ -24,7 +24,19 @@ import qualified Hedgehog.Range as Range
 
 import What4.BaseTypes (BaseBoolType, BaseBVType)
 import qualified What4.Interface as WI
-import Who2.Builder.API (ExprBuilderAPI(..))
+import Who2.Builder.API
+  ( ExprBuilderAPI
+      ( TruePred, FalsePred, BoundVarBool, BoundVarBV
+      , NotPred, AndPred, OrPred, XorPred, ItePred
+      , BVLit, BVAdd, BVSub, BVMul, BVNeg, BVIte
+      , BVAndBits, BVOrBits, BVXorBits, BVNotBits
+      , BVUlt, BVSlt, BVEq
+      , BVShl, BVLshr, BVAshr
+      , BVUdiv, BVUrem, BVSdiv, BVSrem
+      , BVRol, BVRor
+      , BVConcat, BVSelect, BVZext, BVSext
+      )
+  )
 
 -- | A bitvector width with its constraint
 data SomeWidth where

@@ -19,7 +19,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Builder as Builder
 import System.Directory (listDirectory)
-import System.Exit (ExitCode(..))
+import System.Exit (ExitCode(ExitSuccess, ExitFailure))
 import System.FilePath ((</>), (<.>), takeExtension, dropExtension)
 import System.Process (readProcessWithExitCode)
 import Test.Tasty (TestTree, testGroup)

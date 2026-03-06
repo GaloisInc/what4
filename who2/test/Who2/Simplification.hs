@@ -89,7 +89,7 @@ mkTestWithRunner runTest dir file = do
 -- | Create a test case for a single SMT2 file using Who2
 mkSimplTest :: FilePath -> FilePath -> IO TestTree
 mkSimplTest = mkTestWithRunner $ \_inputPath input -> withIONonceGenerator $ \gen -> do
-  let ?logStderr = \_ -> return ()
+  let ?logStderr = \_ -> return () :: IO ()
   builder <- newBuilder gen
   result <- solve builder input
   return [ case r of

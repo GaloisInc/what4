@@ -8,7 +8,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Set as ES
-import Who2.Laws.Helpers (MockExpr(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExpr(MockExpr), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator

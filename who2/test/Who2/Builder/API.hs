@@ -21,11 +21,11 @@ import qualified Data.Map as Map
 import Data.Parameterized.NatRepr (NatRepr, natValue, type (<=), type (+), addNat)
 import qualified Data.Parameterized.Classes as PC
 import Numeric.Natural (Natural)
-import Prettyprinter (Pretty(..), parens, (<+>), viaShow)
+import Prettyprinter (Pretty(pretty), parens, (<+>), viaShow)
 import qualified What4.BaseTypes as BT
 import What4.BaseTypes
   ( BaseType
-  , BaseTypeRepr(..)
+  , BaseTypeRepr(BaseBoolRepr, BaseBVRepr)
   , BaseBoolType
   , BaseBVType
   )

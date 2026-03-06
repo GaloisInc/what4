@@ -18,7 +18,7 @@ import Data.Parameterized.NatRepr (natValue)
 import qualified Data.BitVector.Sized as BVS
 
 import What4.BaseTypes (BaseBoolType)
-import What4.Interface (IsExprBuilder(..))
+import What4.Interface (IsExprBuilder, bvLit, bvUrem, isEq, notPred, bvNotBits)
 import qualified What4.Interface as WI
 import qualified What4.Expr as WE
 import qualified What4.Expr.App as WEA
@@ -28,9 +28,9 @@ import What4.Utils.AbstractDomains (AbstractValue, avTop)
 import qualified What4.Utils.BVDomain as BVD
 
 import qualified Data.Parameterized.Classes as PC
-import Who2.Expr (Expr(..), HasBaseType(..), mkExpr)
-import Who2.Expr.App (App(..))
-import Who2.Expr.SymExpr (SymExpr(..))
+import Who2.Expr (Expr(RiskyExpr, eId, eHash, eApp, eAbsVal), HasBaseType(baseType), mkExpr)
+import Who2.Expr.App (App(LogicApp, BVApp, BoundVarApp))
+import Who2.Expr.SymExpr (SymExpr(SymExpr))
 import qualified Who2.Builder.Ops.BV as BV
 import qualified Who2.Expr.BV as EBV
 import qualified Who2.Expr.Logic as EL

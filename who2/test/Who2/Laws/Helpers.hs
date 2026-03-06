@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -35,7 +36,7 @@ import Hedgehog (Gen)
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
-import Who2.Expr (HasId(..))
+import Who2.Expr (HasId(getId))
 import qualified Who2.Expr.Bloom.Polarized as PBS
 
 -------------------------------------------------------------------------------

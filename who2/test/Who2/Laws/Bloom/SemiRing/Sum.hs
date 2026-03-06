@@ -19,7 +19,7 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
-import Who2.Laws.Helpers (MockExprBT(..), genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
 
 -------------------------------------------------------------------------------
 -- Generator

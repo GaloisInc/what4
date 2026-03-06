@@ -12,7 +12,7 @@ import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.Set as ES
-import Who2.Laws.Helpers (MockExpr(..), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity)
+import Who2.Laws.Helpers (MockExpr(MockExpr), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity)
 
 genPolarizedExprSet :: H.Gen (PES.PolarizedExprSet MockExpr)
 genPolarizedExprSet = do

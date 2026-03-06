@@ -1,6 +1,7 @@
 module Who2.Laws.Bloom.Polarized (tests) where
 
 import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare))
+import Data.Hashable (Hashable(hashWithSalt))
 
 import Hedgehog (Property)
 import qualified Hedgehog as H
@@ -16,19 +17,26 @@ import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivi
 -- Generator and Instance
 -------------------------------------------------------------------------------
 
-genPolarizedBloomSeqInt :: H.Gen (PBS.PolarizedBloomSeq Int)
+-- | Newtype wrapper to avoid orphan instance
+newtype TestInt = TestInt Int
+  deriving (Eq, Ord, Show)
+
+instance Hashable TestInt where
+  hashWithSalt s (TestInt x) = hashWithSalt s x
+
+instance PBS.Polarizable TestInt where
+  polarity (TestInt x)
+    | x < 0 = PBS.Negative (TestInt (negate x))
+    | otherwise = PBS.Positive (TestInt x)
+
+genPolarizedBloomSeqInt :: H.Gen (PBS.PolarizedBloomSeq TestInt)
 genPolarizedBloomSeqInt = do
-  x <- Gen.int (Range.linear 1 50)
-  y <- Gen.int (Range.linear 51 100)  -- Ensure x /= y
+  x <- TestInt <$> Gen.int (Range.linear 1 50)
+  y <- TestInt <$> Gen.int (Range.linear 51 100)  -- Ensure x /= y
   -- fromTwo with distinct positive ints always gives Merged
   case PBS.fromTwo x y of
     PBS.Merged pbs -> pure pbs
     _ -> error "Unexpected: fromTwo with distinct positive ints should give Merged"
-
-instance PBS.Polarizable Int where
-  polarity x
-    | x < 0 = PBS.Negative (negate x)
-    | otherwise = PBS.Positive x
 
 -------------------------------------------------------------------------------
 -- Eq Laws

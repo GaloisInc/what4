@@ -34,8 +34,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.Protocol.SMTLib2.Syntax as SMT2
 
 import Who2.Builder (newBuilder)
-import Who2.Builder.API (ExprBuilderAPI(..), interp)
-import Who2.Builder.API.Gen (SomeWidth(SomeWidth), GenConfig(..), defaultGenConfig, genBool, genBVAtWidth)
+import Who2.Builder.API (ExprBuilderAPI(BVUlt, BVSlt, EqPred), interp)
+import Who2.Builder.API.Gen (SomeWidth(SomeWidth), GenConfig(gcMaxDepth, gcBVWidths, gcNumBoolVars, gcNumBVVars, gcEnableDivisionOps), defaultGenConfig, genBool, genBVAtWidth)
 import Who2.Builder.TestBuilder (newTestBuilder)
 import qualified Who2.Protocol.SMTLib2 as Who2SMT2
 import qualified Who2.Expr.Logic as EL
