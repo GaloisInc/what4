@@ -3,10 +3,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | TODO
 module Who2.Simplification
-  ( discoverSimplificationTests
-  , discoverZ3ValidationTests
+  ( tests
   ) where
 
 import Control.Exception (catch, SomeException)
@@ -19,13 +17,25 @@ import System.Directory (listDirectory)
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath ((</>), takeExtension, dropExtension)
 import System.Process (readProcessWithExitCode)
-import Test.Tasty (TestTree)
+import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, assertEqual, assertFailure)
 import What4.SatResult (SatResult(Sat, Unsat, Unknown))
 
 import W4SMT2.Exec (ExecutionResult(erResults))
 import W4SMT2.Solve (solve)
 import Who2.Builder (newBuilder)
+
+-- | Main test tree for SMT2 file tests
+tests :: Bool -> IO TestTree
+tests z3Available = do
+  simplTests <- discoverSimplificationTests "test-data/simpl"
+  z3Tests <- if z3Available
+             then discoverZ3ValidationTests "test-data/simpl"
+             else return []
+  return $ testGroup "SMT2 File Tests"
+    [ testGroup "Simplification" simplTests
+    , testGroup "Z3 Validation" z3Tests
+    ]
 
 -- | Discover all .smt2 files in a directory and create simplification tests
 discoverSimplificationTests :: FilePath -> IO [TestTree]

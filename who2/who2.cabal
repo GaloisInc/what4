@@ -222,6 +222,7 @@ test-suite who2-tests
     Who2.Cryptol
     Who2.Filter
     Who2.Functions
+    Who2.Laws
     Who2.Laws.Bloom.HashedSeq
     Who2.Laws.Bloom.Map
     Who2.Laws.Bloom.Polarized
