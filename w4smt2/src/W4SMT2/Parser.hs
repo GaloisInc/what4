@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -80,17 +81,15 @@ parseSExps input =
   where
     parser = skipSpaceAndComments *> A.many' (SExp.parseSExp readString <* skipSpaceAndComments) <* A.endOfInput
 
-    skipSpaceAndComments :: A.Parser ()
-    skipSpaceAndComments = A.skipWhile (\c -> c `elem` (" \t\n\r" :: String)) <* A.skipMany comment
-      where
-        comment = A.char ';' *> A.skipWhile (/= '\n') *> (A.char '\n' >> pure () <|> pure ())
+-- | Skip whitespace and comments
+skipSpaceAndComments :: A.Parser ()
+skipSpaceAndComments = A.skipWhile (\c -> c `elem` (" \t\n\r" :: String)) <* A.skipMany comment
+  where
+    comment = A.char ';' *> A.skipWhile (/= '\n') *> (A.char '\n' >> pure () <|> pure ())
 
-    readString :: A.Parser Text
-    readString = do
-      _ <- A.char '"'
-      s <- A.takeWhile (/= '"')
-      _ <- A.char '"'
-      return s
+-- | Read a quoted string
+readString :: A.Parser Text
+readString = A.char '"' *> A.takeWhile (/= '"') <* A.char '"'
 
 -- | Parse a type s-expression
 parseType :: (?logStderr :: Text -> IO ()) => SExp.SExp -> IO (Some WBT.BaseTypeRepr)

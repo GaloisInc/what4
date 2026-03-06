@@ -27,7 +27,6 @@ import Control.Monad.Fail( MonadFail )
 #endif
 
 import           Control.Applicative
-import           Control.Monad (msum)
 import           Data.Attoparsec.Text
 import           Data.Char
 import           Data.Monoid
@@ -46,9 +45,9 @@ parseNextWord = do
   skipSpaceOrNewline
   mappend (takeWhile1 isAlphaNum) (fail "Unexpected end of stream.")
 
-data SExp = SAtom Text
-          | SString Text
-          | SApp [SExp]
+data SExp = SAtom !Text
+          | SString !Text
+          | SApp ![SExp]
   deriving (Eq, Ord, Show)
 
 instance IsString SExp where
@@ -62,7 +61,11 @@ isTokenChar '|' = False  -- Reserved for quoted symbols
 isTokenChar c = not (isSpace c)
 
 readToken :: Parser Text
-readToken = quotedSymbol <|> takeWhile1 isTokenChar
+readToken = do
+  c <- peekChar'
+  if c == '|'
+    then quotedSymbol
+    else takeWhile1 isTokenChar
   where
     quotedSymbol = do
       _ <- char '|'
@@ -79,10 +82,11 @@ parseSExp ::
   Parser SExp
 parseSExp readString = do
   skipSpaceOrNewline
-  msum [ char '(' *> parseSExpBody readString
-       , SString <$> readString
-       , SAtom <$> readToken
-       ]
+  c <- peekChar'
+  case c of
+    '(' -> char '(' *> parseSExpBody readString
+    '"' -> SString <$> readString
+    _   -> SAtom <$> readToken
 
 -- | Parses the body of an SExp after the opening '(' has already been
 -- parsed.
