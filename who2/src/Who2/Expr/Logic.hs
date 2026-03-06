@@ -34,6 +34,7 @@ import qualified Who2.Expr as E
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.Views as EV
+import Who2.Expr.InstanceHelpers (viaEq, viaOrd)
 
 -- | 'Polarizable' wrapper for boolean expressions used in both 'AndPred' and 'OrPred'
 newtype BoolExprWrapper f = BoolExprWrapper { unBoolExprWrapper :: f BT.BaseBoolType }
@@ -140,6 +141,7 @@ instance HasBaseType f => HasBaseType (LogicExpr f) where
       BVSlt {} -> BT.BaseBoolRepr
       BVSle {} -> BT.BaseBoolRepr
 
+
 -- TestEquality helper
 
 testEqPolarizedBloomSeqBool ::
@@ -164,23 +166,6 @@ comparePolarizedBloomSeqBool pbs1 pbs2 =
   PC.fromOrdering (liftCompare (\(BoolExprWrapper u) (BoolExprWrapper v) -> compare u v) pbs1 pbs2)
 {-# INLINE comparePolarizedBloomSeqBool #-}
 
--- PES TestEquality helper
-
-testEqPolarizedExprSetBool ::
-  PES.PolarizedExprSet (BoolExprWrapper f) ->
-  PES.PolarizedExprSet (BoolExprWrapper f) ->
-  Maybe (BT.BaseBoolType :~: BT.BaseBoolType)
-testEqPolarizedExprSetBool x y = if x == y then Just PC.Refl else Nothing
-{-# INLINE testEqPolarizedExprSetBool #-}
-
--- PES OrdF helper
-
-comparePolarizedExprSetBool ::
-  PES.PolarizedExprSet (BoolExprWrapper f) ->
-  PES.PolarizedExprSet (BoolExprWrapper f) ->
-  PC.OrderingF BT.BaseBoolType BT.BaseBoolType
-comparePolarizedExprSetBool x y = PC.fromOrdering (compare x y)
-{-# INLINE comparePolarizedExprSetBool #-}
 
 -- HashableF helper
 
@@ -209,7 +194,7 @@ instance (PC.TestEquality f) => PC.TestEquality (LogicExpr f) where
          , [|testEqPolarizedBloomSeqBool|]
          )
        , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
-         , [|testEqPolarizedExprSetBool|]
+         , [|viaEq|]
          )
        ]
      )
@@ -228,7 +213,7 @@ instance (PC.OrdF f, Ord (f BT.BaseBoolType)) => PC.OrdF (LogicExpr f) where
          , [|comparePolarizedBloomSeqBool|]
          )
        , ( PTH.ConType [t|PES.PolarizedExprSet|] `PTH.TypeApp` (PTH.ConType [t|BoolExprWrapper|] `PTH.TypeApp` PTH.AnyType)
-         , [|comparePolarizedExprSetBool|]
+         , [|viaOrd|]
          )
        ]
      )

@@ -38,6 +38,7 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import Who2.Expr (Expr, HasBaseType(baseType))
+import Who2.Expr.InstanceHelpers (viaEq, viaEqBy, viaOrd, viaOrdBy)
 import qualified Who2.Expr as E
 import qualified Who2.Expr.Bloom.Polarized as PBS
 import qualified Who2.Expr.Views as EV
@@ -308,45 +309,6 @@ width e = case baseType e of BT.BaseBVRepr w -> w
 
 ------------------------------------------------------------------------
 -- Helper functions for Template Haskell instances
-
-testEq :: PC.TestEquality f => f x -> f y -> Bool
-testEq x y = PC.isJust (PC.testEquality x y)
-{-# INLINE testEq #-}
-
-viaEq ::
-  Eq a =>
-  a ->
-  a ->
-  Maybe (b :~: b)
-viaEq x y = if x == y then Just Refl else Nothing
-{-# INLINE viaEq #-}
-
-viaEqBy ::
-  PC.TestEquality f =>
-  ((f x -> f x -> Bool) -> g f -> g f -> Bool) ->
-  g f ->
-  g f ->
-  Maybe (b :~: b)
-viaEqBy eqBy x y = if eqBy testEq x y then Just Refl else Nothing
-{-# INLINE viaEqBy #-}
-
-viaOrd ::
-  Ord a =>
-  a ->
-  a ->
-  PC.OrderingF b b
-viaOrd x y = PC.fromOrdering (compare x y)
-{-# INLINE viaOrd #-}
-
-viaOrdBy ::
-  PC.OrdF f =>
-  ((f x -> f y -> Ordering) -> a -> b -> Ordering) ->
-  a ->
-  b ->
-  PC.OrderingF c c
-viaOrdBy cmp x y =
-  PC.fromOrdering (cmp (\u v -> PC.toOrdering (PC.compareF u v)) x y)
-{-# INLINE viaOrdBy #-}
 
 $(return [])
 

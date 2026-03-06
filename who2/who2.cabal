@@ -190,6 +190,7 @@ library
     Who2.Expr.HashConsed.SemiRing.Product
     Who2.Expr.HashConsed.SemiRing.Sum
     Who2.Expr.HashConsed.Set
+    Who2.Expr.InstanceHelpers
     Who2.Expr.Logic
     Who2.Expr.Subst
     Who2.Expr.SymExpr
