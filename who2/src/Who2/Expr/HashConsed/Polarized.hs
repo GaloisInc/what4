@@ -1,5 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+
+-- | See "Who2.Expr.App"
 module Who2.Expr.HashConsed.Polarized
   ( PolarizedExprSet(..)
   , Simplified(..)

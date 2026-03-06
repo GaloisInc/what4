@@ -8,6 +8,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE LambdaCase #-}
 
+-- | See "Who2.Expr.App"
 module Who2.Expr.HashConsed.SemiRing.Product
   ( SRProd
   , eqBy

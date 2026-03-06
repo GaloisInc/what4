@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | See "Who2.Expr.App"
 module Who2.Expr.HashConsed.SemiRing.Sum
   ( SRSum(..)
   , eqBy

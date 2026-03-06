@@ -1,5 +1,6 @@
 {-# LANGUAGE StrictData #-}
 
+-- | See "Who2.Expr.App"
 module Who2.Expr.Bloom.HashedSeq
   ( HashedSeq
   , eqBy

@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+-- | See "Who2.Expr.App"
 module Who2.Expr.HashConsed.Map
   ( ExprMap
   , eqBy2
