@@ -9,7 +9,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Set as BS
-import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -27,13 +27,13 @@ genBloomSeqInt = do
 propBloomSeqEqReflexivity :: Property
 propBloomSeqEqReflexivity = H.property $ do
   bs <- H.forAll genBloomSeqInt
-  H.assert $ checkEqReflexivity (==) bs
+  H.assert $ Helpers.checkEqReflexivity (==) bs
 
 propBloomSeqEqSymmetry :: Property
 propBloomSeqEqSymmetry = H.property $ do
   bs1 <- H.forAll genBloomSeqInt
   bs2 <- H.forAll genBloomSeqInt
-  H.assert $ checkEqSymmetry (==) (==) bs1 bs2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) bs1 bs2
 
 propBloomSeqEqTransitivity :: Property
 propBloomSeqEqTransitivity = H.property $ do
@@ -43,7 +43,7 @@ propBloomSeqEqTransitivity = H.property $ do
   let eq12 = bs1 == bs2
   let eq23 = bs2 == bs3
   let eq13 = bs1 == bs3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Eq1 Consistency
@@ -70,7 +70,7 @@ propBloomSeqOrdAntisymmetry = H.property $ do
   bs2 <- H.forAll genBloomSeqInt
   let ord1 = compare bs1 bs2
   let ord2 = compare bs2 bs1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propBloomSeqOrdTransitivity :: Property
 propBloomSeqOrdTransitivity = H.property $ do
@@ -80,7 +80,7 @@ propBloomSeqOrdTransitivity = H.property $ do
   let ord12 = compare bs1 bs2
   let ord23 = compare bs2 bs3
   let ord13 = compare bs1 bs3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propBloomSeqOrdEqConsistency :: Property
 propBloomSeqOrdEqConsistency = H.property $ do
@@ -88,7 +88,7 @@ propBloomSeqOrdEqConsistency = H.property $ do
   bs2 <- H.forAll genBloomSeqInt
   let eq = bs1 == bs2
   let ord = compare bs1 bs2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Ord1 Consistency

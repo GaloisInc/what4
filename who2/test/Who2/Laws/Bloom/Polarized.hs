@@ -11,7 +11,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Polarized as PBS
-import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator and Instance
@@ -45,13 +45,13 @@ genPolarizedBloomSeqInt = do
 propPolarizedBloomSeqEqReflexivity :: Property
 propPolarizedBloomSeqEqReflexivity = H.property $ do
   pbs <- H.forAll genPolarizedBloomSeqInt
-  H.assert $ checkEqReflexivity (==) pbs
+  H.assert $ Helpers.checkEqReflexivity (==) pbs
 
 propPolarizedBloomSeqEqSymmetry :: Property
 propPolarizedBloomSeqEqSymmetry = H.property $ do
   pbs1 <- H.forAll genPolarizedBloomSeqInt
   pbs2 <- H.forAll genPolarizedBloomSeqInt
-  H.assert $ checkEqSymmetry (==) (==) pbs1 pbs2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) pbs1 pbs2
 
 propPolarizedBloomSeqEqTransitivity :: Property
 propPolarizedBloomSeqEqTransitivity = H.property $ do
@@ -61,7 +61,7 @@ propPolarizedBloomSeqEqTransitivity = H.property $ do
   let eq12 = pbs1 == pbs2
   let eq23 = pbs2 == pbs3
   let eq13 = pbs1 == pbs3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Eq1 Consistency
@@ -88,7 +88,7 @@ propPolarizedBloomSeqOrdAntisymmetry = H.property $ do
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   let ord1 = compare pbs1 pbs2
   let ord2 = compare pbs2 pbs1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propPolarizedBloomSeqOrdTransitivity :: Property
 propPolarizedBloomSeqOrdTransitivity = H.property $ do
@@ -98,7 +98,7 @@ propPolarizedBloomSeqOrdTransitivity = H.property $ do
   let ord12 = compare pbs1 pbs2
   let ord23 = compare pbs2 pbs3
   let ord13 = compare pbs1 pbs3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propPolarizedBloomSeqOrdEqConsistency :: Property
 propPolarizedBloomSeqOrdEqConsistency = H.property $ do
@@ -106,7 +106,7 @@ propPolarizedBloomSeqOrdEqConsistency = H.property $ do
   pbs2 <- H.forAll genPolarizedBloomSeqInt
   let eq = pbs1 == pbs2
   let ord = compare pbs1 pbs2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Ord1 Consistency

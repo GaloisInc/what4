@@ -17,7 +17,8 @@ import Test.Tasty.HUnit (testCase, assertBool)
 
 import Who2.Builder (newBuilder)
 import Who2.Builder.API (interp)
-import Who2.Builder.API.Gen (defaultGenConfig, gcEnableDivisionOps, genBool, genBVAtWidth, SomeWidth(SomeWidth), gcBVWidths)
+import Who2.Builder.API.Gen (defaultGenConfig, genBool, genBVAtWidth, SomeWidth(SomeWidth))
+import qualified Who2.Builder.API.Gen as Gen
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
 import qualified Who2.Expr.Logic as EL
@@ -208,9 +209,9 @@ testBoolCoverage = do
 -- | Run generator N times and collect top-level BV constructors
 testBVCoverage :: IO ()
 testBVCoverage = do
-  let cfg = defaultGenConfig { gcEnableDivisionOps = True }
+  let cfg = defaultGenConfig { Gen.gcEnableDivisionOps = True }
       numTests = 1024
-      widths = gcBVWidths cfg
+      widths = Gen.gcBVWidths cfg
 
   seen <- withIONonceGenerator $ \nonceGen -> do
     builder <- newBuilder nonceGen

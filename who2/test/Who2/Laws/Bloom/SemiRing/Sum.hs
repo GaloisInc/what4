@@ -19,7 +19,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
-import Who2.Laws.Helpers (MockExprBT, genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -43,13 +44,13 @@ genBloomSumBV8 = do
 propSRSumCustomEqReflexivity :: Property
 propSRSumCustomEqReflexivity = H.property $ do
   s <- H.forAll genBloomSumBV8
-  H.assert $ checkEqReflexivity (SRS.eqBy (==)) s
+  H.assert $ Helpers.checkEqReflexivity (SRS.eqBy (==)) s
 
 propSRSumCustomEqSymmetry :: Property
 propSRSumCustomEqSymmetry = H.property $ do
   s1 <- H.forAll genBloomSumBV8
   s2 <- H.forAll genBloomSumBV8
-  H.assert $ checkEqSymmetry (SRS.eqBy (==)) (SRS.eqBy (==)) s1 s2
+  H.assert $ Helpers.checkEqSymmetry (SRS.eqBy (==)) (SRS.eqBy (==)) s1 s2
 
 propSRSumCustomEqTransitivity :: Property
 propSRSumCustomEqTransitivity = H.property $ do
@@ -59,7 +60,7 @@ propSRSumCustomEqTransitivity = H.property $ do
   let eq12 = SRS.eqBy (==) s1 s2
   let eq23 = SRS.eqBy (==) s2 s3
   let eq13 = SRS.eqBy (==) s1 s3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Custom Ordering (ordBy)
@@ -77,7 +78,7 @@ propSRSumCustomOrdAntisymmetry = H.property $ do
   s2 <- H.forAll genBloomSumBV8
   let ord1 = SRS.ordBy compare s1 s2
   let ord2 = SRS.ordBy compare s2 s1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propSRSumCustomOrdTransitivity :: Property
 propSRSumCustomOrdTransitivity = H.property $ do
@@ -87,7 +88,7 @@ propSRSumCustomOrdTransitivity = H.property $ do
   let ord12 = SRS.ordBy compare s1 s2
   let ord23 = SRS.ordBy compare s2 s3
   let ord13 = SRS.ordBy compare s1 s3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propSRSumCustomOrdEqConsistency :: Property
 propSRSumCustomOrdEqConsistency = H.property $ do
@@ -95,7 +96,7 @@ propSRSumCustomOrdEqConsistency = H.property $ do
   s2 <- H.forAll genBloomSumBV8
   let eq = SRS.eqBy (==) s1 s2
   let ord = SRS.ordBy compare s1 s2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree

@@ -2,15 +2,29 @@
 
 -- | Who2 test suite
 --
--- TODO
+-- As a foundation for verification tools, the correctness of Who2 is crucial.
+-- We try hard to maintain fairly extensive tests.
+--
+-- For more information about each kind of test, see the corresponding modules:
+--
+-- Individual tests:
+--
+-- * "Who2.TestAnnotations"
+-- * "Who2.Cryptol"
+-- * "Who2.Functions"
+-- * "Who2.SMTLib2"
+-- * "Who2.Simplification"
+--
+-- Property tests:
+--
+-- * "Who2.Builder.Simplification"
+-- * "Who2.Laws" -- TODO
+-- * "Who2.Builder.Invariants"
 module Main (main) where
 
 import System.Directory (findExecutable)
 import System.IO (hPutStrLn, stderr)
 import Test.Tasty (TestTree, defaultMain, testGroup)
-import Test.Tasty.HUnit (testCase, assertBool)
-
-import Who2.Internal (assertionsEnabled)
 import qualified Who2.Builder.API.GenTests as GenTests
 import qualified Who2.Builder.Invariants as Invariants
 import qualified Who2.Builder.Simplification as Props
@@ -57,24 +71,23 @@ z3ValidationTests z3Available =
 main :: IO ()
 main = do
   z3Available <- checkZ3Available
-  simplTests <- Simpl.discoverSimplificationTests "test-data/simpl"
-  z3Tests <- z3ValidationTests z3Available
-  smtLib2Tests <- SMTLib2.tests
-  functionTests <- Functions.tests
   annotationTests <- TestAnnotations.tests
   cryptolTests <- Cryptol.tests
+  functionTests <- Functions.tests
+  smtLib2Tests <- SMTLib2.tests
+  simplTests <- Simpl.discoverSimplificationTests "test-data/simpl"
+  z3Tests <- z3ValidationTests z3Available
 
   defaultMain $ testGroup "Who2 Tests"
-    [ -- See Note [Asserts] in who2
-      testCase "assertions enabled" $ do
-        assertsEnabled <- assertionsEnabled
-        assertBool "assertions should be enabled" assertsEnabled
+    [ annotationTests
+    , cryptolTests
+    , functionTests
+    , smtLib2Tests
     , testGroup "SMT2 File Tests"
         [ testGroup "Simplification" simplTests
         , testGroup "Z3 Validation" z3Tests
         ]
-    , smtLib2Tests
-    , functionTests
+    , GenTests.tests
     , testGroup "Property Tests"
         [ Props.tests
         , LawsExpr.tests

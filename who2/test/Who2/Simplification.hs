@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | TODO
 module Who2.Simplification
   ( discoverSimplificationTests
   , discoverZ3ValidationTests

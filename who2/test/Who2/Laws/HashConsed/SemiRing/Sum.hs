@@ -18,7 +18,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
-import Who2.Laws.Helpers (MockExprBT, genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -42,13 +43,13 @@ genHashConsedSumBV8 = do
 propSRSumCustomEqReflexivity :: Property
 propSRSumCustomEqReflexivity = H.property $ do
   s <- H.forAll genHashConsedSumBV8
-  H.assert $ checkEqReflexivity (HCSR.eqBy (==)) s
+  H.assert $ Helpers.checkEqReflexivity (HCSR.eqBy (==)) s
 
 propSRSumCustomEqSymmetry :: Property
 propSRSumCustomEqSymmetry = H.property $ do
   s1 <- H.forAll genHashConsedSumBV8
   s2 <- H.forAll genHashConsedSumBV8
-  H.assert $ checkEqSymmetry (HCSR.eqBy (==)) (HCSR.eqBy (==)) s1 s2
+  H.assert $ Helpers.checkEqSymmetry (HCSR.eqBy (==)) (HCSR.eqBy (==)) s1 s2
 
 propSRSumCustomEqTransitivity :: Property
 propSRSumCustomEqTransitivity = H.property $ do
@@ -58,7 +59,7 @@ propSRSumCustomEqTransitivity = H.property $ do
   let eq12 = HCSR.eqBy (==) s1 s2
   let eq23 = HCSR.eqBy (==) s2 s3
   let eq13 = HCSR.eqBy (==) s1 s3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Custom Ordering (ordBy)
@@ -76,7 +77,7 @@ propSRSumCustomOrdAntisymmetry = H.property $ do
   s2 <- H.forAll genHashConsedSumBV8
   let ord1 = HCSR.ordBy compare s1 s2
   let ord2 = HCSR.ordBy compare s2 s1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propSRSumCustomOrdTransitivity :: Property
 propSRSumCustomOrdTransitivity = H.property $ do
@@ -86,7 +87,7 @@ propSRSumCustomOrdTransitivity = H.property $ do
   let ord12 = HCSR.ordBy compare s1 s2
   let ord23 = HCSR.ordBy compare s2 s3
   let ord13 = HCSR.ordBy compare s1 s3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propSRSumCustomOrdEqConsistency :: Property
 propSRSumCustomOrdEqConsistency = H.property $ do
@@ -94,7 +95,7 @@ propSRSumCustomOrdEqConsistency = H.property $ do
   s2 <- H.forAll genHashConsedSumBV8
   let eq = HCSR.eqBy (==) s1 s2
   let ord = HCSR.ordBy compare s1 s2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree

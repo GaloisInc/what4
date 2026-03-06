@@ -24,7 +24,8 @@ module Who2.Expr.HashConsed.Map
   ) where
 
 import Data.Hashable (Hashable)
-import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare), Eq2(liftEq2), Ord2(liftCompare2))
+import qualified Data.Functor.Classes as FC
+import Data.Functor.Classes (Eq1, Ord1, Eq2, Ord2)
 import qualified Data.IntMap.Strict as IM
 
 import Who2.Expr (HasId(getId))
@@ -44,7 +45,7 @@ eqBy2 ::
   ExprMap k2 v2 ->
   Bool
 eqBy2 eqK eqV (ExprMap x) (ExprMap y) =
-  liftEq (\(k1, u) (k2, v) -> eqK k1 k2 && eqV u v) x y
+  FC.liftEq (\(k1, u) (k2, v) -> eqK k1 k2 && eqV u v) x y
 {-# INLINE eqBy2 #-}
 
 -- | Like 'liftCompare', but without typeclass constraints
@@ -54,7 +55,7 @@ ordBy2 ::
   ExprMap k1 v1 ->
   ExprMap k2 v2 ->
   Ordering
-ordBy2 cmpK cmpV (ExprMap x) (ExprMap y) = liftCompare cmp' x y
+ordBy2 cmpK cmpV (ExprMap x) (ExprMap y) = FC.liftCompare cmp' x y
   where cmp' (k1, v1) (k2, v2) =
           case cmpK k1 k2 of
             EQ -> cmpV v1 v2

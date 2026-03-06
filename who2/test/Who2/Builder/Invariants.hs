@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | TODO
 module Who2.Builder.Invariants (tests) where
 
 import Control.Monad.IO.Class (liftIO)
@@ -21,7 +22,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.Utils.BVDomain as BVD
 import Who2.Builder (newBuilder)
 import Who2.Builder.API (interp)
-import Who2.Builder.API.Gen (GenConfig(gcBVWidths, gcMaxDepth), SomeWidth(SomeWidth), defaultGenConfig, genBool, genBVAtWidth)
+import Who2.Builder.API.Gen (SomeWidth(SomeWidth), defaultGenConfig, genBool, genBVAtWidth)
+import qualified Who2.Builder.API.Gen as Gen
 import qualified Hedgehog.Gen as Gen
 import qualified Who2.Expr as E
 import qualified Who2.Expr.App as App
@@ -162,7 +164,7 @@ checkHashConsedProduct _prod _ctxt = checked
 propNoEmptyOrSingletonStructures :: Property
 propNoEmptyOrSingletonStructures = H.withDiscards 10000 $ H.property $ do
   -- Use larger depth to increase chance of creating complex structures
-  let cfg = defaultGenConfig { gcMaxDepth = 10 }
+  let cfg = defaultGenConfig { Gen.gcMaxDepth = 10 }
   api <- H.forAll $ genBool cfg
   CheckResult checkedAny err <- liftIO $ withIONonceGenerator $ \gen -> do
     builder <- newBuilder gen
@@ -180,8 +182,8 @@ propNoEmptyOrSingletonStructures = H.withDiscards 10000 $ H.property $ do
 propNoEmptyOrSingletonStructuresBV :: Property
 propNoEmptyOrSingletonStructuresBV = H.withDiscards 10000 $ H.property $ do
   -- Use larger depth to increase chance of creating complex structures
-  let cfg = defaultGenConfig { gcMaxDepth = 10 }
-  SomeWidth w <- H.forAll $ Gen.element (gcBVWidths cfg)
+  let cfg = defaultGenConfig { Gen.gcMaxDepth = 10 }
+  SomeWidth w <- H.forAll $ Gen.element (Gen.gcBVWidths cfg)
   api <- H.forAll $ genBVAtWidth cfg w
   CheckResult checkedAny err <- liftIO $ withIONonceGenerator $ \gen -> do
     builder <- newBuilder gen
@@ -203,7 +205,7 @@ propNoEmptyOrSingletonStructuresBV = H.withDiscards 10000 $ H.property $ do
 -- | Property: A built expression is a literal if and only if its abstract domain is a singleton
 propSingletonAbstractDomainIffLiteral :: Property
 propSingletonAbstractDomainIffLiteral = property $ do
-  SomeWidth w <- forAll $ Gen.element (gcBVWidths defaultGenConfig)
+  SomeWidth w <- forAll $ Gen.element (Gen.gcBVWidths defaultGenConfig)
   expr <- forAll $ genBVAtWidth defaultGenConfig w
   (isLit, isSingleton) <- liftIO $ withIONonceGenerator $ \gen -> do
     builder <- newBuilder gen

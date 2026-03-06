@@ -12,7 +12,8 @@ import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.Set as ES
-import Who2.Laws.Helpers (MockExpr(MockExpr), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity)
+import Who2.Laws.Helpers (MockExpr(MockExpr))
+import qualified Who2.Laws.Helpers as Helpers
 
 genPolarizedExprSet :: H.Gen (PES.PolarizedExprSet MockExpr)
 genPolarizedExprSet = do
@@ -29,13 +30,13 @@ genPolarizedExprSet = do
 propPolarizedExprSetEqReflexivity :: Property
 propPolarizedExprSetEqReflexivity = H.property $ do
   pes <- H.forAll genPolarizedExprSet
-  H.assert $ checkEqReflexivity (==) pes
+  H.assert $ Helpers.checkEqReflexivity (==) pes
 
 propPolarizedExprSetEqSymmetry :: Property
 propPolarizedExprSetEqSymmetry = H.property $ do
   pes1 <- H.forAll genPolarizedExprSet
   pes2 <- H.forAll genPolarizedExprSet
-  H.assert $ checkEqSymmetry (==) (==) pes1 pes2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) pes1 pes2
 
 propPolarizedExprSetEqTransitivity :: Property
 propPolarizedExprSetEqTransitivity = H.property $ do
@@ -45,7 +46,7 @@ propPolarizedExprSetEqTransitivity = H.property $ do
   let eq12 = pes1 == pes2
   let eq23 = pes2 == pes3
   let eq13 = pes1 == pes3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Hashable Laws

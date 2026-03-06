@@ -10,7 +10,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.Map as BKv
-import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -33,13 +33,13 @@ genBloomKvIntString = do
 propBloomKvEqReflexivity :: Property
 propBloomKvEqReflexivity = H.property $ do
   bkv <- H.forAll genBloomKvIntString
-  H.assert $ checkEqReflexivity (==) bkv
+  H.assert $ Helpers.checkEqReflexivity (==) bkv
 
 propBloomKvEqSymmetry :: Property
 propBloomKvEqSymmetry = H.property $ do
   bkv1 <- H.forAll genBloomKvIntString
   bkv2 <- H.forAll genBloomKvIntString
-  H.assert $ checkEqSymmetry (==) (==) bkv1 bkv2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) bkv1 bkv2
 
 propBloomKvEqTransitivity :: Property
 propBloomKvEqTransitivity = H.property $ do
@@ -49,7 +49,7 @@ propBloomKvEqTransitivity = H.property $ do
   let eq12 = bkv1 == bkv2
   let eq23 = bkv2 == bkv3
   let eq13 = bkv1 == bkv3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Eq1 Consistency
@@ -76,7 +76,7 @@ propBloomKvOrdAntisymmetry = H.property $ do
   bkv2 <- H.forAll genBloomKvIntString
   let ord1 = compare bkv1 bkv2
   let ord2 = compare bkv2 bkv1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propBloomKvOrdTransitivity :: Property
 propBloomKvOrdTransitivity = H.property $ do
@@ -86,7 +86,7 @@ propBloomKvOrdTransitivity = H.property $ do
   let ord12 = compare bkv1 bkv2
   let ord23 = compare bkv2 bkv3
   let ord13 = compare bkv1 bkv3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propBloomKvOrdEqConsistency :: Property
 propBloomKvOrdEqConsistency = H.property $ do
@@ -94,7 +94,7 @@ propBloomKvOrdEqConsistency = H.property $ do
   bkv2 <- H.forAll genBloomKvIntString
   let eq = bkv1 == bkv2
   let ord = compare bkv1 bkv2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Ord1 Consistency

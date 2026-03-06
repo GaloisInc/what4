@@ -8,7 +8,8 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.HashConsed.Set as ES
-import Who2.Laws.Helpers (MockExpr(MockExpr), checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExpr(MockExpr))
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -26,13 +27,13 @@ genExprSetInt = do
 propExprSetEqReflexivity :: Property
 propExprSetEqReflexivity = H.property $ do
   es <- H.forAll genExprSetInt
-  H.assert $ checkEqReflexivity (==) es
+  H.assert $ Helpers.checkEqReflexivity (==) es
 
 propExprSetEqSymmetry :: Property
 propExprSetEqSymmetry = H.property $ do
   es1 <- H.forAll genExprSetInt
   es2 <- H.forAll genExprSetInt
-  H.assert $ checkEqSymmetry (==) (==) es1 es2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) es1 es2
 
 propExprSetEqTransitivity :: Property
 propExprSetEqTransitivity = H.property $ do
@@ -42,7 +43,7 @@ propExprSetEqTransitivity = H.property $ do
   let eq12 = es1 == es2
   let eq23 = es2 == es3
   let eq13 = es1 == es3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Ord Laws
@@ -59,7 +60,7 @@ propExprSetOrdAntisymmetry = H.property $ do
   es2 <- H.forAll genExprSetInt
   let ord1 = compare es1 es2
   let ord2 = compare es2 es1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propExprSetOrdTransitivity :: Property
 propExprSetOrdTransitivity = H.property $ do
@@ -69,7 +70,7 @@ propExprSetOrdTransitivity = H.property $ do
   let ord12 = compare es1 es2
   let ord23 = compare es2 es3
   let ord13 = compare es1 es3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propExprSetOrdEqConsistency :: Property
 propExprSetOrdEqConsistency = H.property $ do
@@ -77,7 +78,7 @@ propExprSetOrdEqConsistency = H.property $ do
   es2 <- H.forAll genExprSetInt
   let eq = es1 == es2
   let ord = compare es1 es2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree

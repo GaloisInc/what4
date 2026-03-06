@@ -17,7 +17,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
-import Who2.Laws.Helpers (MockExprBT, genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -40,13 +41,13 @@ genHashConsedProductBV8 = do
 propSRProductCustomEqReflexivity :: Property
 propSRProductCustomEqReflexivity = H.property $ do
   p <- H.forAll genHashConsedProductBV8
-  H.assert $ checkEqReflexivity (HCPR.eqBy (==)) p
+  H.assert $ Helpers.checkEqReflexivity (HCPR.eqBy (==)) p
 
 propSRProductCustomEqSymmetry :: Property
 propSRProductCustomEqSymmetry = H.property $ do
   p1 <- H.forAll genHashConsedProductBV8
   p2 <- H.forAll genHashConsedProductBV8
-  H.assert $ checkEqSymmetry (HCPR.eqBy (==)) (HCPR.eqBy (==)) p1 p2
+  H.assert $ Helpers.checkEqSymmetry (HCPR.eqBy (==)) (HCPR.eqBy (==)) p1 p2
 
 propSRProductCustomEqTransitivity :: Property
 propSRProductCustomEqTransitivity = H.property $ do
@@ -56,7 +57,7 @@ propSRProductCustomEqTransitivity = H.property $ do
   let eq12 = HCPR.eqBy (==) p1 p2
   let eq23 = HCPR.eqBy (==) p2 p3
   let eq13 = HCPR.eqBy (==) p1 p3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Custom Ordering (ordBy)
@@ -74,7 +75,7 @@ propSRProductCustomOrdAntisymmetry = H.property $ do
   p2 <- H.forAll genHashConsedProductBV8
   let ord1 = HCPR.ordBy compare p1 p2
   let ord2 = HCPR.ordBy compare p2 p1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propSRProductCustomOrdTransitivity :: Property
 propSRProductCustomOrdTransitivity = H.property $ do
@@ -84,7 +85,7 @@ propSRProductCustomOrdTransitivity = H.property $ do
   let ord12 = HCPR.ordBy compare p1 p2
   let ord23 = HCPR.ordBy compare p2 p3
   let ord13 = HCPR.ordBy compare p1 p3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propSRProductCustomOrdEqConsistency :: Property
 propSRProductCustomOrdEqConsistency = H.property $ do
@@ -92,7 +93,7 @@ propSRProductCustomOrdEqConsistency = H.property $ do
   p2 <- H.forAll genHashConsedProductBV8
   let eq = HCPR.eqBy (==) p1 p2
   let ord = HCPR.ordBy compare p1 p2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree

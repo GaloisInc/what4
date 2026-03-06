@@ -26,7 +26,8 @@ module Who2.Expr.Bloom.Map
     threshold
   ) where
 
-import Data.Functor.Classes (Eq1(liftEq), Ord1(liftCompare), Eq2(liftEq2), Ord2(liftCompare2))
+import qualified Data.Functor.Classes as FC
+import Data.Functor.Classes (Eq1, Ord1, Eq2, Ord2)
 import Data.Hashable (Hashable(hashWithSalt))
 import qualified Data.Foldable as F
 import qualified Who2.Expr.Bloom.Filter as Filt
@@ -89,7 +90,7 @@ instance Foldable (BloomKv k) where
   foldMap f = foldMap (f . kvValue) . kvs
   {-# INLINE foldMap #-}
 
--- | Like 'liftCompare2', but without typeclass constraints
+-- | Like 'FC.liftCompare2', but without typeclass constraints
 eqBy2 ::
   (k1 -> k2 -> Bool) ->
   (v1 -> v2 -> Bool) ->
@@ -123,7 +124,7 @@ instance Eq2 BloomKv where
   liftEq2 = eqBy2
   {-# INLINE liftEq2 #-}
 
--- | Like 'liftCompare2', but without typeclass constraints
+-- | Like 'FC.liftCompare2', but without typeclass constraints
 ordBy2 ::
   (k1 -> k2 -> Ordering) ->
   (v1 -> v2 -> Ordering) ->

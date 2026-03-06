@@ -35,7 +35,7 @@ module Who2.Builder.Ops.BV
 
 import qualified Data.BitVector.Sized as BV
 
-import           Data.Parameterized.NatRepr (type (<=), type (+), NatRepr, addNat, LeqProof(LeqProof), leqAddPos, withLeqProof, leqTrans, knownNat)
+import           Data.Parameterized.NatRepr (type (<=), type (+), NatRepr, addNat, knownNat)
 import qualified Data.Parameterized.NatRepr as NR
 import qualified Data.Parameterized.Classes as PC
 
@@ -821,7 +821,7 @@ bvConcat ::
 bvConcat alloc x y =
   let wx = EBV.width x
       wy = EBV.width y
-  in withLeqProof (leqAddPos wx wy) $
+  in NR.withLeqProof (NR.leqAddPos wx wy) $
     -- Constant folding
     -- test: bvconcat-const
     if | Just (_, bvx) <- asBVLit x
@@ -869,7 +869,7 @@ bvZext ::
 bvZext alloc w' x =
   let wx = EBV.width x in
   -- Prove 1 <= w' from 1 <= w + 1 and w + 1 <= w'
-  withLeqProof (leqTrans (leqAddPos wx (knownNat @1)) (LeqProof :: LeqProof (w + 1) w')) $
+  NR.withLeqProof (NR.leqTrans (NR.leqAddPos wx (knownNat @1)) (NR.LeqProof :: NR.LeqProof (w + 1) w')) $
     -- Constant folding
     -- test: bvzext-const
     if | Just (_, bv) <- asBVLit x ->
@@ -892,7 +892,7 @@ bvSext ::
 bvSext alloc w' x =
   let wx = EBV.width x in
   -- Prove 1 <= w' from 1 <= w + 1 and w + 1 <= w'
-  withLeqProof (leqTrans (leqAddPos wx (knownNat @1)) (LeqProof :: LeqProof (w + 1) w')) $
+  NR.withLeqProof (NR.leqTrans (NR.leqAddPos wx (knownNat @1)) (NR.LeqProof :: NR.LeqProof (w + 1) w')) $
     -- Constant folding
     -- test: bvsext-const
     if | Just (_, bv) <- asBVLit x ->

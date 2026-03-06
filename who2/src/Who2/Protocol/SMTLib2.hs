@@ -70,7 +70,7 @@ import qualified Who2.Expr.HashConsed.Polarized as PES
 import qualified Who2.Expr.HashConsed.SemiRing.Sum as HCSR
 import qualified Who2.Expr.HashConsed.SemiRing.Product as HCPR
 
-import Who2.Config (emitAbstractDomainConstraintsForBoundVars, emitAbstractDomainConstraintsForAllBV)
+import qualified Who2.Config as Config
 
 ------------------------------------------------------------------------
 -- Variable Cache
@@ -219,7 +219,7 @@ mkExprWithCache ::
   IO SMT2.Term
 mkExprWithCache cache expr = do
   baseTerm <- mkAppWithCache cache (E.eApp expr)
-  if emitAbstractDomainConstraintsForAllBV
+  if Config.emitAbstractDomainConstraintsForAllBV
     then return $ applyExprConstraints (E.baseType expr) (E.eAbsVal expr) baseTerm
     else return baseTerm
 
@@ -266,7 +266,7 @@ mkBoundVar ::
   IO SMT2.Term
 mkBoundVar cache var = do
   baseTerm <- lookupOrGenVarName cache (WE.bvarId var) (WEA.bvarType var)
-  if emitAbstractDomainConstraintsForBoundVars
+  if Config.emitAbstractDomainConstraintsForBoundVars
     then return $ applyBoundVarConstraints
                     (WEA.bvarType var)
                     (WEA.bvarAbstractValue var)

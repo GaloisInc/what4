@@ -19,7 +19,8 @@ import qualified What4.BaseTypes as BT
 import qualified What4.SemiRing as SR
 
 import qualified Who2.Expr.Bloom.SemiRing.Product as SRP
-import Who2.Laws.Helpers (MockExprBT, genMockExprBT, checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -42,13 +43,13 @@ genBloomProductBV8 = do
 propSRProductCustomEqReflexivity :: Property
 propSRProductCustomEqReflexivity = H.property $ do
   p <- H.forAll genBloomProductBV8
-  H.assert $ checkEqReflexivity (SRP.eqBy (==)) p
+  H.assert $ Helpers.checkEqReflexivity (SRP.eqBy (==)) p
 
 propSRProductCustomEqSymmetry :: Property
 propSRProductCustomEqSymmetry = H.property $ do
   p1 <- H.forAll genBloomProductBV8
   p2 <- H.forAll genBloomProductBV8
-  H.assert $ checkEqSymmetry (SRP.eqBy (==)) (SRP.eqBy (==)) p1 p2
+  H.assert $ Helpers.checkEqSymmetry (SRP.eqBy (==)) (SRP.eqBy (==)) p1 p2
 
 propSRProductCustomEqTransitivity :: Property
 propSRProductCustomEqTransitivity = H.property $ do
@@ -58,7 +59,7 @@ propSRProductCustomEqTransitivity = H.property $ do
   let eq12 = SRP.eqBy (==) p1 p2
   let eq23 = SRP.eqBy (==) p2 p3
   let eq13 = SRP.eqBy (==) p1 p3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Custom Ordering (ordBy)
@@ -76,7 +77,7 @@ propSRProductCustomOrdAntisymmetry = H.property $ do
   p2 <- H.forAll genBloomProductBV8
   let ord1 = SRP.ordBy compare p1 p2
   let ord2 = SRP.ordBy compare p2 p1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propSRProductCustomOrdTransitivity :: Property
 propSRProductCustomOrdTransitivity = H.property $ do
@@ -86,7 +87,7 @@ propSRProductCustomOrdTransitivity = H.property $ do
   let ord12 = SRP.ordBy compare p1 p2
   let ord23 = SRP.ordBy compare p2 p3
   let ord13 = SRP.ordBy compare p1 p3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propSRProductCustomOrdEqConsistency :: Property
 propSRProductCustomOrdEqConsistency = H.property $ do
@@ -94,7 +95,7 @@ propSRProductCustomOrdEqConsistency = H.property $ do
   p2 <- H.forAll genBloomProductBV8
   let eq = SRP.eqBy (==) p1 p2
   let ord = SRP.ordBy compare p1 p2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Test Tree

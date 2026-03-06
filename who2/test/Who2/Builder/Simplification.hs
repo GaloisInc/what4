@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | TODO
 module Who2.Builder.Simplification
   ( tests
   ) where
@@ -25,7 +26,7 @@ import System.Timeout (timeout)
 
 import Data.Parameterized.Nonce (withIONonceGenerator)
 import qualified Hedgehog as H
-import Hedgehog (Property, PropertyT, property, forAll, annotate, failure, assert)
+import Hedgehog (Property, PropertyT)
 import qualified Hedgehog.Gen as Gen
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
@@ -35,7 +36,8 @@ import qualified What4.Protocol.SMTLib2.Syntax as SMT2
 
 import Who2.Builder (newBuilder)
 import Who2.Builder.API (ExprBuilderAPI(BVUlt, BVSlt, EqPred), interp)
-import Who2.Builder.API.Gen (SomeWidth(SomeWidth), GenConfig(gcMaxDepth, gcBVWidths, gcNumBoolVars, gcNumBVVars, gcEnableDivisionOps), defaultGenConfig, genBool, genBVAtWidth)
+import Who2.Builder.API.Gen (SomeWidth(SomeWidth), defaultGenConfig, genBool, genBVAtWidth)
+import qualified Who2.Builder.API.Gen as Gen
 import Who2.Builder.TestBuilder (newTestBuilder)
 import qualified Who2.Protocol.SMTLib2 as Who2SMT2
 import qualified Who2.Expr.Logic as EL
@@ -98,34 +100,34 @@ checkSimplificationPreserved expr = do
     (Right simpleRes, Right naiveRes) | simpleRes == naiveRes ->
       pure ()  -- Equisatisfiable
     (Right simpleRes, Right naiveRes) -> do
-      annotate $ "Expression: " ++ show expr
-      annotate $ "Simplified result: " ++ Text.unpack simpleRes
-      annotate $ "Naive result: " ++ Text.unpack naiveRes
-      annotate "Results differ - not equisatisfiable"
-      failure
+      H.annotate $ "Expression: " ++ show expr
+      H.annotate $ "Simplified result: " ++ Text.unpack simpleRes
+      H.annotate $ "Naive result: " ++ Text.unpack naiveRes
+      H.annotate "Results differ - not equisatisfiable"
+      H.failure
     (Left "term rendering timeout", Left _) -> do
-      annotate "Skipped - naive term too large to render"
+      H.annotate "Skipped - naive term too large to render"
       H.discard
     (Left err, _) | "term rendering timeout" `isInfixOf` err -> do
-      annotate "Skipped - term too large to render"
+      H.annotate "Skipped - term too large to render"
       H.discard
     (Left err, _) | "z3 timeout" `isInfixOf` err -> do
-      annotate "Skipped - Z3 timeout (query too complex)"
+      H.annotate "Skipped - Z3 timeout (query too complex)"
       H.discard
     (_, Left err) | "term rendering timeout" `isInfixOf` err -> do
-      annotate "Skipped - term too large to render"
+      H.annotate "Skipped - term too large to render"
       H.discard
     (_, Left err) | "z3 timeout" `isInfixOf` err -> do
-      annotate "Skipped - Z3 timeout (query too complex)"
+      H.annotate "Skipped - Z3 timeout (query too complex)"
       H.discard
     (Left err, _) -> do
-      annotate $ "Expression: " ++ show expr
-      annotate $ "Z3 error (simplified): " ++ err
-      failure
+      H.annotate $ "Expression: " ++ show expr
+      H.annotate $ "Z3 error (simplified): " ++ err
+      H.failure
     (_, Left err) -> do
-      annotate $ "Expression: " ++ show expr
-      annotate $ "Z3 error (naive): " ++ err
-      failure
+      H.annotate $ "Expression: " ++ show expr
+      H.annotate $ "Z3 error (naive): " ++ err
+      H.failure
 
 -- | Render a Term to Text
 renderTerm :: SMT2.Term -> Text.Text
@@ -147,33 +149,33 @@ runZ3WithQuery query = catch
   )
   (\(e :: SomeException) -> pure $ Left $ "Exception running z3: " ++ show e)
 
--- | Main property: simplifications preserve semantics (boolean expressions only)
+-- | Main H.property: simplifications preserve semantics (boolean expressions only)
 propSimplificationCorrect :: Property
-propSimplificationCorrect = property $ do
-  expr <- forAll $ genBool defaultGenConfig
+propSimplificationCorrect = H.property $ do
+  expr <- H.forAll $ genBool defaultGenConfig
   checkSimplificationPreserved expr
 
 -- | Property for deeper boolean expressions
 propDeepSimplifications :: Property
-propDeepSimplifications = property $ do
-  let deepConfig = defaultGenConfig { gcMaxDepth = 10 }
-  expr <- forAll $ genBool deepConfig
+propDeepSimplifications = H.property $ do
+  let deepConfig = defaultGenConfig { Gen.gcMaxDepth = 10 }
+  expr <- H.forAll $ genBool deepConfig
   checkSimplificationPreserved expr
 
 -- | Property for Boolean-only expressions
 propBoolSimplifications :: Property
-propBoolSimplifications = property $ do
-  expr <- forAll $ genBool defaultGenConfig
+propBoolSimplifications = H.property $ do
+  expr <- H.forAll $ genBool defaultGenConfig
   checkSimplificationPreserved expr
 
 -- | Property for BV arithmetic expressions (generates boolean comparisons)
 propBvArithSimplifications :: Property
-propBvArithSimplifications = property $ do
-  SomeWidth w <- forAll $ Gen.element (gcBVWidths defaultGenConfig)
-  bvExpr1 <- forAll $ genBVAtWidth defaultGenConfig w
-  bvExpr2 <- forAll $ genBVAtWidth defaultGenConfig w
+propBvArithSimplifications = H.property $ do
+  SomeWidth w <- H.forAll $ Gen.element (Gen.gcBVWidths defaultGenConfig)
+  bvExpr1 <- H.forAll $ genBVAtWidth defaultGenConfig w
+  bvExpr2 <- H.forAll $ genBVAtWidth defaultGenConfig w
   -- Turn BV expressions into a boolean by comparing them
-  expr <- forAll $ Gen.element
+  expr <- H.forAll $ Gen.element
     [ BVUlt bvExpr1 bvExpr2
     , BVSlt bvExpr1 bvExpr2
     , EqPred bvExpr1 bvExpr2
@@ -182,12 +184,12 @@ propBvArithSimplifications = property $ do
 
 -- | Property: Expressions with no variables and no division operations reduce to literals
 propNoVariablesReducesToLiteral :: Property
-propNoVariablesReducesToLiteral = property $ do
-  let noVarConfig = defaultGenConfig { gcNumBoolVars = 0, gcNumBVVars = 0, gcEnableDivisionOps = False }
-  annotate "Generating expression..."
+propNoVariablesReducesToLiteral = H.property $ do
+  let noVarConfig = defaultGenConfig { Gen.gcNumBoolVars = 0, Gen.gcNumBVVars = 0, Gen.gcEnableDivisionOps = False }
+  H.annotate "Generating expression..."
   -- Cap the size at 5 to prevent expression explosion while still testing nested expressions
-  expr <- forAll $ Gen.resize 5 (genBool noVarConfig)
-  annotate "Building with Builder..."
+  expr <- H.forAll $ Gen.resize 5 (genBool noVarConfig)
+  H.annotate "Building with Builder..."
   isLiteral <- liftIO $ withIONonceGenerator $ \gen -> do
     builder <- newBuilder gen
 
@@ -197,8 +199,8 @@ propNoVariablesReducesToLiteral = property $ do
     -- Check if Builder reduced to a literal
     pure $ checkExprIsLiteral simplifiedExpr
 
-  annotate $ "Is literal: " ++ show isLiteral
-  assert isLiteral
+  H.annotate $ "Is literal: " ++ show isLiteral
+  H.assert isLiteral
   where
     checkExprIsLiteral ::
       forall t tp.

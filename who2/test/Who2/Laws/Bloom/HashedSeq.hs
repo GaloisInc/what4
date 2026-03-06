@@ -12,7 +12,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hedgehog (testProperty)
 
 import qualified Who2.Expr.Bloom.HashedSeq as HS
-import Who2.Laws.Helpers (checkEqReflexivity, checkEqSymmetry, checkEqTransitivity, checkOrdTransitivity, checkOrdAntisymmetry, checkOrdEqConsistency)
+import qualified Who2.Laws.Helpers as Helpers
 
 -------------------------------------------------------------------------------
 -- Generator
@@ -30,13 +30,13 @@ genHashedSeqInt = do
 propHashedSeqEqReflexivity :: Property
 propHashedSeqEqReflexivity = H.property $ do
   hs <- H.forAll genHashedSeqInt
-  H.assert $ checkEqReflexivity (==) hs
+  H.assert $ Helpers.checkEqReflexivity (==) hs
 
 propHashedSeqEqSymmetry :: Property
 propHashedSeqEqSymmetry = H.property $ do
   hs1 <- H.forAll genHashedSeqInt
   hs2 <- H.forAll genHashedSeqInt
-  H.assert $ checkEqSymmetry (==) (==) hs1 hs2
+  H.assert $ Helpers.checkEqSymmetry (==) (==) hs1 hs2
 
 propHashedSeqEqTransitivity :: Property
 propHashedSeqEqTransitivity = H.property $ do
@@ -46,7 +46,7 @@ propHashedSeqEqTransitivity = H.property $ do
   let eq12 = hs1 == hs2
   let eq23 = hs2 == hs3
   let eq13 = hs1 == hs3
-  H.assert $ checkEqTransitivity eq12 eq23 eq13
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
 
 -------------------------------------------------------------------------------
 -- Hashable Laws
@@ -104,7 +104,7 @@ propHashedSeqOrdAntisymmetry = H.property $ do
   hs2 <- H.forAll genHashedSeqInt
   let ord1 = compare hs1 hs2
   let ord2 = compare hs2 hs1
-  H.assert $ checkOrdAntisymmetry ord1 ord2
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
 
 propHashedSeqOrdTransitivity :: Property
 propHashedSeqOrdTransitivity = H.property $ do
@@ -114,7 +114,7 @@ propHashedSeqOrdTransitivity = H.property $ do
   let ord12 = compare hs1 hs2
   let ord23 = compare hs2 hs3
   let ord13 = compare hs1 hs3
-  H.assert $ checkOrdTransitivity ord12 ord23 ord13
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
 
 propHashedSeqOrdEqConsistency :: Property
 propHashedSeqOrdEqConsistency = H.property $ do
@@ -122,7 +122,7 @@ propHashedSeqOrdEqConsistency = H.property $ do
   hs2 <- H.forAll genHashedSeqInt
   let eq = hs1 == hs2
   let ord = compare hs1 hs2
-  H.assert $ checkOrdEqConsistency eq ord
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
 
 -------------------------------------------------------------------------------
 -- Ord1 Consistency
