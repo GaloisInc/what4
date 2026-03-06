@@ -1,6 +1,10 @@
+-- | Property tests for algebraic laws of Who2 data structures.
+--
+-- Tests verify that Eq, Ord, Hashable, and other typeclass instances
+-- satisfy their required laws. Matched by @-- test-law:@ comments,
+-- see "Who2.TestAnnotations" for details.
 module Who2.Laws (tests) where
 
--- | TODO
 import Test.Tasty (TestTree, testGroup)
 
 import qualified Who2.Laws.Bloom.HashedSeq as LawsBloomHashedSeq

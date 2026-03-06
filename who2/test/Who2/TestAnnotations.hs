@@ -1,7 +1,17 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | TODO
+-- | To ensure good test coverage, these tests extract structured comments from
+-- the source code and match them against files or structured comments in the
+-- test suite.
+--
+-- Supported comment forms:
+--
+-- * @-- test: foo@ — Matched against @test-data\/simpl\/foo.smt2@
+--
+-- * @-- test-law: propFoo@ — Matched against @propFoo :: Property@ in @test\/Who2\/Laws\/@
+--
+-- * @-- test-smt2: bar@ — Matched against @test-data\/smt2\/bar.smt2@
 module Who2.TestAnnotations (tests) where
 
 import Control.Exception qualified

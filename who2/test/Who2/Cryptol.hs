@@ -1,7 +1,14 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | TODO
+-- | Tests for Cryptol proofs embedded in source code comments.
+--
+-- Searches for comments like @-- Cryptol> :prove \\(x : [8]) -> x + 0 == x@
+-- and verifies them using the Cryptol prover. Tests are skipped if Cryptol
+-- is not installed.
+--
+-- These Cryptol statements are used to verify the correctness of local
+-- rewrites in @Who2.Builder.Ops@.
 module Who2.Cryptol (tests) where
 
 import Control.Exception qualified as Exception

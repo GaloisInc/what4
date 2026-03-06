@@ -9,7 +9,10 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
--- | TODO
+-- | Property tests for Who2 builder simplifications.
+--
+-- Uses Hedgehog to generate random expressions and Z3 to verify that
+-- simplifications preserve semantics (equisatisfiability).
 module Who2.Builder.Simplification
   ( tests
   ) where

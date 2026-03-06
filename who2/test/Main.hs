@@ -17,8 +17,10 @@
 --
 -- Property tests:
 --
+-- * "Who2.Builder.API.GenTests"
 -- * "Who2.Builder.Simplification"
 -- * "Who2.Laws"
+-- * "Who2.SemiRing"
 -- * "Who2.Builder.Invariants"
 module Main (main) where
 
@@ -32,10 +34,7 @@ import qualified Who2.Cryptol as Cryptol
 import qualified Who2.Filter as Filter
 import qualified Who2.Functions as Functions
 import qualified Who2.Laws as Laws
-import qualified Who2.SemiRing.Bloom.Product as SRBloomProduct
-import qualified Who2.SemiRing.Bloom.Sum as SRBloomSum
-import qualified Who2.SemiRing.HashConsed.Product as SRHCProduct
-import qualified Who2.SemiRing.HashConsed.Sum as SRHCSum
+import qualified Who2.SemiRing as SemiRing
 import qualified Who2.Simplification as Simpl
 import qualified Who2.SMTLib2 as SMTLib2
 import qualified Who2.TestAnnotations as TestAnnotations
@@ -68,12 +67,7 @@ main = do
             [ Props.tests
             , Laws.tests
             , Filter.tests
-            , testGroup "SemiRing Algebraic Laws"
-                [ SRHCSum.tests
-                , SRHCProduct.tests
-                , SRBloomSum.tests
-                , SRBloomProduct.tests
-                ]
+            , SemiRing.tests
             , Invariants.tests
             ]
         ]

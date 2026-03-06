@@ -5,7 +5,12 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | TODO
+-- | Tests for SMT-Lib2 serialization of Who2 expressions.
+--
+-- Golden tests compare generated SMT-Lib2 against expected output
+-- in @test-data\/smt2\/@ . Matched by @-- test-smt2:@ comments, see
+-- "Who2.TestAnnotations" for more information. Z3 validation tests verify
+-- well-formedness of generated formulas.
 module Who2.SMTLib2 (tests, goldenTests, discoverZ3ValidationTests) where
 
 import Data.List (sort)

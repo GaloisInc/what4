@@ -3,6 +3,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Tests for expression generator coverage.
+--
+-- Verifies that "Who2.Builder.API.Gen" can generate expressions covering
+-- all boolean and bitvector operations.
 module Who2.Builder.API.GenTests
   ( tests
   ) where

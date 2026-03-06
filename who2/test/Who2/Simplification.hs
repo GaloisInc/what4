@@ -3,9 +3,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Who2.Simplification
-  ( tests
-  ) where
+-- | Tests for Who2 simplifications/rewrites.
+--
+-- Simplification tests check that Who2's builder produces correct SAT/UNSAT
+-- results for @test-data\/simpl\/*.smt2@ files. Matched by @-- test:@
+-- comments), see "Who2.TestAnnotations" for details. Z3 validation tests verify
+-- results match Z3's solver output.
+module Who2.Simplification (tests) where
 
 import Control.Exception (catch, SomeException)
 import Data.List (sort)

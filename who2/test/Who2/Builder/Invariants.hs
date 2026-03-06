@@ -5,7 +5,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
--- | TODO
+-- | Property tests for Who2 builder internal invariants.
+--
+-- Verifies structural invariants (no empty/singleton polarized or semiring
+-- structures) and abstract value precision after simplification.
 module Who2.Builder.Invariants (tests) where
 
 import Control.Monad.IO.Class (liftIO)

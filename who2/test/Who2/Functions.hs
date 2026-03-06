@@ -5,7 +5,9 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | TODO
+-- | Tests for SMT-Lib2 output for defined and uninterpreted functions.
+--
+-- Output is validated with Z3.
 module Who2.Functions (tests) where
 
 import Data.List (sort)
