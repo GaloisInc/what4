@@ -374,9 +374,11 @@ test-suite exprs_tests
   other-modules:
     Bool
     GenWhat4Expr
+    WeightedSum
 
   build-depends: bv-sized
                , containers
+               , hashable
                , mtl
 
 executable bool-normalization
