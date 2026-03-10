@@ -559,8 +559,15 @@ scale sr c wsum
   where
     m' = AM.mapMaybeWithKey f (wsum^.sumMap)
     f (WrapF t) _ x =
-      Ex.assert (not (SR.eq sr (SR.zero sr) cx)) $  -- enforced by INVARIANT
-        Just (mkNote sr cx t, cx)
+      Ex.assert (not (varIsConst sr t)) $  -- INVARIANT
+      -- Filter out terms that become zero after scaling. This can happen in
+      -- bitvector arthmetic. For example, for 8-bit bitvectors c and x where
+      -- c = 2 and x = 128, c * x mod 256 = 0.
+      --
+      -- Necessary to uphold INVARIANT.
+      if SR.eq sr (SR.zero sr) cx
+      then Nothing
+      else Just (mkNote sr cx t, cx)
       where cx = SR.mul sr c x
 
 -- | Produce a weighted sum from a list of terms and an offset.
