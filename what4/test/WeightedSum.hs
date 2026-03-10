@@ -13,9 +13,6 @@ import Data.Hashable (Hashable(..))
 import qualified Data.BitVector.Sized as BV
 import Data.Maybe (isNothing)
 import Data.Parameterized.Classes
-import GHC.TypeNats ()
-
-import Data.Foldable (foldl1)
 
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as Gen
@@ -34,6 +31,9 @@ import qualified What4.Utils.AbstractDomains as AD
 -------------------------------------------------------------------------------
 
 -- | Mock expression type for testing WeightedSum without a full ExprBuilder
+--
+-- The Int field serves as a unique identifier for each mock expression,
+-- allowing us to define Eq, Ord, and Hashable instances based solely on identity.
 data MockExpr (tp :: BaseType) = MockExpr Int (BaseTypeRepr tp)
   deriving (Show)
 
@@ -142,14 +142,14 @@ propScalarDistributivity = H.property $ do
   let rhs = WSum.add sr (WSum.scaledVar sr c1 x) (WSum.scaledVar sr c2 x)
   H.assert $ lhs == rhs
 
--- | Test that scaling is associative: scale c2 (scale c1 s) == scale (c1*c2) s
+-- | Test that scaling is associative: scale c1 (scale c2 s) == scale (c1*c2) s
 propScaleAssociative :: H.Property
 propScaleAssociative = H.property $ do
   s <- H.forAllWith (const "WeightedSum") genWeightedSumBV8
   c1 <- H.forAll genBV8Constant
   c2 <- H.forAll genBV8Constant
   let sr = SR.SemiRingBVRepr SR.BVArithRepr (knownNat @8)
-  let lhs = WSum.scale sr c2 (WSum.scale sr c1 s)
+  let lhs = WSum.scale sr c1 (WSum.scale sr c2 s)
   let rhs = WSum.scale sr (SR.mul sr c1 c2) s
   H.assert $ lhs == rhs
 
@@ -164,7 +164,7 @@ propScaleDistributesOverAdd = H.property $ do
   let rhs = WSum.add sr (WSum.scale sr c s1) (WSum.scale sr c s2)
   H.assert $ lhs == rhs
 
--- | Test cancellation: adding opposite scalars cancels out
+-- | Test cancellation: adding opposite scalars cancels out (c*x + (-c)*x == 0)
 propCancellation :: H.Property
 propCancellation = H.property $ do
   c <- H.forAll genBV8Constant
