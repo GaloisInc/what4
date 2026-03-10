@@ -35,6 +35,7 @@ import           What4.Interface
 import           What4.Internal (assertionsEnabled)
 
 import Bool (boolTests)
+import WeightedSum (weightedSumTests)
 
 type IteExprBuilder t fs = ExprBuilder t EmptyExprBuilderState fs
 
@@ -392,4 +393,5 @@ main = defaultMain $ testGroup "What4 Expressions"
     (fromConcreteString <$> s) === Just ""
   , testInjectiveConversions
   , boolTests
+  , weightedSumTests
   ]
