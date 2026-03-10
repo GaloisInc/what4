@@ -15,6 +15,8 @@ import Data.Maybe (isNothing)
 import Data.Parameterized.Classes
 import GHC.TypeNats ()
 
+import Data.Foldable (foldl1)
+
 import Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
@@ -85,6 +87,14 @@ genWeightedSumBV8 = do
     pure (key, coeff)
   let sr = SR.SemiRingBVRepr SR.BVArithRepr (knownNat @8)
   pure $ WSum.fromTerms sr terms offset
+
+-- Generator for products
+genProductBV8 :: Gen (WSum.SemiRingProduct MockExpr (SR.SemiRingBV SR.BVBits 8))
+genProductBV8 = do
+  numTerms <- Gen.int (Range.linear 1 3)
+  terms <- Gen.list (Range.singleton numTerms) $ genMockExpr @(BaseBVType 8)
+  let sr = SR.SemiRingBVRepr SR.BVBitsRepr (knownNat @8)
+  pure $ foldl1 WSum.prodMul (map (WSum.prodVar sr) terms)
 
 -------------------------------------------------------------------------------
 -- Properties
@@ -166,23 +176,66 @@ propCancellation = property $ do
   assert $ isNothing (WSum.asVar result)
 
 -------------------------------------------------------------------------------
+-- Product Properties
+-------------------------------------------------------------------------------
+
+-- | Test that multiplication is associative: (a * b) * c == a * (b * c)
+propMulAssociative :: Property
+propMulAssociative = property $ do
+  p1 <- forAllWith (const "Product") genProductBV8
+  p2 <- forAllWith (const "Product") genProductBV8
+  p3 <- forAllWith (const "Product") genProductBV8
+  let lhs = WSum.prodMul (WSum.prodMul p1 p2) p3
+  let rhs = WSum.prodMul p1 (WSum.prodMul p2 p3)
+  assert $ lhs == rhs
+
+-- | Test that multiplication is commutative: a * b == b * a
+propMulCommutative :: Property
+propMulCommutative = property $ do
+  p1 <- forAllWith (const "Product") genProductBV8
+  p2 <- forAllWith (const "Product") genProductBV8
+  let lhs = WSum.prodMul p1 p2
+  let rhs = WSum.prodMul p2 p1
+  assert $ lhs == rhs
+
+-- | Test that single variable product is idempotent: var x * var x == var x
+-- (in the BVBits semiring, which is idempotent)
+propProdVarIdempotent :: Property
+propProdVarIdempotent = property $ do
+  x <- forAll (genMockExpr @(BaseBVType 8))
+  let sr = SR.SemiRingBVRepr SR.BVBitsRepr (knownNat @8)
+  let var_x = WSum.prodVar sr x
+  let result = WSum.prodMul var_x var_x
+  assert $ result == var_x
+
+-------------------------------------------------------------------------------
 -- Test Tree
 -------------------------------------------------------------------------------
 
 weightedSumTests :: TestTree
-weightedSumTests = testGroup "WeightedSum"
-  [ testProperty "Addition is associative" $
-      withTests 2048 propAddAssociative
-  , testProperty "Zero is additive identity" $
-      withTests 2048 propAddIdentity
-  , testProperty "Adding constants is associative" $
-      withTests 2048 propAddConstantAssociative
-  , testProperty "Scalar multiplication distributes" $
-      withTests 2048 propScalarDistributivity
-  , testProperty "Scaling is associative" $
-      withTests 2048 propScaleAssociative
-  , testProperty "Scaling distributes over addition" $
-      withTests 2048 propScaleDistributesOverAdd
-  , testProperty "Adding opposite scalars cancels" $
-      withTests 2048 propCancellation
+weightedSumTests = testGroup "WeightedSum and SemiRingProduct"
+  [ testGroup "WeightedSum (Sums)"
+      [ testProperty "Addition is associative" $
+          withTests 2048 propAddAssociative
+      , testProperty "Zero is additive identity" $
+          withTests 2048 propAddIdentity
+      , testProperty "Adding constants is associative" $
+          withTests 2048 propAddConstantAssociative
+      , testProperty "Scalar multiplication distributes" $
+          withTests 2048 propScalarDistributivity
+      , testProperty "Scaling is associative" $
+          withTests 2048 propScaleAssociative
+      , testProperty "Scaling distributes over addition" $
+          withTests 2048 propScaleDistributesOverAdd
+      , testProperty "Adding opposite scalars cancels" $
+          withTests 2048 propCancellation
+      ]
+  , testGroup "SemiRingProduct (Products)"
+      [ testProperty "Multiplication is associative" $
+          withTests 2048 propMulAssociative
+      , testProperty "Multiplication is commutative" $
+          withTests 2048 propMulCommutative
+      , testProperty "Product variable is idempotent (BVBits)" $
+          withTests 2048 propProdVarIdempotent
+      ]
   ]
