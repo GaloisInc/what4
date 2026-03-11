@@ -28,7 +28,7 @@ module What4.Solver.DReal
 
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Lens(folded)
+import           Lens.Micro(folded)
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8 hiding (try)
 import           Data.ByteString (ByteString)
