@@ -64,6 +64,7 @@ module What4.Protocol.SMTWriter
               )
   , connState
   , newWriterConn
+  , reassertSideConditions
   , resetEntryStack
   , popEntryStackToTop
   , entryStackHeight
@@ -643,6 +644,12 @@ data WriterConn t (h :: Type) =
              , consumeAcknowledgement :: AcknowledgementAction t h
                -- ^ Consume an acknowledgement notifications the solver, if
                --   it produces one
+             , sideConditions :: !(IORef [Term h])
+               -- ^ Side conditions that must be re-asserted after
+               --   a @(reset-assertions)@ command. These arise from
+               --   'addPartialSideCond' for variables cached with
+               --   'DeleteNever', whose cache entries survive a reset but whose
+               --   solver-level assertions do not.
              }
 
 -- | An action for consuming an acknowledgement message from the solver,
@@ -729,6 +736,7 @@ newWriterConn h in_h ack solver_name beStrict features bindings cs = do
   entry <- newStackEntry
   stk_ref <- newIORef [entry]
   r <- newIORef emptyState
+  scRef <- newIORef []
   return $! WriterConn { smtWriterName = solver_name
                        , connHandle    = h
                        , connInputHandle = in_h
@@ -742,6 +750,7 @@ newWriterConn h in_h ack solver_name beStrict features bindings cs = do
                        , varBindings  = bindings
                        , connState    = cs
                        , consumeAcknowledgement = ack
+                       , sideConditions = scRef
                        }
 
 -- | Strictness level for parsing solver responses.
@@ -1075,6 +1084,16 @@ bindVarAsFree conn var = do
       addCommand conn $ declareCommand conn var_name Ctx.empty smt_type
       cacheValueExpr conn (bvarId var) DeleteOnPop $ SMTName smt_type var_name
 
+-- | Re-assert all side conditions that were recorded by 'addPartialSideCond'.
+--
+-- See 'sideConditions' for more details.
+reassertSideConditions :: SMTWriter h => WriterConn t h -> IO ()
+reassertSideConditions conn = do
+  conds <- readIORef (sideConditions conn)
+  -- This adds them back in the reverse order they were originally added, but
+  -- that shouldn't matter semantically.
+  mapM_ (assumeFormula conn) conds
+
 -- | Assume that the given formula holds.
 assumeFormula :: SMTWriter h => WriterConn t h -> Term h -> IO ()
 assumeFormula c p = addCommand c (assertCommand c p)
@@ -1358,6 +1377,21 @@ addSideCondition nm t = do
      fail $ "Cannot add a side condition within a function needed to define the "
        ++ nm ++ " term created at " ++ show loc ++ "."
 
+-- | Add a persistent side condition that will be re-asserted after reset.
+--
+-- This is specifically for side conditions on DeleteNever variables (like
+-- UninterpVarKind variables from freshNat, freshConstant, etc.) whose
+-- constraints must persist across reset.
+addPersistentSideCondition ::
+   SMTWriter h =>
+   WriterConn t h ->
+   String {- ^ Reason that condition is being added. -} ->
+   Term h {- ^ Predicate that should hold. -} ->
+   SMTCollector t h ()
+addPersistentSideCondition conn nm t = do
+  addSideCondition nm t
+  liftIO $ modifyIORef' (sideConditions conn) (t:)
+
 addPartialSideCond ::
   forall t h tp.
   SMTWriter h =>
@@ -1371,53 +1405,53 @@ addPartialSideCond ::
 addPartialSideCond _ _ _ Nothing = return ()
 
 addPartialSideCond _ _ BoolTypeMap (Just Nothing) = return ()
-addPartialSideCond _ t BoolTypeMap (Just (Just b)) =
+addPartialSideCond conn t BoolTypeMap (Just (Just b)) =
    -- This is a weird case, but technically possible, so...
-  addSideCondition "bool_val" $ t .== boolExpr b
+  addPersistentSideCondition conn "bool_val" $ t .== boolExpr b
 
-addPartialSideCond _ t IntegerTypeMap (Just rng) =
+addPartialSideCond conn t IntegerTypeMap (Just rng) =
   do case rangeLowBound rng of
        Unbounded -> return ()
-       Inclusive lo -> addSideCondition "int_range" $ t .>= integerTerm lo
+       Inclusive lo -> addPersistentSideCondition conn "int_range" $ t .>= integerTerm lo
      case rangeHiBound rng of
        Unbounded -> return ()
-       Inclusive hi -> addSideCondition "int_range" $ t .<= integerTerm hi
+       Inclusive hi -> addPersistentSideCondition conn "int_range" $ t .<= integerTerm hi
 
-addPartialSideCond _ t RealTypeMap (Just rng) =
+addPartialSideCond conn t RealTypeMap (Just rng) =
   do case rangeLowBound (ravRange rng) of
        Unbounded -> return ()
-       Inclusive lo -> addSideCondition "real_range" $ t .>= rationalTerm lo
+       Inclusive lo -> addPersistentSideCondition conn "real_range" $ t .>= rationalTerm lo
      case rangeHiBound (ravRange rng) of
        Unbounded -> return ()
-       Inclusive hi -> addSideCondition "real_range" $ t .<= rationalTerm hi
+       Inclusive hi -> addPersistentSideCondition conn "real_range" $ t .<= rationalTerm hi
 
-addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDArith rng)) = assertRange (BVD.arithDomainData rng)
+addPartialSideCond conn t (BVTypeMap w) (Just (BVD.BVDArith rng)) = assertRange (BVD.arithDomainData rng)
    where
    assertRange Nothing = return ()
    assertRange (Just (lo, sz)) =
-     addSideCondition "bv_range" $ bvULe (bvSub t (bvTerm w (BV.mkBV w lo))) (bvTerm w (BV.mkBV w sz))
+     addPersistentSideCondition conn "bv_range" $ bvULe (bvSub t (bvTerm w (BV.mkBV w lo))) (bvTerm w (BV.mkBV w sz))
 
-addPartialSideCond _ t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRange (BVD.bitbounds rng)
+addPartialSideCond conn t (BVTypeMap w) (Just (BVD.BVDBitwise rng)) = assertBitRange (BVD.bitbounds rng)
    where
    assertBitRange (lo, hi) = do
      when (lo > 0) $
-       addSideCondition "bv_bitrange" $ (bvOr (bvTerm w (BV.mkBV w lo)) t) .== t
+       addPersistentSideCondition conn "bv_bitrange" $ (bvOr (bvTerm w (BV.mkBV w lo)) t) .== t
      when (hi < maxUnsigned w) $
-       addSideCondition "bv_bitrange" $ (bvOr t (bvTerm w (BV.mkBV w hi))) .== (bvTerm w (BV.mkBV w hi))
+       addPersistentSideCondition conn "bv_bitrange" $ (bvOr t (bvTerm w (BV.mkBV w hi))) .== (bvTerm w (BV.mkBV w hi))
 
-addPartialSideCond _ t (UnicodeTypeMap) (Just (StringAbs len)) =
+addPartialSideCond conn t (UnicodeTypeMap) (Just (StringAbs len)) =
   do case rangeLowBound len of
        Inclusive lo ->
-          addSideCondition "string length low range" $
+          addPersistentSideCondition conn "string length low range" $
              integerTerm (max 0 lo) .<= stringLength @h t
        Unbounded ->
-          addSideCondition "string length low range" $
+          addPersistentSideCondition conn "string length low range" $
              integerTerm 0 .<= stringLength @h t
 
      case rangeHiBound len of
        Unbounded -> return ()
        Inclusive hi ->
-         addSideCondition "string length high range" $
+         addPersistentSideCondition conn "string length high range" $
            stringLength @h t .<= integerTerm hi
 
 addPartialSideCond _ _ (FloatTypeMap _) (Just ()) = return ()
