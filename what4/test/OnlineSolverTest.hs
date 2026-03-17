@@ -293,6 +293,150 @@ longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, 
 ----------------------------------------------------------------------
 
 
+-- | Test that side conditions (e.g., Nat >= 0) are preserved after 'reset'.
+--
+-- When a fresh Nat variable is created and sent to the solver, 'mkExpr'
+-- declares it and adds a side condition @n >= 0@ via 'addPartialSideCond'.
+-- After 'reset' (which sends @(reset-assertions)@), these side conditions
+-- should still hold.
+--
+-- We use an unconstrained integer @m@ linked to @n@ via @m = n@ to prevent
+-- the ExprBuilder from optimizing away the check based on abstract domains.
+mkResetSideCondTest :: (SolverTestData, SolverVersion) -> TestTree
+mkResetSideCondTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
+  | nm `elem` ["Bitwuzla", "Boolector", "STP"]
+  = testCase nm $ assertBool "skipped (no integer support)" True
+  | otherwise
+  = testCase nm $ withIONonceGenerator $ \gen -> do
+    sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
+    extendConfig opts (getConfiguration sym)
+    proc <- startSolverProcess @s features Nothing sym
+    let conn = solverConn proc
+
+    n <- freshNat sym (safeSymbol "n")
+    nInt <- natToInteger sym n
+    m <- freshConstant sym (safeSymbol "m") BaseIntegerRepr
+    mEqN <- intEq sym m nInt
+
+    -- Force mkExpr to process n (which declares it and adds n >= 0 side condition)
+    inNewFrame proc $ do
+      assume conn mEqN
+      check proc "m = n before reset" >>= \case
+        Unsat _ -> fail "m = n should be SAT"
+        Unknown -> fail "Solver returned UNKNOWN"
+        Sat _ -> return ()
+
+    -- Reset clears all assertions via (reset-assertions), including n >= 0
+    reset proc
+
+    -- After reset, re-assert m = n and check if m < 0 is satisfiable.
+    -- With n >= 0 side condition: m = n >= 0, so m < 0 is UNSAT.
+    -- Without n >= 0 side condition: m = n, n unconstrained, m < 0 is SAT.
+    zero <- intLit sym 0
+    mNeg <- intLt sym m zero
+    inNewFrame proc $ do
+      assume conn mEqN
+      assume conn mNeg
+      check proc "m < 0 after reset" >>= \case
+        Unsat _ -> return ()  -- Correct: n >= 0 side condition preserved
+        Unknown -> fail "Solver returned UNKNOWN"
+        Sat _ -> assertFailure
+          "Side conditions lost after reset: m = n and m < 0 was SAT (n should be >= 0)"
+
+-- | Test that reset actually clears regular assertions.
+--
+-- This test verifies the basic semantics of reset: that it forgets
+-- all previously asserted formulas. We assert a formula, reset, then
+-- assert its negation. If reset worked, the negation should be SAT.
+-- If reset failed to clear the original assertion, we'd get UNSAT.
+mkResetClearsAssertionsTest :: (SolverTestData, SolverVersion) -> TestTree
+mkResetClearsAssertionsTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
+  | nm `elem` ["Bitwuzla", "Boolector", "STP"]
+  = testCase nm $ assertBool "skipped (no integer support)" True
+  | otherwise
+  = testCase nm $ withIONonceGenerator $ \gen -> do
+    sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
+    extendConfig opts (getConfiguration sym)
+    proc <- startSolverProcess @s features Nothing sym
+    let conn = solverConn proc
+
+    -- Create an unconstrained integer variable
+    n <- freshConstant sym (safeSymbol "n") BaseIntegerRepr
+    zero <- intLit sym 0
+
+    -- Assert n >= 0 and verify it's satisfiable
+    nNonNegative <- intLe sym zero n
+    inNewFrame proc $ do
+      assume conn nNonNegative
+      check proc "n >= 0 before reset" >>= \case
+        Unsat _ -> fail "n >= 0 should be SAT"
+        Unknown -> fail "Solver returned UNKNOWN"
+        Sat _ -> return ()
+
+    -- Reset should clear all assertions including n >= 0
+    reset proc
+
+    -- Now assert n < 0, which contradicts the previous assertion.
+    -- If reset worked: n < 0 should be SAT (previous assertion cleared)
+    -- If reset failed: n < 0 would be UNSAT (n >= 0 still asserted)
+    nNegative <- intLt sym n zero
+    inNewFrame proc $ do
+      assume conn nNegative
+      check proc "n < 0 after reset" >>= \case
+        Sat _ -> return ()  -- Correct: reset cleared the previous assertion
+        Unknown -> fail "Solver returned UNKNOWN"
+        Unsat _ -> assertFailure
+          "Reset failed to clear assertions: n < 0 is UNSAT (n >= 0 still asserted)"
+
+-- | Test that operation-specific side conditions are not recorded as persistent.
+--
+-- Operations like RealSqrt add side conditions via addSideCondition within appSMTExpr.
+-- These should NOT be added to the persistent sideConditions list (only side conditions
+-- from addPartialSideCond for DeleteNever variables should persist). This test verifies
+-- that sqrt operations work correctly across reset with independent fresh variables.
+mkResetOperationSideCondsTest :: (SolverTestData, SolverVersion) -> TestTree
+mkResetOperationSideCondsTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
+  | nm `elem` ["Bitwuzla", "Boolector", "STP", "Yices"]
+  = testCase nm $ assertBool "skipped (no real/nonlinear support)" True
+  | otherwise
+  = testCase nm $ withIONonceGenerator $ \gen -> do
+    sym <- newExprBuilder FloatUninterpretedRepr EmptyExprBuilderState gen
+    extendConfig opts (getConfiguration sym)
+    proc <- startSolverProcess @s features Nothing sym
+    let conn = solverConn proc
+
+    -- Create x1 and assert sqrt(x1) = 2
+    -- This creates fresh variable for sqrt result with side conditions
+    x1 <- freshConstant sym (safeSymbol "x1") BaseRealRepr
+    sqrt_x1 <- realSqrt sym x1
+    two <- realLit sym 2
+    sqrt_eq_2 <- realEq sym sqrt_x1 two
+
+    inNewFrame proc $ do
+      assume conn sqrt_eq_2
+      check proc "sqrt(x1) = 2 before reset" >>= \case
+        Unsat _ -> fail "sqrt(x1) = 2 should be SAT"
+        Unknown -> fail "Solver returned UNKNOWN"
+        Sat _ -> return ()
+
+    -- Reset clears all assertions (but not variable declarations)
+    reset proc
+
+    -- Create x2 and assert sqrt(x2) = 3
+    -- This creates a NEW fresh variable for this sqrt result
+    -- Operation side conditions are NOT persistent, only freshConstant bounds are
+    x2 <- freshConstant sym (safeSymbol "x2") BaseRealRepr
+    sqrt_x2 <- realSqrt sym x2
+    three <- realLit sym 3
+    sqrt_eq_3 <- realEq sym sqrt_x2 three
+
+    inNewFrame proc $ do
+      assume conn sqrt_eq_3
+      check proc "sqrt(x2) = 3 after reset" >>= \case
+        Unsat _ -> fail "sqrt(x2) = 3 should be SAT"
+        Unknown -> fail "Solver returned UNKNOWN"
+        Sat _ -> return ()  -- Correct: independent sqrt operation works
+
 main :: IO ()
 main = do
   testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
@@ -305,6 +449,9 @@ main = do
       testGroup "SmokeTest" $ map mkSmokeTest solvers
     , testGroup "QuickStart Framed" $ map (quickstartTest True)  solvers
     , testGroup "QuickStart Direct" $ map (quickstartTest False) solvers
+    , testGroup "Reset Side Conditions" $ map mkResetSideCondTest solvers
+    , testGroup "Reset Clears Assertions" $ map mkResetClearsAssertionsTest solvers
+    , testGroup "Reset Operation Side Conditions" $ map mkResetOperationSideCondsTest solvers
     , timeoutTests testLevel solvers
     ]
 

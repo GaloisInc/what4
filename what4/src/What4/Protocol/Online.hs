@@ -305,7 +305,8 @@ reset p =
      n <- popEntryStackToTop c
      writeIORef (solverEarlyUnsat p) Nothing
      if solverSupportsResetAssertions p then
-       addCommand c (resetCommand c)
+       do addCommand c (resetCommand c)
+          reassertSideConditions c
      else
        do mapM_ (addCommand c) (popManyCommands c n)
           addCommand c (pushCommand c)
