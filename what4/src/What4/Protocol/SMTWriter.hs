@@ -64,7 +64,7 @@ module What4.Protocol.SMTWriter
               )
   , connState
   , newWriterConn
-  , reassertSideConditions
+  , reassertPersistentSideConditions
   , resetEntryStack
   , popEntryStackToTop
   , entryStackHeight
@@ -644,8 +644,8 @@ data WriterConn t (h :: Type) =
              , consumeAcknowledgement :: AcknowledgementAction t h
                -- ^ Consume an acknowledgement notifications the solver, if
                --   it produces one
-             , sideConditions :: !(IORef [Term h])
-               -- ^ Side conditions that must be re-asserted after
+             , persistentSideConditions :: !(IORef [Term h])
+               -- ^ Persistent side conditions that must be re-asserted after
                --   a @(reset-assertions)@ command. These arise from
                --   'addPartialSideCond' for variables cached with
                --   'DeleteNever', whose cache entries survive a reset but whose
@@ -750,7 +750,7 @@ newWriterConn h in_h ack solver_name beStrict features bindings cs = do
                        , varBindings  = bindings
                        , connState    = cs
                        , consumeAcknowledgement = ack
-                       , sideConditions = scRef
+                       , persistentSideConditions = scRef
                        }
 
 -- | Strictness level for parsing solver responses.
@@ -1084,12 +1084,12 @@ bindVarAsFree conn var = do
       addCommand conn $ declareCommand conn var_name Ctx.empty smt_type
       cacheValueExpr conn (bvarId var) DeleteOnPop $ SMTName smt_type var_name
 
--- | Re-assert all side conditions that were recorded by 'addPartialSideCond'.
+-- | Re-assert all persistent side conditions that were recorded by 'addPartialSideCond'.
 --
--- See 'sideConditions' for more details.
-reassertSideConditions :: SMTWriter h => WriterConn t h -> IO ()
-reassertSideConditions conn = do
-  conds <- readIORef (sideConditions conn)
+-- See 'persistentSideConditions' for more details.
+reassertPersistentSideConditions :: SMTWriter h => WriterConn t h -> IO ()
+reassertPersistentSideConditions conn = do
+  conds <- readIORef (persistentSideConditions conn)
   -- This adds them back in the reverse order they were originally added, but
   -- that shouldn't matter semantically.
   mapM_ (assumeFormula conn) conds
@@ -1362,6 +1362,10 @@ freshBoundTerm' t = SMTName tp <$> freshBoundFn [] tp (asBase t)
   where tp = smtExprType t
 
 -- | Assert a predicate holds as a side condition to some formula.
+--
+-- For conditions that must persist across resets (e.g., constraints on
+-- 'DeleteNever' variables), use 'addPersistentSideCondition' or
+-- 'addPartialSideCond' instead.
 addSideCondition ::
    String {- ^ Reason that condition is being added. -} ->
    Term h {- ^ Predicate that should hold. -} ->
@@ -1381,7 +1385,7 @@ addSideCondition nm t = do
 --
 -- This is specifically for side conditions on DeleteNever variables (like
 -- UninterpVarKind variables from freshNat, freshConstant, etc.) whose
--- constraints must persist across reset.
+-- constraints must persist across reset. See 'persistentSideConditions'.
 addPersistentSideCondition ::
    SMTWriter h =>
    WriterConn t h ->
@@ -1390,8 +1394,10 @@ addPersistentSideCondition ::
    SMTCollector t h ()
 addPersistentSideCondition conn nm t = do
   addSideCondition nm t
-  liftIO $ modifyIORef' (sideConditions conn) (t:)
+  liftIO $ modifyIORef' (persistentSideConditions conn) (t:)
 
+-- | Add side conditions arising from the abstract value of a fresh variable via
+-- 'addPersistentSideCondition'.
 addPartialSideCond ::
   forall t h tp.
   SMTWriter h =>

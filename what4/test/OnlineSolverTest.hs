@@ -293,7 +293,7 @@ longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, 
 ----------------------------------------------------------------------
 
 
--- | Test that side conditions (e.g., Nat >= 0) are preserved after 'reset'.
+-- | Test that persistent side conditions (e.g., Nat >= 0) are preserved after 'reset'.
 --
 -- When a fresh Nat variable is created and sent to the solver, 'mkExpr'
 -- declares it and adds a side condition @n >= 0@ via 'addPartialSideCond'.
@@ -304,7 +304,7 @@ longTimeTest (SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, 
 -- the ExprBuilder from optimizing away the check based on abstract domains.
 mkResetSideCondTest :: (SolverTestData, SolverVersion) -> TestTree
 mkResetSideCondTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
-  | nm `elem` ["Bitwuzla", "Boolector", "STP"]
+  | not (hasProblemFeature features useIntegerArithmetic) || nm == "STP" -- stp times out
   = testCase nm $ assertBool "skipped (no integer support)" True
   | otherwise
   = testCase nm $ withIONonceGenerator $ \gen -> do
@@ -351,7 +351,7 @@ mkResetSideCondTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features
 -- If reset failed to clear the original assertion, we'd get UNSAT.
 mkResetClearsAssertionsTest :: (SolverTestData, SolverVersion) -> TestTree
 mkResetClearsAssertionsTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
-  | nm `elem` ["Bitwuzla", "Boolector", "STP"]
+  | not (hasProblemFeature features useIntegerArithmetic) || nm == "STP" -- stp times out
   = testCase nm $ assertBool "skipped (no integer support)" True
   | otherwise
   = testCase nm $ withIONonceGenerator $ \gen -> do
@@ -391,12 +391,12 @@ mkResetClearsAssertionsTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), 
 -- | Test that operation-specific side conditions are not recorded as persistent.
 --
 -- Operations like RealSqrt add side conditions via addSideCondition within appSMTExpr.
--- These should NOT be added to the persistent sideConditions list (only side conditions
+-- These should NOT be added to the persistentSideConditions list (only side conditions
 -- from addPartialSideCond for DeleteNever variables should persist). This test verifies
 -- that sqrt operations work correctly across reset with independent fresh variables.
 mkResetOperationSideCondsTest :: (SolverTestData, SolverVersion) -> TestTree
 mkResetOperationSideCondsTest ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _), _)
-  | nm `elem` ["Bitwuzla", "Boolector", "STP", "Yices"]
+  | not (hasProblemFeature features useNonlinearArithmetic)
   = testCase nm $ assertBool "skipped (no real/nonlinear support)" True
   | otherwise
   = testCase nm $ withIONonceGenerator $ \gen -> do

@@ -1,5 +1,10 @@
 # next
 
+* Fix a bug where persistent side conditions (e.g., @Nat >= 0@ constraints)
+  were lost after @reset-assertions@. These constraints are now properly
+  re-asserted after reset. This fix ensures that variables cached with
+  @DeleteNever@ maintain their necessary constraints across solver resets.
+
 # 1.7.3 -- 2026-01-26
 
 * Fix a bug in which `what4`'s Bitwuzla adapter would generate invalid code

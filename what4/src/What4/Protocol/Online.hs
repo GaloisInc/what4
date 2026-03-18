@@ -306,7 +306,7 @@ reset p =
      writeIORef (solverEarlyUnsat p) Nothing
      if solverSupportsResetAssertions p then
        do addCommand c (resetCommand c)
-          reassertSideConditions c
+          reassertPersistentSideConditions c
      else
        do mapM_ (addCommand c) (popManyCommands c n)
           addCommand c (pushCommand c)
