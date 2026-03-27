@@ -158,7 +158,7 @@ jobs:
         run: |
           $NS -c cabal build pkg:what4
           if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
-            $NS -c cabal build pkg:w4smt2
+            $NS -c cabal build pkg:w4smt2 pkg:who2 pkg:w2smt2
           fi
 
       - name: Test
@@ -174,7 +174,7 @@ jobs:
           echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version | head -n1)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version | head -n1)
           if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
-            test_pkgs="pkg:what4 pkg:w4smt2"
+            test_pkgs="pkg:what4 pkg:w4smt2 pkg:who2 pkg:w2smt2"
           else
             test_pkgs="pkg:what4"
           fi
