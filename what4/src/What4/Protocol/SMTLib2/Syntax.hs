@@ -162,7 +162,6 @@ import           Numeric.Natural
 
 import           GHC.Generics (Generic)
 import           Data.Data (Data)
-import           Data.Typeable (Typeable)
 
 import qualified Prelude
 import           Prelude hiding (and, or, concat, negate, div, mod, abs, not)
@@ -891,7 +890,7 @@ data SMTInfoFlag =
   | Version
   | ErrorBehavior
   | InfoKeyword Text
-  deriving (Data, Eq, Ord, Generic, Show, Typeable)
+  deriving (Data, Eq, Ord, Generic, Show)
 
 flagToSExp :: SMTInfoFlag -> Text
 flagToSExp = (cons ':') .

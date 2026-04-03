@@ -73,7 +73,7 @@ solver(abc).
 %% version (which is not necessarily the "most recently released"
 %% version.
 main_version(ubuntu, "ubuntu-24.04").
-main_version(ghc, "9.2.2").
+main_version(ghc, "9.12.2").
 main_version(z3, "4_8_14").
 main_version(yices, "2_6_4").
 main_version(stp, "2_3_3").
@@ -94,6 +94,7 @@ main_version(abc, "2021_12_30").
 
 version(ubuntu, "ubuntu-24.04").
 
+version(ghc, "9.12.2").
 version(ghc, "9.10.1").
 version(ghc, "9.8.1").
 version(ghc, "9.6.2").

@@ -13,7 +13,6 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -75,7 +74,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
 import           Data.Traversable
-import           Data.Typeable
 import           System.IO (hPutStrLn, stderr)
 import           Prettyprinter
 
@@ -757,7 +755,6 @@ warnAt l msg = hPutStrLn stderr
 ------------------------------------------------------------------------
 
 newtype BLTException = BLTE String
-  deriving (Typeable)
 
 instance Exception BLTException
 
