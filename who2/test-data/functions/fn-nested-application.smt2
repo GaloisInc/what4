@@ -1,0 +1,5 @@
+(set-logic QF_UFBV)
+(declare-fun f ((_ BitVec 8)) (_ BitVec 8))
+(declare-fun g ((_ BitVec 8)) (_ BitVec 8))
+(assert (= (g (f #x0a)) (g (f #x0a))))
+(check-sat)

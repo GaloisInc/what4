@@ -1,0 +1,125 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
+
+module Who2.Laws.Bloom.SemiRing.Sum (tests) where
+
+import Hedgehog (Property)
+import qualified Hedgehog as H
+import qualified Hedgehog.Gen as Gen
+import qualified Hedgehog.Range as Range
+import qualified Data.BitVector.Sized as BV
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.Hedgehog (testProperty)
+
+import Data.Parameterized.NatRepr (knownNat)
+
+import qualified What4.BaseTypes as BT
+import qualified What4.SemiRing as SR
+
+import qualified Who2.Expr.Bloom.SemiRing.Sum as SRS
+import Who2.Laws.Helpers (MockExprBT, genMockExprBT)
+import qualified Who2.Laws.Helpers as Helpers
+
+-------------------------------------------------------------------------------
+-- Generator
+-------------------------------------------------------------------------------
+
+genBloomSumBV8 :: H.Gen (SRS.SRSum (SR.SemiRingBV SR.BVArith 8) MockExprBT)
+genBloomSumBV8 = do
+  offset <- Gen.int (Range.linear 0 255)
+  numTerms <- Gen.int (Range.linear 0 3)
+  terms <- Gen.list (Range.singleton numTerms) $ do
+    key <- genMockExprBT @(BT.BaseBVType 8)
+    coeff <- Gen.int (Range.linear 0 255)
+    pure (key, BV.mkBV knownNat (fromIntegral coeff))
+  pure $ SRS.fromTerms (SR.SemiRingBVRepr SR.BVArithRepr knownNat) terms (BV.mkBV knownNat (fromIntegral offset))
+
+-------------------------------------------------------------------------------
+-- Custom Equality (eqBy)
+-- Note: SRSum uses semiring-specific equality, not Eq/Eq1 typeclass instances
+-------------------------------------------------------------------------------
+
+propSRSumCustomEqReflexivity :: Property
+propSRSumCustomEqReflexivity = H.property $ do
+  s <- H.forAll genBloomSumBV8
+  H.assert $ Helpers.checkEqReflexivity (SRS.eqBy (==)) s
+
+propSRSumCustomEqSymmetry :: Property
+propSRSumCustomEqSymmetry = H.property $ do
+  s1 <- H.forAll genBloomSumBV8
+  s2 <- H.forAll genBloomSumBV8
+  H.assert $ Helpers.checkEqSymmetry (SRS.eqBy (==)) (SRS.eqBy (==)) s1 s2
+
+propSRSumCustomEqTransitivity :: Property
+propSRSumCustomEqTransitivity = H.property $ do
+  s1 <- H.forAll genBloomSumBV8
+  s2 <- H.forAll genBloomSumBV8
+  s3 <- H.forAll genBloomSumBV8
+  let eq12 = SRS.eqBy (==) s1 s2
+  let eq23 = SRS.eqBy (==) s2 s3
+  let eq13 = SRS.eqBy (==) s1 s3
+  H.assert $ Helpers.checkEqTransitivity eq12 eq23 eq13
+
+-------------------------------------------------------------------------------
+-- Custom Ordering (ordBy)
+-- Note: SRSum uses semiring-specific ordering, not Ord/Ord1 typeclass instances
+-------------------------------------------------------------------------------
+
+propSRSumCustomOrdReflexivity :: Property
+propSRSumCustomOrdReflexivity = H.property $ do
+  s <- H.forAll genBloomSumBV8
+  SRS.ordBy compare s s H.=== EQ
+
+propSRSumCustomOrdAntisymmetry :: Property
+propSRSumCustomOrdAntisymmetry = H.property $ do
+  s1 <- H.forAll genBloomSumBV8
+  s2 <- H.forAll genBloomSumBV8
+  let ord1 = SRS.ordBy compare s1 s2
+  let ord2 = SRS.ordBy compare s2 s1
+  H.assert $ Helpers.checkOrdAntisymmetry ord1 ord2
+
+propSRSumCustomOrdTransitivity :: Property
+propSRSumCustomOrdTransitivity = H.property $ do
+  s1 <- H.forAll genBloomSumBV8
+  s2 <- H.forAll genBloomSumBV8
+  s3 <- H.forAll genBloomSumBV8
+  let ord12 = SRS.ordBy compare s1 s2
+  let ord23 = SRS.ordBy compare s2 s3
+  let ord13 = SRS.ordBy compare s1 s3
+  H.assert $ Helpers.checkOrdTransitivity ord12 ord23 ord13
+
+propSRSumCustomOrdEqConsistency :: Property
+propSRSumCustomOrdEqConsistency = H.property $ do
+  s1 <- H.forAll genBloomSumBV8
+  s2 <- H.forAll genBloomSumBV8
+  let eq = SRS.eqBy (==) s1 s2
+  let ord = SRS.ordBy compare s1 s2
+  H.assert $ Helpers.checkOrdEqConsistency eq ord
+
+-------------------------------------------------------------------------------
+-- Test Tree
+-------------------------------------------------------------------------------
+
+tests :: TestTree
+tests = testGroup "Bloom.Sum"
+  [ testGroup "Custom Equality (eqBy)"
+      [ testProperty "Reflexivity (eqBy (==) x x)" $
+          H.withTests 1000 propSRSumCustomEqReflexivity
+      , testProperty "Symmetry" $
+          H.withTests 1000 propSRSumCustomEqSymmetry
+      , testProperty "Transitivity" $
+          H.withTests 1000 propSRSumCustomEqTransitivity
+      ]
+  , testGroup "Custom Ordering (ordBy)"
+      [ testProperty "Reflexivity (ordBy compare x x == EQ)" $
+          H.withTests 1000 propSRSumCustomOrdReflexivity
+      , testProperty "Antisymmetry" $
+          H.withTests 1000 propSRSumCustomOrdAntisymmetry
+      , testProperty "Transitivity" $
+          H.withTests 1000 propSRSumCustomOrdTransitivity
+      , testProperty "Consistency with eqBy" $
+          H.withTests 1000 propSRSumCustomOrdEqConsistency
+      ]
+  ]
