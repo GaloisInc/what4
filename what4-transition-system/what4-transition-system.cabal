@@ -12,10 +12,10 @@ build-type:    Simple
 
 common dependencies
   build-depends:
-    , ansi-wl-pprint       ^>=0.6
+    , ansi-wl-pprint       ^>=0.6 || ^>=1.0
     , base                 >=4.12 && <4.22
     , bytestring
-    , containers           ^>=0.6
+    , containers           ^>=0.6 || ^>=0.7
     , io-streams
     , lens
     , parameterized-utils  >=2.0  && <2.2
