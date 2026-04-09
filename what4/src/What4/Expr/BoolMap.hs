@@ -119,12 +119,21 @@ foldMapVars _ InconsistentMap = mempty
 foldMapVars f (BoolMap am) = foldMap (f . unWrap . fst) (AM.toList am)
 
 -- | Traverse the expressions in a bool map, and rebuild the map.
-traverseVars :: (Applicative m, HashableF g, OrdF g) =>
+traverseVars ::
+  (Applicative m, HashableF g, OrdF g) =>
   (f BaseBoolType -> m (g (BaseBoolType))) ->
-  BoolMap f -> m (BoolMap g)
+  BoolMap f ->
+  m (BoolMap g)
 traverseVars _ InconsistentMap = pure InconsistentMap
 traverseVars f (BoolMap m) =
   fromVars <$> traverse (_1 (f . unWrap)) (AM.toList m)
+-- This signature is used in betaReduce/evalBoundVars with f = g = Expr t
+{-# SPECIALIZE traverseVars ::
+  (HashableF g, OrdF g) =>
+  (f BaseBoolType -> IO (g (BaseBoolType))) ->
+  BoolMap f ->
+  IO (BoolMap g)
+ #-}
 
 elementHash :: HashableF f => f BaseBoolType -> Polarity -> IncrHash
 elementHash x p = mkIncrHash (hashWithSaltF (hash p) x)
