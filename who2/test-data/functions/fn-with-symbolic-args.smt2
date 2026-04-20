@@ -1,0 +1,6 @@
+(set-logic QF_UFBV)
+(declare-const bv32_3 (_ BitVec 32))
+(declare-const bv32_5 (_ BitVec 32))
+(declare-fun equal ((_ BitVec 32) (_ BitVec 32)) Bool)
+(assert (= (equal bv32_3 bv32_5) (equal bv32_3 bv32_5)))
+(check-sat)
