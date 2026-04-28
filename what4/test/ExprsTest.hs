@@ -21,6 +21,7 @@ verify the correctness of those.
 import           Control.Monad.IO.Class ( liftIO )
 import           Data.Bits
 import qualified Data.BitVector.Sized as BV
+import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Nonce
 import           GenWhat4Expr
 import           Hedgehog
@@ -31,6 +32,7 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.Hedgehog.Alt
 import           What4.Concrete
 import           What4.Expr
+import qualified What4.Expr.Builder as WEB
 import           What4.Interface
 import           What4.Internal (assertionsEnabled)
 
@@ -376,6 +378,85 @@ testIntegerToBV = testGroup "integerToBV"
   ]
 
 ----------------------------------------------------------------------
+-- Regression tests for ExprBuilder simplification bugs
+
+-- | Bug: 'scalarMul' calls 'sum'' directly instead of 'semiRingSum' when the
+-- input is already a 'SemiRingSum'.  'sum'' unconditionally allocates a fresh
+-- 'AppExpr' node, so the simplified WeightedSum {x : 1} (produced by negating
+-- the {x : -1} sum) is never reduced back to the original variable @x@ via
+-- 'WSum.asVar'.  As a result @bvNeg (bvNeg x) /= x@ by pointer identity even
+-- though they are semantically equal, which in turn prevents the idempotency
+-- guard @x == y@ in 'bvAndBits' from firing for expressions of the form
+-- @bvAndBits x (bvNeg (bvNeg x))@.
+testBvNegNeg :: TestTree
+testBvNegNeg = testGroup "bvNeg . bvNeg == id (scalarMul canonicalisation)"
+  [ testCase "bvNeg (bvNeg x) is pointer-equal to x" $ do
+      withTestSolver $ \sym -> do
+        x <- freshBoundVar sym (safeSymbol "x") (BaseBVRepr (knownNat @32))
+        let xExpr = varExpr sym x
+        negX    <- bvNeg sym xExpr
+        negNegX <- bvNeg sym negX
+        xExpr @=? negNegX
+
+  , testCase "bvAndBits x (bvNeg (bvNeg x)) is pointer-equal to x (idempotency)" $ do
+      withTestSolver $ \sym -> do
+        x <- freshBoundVar sym (safeSymbol "x") (BaseBVRepr (knownNat @32))
+        let xExpr = varExpr sym x
+        negX    <- bvNeg sym xExpr
+        negNegX <- bvNeg sym negX
+        result  <- bvAndBits sym xExpr negNegX
+        xExpr @=? result
+  ]
+
+-- | Bug: 'traverseProdVars' rebuilds a 'SemiRingProduct' map by folding
+-- 'AM.insert' over the substituted entries.  When two entries in the original
+-- product map to the *same* expression after substitution, 'AM.insert' silently
+-- overwrites the first entry with the second rather than combining their
+-- occurrence counts via 'SR.occ_add'.  This loses a factor from the product.
+--
+-- Concretely: substituting @x -> z@ and @y -> z@ into the BVBits product
+-- @{x:1, y:1}@ (i.e. @x AND y@) should yield @{z:2}@ (i.e. @z AND z = z@),
+-- but the bug causes it to produce @{z:1}@ (just @z@).  The outer arithmetic
+-- product @{x:1, andResult:1}@ (i.e. @x * (x AND y)@) therefore evaluates to
+-- @z@ instead of @z * z@, a semantically wrong result.
+testTraverseProdVarsKeyCollision :: TestTree
+testTraverseProdVarsKeyCollision = testGroup "evalBoundVars product key-collision (traverseProdVars)"
+  [ testCase "subst x->z, y->z in BVArith product {x:1,y:1} preserves both factors" $ do
+      withTestSolver $ \sym -> do
+        xv <- freshBoundVar sym (safeSymbol "x") (BaseBVRepr (knownNat @8))
+        yv <- freshBoundVar sym (safeSymbol "y") (BaseBVRepr (knownNat @8))
+        zv <- freshBoundVar sym (safeSymbol "z") (BaseBVRepr (knownNat @8))
+        let xExpr = varExpr sym xv
+            yExpr = varExpr sym yv
+            zExpr = varExpr sym zv
+        -- Build x * y  (BVArith product)
+        xy    <- bvMul sym xExpr yExpr
+        -- Substitute x -> z, y -> z; expect z * z
+        result <- WEB.evalBoundVars sym xy
+                    (Ctx.empty Ctx.:> xv Ctx.:> yv)
+                    (Ctx.empty Ctx.:> zExpr Ctx.:> zExpr)
+        expected <- bvMul sym zExpr zExpr
+        expected @=? result
+
+  , testCase "subst x->z, y->z in BVBits product {x:1,y:1} preserves both factors" $ do
+      withTestSolver $ \sym -> do
+        xv <- freshBoundVar sym (safeSymbol "x") (BaseBVRepr (knownNat @8))
+        yv <- freshBoundVar sym (safeSymbol "y") (BaseBVRepr (knownNat @8))
+        zv <- freshBoundVar sym (safeSymbol "z") (BaseBVRepr (knownNat @8))
+        let xExpr = varExpr sym xv
+            yExpr = varExpr sym yv
+            zExpr = varExpr sym zv
+        -- Build x AND y  (BVBits product)
+        xy    <- bvAndBits sym xExpr yExpr
+        -- Substitute x -> z, y -> z; idempotency of AND means result should be z
+        result <- WEB.evalBoundVars sym xy
+                    (Ctx.empty Ctx.:> xv Ctx.:> yv)
+                    (Ctx.empty Ctx.:> zExpr Ctx.:> zExpr)
+        -- bvAndBits z z = z (idempotent), so the substituted product is z
+        zExpr @=? result
+  ]
+
+----------------------------------------------------------------------
 
 main :: IO ()
 main = defaultMain $ testGroup "What4 Expressions"
@@ -394,4 +475,6 @@ main = defaultMain $ testGroup "What4 Expressions"
   , testInjectiveConversions
   , boolTests
   , weightedSumTests
+  , testBvNegNeg
+  , testTraverseProdVarsKeyCollision
   ]
