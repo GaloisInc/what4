@@ -2677,6 +2677,7 @@ appSMTExpr ae = do
       xe <- mkBaseExpr x
       freshBoundTerm (BVTypeMap w) $ floatToSBV (natValue w) r xe
     FloatToReal x -> do
+      checkLinearSupport i
       xe <- mkBaseExpr x
       freshBoundTerm RealTypeMap $ floatToReal xe
     FloatSpecialFunction{} -> unsupportedTerm i
