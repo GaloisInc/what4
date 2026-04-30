@@ -4,6 +4,9 @@
   were lost after @reset-assertions@. These constraints are now properly
   re-asserted after reset. This fix ensures that variables cached with
   @DeleteNever@ maintain their necessary constraints across solver resets.
+* What4 now gives a proper error message when preparing to send a query to
+  Bitwuzla involving the `floatToReal` operation (which Bitwuzla does not
+  support) instead of throwing a parse exception.
 * Replace `lens` with `microlens-{,-mtl,-th}`.
 
 # 1.7.3 -- 2026-01-26
