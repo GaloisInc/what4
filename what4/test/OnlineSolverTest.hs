@@ -17,7 +17,6 @@
 
 import           Control.Concurrent ( threadDelay )
 import           Control.Concurrent.Async ( race )
-import           Control.Lens (folded)
 import           Control.Monad ( forM )
 import           Control.Monad.Catch ( MonadMask )
 import           Control.Monad.IO.Class ( MonadIO )
@@ -28,6 +27,7 @@ import           Data.Metrology ( (%), (#), (|<=|), (|*), (|<|), (|+|), qApprox 
 import           Data.Metrology.SI ( Time, milli, micro, nano, Second(..) )
 import           Data.Metrology.Show ()
 import           Data.Proxy
+import           Lens.Micro ( folded )
 import qualified Prettyprinter as PP
 import           System.Clock
 import           System.Environment ( lookupEnv )
