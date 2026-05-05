@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeApplications #-}
 
 import           Control.Exception ( displayException, try, SomeException(..), fromException )
-import           Control.Lens (folded)
 import           Control.Monad ( forM, unless )
 import           Control.Monad.Except ( runExceptT )
 import           Data.BitVector.Sized ( mkBV )
@@ -21,6 +20,7 @@ import           Data.Char ( toLower )
 import qualified Data.List as L
 import           Data.Maybe ( fromMaybe )
 import           Data.Text ( pack )
+import           Lens.Micro ( folded )
 import           System.Environment ( lookupEnv )
 
 import           ProbeSolvers
