@@ -51,11 +51,19 @@ main = do
   w4smt2Path <- Runner.buildW4SMT2
   let config' = config { Conf.cfgW4SMT2Path = w4smt2Path }
 
+  -- Build w2smt2 if any W2 solvers are requested
+  config'' <- if any isW2Solver (Conf.cfgSolvers config')
+    then do
+      hPutStrLn stderr "Building w2smt2..."
+      w2smt2Path <- Runner.buildW2SMT2
+      return $ config' { Conf.cfgW2SMT2Path = w2smt2Path }
+    else return config'
+
   hPutStrLn stderr $ "Using w4smt2 at: " ++ w4smt2Path
-  hPutStrLn stderr $ "Solvers: " ++ unwords (map show (Conf.cfgSolvers config'))
+  hPutStrLn stderr $ "Solvers: " ++ unwords (map show (Conf.cfgSolvers config''))
 
   -- Generate work items: files × solvers, filtering out already completed ones
-  let allWorkItems = [WorkItem file solver | file <- files, solver <- Conf.cfgSolvers config']
+  let allWorkItems = [WorkItem file solver | file <- files, solver <- Conf.cfgSolvers config'']
   let workItems = filter (\wi -> not (Map.member wi existingResults)) allWorkItems
 
   hPutStrLn stderr $ "Total work items: " ++ show (length allWorkItems)
@@ -63,10 +71,10 @@ main = do
   hPutStrLn stderr $ "Remaining work items: " ++ show (length workItems)
 
   when (not (null workItems)) $ do
-    hPutStrLn stderr $ "Starting benchmark with " ++ show (Conf.cfgWorkers config') ++ " workers..."
+    hPutStrLn stderr $ "Starting benchmark with " ++ show (Conf.cfgWorkers config'') ++ " workers..."
     hPutStrLn stderr ""
 
-  maybeLogHandle <- case Conf.cfgLogFile config' of
+  maybeLogHandle <- case Conf.cfgLogFile config'' of
     Just logPath -> do
       h <- openFile logPath WriteMode
       hSetBuffering h LineBuffering
@@ -89,14 +97,14 @@ main = do
 
   when isTerm $ do
     let initialStats = Output.computeStats existingResults
-    let initialRunning = min (Conf.cfgWorkers config') (length workItems)
+    let initialRunning = min (Conf.cfgWorkers config'') (length workItems)
     Output.updateProgressLine initialRunning alreadyDone totalWorkItems initialStats (length workItems)
 
   let onComplete cr = do
         when isTerm Output.clearProgressLine
 
         -- Append result to CSV file
-        CSV.appendResult (Conf.cfgCSVFile config') (crWorkItem cr) (crResult cr)
+        CSV.appendResult (Conf.cfgCSVFile config'') (crWorkItem cr) (crResult cr)
 
         modifyIORef' resultsRef (Map.insert (crWorkItem cr) (crResult cr))
 
@@ -110,10 +118,10 @@ main = do
         when isTerm $ do
           let partialStats = Output.computeStats completedResults
           let remaining = totalWorkItems - done
-          let currentlyRunning = min (Conf.cfgWorkers config') remaining
+          let currentlyRunning = min (Conf.cfgWorkers config'') remaining
           Output.updateProgressLine currentlyRunning done totalWorkItems partialStats remaining
 
-  _ <- Runner.runBenchmark config' workItems onComplete interruptedMVar
+  _ <- Runner.runBenchmark config'' workItems onComplete interruptedMVar
 
   endTime <- getCurrentTime
 
@@ -153,6 +161,15 @@ main = do
     else when (Output.statsErrors stats > 0) exitFailure
 
   where
+    isW2Solver :: Conf.Solver -> Bool
+    isW2Solver s = case s of
+      Conf.W2 -> True
+      Conf.W2Z3 -> True
+      Conf.W2Yices -> True
+      Conf.W2CVC5 -> True
+      Conf.W2Bitwuzla -> True
+      _ -> False
+
     handleInterrupt :: Bool -> MVar () -> IO ()
     handleInterrupt isTerm interruptedMVar = do
       -- Signal interruption by taking the MVar

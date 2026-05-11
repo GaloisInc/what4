@@ -9,7 +9,9 @@ packages:
   what4-abc/
   what4-blt/
   what4-transition-system/
+  who2/
   w4smt2/
+  w2smt2/
 
 optional-packages:
   dependencies/abcBridge/

@@ -31,7 +31,7 @@ import W4SMT2.Parser qualified as Parser
 
 -- | Solver timeout in seconds.
 solverTimeoutSeconds :: Integer
-solverTimeoutSeconds = 300
+solverTimeoutSeconds = 720
 
 -- | Solve an SMT-Lib 2 problem provided as 'Text'.
 -- Returns all check-sat results from the execution

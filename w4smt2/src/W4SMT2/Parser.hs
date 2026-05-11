@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -31,8 +32,8 @@ import Control.Applicative ((<|>))
 import Control.Monad (forM)
 import Control.Monad qualified as Monad
 import Data.Attoparsec.Text qualified as A
+import Data.Bits (shiftL, (.|.))
 import Data.BitVector.Sized qualified as BV
-import Data.List (isPrefixOf)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Ratio ((%))
@@ -80,17 +81,15 @@ parseSExps input =
   where
     parser = skipSpaceAndComments *> A.many' (SExp.parseSExp readString <* skipSpaceAndComments) <* A.endOfInput
 
-    skipSpaceAndComments :: A.Parser ()
-    skipSpaceAndComments = A.skipWhile (\c -> c `elem` (" \t\n\r" :: String)) <* A.skipMany comment
-      where
-        comment = A.char ';' *> A.skipWhile (/= '\n') *> (A.char '\n' >> pure () <|> pure ())
+-- | Skip whitespace and comments
+skipSpaceAndComments :: A.Parser ()
+skipSpaceAndComments = A.skipWhile (\c -> c `elem` (" \t\n\r" :: String)) <* A.skipMany comment
+  where
+    comment = A.char ';' *> A.skipWhile (/= '\n') *> (A.char '\n' >> pure () <|> pure ())
 
-    readString :: A.Parser Text
-    readString = do
-      _ <- A.char '"'
-      s <- A.takeWhile (/= '"')
-      _ <- A.char '"'
-      return s
+-- | Read a quoted string
+readString :: A.Parser Text
+readString = A.char '"' *> A.takeWhile (/= '"') <* A.char '"'
 
 -- | Parse a type s-expression
 parseType :: (?logStderr :: Text -> IO ()) => SExp.SExp -> IO (Some WBT.BaseTypeRepr)
@@ -211,57 +210,65 @@ parseAtomLiteral ::
   Text ->
   IO (Maybe (SomeExpr sym))
 parseAtomLiteral sym name = do
-  let s = Text.unpack name
-  if "#b" `isPrefixOf` s then parseBinaryBV sym s
-  else if "#x" `isPrefixOf` s then parseHexBV sym s
+  if Text.isPrefixOf "#b" name then parseBinaryBV sym name
+  else if Text.isPrefixOf "#x" name then parseHexBV sym name
   else do
-    intResult <- parseIntegerLiteral sym s
+    intResult <- parseIntegerLiteral sym name
     case intResult of
       Just val -> return (Just val)
-      Nothing -> parseRealLiteral sym s
+      Nothing -> parseRealLiteral sym name
 
 parseBinaryBV ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  String ->
+  Text ->
   IO (Maybe (SomeExpr sym))
-parseBinaryBV sym s = do
-  let bits = drop 2 s
-  if not (null bits) && all (`elem` ("01" :: String)) bits then do
-    let val = bitsToInteger bits
-    let width = fromIntegral @Int @Natural (length bits)
-    case NatRepr.mkNatRepr width of
-      Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
-        Just NatRepr.LeqProof -> do
-          bv <- WI.bvLit sym w (BV.mkBV w val)
-          return (Just (SomeExpr bv))
-        Nothing -> return Nothing
-  else return Nothing
+parseBinaryBV sym atom
+  | Just bits <- Text.stripPrefix "#b" atom
+  , Text.all (\c -> c == '0' || c == '1') bits
+  , not (Text.null bits)
+  = do
+      let !val = Text.foldl' (\acc c -> (acc `shiftL` 1) .|. bit c) (0 :: Integer) bits
+            where bit '1' = 1
+                  bit _   = 0
+      let !width = fromIntegral @Int @Natural (Text.length bits)
+      case NatRepr.mkNatRepr width of
+        Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
+          Just NatRepr.LeqProof -> do
+            bv <- WI.bvLit sym w (BV.mkBV w val)
+            return (Just (SomeExpr bv))
+          Nothing -> return Nothing
+  | otherwise = return Nothing
 
 parseHexBV ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  String ->
+  Text ->
   IO (Maybe (SomeExpr sym))
-parseHexBV sym s = do
-  let hex = drop 2 s
-  if not (null hex) && all (`elem` ("0123456789abcdefABCDEF" :: String)) hex then do
-    let val = hexToInteger hex
-    let width = fromIntegral @Int @Natural (length hex * 4)
-    case NatRepr.mkNatRepr width of
-      Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
-        Just NatRepr.LeqProof -> do
-          bv <- WI.bvLit sym w (BV.mkBV w val)
-          return (Just (SomeExpr bv))
-        Nothing -> return Nothing
-  else return Nothing
+parseHexBV sym atom
+  | Just hexDigits <- Text.stripPrefix "#x" atom
+  , Text.all isHexDigit hexDigits
+  , not (Text.null hexDigits)
+  = do
+      let !val = textHexToInteger hexDigits
+      let !width = fromIntegral @Int @Natural (Text.length hexDigits * 4)
+      case NatRepr.mkNatRepr width of
+        Some w -> case NatRepr.testLeq (NatRepr.knownNat @1) w of
+          Just NatRepr.LeqProof -> do
+            bv <- WI.bvLit sym w (BV.mkBV w val)
+            return (Just (SomeExpr bv))
+          Nothing -> return Nothing
+  | otherwise = return Nothing
+  where
+    isHexDigit c = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 
 parseIntegerLiteral ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  String ->
+  Text ->
   IO (Maybe (SomeExpr sym))
-parseIntegerLiteral sym s = do
+parseIntegerLiteral sym name = do
+  let s = Text.unpack name
   case reads s of
     [(n, "")] -> do
       intVal <- WI.intLit sym n
@@ -271,9 +278,10 @@ parseIntegerLiteral sym s = do
 parseRealLiteral ::
   (WI.IsSymExprBuilder sym, ?logStderr :: Text -> IO ()) =>
   sym ->
-  String ->
+  Text ->
   IO (Maybe (SomeExpr sym))
-parseRealLiteral sym s = do
+parseRealLiteral sym name = do
+  let s = Text.unpack name
   case reads s of
     [(n, "")] | '.' `elem` s -> do
       realVal <- WI.realLit sym (toRational (n :: Double))
@@ -288,7 +296,7 @@ parseExpr ::
   Map FnName (WI.SomeSymFn sym) ->
   SExp.SExp ->
   IO (SomeExpr sym)
-parseExpr sym vars fns = \case
+parseExpr !sym !vars !fns s = case s of
   [sexp|true|] -> return $ SomeExpr (WI.truePred sym)
   [sexp|false|] -> return $ SomeExpr (WI.falsePred sym)
 
@@ -426,6 +434,32 @@ parseExpr sym vars fns = \case
           extended <- WI.bvSext sym resultW bv
           return (SomeExpr extended)
         _ -> Pretty.userErr "sign_extend requires a bitvector argument"
+
+  [sexp|((#_ rotate_left $n) #bvExpr)|]
+    | n >= 0
+    -> do
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          -- Normalize rotation amount modulo width
+          let rotAmt = n `mod` NatRepr.intValue w
+          amtBV <- WI.bvLit sym w (BV.mkBV w rotAmt)
+          rotated <- WI.bvRol sym bv amtBV
+          return (SomeExpr rotated)
+        _ -> Pretty.userErr "rotate_left requires a bitvector argument"
+
+  [sexp|((#_ rotate_right $n) #bvExpr)|]
+    | n >= 0
+    -> do
+      SomeExpr bv <- parseExpr sym vars fns bvExpr
+      case WI.exprType bv of
+        WBT.BaseBVRepr w -> do
+          -- Normalize rotation amount modulo width
+          let rotAmt = n `mod` NatRepr.intValue w
+          amtBV <- WI.bvLit sym w (BV.mkBV w rotAmt)
+          rotated <- WI.bvRor sym bv amtBV
+          return (SomeExpr rotated)
+        _ -> Pretty.userErr "rotate_right requires a bitvector argument"
 
   [sexp|(concat #e1 #e2)|] -> do
     SomeExpr bv1 <- parseExpr sym vars fns e1
@@ -700,11 +734,13 @@ parseBVOp sym op e1 e2 = case op of
   "sge" -> SomeExpr <$> WI.bvSge sym e1 e2
   _ -> Pretty.unsupported $ PP.pretty ("bitvector operation: bv" ++ op)
 
--- | Convert a binary string to an integer (e.g., "101" -> 5)
-bitsToInteger :: String -> Integer
-bitsToInteger = foldl (\acc c -> acc * 2 + if c == '1' then 1 else 0) 0
-
--- | Convert a hexadecimal string to an integer
-hexToInteger :: String -> Integer
-hexToInteger s = read ("0x" ++ s)
+-- | Convert a hexadecimal Text to an integer using bit operations
+textHexToInteger :: Text -> Integer
+textHexToInteger = Text.foldl' (\acc c -> (acc `shiftL` 4) .|. hexValue c) (0 :: Integer)
+  where
+    hexValue c
+      | c >= '0' && c <= '9' = fromIntegral (fromEnum c - fromEnum '0')
+      | c >= 'a' && c <= 'f' = fromIntegral (fromEnum c - fromEnum 'a' + 10)
+      | c >= 'A' && c <= 'F' = fromIntegral (fromEnum c - fromEnum 'A' + 10)
+      | otherwise = 0
 
