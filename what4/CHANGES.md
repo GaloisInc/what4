@@ -1,5 +1,6 @@
 # next
 
+* Deprecate `What4.Utils.Endian`, use `Data.Parameterized.Utils.Endian` instead.
 * Fix a bug where persistent side conditions (e.g., @Nat >= 0@ constraints)
   were lost after @reset-assertions@. These constraints are now properly
   re-asserted after reset. This fix ensures that variables cached with
