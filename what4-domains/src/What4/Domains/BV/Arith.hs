@@ -174,7 +174,7 @@ genElement :: Domain w -> Gen Integer
 genElement (BVDAny mask) = chooseInteger (0, mask)
 genElement (BVDInterval mask lo sz) =
    do x <- chooseInteger (0, sz)
-      pure ((x+lo) .&. mask)
+      pure ((x + lo) .&. mask)
 
 -- | Generate a random domain and an element
 --   contained in that domain.
@@ -430,7 +430,7 @@ select ::
   Domain w -> Domain n
 select i n a = shrink i (trunc (addNat i n) a)
 
-zext :: (1 <= w, w+1 <= u) => Domain w -> NatRepr u -> Domain u
+zext :: (1 <= w, w + 1 <= u) => Domain w -> NatRepr u -> Domain u
 zext a u = range u al ah
   where (al, ah) = ubounds a
 
@@ -448,7 +448,7 @@ sext w a u =
   where
     wProof :: LeqProof 1 w
     wProof = LeqProof
-    uProof :: LeqProof (w+1) u
+    uProof :: LeqProof (w + 1) u
     uProof = LeqProof
     fProof :: LeqProof 1 u
     fProof = leqTrans (leqAdd wProof (knownNat :: NatRepr 1)) uProof
@@ -547,7 +547,7 @@ zbounds a =
   case a of
     BVDAny mask -> (0, mask)
     BVDInterval mask lo sz -> (lo', lo' + sz)
-      where lo' = if 2*lo + sz > mask then lo - (mask + 1) else lo
+      where lo' = if 2 * lo + sz > mask then lo - (mask + 1) else lo
 
 mulRange :: (Integer, Integer) -> (Integer, Integer) -> (Integer, Integer)
 mulRange (al, ah) (bl, bh) = (cl, ch)
@@ -643,7 +643,7 @@ srem w a b =
     (al, ah) = sbounds w a
     (bl, bh) = sbounds w b
     (ql, qh) = sdivRange (al, ah) (rbounds w b)
-    rl = if al < 0 then min (bl+1) (-bh+1) else 0
+    rl = if al < 0 then min (bl + 1) (-bh + 1) else 0
     rh = if ah > 0 then max (-bl-1) (bh-1) else 0
     aw = ah - al
     bw = bh - bl
@@ -679,7 +679,7 @@ bitbounds a =
 -- @lo..hi@.
 unknowns :: Domain w -> Integer
 unknowns (BVDAny mask) = mask
-unknowns (BVDInterval mask al aw) = mask .&. (fillright (al `Bits.xor` (al+aw)))
+unknowns (BVDInterval mask al aw) = mask .&. (fillright (al `Bits.xor` (al + aw)))
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
@@ -731,12 +731,12 @@ correct_union :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Pro
 correct_union n a b x =
   (member a x || member b x) ==> pmember n (union a b) x
 
-correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
+correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
   where
   x' = toUnsigned w x
 
-correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
+correct_sign_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
   where
   x' = toSigned w x

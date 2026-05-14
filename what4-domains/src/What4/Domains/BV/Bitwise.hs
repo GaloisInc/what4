@@ -158,8 +158,8 @@ genElement (BVBitInterval _mask lo hi) =
    | x == 0 = val
    | Bits.testBit u i =
        let val' = if Bits.testBit x 0 then setBit val i else val in
-       stripe val' (x `shiftR` 1) (i+1)
-   | otherwise = stripe val x (i+1)
+       stripe val' (x `shiftR` 1) (i + 1)
+   | otherwise = stripe val x (i + 1)
 
 {- A faster generator, but I worry that it
    doesn't have very good statistical properties...
@@ -272,10 +272,10 @@ select ::
   Domain w -> Domain n
 select i n a = shrink i (trunc (addNat i n) a)
 
-zext :: (1 <= w, w+1 <= u) => Domain w -> NatRepr u -> Domain u
+zext :: (1 <= w, w + 1 <= u) => Domain w -> NatRepr u -> Domain u
 zext (BVBitInterval _ lo hi) u = range u lo hi
 
-sext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Domain u
+sext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Domain u
 sext w (BVBitInterval _ lo hi) u = range u lo' hi'
   where
   lo' = toSigned w lo
@@ -366,12 +366,12 @@ correct_intersection :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
 correct_intersection a b x = -- NB, intersection might not be proper
   member a x && member b x ==> member (intersection a b) x
 
-correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
+correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
   where
   x' = toUnsigned w x
 
-correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
+correct_sign_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
   where
   x' = toSigned w x
