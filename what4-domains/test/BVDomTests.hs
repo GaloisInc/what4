@@ -44,7 +44,11 @@ main = defaultMain $
   setTestOptions $
 
     testGroup "Bitvector Domain"
-    [ arithDomainTests
+    [ -- See Note [Asserts] in what4-domains
+      testCase "assertions enabled" $ do
+        assertsEnabled <- assertionsEnabled
+        assertBool "assertions should be enabled" assertsEnabled
+    , arithDomainTests
     , bitwiseDomainTests
     , xorDomainTests
     , overallDomainTests

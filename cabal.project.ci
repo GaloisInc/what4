@@ -1,3 +1,6 @@
 -- See Note [Asserts] in what4
 package what4
   ghc-options: -fno-ignore-asserts
+
+package what4-domains
+  ghc-options: -fno-ignore-asserts
