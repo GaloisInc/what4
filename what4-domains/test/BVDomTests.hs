@@ -57,7 +57,7 @@ data SomeWidth where
 genWidth :: Gen SomeWidth
 genWidth =
   do sz <- getSize
-     x <- chooseInt (1, sz+4)
+     x <- chooseInt (1, sz + 4)
      case someNat x of
        Just (Some n)
          | Just LeqProof <- isPosNat n -> pure (SW n)
@@ -166,13 +166,13 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_srem" $
       do SW n <- genWidth
          A.correct_srem n <$> A.genPair n <*> A.genPair n
-  , genTest "correct_shl"$
+  , genTest "correct_shl" $
       do SW n <- genWidth
          A.correct_shl n <$> A.genPair n <*> A.genPair n
-  , genTest "correct_lshr"$
+  , genTest "correct_lshr" $
       do SW n <- genWidth
          A.correct_lshr n <$> A.genPair n <*> A.genPair n
-  , genTest "correct_ashr"$
+  , genTest "correct_ashr" $
       do SW n <- genWidth
          A.correct_ashr n <$> A.genPair n <*> A.genPair n
   , genTest "correct_eq" $
@@ -285,19 +285,19 @@ bitwiseDomainTests =
          let w = addNat i_n z
          LeqProof <- pure $ addIsLeq i_n z
          B.correct_select i n <$> B.genPair w
-  , genTest "correct_shl"$
+  , genTest "correct_shl" $
       do SW n <- genWidth
          B.correct_shl n <$> B.genPair n <*> chooseInteger (0, intValue n)
-  , genTest "correct_lshr"$
+  , genTest "correct_lshr" $
       do SW n <- genWidth
          B.correct_lshr n <$> B.genPair n <*> chooseInteger (0, intValue n)
-  , genTest "correct_ashr"$
+  , genTest "correct_ashr" $
       do SW n <- genWidth
          B.correct_ashr n <$> B.genPair n <*> chooseInteger (0, intValue n)
-  , genTest "correct_rol"$
+  , genTest "correct_rol" $
       do SW n <- genWidth
          B.correct_rol n <$> B.genPair n <*> chooseInteger (0, intValue n)
-  , genTest "correct_ror"$
+  , genTest "correct_ror" $
       do SW n <- genWidth
          B.correct_ror n <$> B.genPair n <*> chooseInteger (0, intValue n)
   , genTest "correct_eq" $
@@ -331,7 +331,7 @@ overallDomainTests = testGroup "Overall Domain"
          y <- min 1000 <$> genBV n
          let as = [ O.singleton n ((x + i) Bits..&. w) | i <- [0 .. y] ]
          let a = foldl1 O.union as
-         pure $ property (O.size a == y+1)
+         pure $ property (O.size a == y + 1)
   , genTest "correct_bra1" $
       do SW n <- genWidth
          O.correct_bra1 n <$> genBV n <*> genBV n
@@ -421,19 +421,19 @@ overallDomainTests = testGroup "Overall Domain"
   , genTest "correct_srem" $
       do SW n <- genWidth
          O.correct_srem n <$> O.genPair n <*> O.genPair n
-  , genTest "correct_shl"$
+  , genTest "correct_shl" $
       do SW n <- genWidth
          O.correct_shl n <$> O.genPair n <*> O.genPair n
-  , genTest "correct_lshr"$
+  , genTest "correct_lshr" $
       do SW n <- genWidth
          O.correct_lshr n <$> O.genPair n <*> O.genPair n
-  , genTest "correct_ashr"$
+  , genTest "correct_ashr" $
       do SW n <- genWidth
          O.correct_ashr n <$> O.genPair n <*> O.genPair n
-  , genTest "correct_rol"$
+  , genTest "correct_rol" $
       do SW n <- genWidth
          O.correct_rol n <$> O.genPair n <*> O.genPair n
-  , genTest "correct_ror"$
+  , genTest "correct_ror" $
       do SW n <- genWidth
          O.correct_ror n <$> O.genPair n <*> O.genPair n
   , genTest "correct_eq" $

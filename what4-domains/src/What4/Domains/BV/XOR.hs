@@ -128,8 +128,8 @@ genElement (BVDXor _mask v u) =
    | x == 0 = val
    | Bits.testBit u i =
        let val' = if Bits.testBit x 0 then setBit val i else val in
-       stripe val' (x `shiftR` 1) (i+1)
-   | otherwise = stripe val x (i+1)
+       stripe val' (x `shiftR` 1) (i + 1)
+   | otherwise = stripe val x (i + 1)
 
 -- | Generate a random nonempty domain and an element
 --   contained in that domain.

@@ -481,7 +481,7 @@ select ::
 select i n (BVDArith a)   = BVDArith (A.select i n a)
 select i n (BVDBitwise b) = BVDBitwise (B.select i n b)
 
-zext :: (1 <= w, w+1 <= u) => BVDomain w -> NatRepr u -> BVDomain u
+zext :: (1 <= w, w + 1 <= u) => BVDomain w -> NatRepr u -> BVDomain u
 zext (BVDArith a) u   = BVDArith (A.zext a u)
 zext (BVDBitwise b) u = BVDBitwise (B.zext b u)
 
@@ -743,12 +743,12 @@ correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer ->
 correct_union n a b x =
   (member a x || member b x) ==> pmember n (union a b) x
 
-correct_zero_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
+correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
   where
   x' = toUnsigned w x
 
-correct_sign_ext :: (1 <= w, w+1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
+correct_sign_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
 correct_sign_ext w a u x = member a x' ==> pmember u (sext w a u) x'
   where
   x' = toSigned w x
