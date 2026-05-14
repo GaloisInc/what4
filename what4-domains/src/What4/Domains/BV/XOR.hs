@@ -112,7 +112,7 @@ genDomain w =
 
 -- This generator goes to some pains to try
 -- to generate a good statistical distribution
--- of the values in the domain.  It only choses
+-- of the values in the domain.  It only chooses
 -- random bits for the "unknown" values of
 -- the domain, then stripes them out among
 -- the unknown bit positions.
