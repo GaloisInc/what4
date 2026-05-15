@@ -26,15 +26,17 @@ implementations, which are transliterated from the Cryptol.
 
 import qualified Data.Bits as Bits
 import           Test.Tasty
-import           Test.Verification
+import           Test.Tasty.HUnit
+import           What4.Domains.Verification
 import           VerifyBindings
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 
-import qualified What4.Utils.BVDomain as O
-import qualified What4.Utils.BVDomain.Arith as A
-import qualified What4.Utils.BVDomain.Bitwise as B
-import qualified What4.Utils.BVDomain.XOR as X
+import qualified What4.Domains.BV as O
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
+import qualified What4.Domains.BV.XOR as X
+import           What4.Domains.Internal (assertionsEnabled)
 
 
 main :: IO ()

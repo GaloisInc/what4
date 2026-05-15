@@ -132,9 +132,10 @@ jobs:
       - name: Cabal check
         shell: bash
         run: |
-          (cd what4;     $NS -c cabal check)
-          (cd what4-abc; $NS -c cabal check)
-          (cd what4-blt; $NS -c cabal check)
+          (cd what4;         $NS -c cabal check)
+          (cd what4-abc;     $NS -c cabal check)
+          (cd what4-blt;     $NS -c cabal check)
+          (cd what4-domains; $NS -c cabal check)
 
       - name: Cabal configure what4
         shell: bash
@@ -157,7 +158,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          $NS -c cabal build pkg:what4
+          $NS -c cabal build pkg:what4-domains pkg:what4
           if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
             $NS -c cabal build pkg:w4smt2
           fi
@@ -175,9 +176,9 @@ jobs:
           echo Yices version $(nix run github:GaloisInc/flakes#yices.v${{ matrix.yices }} -- --version | head -n1)
           echo Z3 version $(nix run github:GaloisInc/flakes#z3.v${{ matrix.z3 }} -- --version | head -n1)
           if [ "${{ matrix.ghc }}" = "9.10.1" ]; then
-            test_pkgs="pkg:what4 pkg:w4smt2"
+            test_pkgs="pkg:what4-domains pkg:what4 pkg:w4smt2"
           else
-            test_pkgs="pkg:what4"
+            test_pkgs="pkg:what4-domains pkg:what4"
           fi
           $NS \
             github:GaloisInc/flakes#abc.v${{ matrix.abc }} \
@@ -193,6 +194,7 @@ jobs:
       - name: Documentation
         shell: bash
         run: |
+          $NS -c cabal haddock what4-domains
           cd what4
           $NS -c cabal haddock what4
 
@@ -223,7 +225,8 @@ jobs:
           setup_src() { if [ ! -f Setup.hs ] ; then defsetup > DefSetup.hs; fi; ls *Setup.hs; }
           setup_bin() { echo setup.${{ matrix.ghc }}; }
           with_ghc()  { $NS -c ${@}; }
-          (cd what4;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-abc; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd what4-blt; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
-          (cd w4smt2;    with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4;         with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-abc;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-blt;     with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd what4-domains; with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)
+          (cd w4smt2;        with_ghc ghc -o $(setup_bin) $(setup_src) && ./$(setup_bin) clean)

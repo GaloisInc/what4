@@ -30,12 +30,7 @@ Extra-source-files:
 Extra-doc-files:
   README.md
   CHANGES.md
-  doc/README.md
   doc/implementation.md
-  doc/bvdomain.cry
-  doc/arithdomain.cry
-  doc/bitsdomain.cry
-  doc/xordomain.cry
 
 source-repository head
   type: git
@@ -136,6 +131,7 @@ library
     unordered-containers >= 0.2.10,
     vector >= 0.12.1,
     versions >= 6.0.2 && < 6.1,
+    what4-domains,
     zenc >= 0.1.0 && < 0.2.0,
 
   default-extensions:
@@ -364,7 +360,8 @@ test-suite expr-builder-smtlib2
     tasty-expected-failure >= 0.12 && < 0.13,
     tasty-checklist >= 1.0.3 && < 1.1,
     text,
-    versions
+    versions,
+    what4-domains
 
 
 test-suite exprs_tests
@@ -403,30 +400,6 @@ test-suite iteexprs_tests
 
   build-depends: bv-sized
                , containers >= 0.5.0.0
-
-
-test-suite bvdomain_tests
-  import: bldflags, testdefs-quickcheck
-  type: exitcode-stdio-1.0
-
-  hs-source-dirs: test/QC
-  main-is: BVDomTests.hs
-
-  other-modules:  VerifyBindings
-
-  build-depends: transformers
-
-
-test-suite bvdomain_tests_hh
-  import: bldflags, testdefs-hedgehog
-  type: exitcode-stdio-1.0
-
-  hs-source-dirs: test/HH
-  main-is: BVDomTests.hs
-
-  other-modules:  VerifyBindings
-
-  build-depends: transformers
 
 
 test-suite template_tests

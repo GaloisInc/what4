@@ -83,13 +83,13 @@ import           Data.Maybe
 import           Data.Parameterized.Classes
 
 import           What4.BaseTypes
+import qualified What4.Domains.BV as BVD
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.XOR as X
 import qualified What4.SemiRing as SR
 import           What4.Utils.AnnotatedMap (AnnotatedMap)
 import qualified What4.Utils.AnnotatedMap as AM
 import qualified What4.Utils.AbstractDomains as AD
-import qualified What4.Utils.BVDomain.Arith as A
-import qualified What4.Utils.BVDomain.XOR as X
-import qualified What4.Utils.BVDomain as BVD
 
 import           What4.Utils.IncrHash
 
