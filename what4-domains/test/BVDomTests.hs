@@ -18,7 +18,7 @@ This module performs randomized testing of the bitvector abstract domain
 computations, which are among relatively complex.
 
 The intended meaning of the abstract domain computations are
-specified using Cryptol in "doc/bvdoman.cry" and realated files.
+specified using Cryptol in "doc/bvdomain.cry" and realated files.
 In those files soundness properites are proved for the implementations.
 These tests are intended to supplement those proofs for the actual
 implementations, which are transliterated from the Cryptol.
