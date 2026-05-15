@@ -100,7 +100,7 @@ data Domain (w :: Nat) =
   BVBitInterval !Integer !Integer !Integer
   -- ^ @BVDBitInterval mask lo hi@.
   --  @mask@ caches the value of @2^w - 1@
- deriving (Show)
+  deriving (Eq, Ord, Show)
 
 -- | Test if the domain satisfies its invariants
 proper :: NatRepr w -> Domain w -> Bool
