@@ -1,6 +1,6 @@
 # Bitvector Abstract Domain Formalization
 
-The module `What4.Utils.BVDomain` implements an abstract domain for
+The module `What4.Domains.BVDomain` implements an abstract domain for
 sized bitvectors, using an interval-based representation. Many of the
 algorithms in this module are subtle and not obviously correct.
 
