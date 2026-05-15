@@ -1,0 +1,99 @@
+Cabal-version: 2.4
+Name:          what4-domains
+Version:       0.1.0.0
+Author:        Galois Inc.
+Maintainer:    rscott@galois.com, kquick@galois.com, langston@galois.com
+Copyright:     (c) Galois, Inc 2014-2024
+License:       BSD-3-Clause
+License-file:  LICENSE
+Build-type:    Simple
+Category:      Formal Methods, Theorem Provers, Symbolic Computation, SMT
+Synopsis:      Abstract domains for What4 term simplification
+Description:
+  Abstract domains used by What4 for term simplification, including
+  interval domains on numeric types and bitvector domains.
+
+Extra-doc-files:
+  doc/bvdomain.cry
+  doc/arithdomain.cry
+  doc/bitsdomain.cry
+  doc/xordomain.cry
+  doc/README.md
+
+source-repository head
+  type: git
+  location: https://github.com/GaloisInc/what4
+
+common bldflags
+  default-language: Haskell2010
+  ghc-options: -Wall
+               -Werror=incomplete-patterns
+               -Werror=missing-methods
+               -Werror=overlapping-patterns
+               -Wcompat
+               -Wpartial-fields
+
+  if impl(ghc >= 8.6)
+    default-extensions: NoStarIsType
+
+common testdefs-quickcheck
+  hs-source-dirs: test test/QC
+  build-depends: base
+               , parameterized-utils
+               , tasty >= 0.10
+               , tasty-quickcheck >= 0.10
+               , QuickCheck >= 2.12
+               , transformers
+               , what4-domains
+
+common testdefs-hedgehog
+  hs-source-dirs: test test/HH test/hedgehog
+  build-depends: base
+               , parameterized-utils
+               , tasty >= 0.10
+               , hedgehog >= 1.0.2
+               , tasty-hedgehog >= 1.2
+               , transformers
+               , what4-domains
+  other-modules: Test.Tasty.Hedgehog.Alt
+
+library
+  import: bldflags
+  build-depends:
+    base >= 4.10 && < 5,
+    parameterized-utils >= 2.3 && < 2.4,
+    mtl >= 2.2.1,
+    transformers >= 0.4,
+
+  hs-source-dirs: src
+
+  exposed-modules:
+    What4.Domains.BV
+    What4.Domains.BV.Arith
+    What4.Domains.BV.Bitwise
+    What4.Domains.BV.XOR
+    What4.Domains.Verification
+
+  other-modules:
+    What4.Domains.Arithmetic
+
+  default-extensions:
+    NondecreasingIndentation
+
+
+test-suite bvdomain_tests
+  import: bldflags, testdefs-quickcheck
+  type: exitcode-stdio-1.0
+
+  main-is: BVDomTests.hs
+
+  other-modules: VerifyBindings
+
+
+test-suite bvdomain_tests_hh
+  import: bldflags, testdefs-hedgehog
+  type: exitcode-stdio-1.0
+
+  main-is: BVDomTests.hs
+
+  other-modules: VerifyBindings

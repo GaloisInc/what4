@@ -151,6 +151,7 @@ import qualified System.IO.Streams as Streams
 
 import           What4.BaseTypes
 import qualified What4.Config as CFG
+import qualified What4.Domains.BV as BVD
 import qualified What4.Expr.ArrayUpdateMap as AUM
 import qualified What4.Expr.BoolMap as BM
 import           What4.Expr.Builder
@@ -166,7 +167,6 @@ import qualified What4.SemiRing as SR
 import qualified What4.SpecialFunctions as SFn
 import           What4.Symbol
 import           What4.Utils.AbstractDomains
-import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
 import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral

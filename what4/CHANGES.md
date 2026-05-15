@@ -1,5 +1,13 @@
 # next
 
+* The `What4.Utils.BVDomain`, `What4.Utils.BVDomain.Arith`,
+  `What4.Utils.BVDomain.Bitwise`, and `What4.Utils.BVDomain.XOR` modules have
+  moved to the new `what4-domains` package as `What4.Domains.BV`,
+  `What4.Domains.BV.Arith`, `What4.Domains.BV.Bitwise`, and
+  `What4.Domains.BV.XOR`, respectively. The old names are deprecated
+  re-exports and will be removed in a future release.
+* `Test.Verification` has moved to `what4-domains` as
+  `What4.Domains.Verification`. The old name is a deprecated re-export.
 * Deprecate `What4.Utils.Endian`, use `Data.Parameterized.Utils.Endian` instead.
 * Fix a bug where persistent side conditions (e.g., @Nat >= 0@ constraints)
   were lost after @reset-assertions@. These constraints are now properly

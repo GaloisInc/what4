@@ -66,8 +66,8 @@ import qualified GHC.TypeNats as Type
 
 import           What4.BaseTypes
 import           What4.Interface
-import           What4.Utils.BVDomain (BVDomain)
-import qualified What4.Utils.BVDomain as BVD
+import           What4.Domains.BV (BVDomain)
+import qualified What4.Domains.BV as BVD
 
 import qualified Data.Map.Strict as Map
 

@@ -57,8 +57,8 @@ import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.CVC5 as CVC5
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
-import qualified What4.Utils.BVDomain as WUB
-import qualified What4.Utils.BVDomain.Arith as WUBA
+import qualified What4.Domains.BV as WUB
+import qualified What4.Domains.BV.Arith as WUBA
 import qualified What4.Utils.ResolveBounds.BV as WURB
 import           What4.Utils.StringLiteral
 import           What4.Utils.Versions (ver, SolverBounds(..), emptySolverBounds)

@@ -31,7 +31,7 @@ import qualified What4.Interface as WI
 import qualified What4.Protocol.Online as WPO
 import qualified What4.Protocol.SMTWriter as WPS
 import qualified What4.SatResult as WSat
-import qualified What4.Utils.BVDomain.Arith as WUBA
+import qualified What4.Domains.BV.Arith as WUBA
 
 -- | The results of an 'WPO.OnlineSolver' trying to resolve a 'WI.SymBV' as
 -- concrete.

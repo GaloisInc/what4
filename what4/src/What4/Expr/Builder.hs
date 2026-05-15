@@ -254,6 +254,7 @@ import           What4.BaseTypes
 import           What4.Concrete
 import qualified What4.Config as CFG
 import           What4.FloatMode
+import qualified What4.Domains.BV as BVD
 import           What4.Interface
 import           What4.InterpretedFloatingPoint
 import           What4.ProgramLoc
@@ -276,7 +277,6 @@ import qualified What4.Expr.VarIdentification as VI
 
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
-import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
 import           What4.Utils.FloatHelpers
 import           What4.Utils.StringLiteral

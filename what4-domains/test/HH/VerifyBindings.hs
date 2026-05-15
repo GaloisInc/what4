@@ -9,7 +9,7 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import           Test.Tasty
 import           Test.Tasty.Hedgehog.Alt
-import qualified Test.Verification as V
+import qualified What4.Domains.Verification as V
 
 
 verifyGenerators :: V.GenEnv Gen

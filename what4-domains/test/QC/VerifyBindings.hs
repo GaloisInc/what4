@@ -5,7 +5,7 @@ module VerifyBindings where
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-import qualified Test.Verification as V
+import qualified What4.Domains.Verification as V
 
 
 instance Testable V.Property where

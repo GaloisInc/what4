@@ -144,6 +144,7 @@ import           Prettyprinter hiding (Unbounded)
 
 import           What4.BaseTypes
 import           What4.Concrete
+import qualified What4.Domains.BV as BVD
 import           What4.Interface
 import           What4.ProgramLoc
 import qualified What4.SemiRing as SR
@@ -160,7 +161,6 @@ import qualified What4.Expr.UnaryBV as UnaryBV
 
 import           What4.Utils.AbstractDomains
 import           What4.Utils.Arithmetic
-import qualified What4.Utils.BVDomain as BVD
 import           What4.Utils.Complex
 import           What4.Utils.IncrHash
 import qualified What4.Utils.AnnotatedMap as AM
