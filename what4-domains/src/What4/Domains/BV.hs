@@ -233,7 +233,7 @@ asBitwiseDomain (BVDBitwise b) = b
 data BVDomain (w :: Nat)
   = BVDArith !(A.Domain w)
   | BVDBitwise !(B.Domain w)
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 -- | Return the bitvector mask value from this domain
 bvdMask :: BVDomain w -> Integer
