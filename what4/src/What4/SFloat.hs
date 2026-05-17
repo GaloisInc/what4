@@ -18,6 +18,8 @@ module What4.SFloat
     -- * Constants
   , fpFresh
   , fpNaN
+  , fpPosZero
+  , fpNegZero
   , fpPosInf
   , fpNegInf
   , fpFromLit
@@ -30,9 +32,14 @@ module What4.SFloat
     -- * Relations
   , SFloatRel
   , fpEq
+  , fpNe
   , fpEqIEEE
+  , fpNeIEEE
+  , fpLeIEEE
   , fpLtIEEE
+  , fpGeIEEE
   , fpGtIEEE
+  , fpUnordered
 
     -- * Arithmetic
   , SFloatBinArith
@@ -43,6 +50,7 @@ module What4.SFloat
   , fpSub
   , fpMul
   , fpDiv
+  , fpRem
   , fpMin
   , fpMax
   , fpFMA
@@ -54,12 +62,18 @@ module What4.SFloat
   , fpFromRational
   , fpToRational
   , fpFromInteger
+  , fpCast
+  , fpFromBV
+  , fpFromSBV
+  , fpToBV
+  , fpToSBV
 
     -- * Queries
   , fpIsInf
   , fpIsNaN
   , fpIsZero
   , fpIsNeg
+  , fpIsPos
   , fpIsSubnorm
   , fpIsNorm
 
@@ -70,6 +84,7 @@ module What4.SFloat
 
 import Control.Exception
 import LibBF (BigFloat)
+import Numeric.Natural
 
 import Data.Parameterized.Some
 import Data.Parameterized.NatRepr
@@ -179,6 +194,27 @@ fpNaN sym e p
   | Just (Some fpp) <- fpRepr e p = SFloat <$> floatNaN sym fpp
   | otherwise = unsupported "fpNaN" e p
 
+-- | Positive zero
+fpPosZero ::
+  IsExprBuilder sym =>
+  sym ->
+  Integer {- ^ Exponent width -} ->
+  Integer {- ^ Precision width -} ->
+  IO (SFloat sym)
+fpPosZero sym e p
+  | Just (Some fpp) <- fpRepr e p = SFloat <$> floatPZero sym fpp
+  | otherwise = unsupported "fpPosZero" e p
+
+-- | Negative zero
+fpNegZero ::
+  IsExprBuilder sym =>
+  sym ->
+  Integer {- ^ Exponent width -} ->
+  Integer {- ^ Precision width -} ->
+  IO (SFloat sym)
+fpNegZero sym e p
+  | Just (Some fpp) <- fpRepr e p = SFloat <$> floatNZero sym fpp
+  | otherwise = unsupported "fpNegZero" e p
 
 -- | Positive infinity
 fpPosInf ::
@@ -303,6 +339,15 @@ fpMul = fpBinArith floatMul
 fpDiv :: IsExprBuilder sym => SFloatBinArith sym
 fpDiv = fpBinArith floatDiv
 
+fpRem :: IsExprBuilder sym => sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
+fpRem sym (SFloat x) (SFloat y) =
+  let t1 = sym `fpReprOf` x
+      t2 = sym `fpReprOf` y
+  in
+  case testEquality t1 t2 of
+    Just Refl -> SFloat <$> floatRem sym x y
+    _         -> fpTypeError t1 t2
+
 fpMin :: IsExprBuilder sym => sym -> SFloat sym -> SFloat sym -> IO (SFloat sym)
 fpMin sym (SFloat x) (SFloat y) =
   let t1 = sym `fpReprOf` x
@@ -371,15 +416,29 @@ type SFloatRel sym =
 fpEq :: IsExprBuilder sym => SFloatRel sym
 fpEq = fpRel floatEq
 
+fpNe :: IsExprBuilder sym => SFloatRel sym
+fpNe = fpRel floatNe
+
 fpEqIEEE :: IsExprBuilder sym => SFloatRel sym
 fpEqIEEE = fpRel floatFpEq
+
+fpNeIEEE :: IsExprBuilder sym => SFloatRel sym
+fpNeIEEE = fpRel floatFpApart
+
+fpLeIEEE :: IsExprBuilder sym => SFloatRel sym
+fpLeIEEE = fpRel floatLe
 
 fpLtIEEE :: IsExprBuilder sym => SFloatRel sym
 fpLtIEEE = fpRel floatLt
 
+fpGeIEEE :: IsExprBuilder sym => SFloatRel sym
+fpGeIEEE = fpRel floatGe
+
 fpGtIEEE :: IsExprBuilder sym => SFloatRel sym
 fpGtIEEE = fpRel floatGt
 
+fpUnordered :: IsExprBuilder sym => SFloatRel sym
+fpUnordered = fpRel floatFpUnordered
 
 --------------------------------------------------------------------------------
 fpRound ::
@@ -433,7 +492,59 @@ fpToRational sym fp =
      same <- realEq sym r res
      pure (same, x, y)
 
+-- | Change the precision of a floating point number.
+fpCast ::
+  IsExprBuilder sym =>
+  sym -> Integer -> Integer -> RoundingMode -> SFloat sym -> IO (SFloat sym)
+fpCast sym e p r (SFloat x)
+  | Just (Some repr) <- fpRepr e p = SFloat <$> floatCast sym repr r x
+  | otherwise = unsupported "fpFromReal" e p
 
+-- | Convert a unsigned bitvector to a floating point number.
+fpFromBV ::
+  IsExprBuilder sym =>
+  sym -> Integer -> Integer -> RoundingMode -> SWord sym -> IO (SFloat sym)
+fpFromBV sym e p r swe
+  | DBV sw <- swe
+  , Just (Some fpp) <- fpRepr e p =
+    SFloat <$> bvToFloat sym fpp r sw
+  | otherwise = unsupported "fpFromBV" e p
+
+-- | Convert a signed bitvector to a floating point number.
+fpFromSBV ::
+  IsExprBuilder sym =>
+  sym -> Integer -> Integer -> RoundingMode -> SWord sym -> IO (SFloat sym)
+fpFromSBV sym e p r swe
+  | DBV sw <- swe
+  , Just (Some fpp) <- fpRepr e p =
+    SFloat <$> sbvToFloat sym fpp r sw
+  | otherwise = unsupported "fpFromSBV" e p
+
+-- | Convert a floating point number to a unsigned bitvector.
+-- Precondition: the supplied 'Natural' (the bit width of the returned
+-- bitvector) is non-zero.
+fpToBV ::
+  IsExprBuilder sym =>
+  sym -> Natural -> RoundingMode -> SFloat sym -> IO (SWord sym)
+fpToBV sym n r (SFloat x) =
+  case mkNatRepr n of
+    Some nr ->
+      case isPosNat nr of
+        Nothing -> panic "fpToBV" ["bit width must be non-zero"]
+        Just LeqProof -> DBV <$> floatToBV sym nr r x
+
+-- | Convert a floating point number to a signed bitvector.
+-- Precondition: the supplied 'Natural' (the bit width of the returned
+-- bitvector) is non-zero.
+fpToSBV ::
+  IsExprBuilder sym =>
+  sym -> Natural -> RoundingMode -> SFloat sym -> IO (SWord sym)
+fpToSBV sym n r (SFloat x) =
+  case mkNatRepr n of
+    Some nr ->
+      case isPosNat nr of
+        Nothing -> panic "fpToSBV" ["bit width must be non-zero"]
+        Just LeqProof -> DBV <$> floatToSBV sym nr r x
 
 --------------------------------------------------------------------------------
 fpIsInf :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
@@ -447,6 +558,9 @@ fpIsZero sym (SFloat x) = floatIsZero sym x
 
 fpIsNeg :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
 fpIsNeg sym (SFloat x) = floatIsNeg sym x
+
+fpIsPos :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
+fpIsPos sym (SFloat x) = floatIsPos sym x
 
 fpIsSubnorm :: IsExprBuilder sym => sym -> SFloat sym -> IO (Pred sym)
 fpIsSubnorm sym (SFloat x) = floatIsSubnorm sym x

@@ -24,6 +24,9 @@
   but follow the SMT-LIB-specified div-by-zero semantics
   (`bvudiv s 0 = ~0`, `bvurem s 0 = s`, `bvsdiv s 0 = if s < 0 then 1 else ~0`,
   `bvsrem s 0 = s`). See Note `[SMT-LIB division]` in `What4.Interface`.
+* Add `fpNegZero`, `fpPosZero`, `fpRem`, `fpNe`, `fpNeIEEE`, `fpLeIEEE`,
+  `fpGeIEEE`, `fpIsPos`, `fpCast`, `fpFromBV`, `fpFromSBV`, `fpToBV`, and
+  `fpToSBV` to `What4.SFloat`.
 
 # 1.7.3 -- 2026-01-26
 
