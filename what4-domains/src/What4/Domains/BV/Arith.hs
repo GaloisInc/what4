@@ -572,7 +572,9 @@ scaleRange k (lo, hi)
   | otherwise = (k * lo, k * hi)
 
 udiv :: (1 <= w) => Domain w -> Domain w -> Domain w
-udiv a b = interval mask ql (qh - ql)
+udiv a b
+  | isSingletonZero b = BVDAny mask
+  | otherwise = interval mask ql (qh - ql)
   where
     mask = bvdMask a
     (al, ah) = ubounds a
@@ -582,6 +584,7 @@ udiv a b = interval mask ql (qh - ql)
 
 urem :: (1 <= w) => Domain w -> Domain w -> Domain w
 urem a b
+  | isSingletonZero b = BVDAny mask
   | qh == ql = interval mask rl (rh - rl)
   | otherwise = interval mask 0 (bh - 1)
   where
@@ -631,22 +634,28 @@ scaleDownRange (lo, hi) k
 
 
 sdiv :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-sdiv w a b = interval mask ql (qh - ql)
+sdiv w a b
+  | isSingletonZero b = BVDAny mask
+  | otherwise = interval mask ql (qh - ql)
   where
     mask = bvdMask a
     (ql, qh) = sdivRange (sbounds w a) (rbounds w b)
 
 srem :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-srem w a b =
+srem w a b
+  -- Division by zero is unspecified; widen to any rather than building
+  -- an improper domain. (Without this guard, the @rh < rl@ branch below
+  -- builds @BVDInterval mask _ (rh - rl)@ with a negative size.)
+  | isSingletonZero b = BVDAny mask
   -- If the quotient is a singleton @q@, then we compute the remainder
   -- @r = a - q*b@.
-  if ql == qh then
-    (if ql < 0
-     then interval mask (al - ql * bl) (aw - ql * bw)
-     else interval mask (al - ql * bh) (aw + ql * bw))
+  | ql == qh =
+      if ql < 0
+      then interval mask (al - ql * bl) (aw - ql * bw)
+      else interval mask (al - ql * bh) (aw + ql * bw)
   -- Otherwise the range of possible remainders is determined by the
   -- modulus and the sign of the first argument.
-  else interval mask rl (rh - rl)
+  | otherwise = interval mask rl (rh - rl)
   where
     mask = bvdMask a
     (al, ah) = sbounds w a
