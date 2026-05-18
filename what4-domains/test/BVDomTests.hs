@@ -170,6 +170,18 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_srem" $
       do SW n <- genWidth
          A.correct_srem n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_udivSmtlib" $
+      do SW n <- genWidth
+         A.correct_udivSmtlib n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_uremSmtlib" $
+      do SW n <- genWidth
+         A.correct_uremSmtlib n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_sdivSmtlib" $
+      do SW n <- genWidth
+         A.correct_sdivSmtlib n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_sremSmtlib" $
+      do SW n <- genWidth
+         A.correct_sremSmtlib n <$> A.genPair n <*> A.genPair n
   , genTest "correct_shl" $
       do SW n <- genWidth
          A.correct_shl n <$> A.genPair n <*> A.genPair n

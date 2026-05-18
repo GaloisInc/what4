@@ -60,6 +60,11 @@ module What4.Domains.BV.Arith
   , urem
   , sdiv
   , srem
+    -- ** Arithmetic (SMT-LIB div-by-zero semantics)
+  , udivSmtlib
+  , uremSmtlib
+  , sdivSmtlib
+  , sremSmtlib
     -- ** Bitwise
   , What4.Domains.BV.Arith.not
 
@@ -89,6 +94,10 @@ module What4.Domains.BV.Arith
   , correct_sdivRange
   , correct_sdiv
   , correct_srem
+  , correct_udivSmtlib
+  , correct_uremSmtlib
+  , correct_sdivSmtlib
+  , correct_sremSmtlib
   , correct_not
   , correct_shl
   , correct_lshr
@@ -648,6 +657,74 @@ srem w a b =
     aw = ah - al
     bw = bh - bl
 
+-- | Like 'udiv', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+-- div-by-zero semantics:
+--
+-- > [[(bvudiv s t)]] := if bv2nat([[t]]) = 0
+-- >                     then λx:[0, m). 1
+-- >                     else nat2bv[m](bv2nat([[s]]) div bv2nat([[t]]))
+--
+-- i.e.\ the all-ones bitvector when the divisor is zero. See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+udivSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
+udivSmtlib a b
+  | isSingletonZero b = singleton' mask mask
+  | member b 0        = union (udiv a b) (singleton' mask mask)
+  | otherwise         = udiv a b
+  where
+    mask = bvdMask a
+    singleton' m v = BVDInterval m v 0
+
+-- | Like 'urem', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+-- div-by-zero semantics:
+--
+-- > [[(bvurem s t)]] := if bv2nat([[t]]) = 0
+-- >                     then [[s]]
+-- >                     else nat2bv[m](bv2nat([[s]]) mod bv2nat([[t]]))
+--
+-- i.e.\ the dividend itself when the divisor is zero. See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+uremSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
+uremSmtlib a b
+  | isSingletonZero b = a
+  | member b 0        = union (urem a b) a
+  | otherwise         = urem a b
+
+-- | Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero
+-- convention: @(bvsdiv s 0)@ is all-ones when the dividend is
+-- non-negative, @1@ when it is negative. The signed variants are not
+-- in the core @FixedSizeBitVectors@ theory; this convention matches
+-- Z3, CVC5, Bitwuzla, and Yices. See @Note [SMT-LIB division]@ in
+-- "What4.Interface" for the design rationale.
+sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sdivSmtlib w a b
+  | isSingletonZero b = sdivByZero w a
+  | member b 0        = union (sdiv w a b) (sdivByZero w a)
+  | otherwise         = sdiv w a b
+
+-- The result of @bvsdiv s 0@ as a function of the dividend's sign:
+-- all-ones when @s >= 0@, @1@ when @s < 0@.
+sdivByZero :: (1 <= w) => NatRepr w -> Domain w -> Domain w
+sdivByZero w a =
+  case (al < 0, ah >= 0) of
+    (False, _    ) -> singleton w mask        -- s >= 0: all-ones
+    (True,  False) -> singleton w 1           -- s < 0: one
+    (True,  True ) -> union (singleton w 1) (singleton w mask)
+  where
+    mask = bvdMask a
+    (al, ah) = sbounds w a
+
+-- | Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero
+-- convention: @(bvsrem s 0)@ is the dividend itself. The signed
+-- variants are not in the core @FixedSizeBitVectors@ theory; this
+-- convention matches Z3, CVC5, Bitwuzla, and Yices. See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sremSmtlib w a b
+  | isSingletonZero b = a
+  | member b 0        = union (srem w a b) a
+  | otherwise         = srem w a b
+
 --------------------------------------------------------------------------------
 -- Bitwise logical
 
@@ -815,6 +892,51 @@ correct_sdiv n (a,x) (b,y) =
 correct_srem :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_srem n (a,x) (b,y) =
     member a x ==> member b y ==> y /= 0 ==> pmember n (srem n a b) (x' `rem` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+
+correct_udivSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_udivSmtlib n (a,x) (b,y) =
+    member a x' ==> member b y' ==>
+      pmember n (udivSmtlib a b)
+        (if y' == 0 then maxUnsigned n else x' `quot` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_uremSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_uremSmtlib n (a,x) (b,y) =
+    member a x' ==> member b y' ==>
+      pmember n (uremSmtlib a b) (if y' == 0 then x' else x' `rem` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_sdivSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sdivSmtlib n (a,x) (b,y) =
+    member a x ==> member b y ==>
+      pmember n (sdivSmtlib n a b) result
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+  result
+    | y' /= 0   = x' `quot` y'
+    | x' >= 0   = maxUnsigned n
+    | otherwise = 1
+
+correct_sremSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sremSmtlib n (a,x) (b,y) =
+    member a x ==> member b y ==>
+      pmember n (sremSmtlib n a b) (if y' == 0 then x' else x' `rem` y')
   where
   x' = toSigned n x
   y' = toSigned n y
