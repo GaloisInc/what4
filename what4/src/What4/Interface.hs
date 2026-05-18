@@ -940,6 +940,136 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
          -> SymBV sym w
          -> IO (SymBV sym w)
 
+  {-
+  Note [SMT-LIB division]
+  ~~~~~~~~~~~~~~~~~~~~~~~
+
+  The 'bvUdiv', 'bvUrem', 'bvSdiv', and 'bvSrem' methods document
+  their behavior on a zero divisor as /undefined/. Backends are free
+  to fold @bvUdiv x 0@ to anything they like; the abstract domain in
+  "What4.Domains.BV.Arith" assumes @y /= 0@ when computing bounds, and
+  the symbolic-eval machinery may constant-fold a div-by-zero
+  expression to whatever the abstract value happens to be.
+
+  The SMT-LIB @FixedSizeBitVectors@ theory, by contrast, /defines/ a
+  value for division by zero:
+
+  * @(bvudiv s 0)@ is the all-ones bitvector,
+  * @(bvurem s 0)@ is @s@.
+
+  See <https://smt-lib.org/theories-FixedSizeBitVectors.shtml>. The
+  signed variants @bvsdiv@ and @bvsrem@ are not in the core theory but
+  are uniformly implemented by Z3, CVC5, Bitwuzla, and Yices as
+
+  * @(bvsdiv s 0) = if s < 0 then 1 else \-1@,
+  * @(bvsrem s 0) = s@.
+
+  Tools that translate SMT-LIB input through What4 (notably @w4smt2@)
+  must therefore use a div/rem operator that respects these defined
+  values, otherwise the abstract evaluator can produce concretely
+  wrong constant folds for div-by-zero corners.
+
+  We expose the SMT-LIB-faithful variants as separate methods rather than
+  changing 'bvUdiv'\/etc., to preserve precisions for frontends with their own
+  div-by-zero handling (e.g., by asserting to the solver that the denominator is
+  not zero).
+
+  /Why no dedicated @App@ constructor?/  The default implementations
+  use 'bvIte' to splice the SMT-LIB-mandated value over the existing
+  primitive: @bvUdivSmtlib x y = ite (y == 0) maxUnsigned (bvUdiv x
+  y)@. Abstract evaluation of the resulting 'BaseIte' computes the
+  union of the two branches' abstract values, which matches what a
+  dedicated constructor would do via 'A.udivSmtlib'\/etc.\ — including
+  in the constant-folding cases — so the only thing a dedicated
+  constructor would buy is more compact SMT output, which is not
+  worth the cross-cutting boilerplate.
+  -}
+
+  -- | Unsigned bitvector division, using the SMT-LIB
+  -- @FixedSizeBitVectors@ theory's div-by-zero semantics:
+  --
+  -- @
+  -- bvUdivSmtlib x 0 = bvNotBits 0   -- the all-ones bitvector
+  -- @
+  --
+  -- Otherwise behaves like 'bvUdiv'. See @Note [SMT-LIB division]@.
+  bvUdivSmtlib :: (1 <= w)
+               => sym
+               -> SymBV sym w
+               -> SymBV sym w
+               -> IO (SymBV sym w)
+  bvUdivSmtlib sym x y = do
+    let w = bvWidth x
+    zero <- bvZero sym w
+    isZero <- bvEq sym y zero
+    allOnes <- bvLit sym w (BV.maxUnsigned w)
+    safeQuot <- bvUdiv sym x y
+    bvIte sym isZero allOnes safeQuot
+
+  -- | Unsigned bitvector remainder, using the SMT-LIB
+  -- @FixedSizeBitVectors@ theory's div-by-zero semantics:
+  --
+  -- @
+  -- bvUremSmtlib x 0 = x
+  -- @
+  --
+  -- Otherwise behaves like 'bvUrem'. See @Note [SMT-LIB division]@.
+  bvUremSmtlib :: (1 <= w)
+               => sym
+               -> SymBV sym w
+               -> SymBV sym w
+               -> IO (SymBV sym w)
+  bvUremSmtlib sym x y = do
+    let w = bvWidth x
+    zero <- bvZero sym w
+    isZero <- bvEq sym y zero
+    safeRem <- bvUrem sym x y
+    bvIte sym isZero x safeRem
+
+  -- | Signed bitvector division, using the SMT-LIB QF_BV logic's
+  -- div-by-zero convention (matching Z3, CVC5, Bitwuzla, Yices):
+  --
+  -- @
+  -- bvSdivSmtlib x 0 = if x \>= 0 then -1 else 1
+  -- @
+  --
+  -- Otherwise behaves like 'bvSdiv'. See @Note [SMT-LIB division]@.
+  bvSdivSmtlib :: (1 <= w)
+               => sym
+               -> SymBV sym w
+               -> SymBV sym w
+               -> IO (SymBV sym w)
+  bvSdivSmtlib sym x y = do
+    let w = bvWidth x
+    zero <- bvZero sym w
+    isZero <- bvEq sym y zero
+    isNeg <- bvIsNeg sym x
+    one <- bvLit sym w (BV.one w)
+    allOnes <- bvLit sym w (BV.maxUnsigned w)
+    onZero <- bvIte sym isNeg one allOnes
+    safeQuot <- bvSdiv sym x y
+    bvIte sym isZero onZero safeQuot
+
+  -- | Signed bitvector remainder, using the SMT-LIB QF_BV logic's
+  -- div-by-zero convention (matching Z3, CVC5, Bitwuzla, Yices):
+  --
+  -- @
+  -- bvSremSmtlib x 0 = x
+  -- @
+  --
+  -- Otherwise behaves like 'bvSrem'. See @Note [SMT-LIB division]@.
+  bvSremSmtlib :: (1 <= w)
+               => sym
+               -> SymBV sym w
+               -> SymBV sym w
+               -> IO (SymBV sym w)
+  bvSremSmtlib sym x y = do
+    let w = bvWidth x
+    zero <- bvZero sym w
+    isZero <- bvEq sym y zero
+    safeRem <- bvSrem sym x y
+    bvIte sym isZero x safeRem
+
   -- | Returns true if the corresponding bit in the bitvector is set.
   testBitBV :: (1 <= w)
             => sym

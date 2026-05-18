@@ -79,6 +79,11 @@ module What4.Domains.BV
   , urem
   , sdiv
   , srem
+    -- ** Arithmetic (SMT-LIB div-by-zero semantics)
+  , udivSmtlib
+  , uremSmtlib
+  , sdivSmtlib
+  , sremSmtlib
     -- ** Bitwise
   , What4.Domains.BV.not
   , and
@@ -603,6 +608,26 @@ sdiv w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.sdiv w a b)
 
 srem :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 srem w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.srem w a b)
+
+-- | Like 'udiv', but using the SMT-LIB FixedSizeBitVectors theory's
+-- div-by-zero semantics. See 'A.udivSmtlib'.
+udivSmtlib :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+udivSmtlib (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.udivSmtlib a b)
+
+-- | Like 'urem', but using the SMT-LIB FixedSizeBitVectors theory's
+-- div-by-zero semantics. See 'A.uremSmtlib'.
+uremSmtlib :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+uremSmtlib (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.uremSmtlib a b)
+
+-- | Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero
+-- semantics. See 'A.sdivSmtlib'.
+sdivSmtlib :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+sdivSmtlib w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.sdivSmtlib w a b)
+
+-- | Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero
+-- semantics. See 'A.sremSmtlib'.
+sremSmtlib :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
+sremSmtlib w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.sremSmtlib w a b)
 
 --------------------------------------------------------------------------------
 -- Bitwise logical

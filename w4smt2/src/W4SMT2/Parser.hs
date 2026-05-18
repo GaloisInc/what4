@@ -680,10 +680,13 @@ parseBVOp sym op e1 e2 = case op of
   "add" -> SomeExpr <$> WI.bvAdd sym e1 e2
   "sub" -> SomeExpr <$> WI.bvSub sym e1 e2
   "mul" -> SomeExpr <$> WI.bvMul sym e1 e2
-  "udiv" -> SomeExpr <$> WI.bvUdiv sym e1 e2
-  "sdiv" -> SomeExpr <$> WI.bvSdiv sym e1 e2
-  "urem" -> SomeExpr <$> WI.bvUrem sym e1 e2
-  "srem" -> SomeExpr <$> WI.bvSrem sym e1 e2
+  -- SMT-LIB defines a value for division by zero (see
+  -- <https://smt-lib.org/theories-FixedSizeBitVectors.shtml>); use the
+  -- *Smtlib variants so the abstract domain agrees with the spec.
+  "udiv" -> SomeExpr <$> WI.bvUdivSmtlib sym e1 e2
+  "sdiv" -> SomeExpr <$> WI.bvSdivSmtlib sym e1 e2
+  "urem" -> SomeExpr <$> WI.bvUremSmtlib sym e1 e2
+  "srem" -> SomeExpr <$> WI.bvSremSmtlib sym e1 e2
   "and" -> SomeExpr <$> WI.bvAndBits sym e1 e2
   "or" -> SomeExpr <$> WI.bvOrBits sym e1 e2
   "xor" -> SomeExpr <$> WI.bvXorBits sym e1 e2
