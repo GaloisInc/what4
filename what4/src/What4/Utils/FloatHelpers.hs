@@ -14,6 +14,7 @@ import LibBF
 
 import What4.BaseTypes
 import What4.Panic (panic)
+import What4.Utils.Arithmetic (roundAway)
 
 -- | Rounding modes for IEEE-754 floating point operations.
 data RoundingMode
@@ -95,7 +96,7 @@ floatToInteger r fp =
   do rat <- floatToRational fp
      pure case r of
             RNE -> round rat
-            RNA -> if rat > 0 then ceiling rat else floor rat
+            RNA -> roundAway rat
             RTP -> ceiling rat
             RTN -> floor rat
             RTZ -> truncate rat
