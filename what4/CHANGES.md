@@ -17,6 +17,8 @@
   Bitwuzla involving the `floatToReal` operation (which Bitwuzla does not
   support) instead of throwing a parse exception.
 * Replace `lens` with `microlens-{,-mtl,-th}`.
+* Fix a bug where `what4` could produce incorrect models involving the
+  `floatToBV` operation when using the `RNA` rounding mode.
 
 # 1.7.3 -- 2026-01-26
 

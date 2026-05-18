@@ -1161,6 +1161,48 @@ issue329Test sym solver = do
 
       _ -> fail "expected satisfible model"
 
+-- | A regression test for #377.
+issue377Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue377Test sym solver = do
+    -- Construct the following proposition (written in pseudo-Cryptol):
+    --
+    --   \(f : Float32) (bv3 : [32]) -> lit == f /\ bv2 == bv3
+    --     where
+    --       lit : Float32
+    --       lit = 0.25
+    --
+    --       bv1, bv2 : [32]
+    --       bv1 = fpFromBV rna lit
+    --       bv2 = fpFromBV rna f
+    let w :: NatRepr 32
+        w = knownNat
+    let fpp :: FloatPrecisionRepr Prec32
+        fpp = knownRepr
+    lit <- floatLit sym fpp (bfFromDouble 0.25)
+    f <- freshConstant sym (safeSymbol "f") (BaseFloatRepr fpp)
+    p1 <- floatEq sym lit f
+    bv1 <- floatToBV sym w RNA lit
+    bv2 <- floatToBV sym w RNA f
+    bv3 <- freshConstant sym (safeSymbol "bv") (BaseBVRepr w)
+    p2 <- bvEq sym bv2 bv3
+    p <- andPred sym p1 p2
+
+    -- Check that the proposition is satisfiaible and that the model that what4
+    -- computes evaluates all of the `bv*` values to `0`.
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do bv1Eval <- groundEval fn bv1
+           bv2Eval <- groundEval fn bv2
+           bv3Eval <- groundEval fn bv3
+           let expected = BV.mkBV w 0
+           (all (== expected) [bv1Eval, bv2Eval, bv3Eval]) @? "result other than 0"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1325,6 +1367,7 @@ main = do
         , testCase "Z3 #182 test case" $ withOnlineZ3 issue182Test
         , testCase "Z3 #315 test case" $ withOnlineZ3 issue315Test
         , testCase "Z3 #329 test case" $ withOnlineZ3 issue329Test
+        , testCase "Z3 #377 test case" $ withOnlineZ3 issue377Test
 
         , arrayCopyTest
         , arraySetTest
@@ -1377,6 +1420,7 @@ main = do
         , cvcTestCase "#182 test case" $ withCVC issue182Test
         , cvcTestCase "#315 test case" $ withCVC issue315Test
         , cvcTestCase "#329 test case" $ withCVC issue329Test
+        , cvcTestCase "#377 test case" $ withCVC issue377Test
         ]
   let cvc4Tests = cvcTests CVC4
   let cvc5Tests = cvcTests CVC5
