@@ -167,6 +167,7 @@ library
 
   other-modules:
     What4.Domains.Arithmetic
+    What4.Domains.BV.Bitwise.Tnum
 
   default-extensions:
     NondecreasingIndentation

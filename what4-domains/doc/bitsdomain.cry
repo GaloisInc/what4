@@ -105,6 +105,104 @@ ror : {n} (fin n) => Dom n -> [n] -> Dom n
 ror a x = { lomask = a.lomask >>> x, himask = a.himask >>> x }
 
 ////////////////////////////////////////////////////////////
+// Bounds and comparisons
+
+// Unsigned bounds: the bit-pattern lo and hi are also the unsigned min/max.
+ubounds : {n} (fin n) => Dom n -> ([n], [n])
+ubounds a = (a.lomask, a.himask)
+
+// Signed bounds: if the sign bit is known (lomask and himask agree on
+// it), the bit-pattern bounds are also the signed bounds. If the sign
+// bit is unknown, the most-negative value sets the sign bit and clears
+// all other unknowns; the most-positive clears the sign bit and sets
+// all other unknowns.
+sbounds : {n} (fin n, n >= 1) => Dom n -> ([n], [n])
+sbounds a =
+  if (a.lomask && signbit) == (a.himask && signbit)
+    then (a.lomask, a.himask)
+    else (a.lomask || signbit, a.himask && (~ signbit))
+  where
+  signbit = 1 << (`n - 1 : [n]) : [n]
+
+ult : {n} (fin n) => Dom n -> Dom n -> Bit
+ult a b = (ubounds a).1 < (ubounds b).0
+
+slt : {n} (fin n, n >= 1) => Dom n -> Dom n -> Bit
+slt a b = (sbounds a).1 <$ (sbounds b).0
+
+////////////////////////////////////////////////////////////
+// Arithmetic operations (tristate-number algorithms)
+//
+// These follow the algorithms used by the Linux kernel BPF verifier
+// for "tnum" (tristate-number) propagation.
+
+// Internal: tristate-number add. Given (av, am) and (bv, bm) where
+// "value" is the known-1 bits and "mask" is the unknown bits, compute
+// the tnum representing the sum.
+addTnum : {n} (fin n) => [n] -> [n] -> [n] -> [n] -> ([n], [n])
+addTnum av am bv bm = (resv, resm)
+  where
+  sm    = am + bm
+  sv    = av + bv
+  sigma = sm + sv
+  chi   = sigma ^ sv
+  resm  = chi || am || bm
+  resv  = sv && (~ resm)
+
+// Convert a (value, mask) pair into a Dom.
+fromTnum : {n} (fin n) => [n] -> [n] -> Dom n
+fromTnum v m = { lomask = v, himask = v || m }
+
+// Convert a Dom to a (value, mask) pair.
+toTnum : {n} (fin n) => Dom n -> ([n], [n])
+toTnum a = (a.lomask, a.lomask ^ a.himask)
+
+add : {n} (fin n) => Dom n -> Dom n -> Dom n
+add a b = fromTnum resv resm
+  where
+  (av, am) = toTnum a
+  (bv, bm) = toTnum b
+  (resv, resm) = addTnum av am bv bm
+
+bneg : {n} (fin n, n >= 1) => Dom n -> Dom n
+bneg a = add (bnot a) (singleton 1)
+
+sub : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+sub a b = add a (bneg b)
+
+scale : {n} (fin n, n >= 1) => [n] -> Dom n -> Dom n
+scale k a = mul (singleton k) a
+
+// Multiply via shift-and-add over the bits of a.
+//
+// At bit position i, when av_i = 1 we add bm shifted to position i
+// (the bv contribution is already accounted for by the initial
+// av*bv product). When am_i = 1 (unknown bit), we add (bv|bm) shifted
+// to position i, since b might or might not contribute.
+mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+mul a b = fromTnum resv resm
+  where
+  (av, am) = toTnum a
+  (bv, bm) = toTnum b
+  // Initial value-by-value product
+  init = (av * bv, 0 : [n])
+  // Shift contributions for each bit position i in [0..n-1]
+  contribs = [ if av @ (`n - 1 - i)
+                 then (0, bm << i)
+                 else if am @ (`n - 1 - i)
+                        then (0, (bv || bm) << i)
+                        else (0, 0)
+             | i <- [0 .. n-1] ]
+  // Sum them all using addTnum
+  (resv, resm) = foldl step init contribs
+  step (v, m) (cv, cm) = addTnum v m cv cm
+
+foldl : {a, b, n} (fin n) => (a -> b -> a) -> a -> [n]b -> a
+foldl f z xs = (zs : [_]a) ! 0
+  where
+  zs = [z] # [ f y x | y <- zs | x <- xs ]
+
+////////////////////////////////////////////////////////////
 // Soundness properties
 
 correct_top : {n} (fin n) => [n] -> Bit
@@ -189,6 +287,46 @@ correct_ror : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
 correct_ror a x y =
   mem a x ==> mem (ror a y) (x >>> y)
 
+correct_ubounds : {n} (fin n) => Dom n -> [n] -> Bit
+correct_ubounds a x =
+  mem a x ==> lo <= x /\ x <= hi
+  where
+  (lo, hi) = ubounds a
+
+correct_sbounds : {n} (fin n, n >= 1) => Dom n -> [n] -> Bit
+correct_sbounds a x =
+  mem a x ==> lo <=$ x /\ x <=$ hi
+  where
+  (lo, hi) = sbounds a
+
+correct_add : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_add a b x y =
+  mem a x ==> mem b y ==> mem (add a b) (x + y)
+
+correct_sub : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_sub a b x y =
+  mem a x ==> mem b y ==> mem (sub a b) (x - y)
+
+correct_neg : {n} (fin n, n >= 1) => Dom n -> [n] -> Bit
+correct_neg a x =
+  mem a x ==> mem (bneg a) (- x)
+
+correct_scale : {n} (fin n, n >= 1) => [n] -> Dom n -> [n] -> Bit
+correct_scale k a x =
+  mem a x ==> mem (scale k a) (k * x)
+
+correct_mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_mul a b x y =
+  mem a x ==> mem b y ==> mem (mul a b) (x * y)
+
+correct_ult : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_ult a b x y =
+  ult a b ==> mem a x ==> mem b y ==> x < y
+
+correct_slt : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_slt a b x y =
+  slt a b ==> mem a x ==> mem b y ==> x <$ y
+
 property b1 = correct_top`{16}
 property b2 = correct_singleton`{16}
 property b3 = correct_overlap`{16}
@@ -212,6 +350,16 @@ property s2 = correct_lshr`{16}
 property s3 = correct_ashr`{16}
 property s4 = correct_rol`{16}
 property s5 = correct_ror`{16}
+
+property a1 = correct_ubounds`{8}
+property a2 = correct_sbounds`{8}
+property a3 = correct_add`{8}
+property a4 = correct_sub`{8}
+property a5 = correct_neg`{8}
+property a6 = correct_mul`{8}
+property a7 = correct_scale`{8}
+property a8 = correct_ult`{8}
+property a9 = correct_slt`{8}
 
 
 ////////////////////////////////////////////////////////////
