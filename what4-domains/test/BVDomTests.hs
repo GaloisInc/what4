@@ -323,6 +323,33 @@ bitwiseDomainTests =
       do SW n <- genWidth
          i <- fromInteger <$> chooseInteger (0, intValue n - 1)
          B.correct_testBit n <$> B.genPair n <*> pure i
+  , genTest "correct_ubounds" $
+      do SW n <- genWidth
+         B.correct_ubounds n <$> B.genPair n
+  , genTest "correct_sbounds" $
+      do SW n <- genWidth
+         B.correct_sbounds n <$> B.genPair n
+  , genTest "correct_ult" $
+      do SW n <- genWidth
+         B.correct_ult n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_slt" $
+      do SW n <- genWidth
+         B.correct_slt n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_add" $
+      do SW n <- genWidth
+         B.correct_add n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_sub" $
+      do SW n <- genWidth
+         B.correct_sub n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_neg" $
+      do SW n <- genWidth
+         B.correct_neg n <$> B.genPair n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         B.correct_scale n <$> genBV n <*> B.genPair n
+  , genTest "correct_mul" $
+      do SW n <- genWidth
+         B.correct_mul n <$> B.genPair n <*> B.genPair n
   ]
 
 overallDomainTests :: TestTree

@@ -24,8 +24,12 @@ module What4.Domains.BV.Bitwise
   , asSingleton
   , nonempty
   , eq
+  , slt
+  , ult
   , domainsOverlap
   , bitbounds
+  , ubounds
+  , sbounds
   -- * Operations
   , any
   , singleton
@@ -44,6 +48,12 @@ module What4.Domains.BV.Bitwise
   , ashr
   , rol
   , ror
+  -- ** arithmetic
+  , add
+  , sub
+  , negate
+  , scale
+  , mul
   -- ** bitwise logical
   , and
   , or
@@ -71,6 +81,15 @@ module What4.Domains.BV.Bitwise
   , correct_rol
   , correct_ror
   , correct_eq
+  , correct_ult
+  , correct_slt
+  , correct_ubounds
+  , correct_sbounds
+  , correct_add
+  , correct_sub
+  , correct_neg
+  , correct_scale
+  , correct_mul
   , correct_and
   , correct_or
   , correct_not
@@ -83,6 +102,8 @@ import qualified Data.Bits as Bits
 import           Data.Parameterized.NatRepr
 import           Numeric.Natural
 import           GHC.TypeNats
+import           What4.Domains.BV.Bitwise.Tnum (Tnum)
+import qualified What4.Domains.BV.Bitwise.Tnum as Tnum
 import           What4.Domains.Verification (Property, property, (==>), Gen, chooseInteger)
 
 import qualified Prelude
@@ -338,6 +359,90 @@ xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask 
 
 
 ---------------------------------------------------------------------------------------
+-- Bounds and comparisons
+
+-- | Unsigned bounds for the domain. The low bit-pattern bound is also the
+--   unsigned minimum, and the high bit-pattern bound is also the unsigned
+--   maximum: setting unknown bits to 0 minimizes, setting them to 1 maximizes.
+ubounds :: Domain w -> (Integer, Integer)
+ubounds = bitbounds
+
+-- | Signed bounds for the domain.
+sbounds :: (1 <= w) => NatRepr w -> Domain w -> (Integer, Integer)
+sbounds w (BVBitInterval _ lo hi) = (toSigned w lo', toSigned w hi')
+  where
+  signbit = bit (widthVal w - 1)
+  -- If the sign bit is known (lo and hi agree on it), the bit-pattern
+  -- bounds are also the signed bounds. If the sign bit is unknown, the
+  -- most-negative value sets the sign bit and clears all other unknowns,
+  -- and the most-positive clears the sign bit and sets all other unknowns.
+  (lo', hi')
+    | (lo .&. signbit) == (hi .&. signbit) = (lo, hi)
+    | otherwise = (lo .|. signbit, hi .&. complement signbit)
+
+-- | Check if all elements in one domain are unsigned-less-than all
+--   elements in the other.
+ult :: Domain w -> Domain w -> Maybe Bool
+ult a b
+  | ah < bl  = Just True
+  | al >= bh = Just False
+  | otherwise = Nothing
+  where
+  (al, ah) = ubounds a
+  (bl, bh) = ubounds b
+
+-- | Check if all elements in one domain are signed-less-than all
+--   elements in the other.
+slt :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Maybe Bool
+slt w a b
+  | ah < bl  = Just True
+  | al >= bh = Just False
+  | otherwise = Nothing
+  where
+  (al, ah) = sbounds w a
+  (bl, bh) = sbounds w b
+
+---------------------------------------------------------------------------------------
+-- Arithmetic
+
+-- | Convert a domain into its tristate-number form.
+toTnum :: Domain w -> Tnum
+toTnum (BVBitInterval _ lo hi) = Tnum.mk lo (lo `Bits.xor` hi)
+
+-- | Convert a tristate-number back into a domain at the given @bvmask@.
+fromTnum :: Integer -> Tnum -> Domain w
+fromTnum mask t = BVBitInterval mask v (v .|. Tnum.tnumMask t)
+  where v = Tnum.tnumValue t
+
+-- | Internal helper: build a singleton domain when only the mask is known.
+mkSingleton :: Integer -> Integer -> Domain w
+mkSingleton mask x = BVBitInterval mask x' x'
+  where x' = x .&. mask
+
+-- | Add two bitwise domains.
+add :: Domain w -> Domain w -> Domain w
+add a@(BVBitInterval mask _ _) b = fromTnum mask (Tnum.add mask (toTnum a) (toTnum b))
+
+-- | Two's complement negation: @negate a = not a + 1@.
+negate :: Domain w -> Domain w
+negate a = add (not a) (mkSingleton (bvdMask a) 1)
+
+-- | Subtract: @sub a b = add a (negate b)@.
+sub :: Domain w -> Domain w -> Domain w
+sub a b = add a (negate b)
+
+-- | Multiply by a constant.
+scale :: Integer -> Domain w -> Domain w
+scale k a = mul (mkSingleton (bvdMask a) k) a
+
+-- | Multiply two bitwise domains, using the shift-and-add tristate-number
+--   algorithm (BPF @tnum_mul@).
+mul :: Domain w -> Domain w -> Domain w
+mul a@(BVBitInterval mask _ _) b =
+  fromTnum mask (Tnum.mul mask (toTnum a) (toTnum b))
+
+
+---------------------------------------------------------------------------------------
 -- Correctness properties
 
 -- | Check that a domain is proper, and that
@@ -447,3 +552,49 @@ correct_testBit n (a,x) i =
       Just True  -> Bits.testBit x (fromIntegral i)
       Just False -> Prelude.not (Bits.testBit x (fromIntegral i))
       Nothing    -> True
+
+correct_ubounds :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
+correct_ubounds n (a,x) = member a x' ==> lo <= x' && x' <= hi
+  where
+  x' = toUnsigned n x
+  (lo, hi) = ubounds a
+
+correct_sbounds :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
+correct_sbounds n (a,x) = member a x' ==> lo <= x' && x' <= hi
+  where
+  x' = toSigned n x
+  (lo, hi) = sbounds n a
+
+correct_ult :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_ult n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    case ult a b of
+      Just True  -> toUnsigned n x < toUnsigned n y
+      Just False -> toUnsigned n x >= toUnsigned n y
+      Nothing    -> True
+
+correct_slt :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_slt n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    case slt n a b of
+      Just True  -> toSigned n x < toSigned n y
+      Just False -> toSigned n x >= toSigned n y
+      Nothing    -> True
+
+correct_add :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_add n (a,x) (b,y) = member a x ==> member b y ==> pmember n (add a b) (x + y)
+
+correct_sub :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sub n (a,x) (b,y) = member a x ==> member b y ==> pmember n (sub a b) (x - y)
+
+correct_neg :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
+correct_neg n (a,x) = member a x ==> pmember n (negate a) (Prelude.negate x)
+
+correct_scale :: (1 <= n) => NatRepr n -> Integer -> (Domain n, Integer) -> Property
+correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
+  where
+  k' = toSigned n k
+
+correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
