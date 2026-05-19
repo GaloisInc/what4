@@ -94,6 +94,51 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_union" $
       do SW n <- genWidth
          A.correct_union n <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "correct_join" $
+      do SW n <- genWidth
+         A.correct_join n <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "correct_meet" $
+      do SW n <- genWidth
+         A.correct_meet <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "correct_leq" $
+      do SW n <- genWidth
+         A.correct_leq <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "join_commutative" $
+      do SW n <- genWidth
+         A.join_commutative <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "join_idempotent" $
+      do SW n <- genWidth
+         A.join_idempotent <$> A.genDomain n <*> genBV n
+  , genTest "meet_commutative" $
+      do SW n <- genWidth
+         A.meet_commutative <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "meet_idempotent" $
+      do SW n <- genWidth
+         A.meet_idempotent <$> A.genDomain n <*> genBV n
+  , genTest "join_top" $
+      do SW n <- genWidth
+         A.join_top n <$> A.genDomain n <*> genBV n
+  , genTest "join_bottom" $
+      do SW n <- genWidth
+         A.join_bottom n <$> A.genDomain n <*> genBV n
+  , genTest "meet_top" $
+      do SW n <- genWidth
+         A.meet_top n <$> A.genDomain n <*> genBV n
+  , genTest "meet_bottom" $
+      do SW n <- genWidth
+         A.meet_bottom n <$> A.genDomain n <*> genBV n
+  , genTest "leq_reflexive" $
+      do SW n <- genWidth
+         A.leq_reflexive <$> A.genDomain n
+  , genTest "join_upper_bound" $
+      do SW n <- genWidth
+         A.join_upper_bound <$> A.genDomain n <*> A.genDomain n
+  , genTest "join_proper" $
+      do SW n <- genWidth
+         A.join_proper n <$> A.genDomain n <*> A.genDomain n
+  , genTest "meet_proper" $
+      do SW n <- genWidth
+         A.meet_proper n <$> A.genDomain n <*> A.genDomain n
   , genTest "correct_zero_ext" $
       do SW w <- genWidth
          SW n <- genWidth
@@ -262,6 +307,54 @@ bitwiseDomainTests =
   , genTest "correct_intersection" $
       do SW n <- genWidth
          B.correct_intersection <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "correct_join" $
+      do SW n <- genWidth
+         B.correct_join n <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "correct_meet" $
+      do SW n <- genWidth
+         B.correct_meet <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "precise_meet" $
+      do SW n <- genWidth
+         B.precise_meet <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "correct_leq" $
+      do SW n <- genWidth
+         B.correct_leq <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "join_commutative" $
+      do SW n <- genWidth
+         B.join_commutative <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "join_idempotent" $
+      do SW n <- genWidth
+         B.join_idempotent <$> B.genDomain n <*> genBV n
+  , genTest "meet_commutative" $
+      do SW n <- genWidth
+         B.meet_commutative <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "meet_idempotent" $
+      do SW n <- genWidth
+         B.meet_idempotent <$> B.genDomain n <*> genBV n
+  , genTest "join_top" $
+      do SW n <- genWidth
+         B.join_top n <$> B.genDomain n <*> genBV n
+  , genTest "join_bottom" $
+      do SW n <- genWidth
+         B.join_bottom n <$> B.genDomain n <*> genBV n
+  , genTest "meet_top" $
+      do SW n <- genWidth
+         B.meet_top n <$> B.genDomain n <*> genBV n
+  , genTest "meet_bottom" $
+      do SW n <- genWidth
+         B.meet_bottom n <$> B.genDomain n <*> genBV n
+  , genTest "leq_reflexive" $
+      do SW n <- genWidth
+         B.leq_reflexive <$> B.genDomain n
+  , genTest "join_upper_bound" $
+      do SW n <- genWidth
+         B.join_upper_bound <$> B.genDomain n <*> B.genDomain n
+  , genTest "join_proper" $
+      do SW n <- genWidth
+         B.join_proper n <$> B.genDomain n <*> B.genDomain n
+  , genTest "meet_proper" $
+      do SW n <- genWidth
+         B.meet_proper n <$> B.genDomain n <*> B.genDomain n
   , genTest "correct_zero_ext" $
       do SW w <- genWidth
          SW n <- genWidth
@@ -409,7 +502,7 @@ overallDomainTests = testGroup "Overall Domain"
          x <- genBV n
          y <- min 1000 <$> genBV n
          let as = [ O.singleton n ((x + i) Bits..&. w) | i <- [0 .. y] ]
-         let a = foldl1 O.union as
+         let a = foldl1 O.join as
          pure $ property (O.size a == y + 1)
   , genTest "correct_bra1" $
       do SW n <- genWidth
@@ -444,6 +537,15 @@ overallDomainTests = testGroup "Overall Domain"
   , genTest "correct_union" $
       do SW n <- genWidth
          O.correct_union n <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "correct_join" $
+      do SW n <- genWidth
+         O.correct_join n <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "correct_meet" $
+      do SW n <- genWidth
+         O.correct_meet <$> O.genDomain n <*> O.genDomain n <*> genBV n
+  , genTest "correct_leq" $
+      do SW n <- genWidth
+         O.correct_leq <$> O.genDomain n <*> O.genDomain n <*> genBV n
   , genTest "correct_zero_ext" $
       do SW w <- genWidth
          SW n <- genWidth

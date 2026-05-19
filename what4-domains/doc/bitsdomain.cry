@@ -48,6 +48,29 @@ intersection a b = { lomask = a.lomask || b.lomask, himask = a.himask && b.himas
 union : {n} (fin n) => Dom n -> Dom n -> Dom n
 union a b = { lomask = a.lomask && b.lomask, himask = a.himask || b.himask }
 
+////////////////////////////////////////////////////////////
+// Lattice operations
+
+/** Lattice join (least upper bound). Synonym for `union`. */
+join : {n} (fin n) => Dom n -> Dom n -> Dom n
+join = union
+
+/** Lattice meet (greatest lower bound). Synonym for `intersection`.
+    Note: meet may produce an improper domain. */
+meet : {n} (fin n) => Dom n -> Dom n -> Dom n
+meet = intersection
+
+/** Bottom element of the lattice: an improper domain whose
+    membership predicate is unsatisfiable. */
+bottom : {n} (fin n) => Dom n
+bottom = { lomask = ~0, himask = 0 }
+
+/** Lattice ordering: every element of `a` is also in `b`. */
+leq : {n} (fin n) => Dom n -> Dom n -> Bit
+leq a b = bitle b.lomask a.lomask /\ bitle a.himask b.himask
+
+////////////////////////////////////////////////////////////
+
 zero_ext : {m, n} (fin m, m >= n) => Dom n -> Dom m
 zero_ext a = { lomask = zext a.lomask, himask = zext a.himask }
 
@@ -497,6 +520,57 @@ correct_intersection : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
 correct_intersection a b x =
   (mem a x /\ mem b x) == mem (intersection a b) x
 
+correct_join : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_join a b x =
+  (mem a x \/ mem b x) ==> mem (join a b) x
+
+correct_meet : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_meet a b x =
+  (mem a x /\ mem b x) ==> mem (meet a b) x
+
+correct_leq : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_leq a b x =
+  (leq a b /\ mem a x) ==> mem b x
+
+// Lattice laws
+
+join_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+join_commutative a b x =
+  mem (join a b) x == mem (join b a) x
+
+join_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+join_idempotent a x =
+  mem (join a a) x == mem a x
+
+meet_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+meet_commutative a b x =
+  mem (meet a b) x == mem (meet b a) x
+
+meet_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+meet_idempotent a x =
+  mem (meet a a) x == mem a x
+
+join_top : {n} (fin n) => Dom n -> [n] -> Bit
+join_top a x = mem (join a top) x
+
+join_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+join_bottom a x =
+  mem (join a bottom) x == mem a x
+
+meet_top : {n} (fin n) => Dom n -> [n] -> Bit
+meet_top a x =
+  mem (meet a top) x == mem a x
+
+meet_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+meet_bottom a x =
+  ~ (mem (meet a bottom) x)
+
+leq_reflexive : {n} (fin n) => Dom n -> Bit
+leq_reflexive a = leq a a
+
+join_upper_bound : {n} (fin n) => Dom n -> Dom n -> Bit
+join_upper_bound a b = leq a (join a b)
+
 correct_zero_ext : {m, n} (fin m, m >= n) => Dom n -> [n] -> Bit
 correct_zero_ext a x =
   mem a x ==> mem (zero_ext`{m} a) (zext`{m} x)
@@ -665,6 +739,20 @@ property a13 = correct_srem`{8}
 property a14 = correct_mulPrecise`{8}  // NB: takes 60s
 property a15 = correct_udivPrecise`{8}
 property a16 = correct_uremPrecise`{8}
+
+property lat1  = correct_join`{8}
+property lat2  = correct_meet`{8}
+property lat3  = correct_leq`{8}
+property lat4  = join_commutative`{8}
+property lat5  = join_idempotent`{8}
+property lat6  = meet_commutative`{8}
+property lat7  = meet_idempotent`{8}
+property lat8  = join_top`{8}
+property lat9  = join_bottom`{8}
+property lat10 = meet_top`{8}
+property lat11 = meet_bottom`{8}
+property lat12 = leq_reflexive`{8}
+property lat13 = join_upper_bound`{8}
 
 
 ////////////////////////////////////////////////////////////

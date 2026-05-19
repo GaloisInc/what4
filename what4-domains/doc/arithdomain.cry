@@ -40,10 +40,21 @@ smax x y = if x >$ y then x else y
 
 ////////////////////////////////////////////////////////////
 
-type Dom n = { lo : [n], sz : [n] }
+/** A `Dom n` is either an interval `{lo, sz}` of width-`n` bitvectors
+where `x` is a member iff `x - lo <= sz`, or the empty domain (when
+`isBot` is set). The `isBot` flag plays the role of the separate
+`BVDAny`/improper-interval sentinel in the Haskell implementation,
+allowing bottom to be distinguished from top in this fixed-width
+encoding. */
+type Dom n = { lo : [n], sz : [n], isBot : Bit }
 
 interval : {n} (fin n) => [n] -> [n] -> Dom n
-interval l s = { lo = l, sz = s }
+interval l s = { lo = l, sz = s, isBot = False }
+
+/** Mark a domain as bottom if the given flag is set. Used to propagate
+    bottom through abstract operations. */
+withBot : {n} (fin n) => Bit -> Dom n -> Dom n
+withBot b a = { lo = a.lo, sz = a.sz, isBot = b \/ a.isBot }
 
 range : {n} (fin n) => [n] -> [n] -> Dom n
 range lo hi = interval lo (hi - lo)
@@ -51,7 +62,7 @@ range lo hi = interval lo (hi - lo)
 /** Membership predicate that defines the set of concrete values
 represented by an abstract domain element. */
 mem : {n} (fin n) => Dom n -> [n] -> Bit
-mem a x = x - a.lo <= a.sz
+mem a x = ~ a.isBot /\ x - a.lo <= a.sz
 
 umem : {n} (fin n) => ([n], [n]) -> [n] -> Bit
 umem (lo, hi) x = lo <= x /\ x <= hi
@@ -66,7 +77,7 @@ singleton : {n} (fin n) => [n] -> Dom n
 singleton x = interval x 0
 
 isSingleton : {n} (fin n) => Dom n -> Bit
-isSingleton a = a.sz == 0
+isSingleton a = ~ a.isBot /\ a.sz == 0
 
 ubounds : {n} (fin n) => Dom n -> ([n], [n])
 ubounds a =
@@ -90,7 +101,7 @@ rbounds a =
   where a_hi = a.lo + a.sz
 
 overlap : {n} (fin n) => Dom n -> Dom n -> Bit
-overlap a b = diff <= b.sz \/ carry diff a.sz
+overlap a b = ~ a.isBot /\ ~ b.isBot /\ (diff <= b.sz \/ carry diff a.sz)
   where diff = a.lo - b.lo
 
 // To compute the union of two intervals, we choose representatives of
@@ -99,7 +110,10 @@ overlap a b = diff <= b.sz \/ carry diff a.sz
 // midpoints of intervals a and b, respectively.
 union : {n} (fin n) => Dom n -> Dom n -> Dom n
 union a b =
-  if cw >= size then top else interval (drop`{2} cl) (drop`{2} cw)
+  if a.isBot /\ b.isBot then bottom
+  else if a.isBot then b
+  else if b.isBot then a
+  else if cw >= size then top else interval (drop`{2} cl) (drop`{2} cw)
   where
     size : [n+2]
     size = bit`{n}
@@ -114,25 +128,61 @@ union a b =
     cw = ch .-. cl
 
 ////////////////////////////////////////////////////////////
+// Lattice operations
+
+/** Lattice join (least upper bound). Synonym for `union`. */
+join : {n} (fin n) => Dom n -> Dom n -> Dom n
+join = union
+
+/** Bottom element of the lattice: the empty domain. */
+bottom : {n} (fin n) => Dom n
+bottom = { lo = 0, sz = 0, isBot = True }
+
+/** Lattice meet (greatest lower bound) - intersection of two intervals. */
+meet : {n} (fin n) => Dom n -> Dom n -> Dom n
+meet a b =
+  if a.isBot \/ b.isBot then bottom
+  else if a.sz == ~0 then b
+  else if b.sz == ~0 then a
+  else if a == b then a
+  else if cl > ch then bottom
+  else { lo = cl, sz = ch - cl, isBot = False }
+  where
+    (al, ah) = ubounds a
+    (bl, bh) = ubounds b
+    cl = max al bl
+    ch = min ah bh
+
+/** Lattice ordering: every element of `a` is also in `b`. */
+leq : {n} (fin n) => Dom n -> Dom n -> Bit
+leq a b =
+  if a.isBot then True          // bottom is below everything
+  else if b.isBot then False    // a is non-bottom, b is bottom
+  else if b.sz == ~0 then True  // b is top: contains everything
+  else if a.sz == ~0 then False // a is top, b is not
+  else a.sz <= b.sz /\ d <= b.sz - a.sz
+  where d = a.lo - b.lo
+
+////////////////////////////////////////////////////////////
 
 zero_ext : {m, n} (fin m, m >= n) => Dom n -> Dom m
-zero_ext a = interval (zext lo) (zext (hi .-. lo))
+zero_ext a = withBot a.isBot (interval (zext lo) (zext (hi .-. lo)))
   where (lo, hi) = ubounds a
 
 sign_ext : {m, n} (fin m, m >= n, n >= 1) => Dom n -> Dom m
-sign_ext a = interval (sext lo) (zext (hi - lo))
+sign_ext a = withBot a.isBot (interval (sext lo) (zext (hi - lo)))
   where (lo, hi) = sbounds a
 
 concat : {m, n} (fin m, fin n) => Dom m -> Dom n -> Dom (m + n)
-concat a b = interval (a.lo # lo) (a.sz # sz)
+concat a b = withBot (a.isBot \/ b.isBot) (interval (a.lo # lo) (a.sz # sz))
   where
     (lo, hi) = ubounds b
     sz = hi .-. lo
 
 shrink : {m, n} (fin m, fin n) => Dom (m + n) -> Dom m
-shrink a =
-  if b_sz >= size then top
-  else interval (tail b_lo) (tail b_sz)
+shrink a = withBot a.isBot
+  (if b_sz >= size then top
+   else interval (tail b_lo) (tail b_sz))
   where
     size : [1 + m]
     size = bit`{m}
@@ -142,31 +192,31 @@ shrink a =
     b_sz = b_hi .-. b_lo
 
 trunc : {m, n} (fin m, fin n) => Dom (m + n) -> Dom n
-trunc a =
-  if a.sz > mask`{n} then top
-  else interval (drop`{m} a.lo) (drop`{m} a.sz)
+trunc a = withBot a.isBot
+  (if a.sz > mask`{n} then top
+   else interval (drop`{m} a.lo) (drop`{m} a.sz))
 
 ////////////////////////////////////////////////////////////
 // Arithmetic operations
 
 add : {n} (fin n) => Dom n -> Dom n -> Dom n
-add a b =
-  if carry a.sz b.sz then top
-  else interval (a.lo + b.lo) (a.sz .+. b.sz)
+add a b = withBot (a.isBot \/ b.isBot)
+  (if carry a.sz b.sz then top
+   else interval (a.lo + b.lo) (a.sz .+. b.sz))
 
 neg : {n} (fin n) => Dom n -> Dom n
-neg a = interval (- (a.lo + a.sz)) a.sz
+neg a = withBot a.isBot (interval (- (a.lo + a.sz)) a.sz)
 
 // Turns out, bitwise complement is easy to specify
 // in this domain also
 bnot : {n} (fin n) => Dom n -> Dom n
-bnot a = interval (~ ah) a.sz
+bnot a = withBot a.isBot (interval (~ ah) a.sz)
   where ah = a.lo + a.sz
 
 mul : {n} (fin n) => Dom n -> Dom n -> Dom n
-mul a b =
-  if sz >= bit`{n} then top
-  else interval (drop lo) (drop sz)
+mul a b = withBot (a.isBot \/ b.isBot)
+  (if sz >= bit`{n} then top
+   else interval (drop lo) (drop sz))
   where
     (lo, hi) = mulRange (zbounds a) (zbounds b)
     sz = hi - lo
@@ -193,7 +243,7 @@ scaleRange k (lo, hi) = if k <$ 0 then (hi', lo') else (lo', hi')
     hi' = sext k * sext hi
 
 udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-udiv a b = range cl ch
+udiv a b = withBot (a.isBot \/ b.isBot) (range cl ch)
   where
     (al, ah) = ubounds a
     (bl, bh) = ubounds b
@@ -203,9 +253,9 @@ udiv a b = range cl ch
     ch = ah / bl'
 
 urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-urem a b =
-  if ql == qh then range rl rh
-  else interval 0 (bh - 1)
+urem a b = withBot (a.isBot \/ b.isBot)
+  (if ql == qh then range rl rh
+   else interval 0 (bh - 1))
   where
     (al, ah) = ubounds a
     (bl, bh) = ubounds b
@@ -235,20 +285,20 @@ shrinkRange (lo, hi) k =
     x ./. y = sext x /$ sext y
 
 sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-sdiv a b =
-  if sz >= bit`{n} then top
-  else interval (drop lo) (drop sz)
+sdiv a b = withBot (a.isBot \/ b.isBot)
+  (if sz >= bit`{n} then top
+   else interval (drop lo) (drop sz))
   where
     (lo, hi) = sdivRange (sbounds a) (rbounds b)
     sz = hi - lo
 
 srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-srem a b =
-  if ql == qh then
+srem a b = withBot (a.isBot \/ b.isBot)
+  (if ql == qh then
     (if ql <$ 0
      then range (al - drop ql * bl) (ah - drop ql * bh)
      else range (al - drop ql * bh) (ah - drop ql * bl))
-  else range rl rh
+  else range rl rh)
   where
     (al, ah) = sbounds a
     (bl, bh) = sbounds b
@@ -260,9 +310,9 @@ srem a b =
 // Shifts
 
 shl : {n} (fin n) => Dom n -> Dom n -> Dom n
-shl a b =
-  if sz > mask`{n} then top
-  else interval (drop lo) (drop sz)
+shl a b = withBot (a.isBot \/ b.isBot)
+  (if sz > mask`{n} then top
+   else interval (drop lo) (drop sz))
   where
     al, ah : [n + 1]
     (al, ah) = zbounds a
@@ -276,7 +326,7 @@ shl a b =
     sz = hi - lo
 
 lshr : {n} (fin n) => Dom n -> Dom n -> Dom n
-lshr a b = interval cl (ch - cl)
+lshr a b = withBot (a.isBot \/ b.isBot) (interval cl (ch - cl))
   where
     (al, ah) = ubounds a
     (bl, bh) = ubounds b
@@ -284,7 +334,7 @@ lshr a b = interval cl (ch - cl)
     ch = ah >> bl
 
 ashr : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-ashr a b = interval cl (ch - cl)
+ashr a b = withBot (a.isBot \/ b.isBot) (interval cl (ch - cl))
   where
     (al, ah) = sbounds a
     (bl, bh) = ubounds b
@@ -346,7 +396,9 @@ infix 20 =@=
 
 /** Equivalence of bitvector domains. */
 (=@=) : {n} (fin n) => Dom n -> Dom n -> Bit
-a =@= b = (a.sz == ~0 /\ b.sz == ~0) \/ (a == b)
+a =@= b = (a.isBot /\ b.isBot)
+       \/ (~ a.isBot /\ ~ b.isBot /\ a.sz == ~0 /\ b.sz == ~0)
+       \/ (a == b)
 
 infix 5 <==>
 
@@ -385,6 +437,57 @@ correct_overlap_inv a b =
 correct_union : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
 correct_union a b x =
   (mem a x \/ mem b x) ==> mem (union a b) x
+
+correct_join : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_join a b x =
+  (mem a x \/ mem b x) ==> mem (join a b) x
+
+correct_meet : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_meet a b x =
+  (mem a x /\ mem b x) ==> mem (meet a b) x
+
+correct_leq : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_leq a b x =
+  (leq a b /\ mem a x) ==> mem b x
+
+// Lattice laws
+
+join_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+join_commutative a b x =
+  mem (join a b) x == mem (join b a) x
+
+join_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+join_idempotent a x =
+  mem (join a a) x == mem a x
+
+meet_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+meet_commutative a b x =
+  mem (meet a b) x == mem (meet b a) x
+
+meet_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+meet_idempotent a x =
+  mem (meet a a) x == mem a x
+
+join_top : {n} (fin n) => Dom n -> [n] -> Bit
+join_top a x = mem (join a top) x
+
+join_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+join_bottom a x =
+  mem (join a bottom) x == mem a x
+
+meet_top : {n} (fin n) => Dom n -> [n] -> Bit
+meet_top a x =
+  mem (meet a top) x == mem a x
+
+meet_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+meet_bottom a x =
+  ~ (mem (meet a bottom) x)
+
+leq_reflexive : {n} (fin n) => Dom n -> Bit
+leq_reflexive a = leq a a
+
+join_upper_bound : {n} (fin n) => Dom n -> Dom n -> Bit
+join_upper_bound a b = leq a (join a b)
 
 correct_zero_ext : {m, n} (fin m, m >= n) => Dom n -> [n] -> Bit
 correct_zero_ext a x =
@@ -527,6 +630,20 @@ property o2 = correct_sle`{16}
 property o3 = correct_ult`{16}
 property o4 = correct_ule`{16}
 property o5 = correct_ult_sum_common_equiv`{4}
+
+property lat1  = correct_join`{8}
+property lat2  = correct_meet`{8}
+property lat3  = correct_leq`{8}
+property lat4  = join_commutative`{8}
+property lat5  = join_idempotent`{8}
+property lat6  = meet_commutative`{8}
+property lat7  = meet_idempotent`{8}
+property lat8  = join_top`{8}
+property lat9  = join_bottom`{8}
+property lat10 = meet_top`{8}
+property lat11 = meet_bottom`{8}
+property lat12 = leq_reflexive`{8}
+property lat13 = join_upper_bound`{8}
 
 ////////////////////////////////////////////////////////////
 // Operations preserve singletons
@@ -689,11 +806,12 @@ assoc_union a b c = union a (union b c) == union (union a b) c
 /* union always has a lower bound equal to one of the input lower bounds */
 lo_union : {n} (fin n) => Dom n -> Dom n -> Bit
 lo_union a b =
-  union a b == top \/ (union a b).lo == a.lo \/ (union a b).lo == b.lo
+  c.isBot \/ c =@= top \/ c.lo == a.lo \/ c.lo == b.lo
+  where c = union a b
 
 /* union always has an upper bound equal to one of the input upper bounds */
 hi_union : {n} (fin n) => Dom n -> Dom n -> Bit
-hi_union a b = c == top \/ c_hi == a_hi \/ c_hi == b_hi
+hi_union a b = c.isBot \/ c =@= top \/ c_hi == a_hi \/ c_hi == b_hi
   where
     c = union a b
     a_hi = a.lo + a.sz

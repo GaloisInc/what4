@@ -54,6 +54,12 @@ module What4.Domains.BV
   , isUltSumCommonEquiv
   , A.arithDomainData
   , B.bitbounds
+    -- * Lattice operations
+  , top
+  , bottom
+  , join
+  , meet
+  , leq
     -- * Operations
   , any
   , singleton
@@ -124,6 +130,9 @@ module What4.Domains.BV
   , correct_overlap
   , precise_overlap
   , correct_union
+  , correct_join
+  , correct_meet
+  , correct_leq
   , correct_zero_ext
   , correct_sign_ext
   , correct_concat
@@ -437,11 +446,54 @@ isUltSumCommonEquiv a b c =
   A.isUltSumCommonEquiv (asArithDomain a) (asArithDomain b) (asArithDomain c)
 
 --------------------------------------------------------------------------------
+-- Lattice operations
+
+-- | Top element of the lattice: represents all bitvectors of width @w@.
+top :: (1 <= w) => NatRepr w -> BVDomain w
+top w = BVDBitwise (B.top w)
+
+-- | Bottom element of the lattice: represents the empty set of bitvectors.
+-- This is an improper domain whose membership predicate is unsatisfiable.
+bottom :: (1 <= w) => NatRepr w -> BVDomain w
+bottom w = BVDBitwise (B.bottom w)
+
+-- | Lattice meet: an over-approximation of the intersection of two domains.
+-- For any concrete value @x@, if @x@ is a member of both @a@ and @b@, then
+-- @x@ is a member of @meet a b@.
+--
+-- For mixed-representation arguments (one 'BVDArith', one 'BVDBitwise'),
+-- the left argument's representation is preserved and the right argument
+-- is converted to match. The result is always precisely a subset of the
+-- left argument (no precision loss on the left); the right argument is
+-- approximated by the conversion, so the result may contain values that
+-- were not members of the original right argument. The single-representation
+-- cases ('A.meet', 'B.meet') preserve precision exactly on both arguments.
+meet :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+meet (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.meet a b)
+meet (BVDArith a) (BVDArith b) = BVDArith (A.meet a b)
+meet (BVDBitwise a) (BVDArith b) = BVDBitwise (B.meet a (arithToBitwiseDomain b))
+meet (BVDArith a) (BVDBitwise b) = BVDArith (A.meet a (bitwiseToArithDomain b))
+
+-- | Lattice ordering: @leq a b@ returns 'True' if every concrete value
+-- represented by @a@ is also represented by @b@.
+leq :: BVDomain w -> BVDomain w -> Bool
+leq (BVDBitwise a) (BVDBitwise b) = B.leq a b
+leq (BVDArith a) (BVDArith b) = A.leq a b
+-- For mixed representations, over-approximate the left side into the right's
+-- representation. This is sound: if @leq (over-approx a) b@, then certainly
+-- @a ⊆ b@. Converting the right side instead would be unsound, since the
+-- over-approximation could include values that aren't really in @b@.
+leq (BVDBitwise a) (BVDArith b) = A.leq (bitwiseToArithDomain a) b
+leq (BVDArith a) (BVDBitwise b) = B.leq (arithToBitwiseDomain a) b
+
+--------------------------------------------------------------------------------
 -- Operations
 
--- | Represents all values
+-- | Represents all values.
+{-# DEPRECATED any "Use 'top' instead" #-}
 any :: (1 <= w) => NatRepr w -> BVDomain w
-any w = BVDBitwise (B.any w)
+any = top
+{-# INLINE any #-}
 
 -- | Create a bitvector domain representing the integer.
 singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> BVDomain w
@@ -458,17 +510,23 @@ range w al ah = BVDArith (A.range w al ah)
 fromAscEltList :: (1 <= w) => NatRepr w -> [Integer] -> BVDomain w
 fromAscEltList w xs = BVDArith (A.fromAscEltList w xs)
 
--- | Return union of two domains.
-union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-union (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.union a b)
-union (BVDArith a) (BVDArith b) = BVDArith (A.union a b)
-union (BVDBitwise a) (BVDArith b) = mixedUnion b a
-union (BVDArith a) (BVDBitwise b) = mixedUnion a b
+-- | Return join (least upper bound) of two domains.
+join :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+join (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.join a b)
+join (BVDArith a) (BVDArith b) = BVDArith (A.join a b)
+join (BVDBitwise a) (BVDArith b) = mixedJoin b a
+join (BVDArith a) (BVDBitwise b) = mixedJoin a b
 
-mixedUnion :: (1 <= w) => A.Domain w -> B.Domain w  -> BVDomain w
-mixedUnion a b
-  | Just _ <- A.asSingleton a = BVDBitwise (B.union (arithToBitwiseDomain a) b)
-  | otherwise = BVDArith (A.union a (bitwiseToArithDomain b))
+mixedJoin :: (1 <= w) => A.Domain w -> B.Domain w  -> BVDomain w
+mixedJoin a b
+  | Just _ <- A.asSingleton a = BVDBitwise (B.join (arithToBitwiseDomain a) b)
+  | otherwise = BVDArith (A.join a (bitwiseToArithDomain b))
+
+-- | Return union of two domains.
+{-# DEPRECATED union "Use 'join' instead" #-}
+union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+union = join
+{-# INLINE union #-}
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits
@@ -510,7 +568,7 @@ shiftBound = 16
 shl :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 shl w (BVDBitwise a) (asArithDomain -> b)
   | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.union [ B.shl w a y | y <- [lo .. hi'] ]
+      BVDBitwise $ foldl1 B.join [ B.shl w a y | y <- [lo .. hi'] ]
   where
   (lo, hi) = A.ubounds b
   hi' = max hi (intValue w)
@@ -521,7 +579,7 @@ shl w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.shl w a b)
 lshr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 lshr w (BVDBitwise a) (asArithDomain -> b)
   | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.union [ B.lshr w a y | y <- [lo .. hi'] ]
+      BVDBitwise $ foldl1 B.join [ B.lshr w a y | y <- [lo .. hi'] ]
   where
   (lo, hi) = A.ubounds b
   hi' = max hi (intValue w)
@@ -533,7 +591,7 @@ lshr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.lshr w a b)
 ashr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 ashr w (BVDBitwise a) (asArithDomain -> b)
   | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.union [ B.ashr w a y | y <- [lo .. hi'] ]
+      BVDBitwise $ foldl1 B.join [ B.ashr w a y | y <- [lo .. hi'] ]
   where
   (lo, hi) = A.ubounds b
   hi' = max hi (intValue w)
@@ -550,7 +608,7 @@ rol _w a@(asSingleton -> Just x) _
 
 rol w (asBitwiseDomain -> a) (asArithDomain -> b) =
     if (lo <= hi && hi - lo <= shiftBound) then
-      BVDBitwise $ foldl1 B.union [ B.rol w a y | y <- [lo .. hi] ]
+      BVDBitwise $ foldl1 B.join [ B.rol w a y | y <- [lo .. hi] ]
     else
       any w
 
@@ -567,7 +625,7 @@ ror _w a@(asSingleton -> Just x) _
 
 ror w (asBitwiseDomain -> a) (asArithDomain -> b) =
     if (lo <= hi && hi - lo <= shiftBound) then
-      BVDBitwise $ foldl1 B.union [ B.ror w a y | y <- [lo .. hi] ]
+      BVDBitwise $ foldl1 B.join [ B.ror w a y | y <- [lo .. hi] ]
     else
       any w
 
@@ -767,6 +825,18 @@ precise_overlap a b =
 correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
 correct_union n a b x =
   (member a x || member b x) ==> pmember n (union a b) x
+
+correct_join :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
+correct_join n a b x =
+  (member a x || member b x) ==> pmember n (join a b) x
+
+correct_meet :: (1 <= n) => BVDomain n -> BVDomain n -> Integer -> Property
+correct_meet a b x =
+  (member a x && member b x) ==> member (meet a b) x
+
+correct_leq :: BVDomain n -> BVDomain n -> Integer -> Property
+correct_leq a b x =
+  (leq a b && member a x) ==> member b x
 
 correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> BVDomain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
