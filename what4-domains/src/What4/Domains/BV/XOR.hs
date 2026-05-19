@@ -6,6 +6,12 @@ Maintainer  : huffman@galois.com
 
 Provides an implementation of bitvector abstract domains
 optimized for performing XOR operations.
+
+This domain is a specialized representation used internally for
+XOR-related operations and conversions; unlike "What4.Domains.BV.Arith"
+and "What4.Domains.BV.Bitwise", it does not form a complete lattice
+and so does not export the standard lattice operations
+(@top@, @bottom@, @join@, @meet@, @leq@).
 -}
 
 {-# LANGUAGE DataKinds #-}

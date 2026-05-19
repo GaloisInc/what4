@@ -37,6 +37,13 @@ module What4.Domains.BV.Arith
   , bitbounds
   , unknowns
   , fillright
+  -- * Lattice operations
+  , top
+  , bottom
+  , join
+  , meet
+  , leq
+  , isBottom
     -- * Operations
   , any
   , singleton
@@ -78,6 +85,22 @@ module What4.Domains.BV.Arith
   , correct_singleton
   , correct_overlap
   , correct_union
+  , correct_join
+  , correct_meet
+  , correct_leq
+  -- ** Lattice laws
+  , join_commutative
+  , join_idempotent
+  , meet_commutative
+  , meet_idempotent
+  , join_top
+  , join_bottom
+  , meet_top
+  , meet_bottom
+  , leq_reflexive
+  , join_upper_bound
+  , join_proper
+  , meet_proper
   , correct_zero_ext
   , correct_sign_ext
   , correct_concat
@@ -331,9 +354,11 @@ isUltSumCommonEquiv a b c = if al == ah && bl == bh && al == bl
 --------------------------------------------------------------------------------
 -- Operations
 
--- | Represents all values
+-- | Represents all values.
+{-# DEPRECATED any "Use 'top' instead" #-}
 any :: (1 <= w) => NatRepr w -> Domain w
-any w = BVDAny (maxUnsigned w)
+any = top
+{-# INLINE any #-}
 
 -- | Create a bitvector domain representing the integer.
 singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> Domain w
@@ -362,33 +387,107 @@ fromAscEltList w (x0 : x1 : xs) = go (x0, x0) (x1, x1) xs
   where
     -- Invariant: the gap between @b@ and @c@ is the biggest we've
     -- seen between adjacent values so far.
-    go (a, b) (c, d) [] = union (range w a b) (range w c d)
+    go (a, b) (c, d) [] = join (range w a b) (range w c d)
     go (a, b) (c, d) (e : rest)
       | e - d > c - b = go (a, d) (e, e) rest
       | otherwise     = go (a, b) (c, e) rest
 
+-- | Returns 'True' if this domain has no members (i.e., is 'bottom'),
+--   detected as an improper interval with negative size.
+isBottom :: Domain w -> Bool
+isBottom (BVDInterval _ _ sz) = sz < 0
+isBottom (BVDAny _) = False
+
+-- | Lattice join (least upper bound) of two domains.
+-- If both inputs are proper (or bottom), so is the result.
+--
+-- For two non-bottom intervals, the result is the shortest single
+-- interval containing both. The trick is to compare each interval's
+-- \"average value\" @2*lo + sz@ (twice the midpoint, doubled to avoid
+-- fractions). If the averages are more than half the modulus apart,
+-- the inputs sit on opposite sides of zero, so we lift the smaller-
+-- midpoint interval by @2^w@ before taking the enclosing range. This
+-- yields the shorter of the two enclosing arcs — the one that wraps
+-- around zero when appropriate — rather than always going clockwise.
+-- 'interval' then collapses sizes @>= 2^w@ to 'BVDAny'.
+join :: (1 <= w) => Domain w -> Domain w -> Domain w
+join a b | isBottom a = b
+         | isBottom b = a
+join a@BVDAny{} _ = a
+join _ b@BVDAny{} = b
+join (BVDInterval mask al aw) (BVDInterval _ bl bw) =
+  interval mask cl (ch - cl)
+  where
+    sz = mask + 1
+    ac = 2 * al + aw -- twice the average value of a
+    bc = 2 * bl + bw -- twice the average value of b
+    -- If the averages are 2^(w-1) or more apart,
+    -- then shift the lower interval up by 2^w.
+    al' = if ac + mask < bc then al + sz else al
+    bl' = if bc + mask < ac then bl + sz else bl
+    ah' = al' + aw
+    bh' = bl' + bw
+    cl = min al' bl'
+    ch = max ah' bh'
+
 -- | Return union of two domains.
+{-# DEPRECATED union "Use 'join' instead" #-}
 union :: (1 <= w) => Domain w -> Domain w -> Domain w
-union a b =
-  case a of
-    BVDAny _ -> a
-    BVDInterval _ al aw ->
-      case b of
-        BVDAny _ -> b
-        BVDInterval mask bl bw ->
-          interval mask cl (ch - cl)
-          where
-            sz = mask + 1
-            ac = 2 * al + aw -- twice the average value of a
-            bc = 2 * bl + bw -- twice the average value of b
-            -- If the averages are 2^(w-1) or more apart,
-            -- then shift the lower interval up by 2^w.
-            al' = if ac + mask < bc then al + sz else al
-            bl' = if bc + mask < ac then bl + sz else bl
-            ah' = al' + aw
-            bh' = bl' + bw
-            cl = min al' bl'
-            ch = max ah' bh'
+union = join
+{-# INLINE union #-}
+
+------------------------------------------------------------------------
+-- Lattice operations
+
+-- | Top element of the lattice: represents all bitvectors of width @w@.
+top :: (1 <= w) => NatRepr w -> Domain w
+top w = BVDAny (maxUnsigned w)
+{-# INLINE top #-}
+
+-- | Bottom element of the lattice for the given mask: represents the empty
+-- set of bitvectors. This is an improper domain whose membership predicate
+-- is unsatisfiable.
+bottomForMask :: Integer -> Domain w
+bottomForMask mask = BVDInterval mask 0 (-1)
+{-# INLINE bottomForMask #-}
+
+-- | Bottom element of the lattice: represents the empty set of bitvectors.
+-- This is an improper domain whose membership predicate is unsatisfiable.
+bottom :: (1 <= w) => NatRepr w -> Domain w
+bottom w = bottomForMask (maxUnsigned w)
+{-# INLINE bottom #-}
+
+-- | Lattice meet: an over-approximation of the intersection of two domains.
+-- For any concrete value @x@, if @x@ is a member of both @a@ and @b@, then
+-- @x@ is a member of @meet a b@.
+-- If both inputs are proper (or bottom), so is the result.
+meet :: (1 <= w) => Domain w -> Domain w -> Domain w
+meet a _ | isBottom a = a
+meet _ b | isBottom b = b
+meet (BVDAny _) b = b
+meet a (BVDAny _) = a
+meet a b
+  | sameDomain a b = a
+meet a b =
+  let (al, ah) = ubounds a
+      (bl, bh) = ubounds b
+      cl = max al bl
+      ch = min ah bh
+      mask = bvdMask a
+  in if cl > ch
+     then bottomForMask mask
+     else interval mask cl (ch - cl)
+
+-- | Lattice ordering: @leq a b@ returns 'True' if every concrete value
+-- represented by @a@ is also represented by @b@.
+leq :: Domain w -> Domain w -> Bool
+leq a _ | isBottom a = True
+leq _ b | isBottom b = False
+leq _ (BVDAny _) = True
+leq (BVDAny _) (BVDInterval _ _ _) = False
+leq (BVDInterval mask al aw) (BVDInterval _ bl bw) =
+  ((al - bl) .&. mask) + aw <= bw
+{-# INLINE leq #-}
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits
@@ -678,7 +777,7 @@ srem w a b
 udivSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
 udivSmtlib a b
   | isSingletonZero b = singleton' mask mask
-  | member b 0        = union (udiv a b) (singleton' mask mask)
+  | member b 0        = join (udiv a b) (singleton' mask mask)
   | otherwise         = udiv a b
   where
     mask = bvdMask a
@@ -696,7 +795,7 @@ udivSmtlib a b
 uremSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
 uremSmtlib a b
   | isSingletonZero b = a
-  | member b 0        = union (urem a b) a
+  | member b 0        = join (urem a b) a
   | otherwise         = urem a b
 
 -- | Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero
@@ -708,7 +807,7 @@ uremSmtlib a b
 sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sdivSmtlib w a b
   | isSingletonZero b = sdivByZero w a
-  | member b 0        = union (sdiv w a b) (sdivByZero w a)
+  | member b 0        = join (sdiv w a b) (sdivByZero w a)
   | otherwise         = sdiv w a b
 
 -- The result of @bvsdiv s 0@ as a function of the dividend's sign:
@@ -718,7 +817,7 @@ sdivByZero w a =
   case (al < 0, ah >= 0) of
     (False, _    ) -> singleton w mask        -- s >= 0: all-ones
     (True,  False) -> singleton w 1           -- s < 0: one
-    (True,  True ) -> union (singleton w 1) (singleton w mask)
+    (True,  True ) -> join (singleton w 1) (singleton w mask)
   where
     mask = bvdMask a
     (al, ah) = sbounds w a
@@ -731,7 +830,7 @@ sdivByZero w a =
 sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sremSmtlib w a b
   | isSingletonZero b = a
-  | member b 0        = union (srem w a b) a
+  | member b 0        = join (srem w a b) a
   | otherwise         = srem w a b
 
 --------------------------------------------------------------------------------
@@ -816,6 +915,72 @@ correct_overlap a b x =
 correct_union :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
 correct_union n a b x =
   (member a x || member b x) ==> pmember n (union a b) x
+
+correct_join :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
+correct_join n a b x =
+  (member a x || member b x) ==> pmember n (join a b) x
+
+correct_meet :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
+correct_meet a b x =
+  (member a x && member b x) ==> member (meet a b) x
+
+-- Note: 'meet' for the arithmetic domain is *not* a precise intersection
+-- when one of the arguments is a wrap-around interval. In that case
+-- 'ubounds' returns @(0, mask)@, and the result over-approximates. The
+-- bitwise domain's meet (in "What4.Domains.BV.Bitwise") *is* precise; see
+-- 'What4.Domains.BV.Bitwise.precise_meet'.
+
+correct_leq :: Domain n -> Domain n -> Integer -> Property
+correct_leq a b x =
+  (leq a b && member a x) ==> member b x
+
+------------------------------------------------------------------------
+-- Lattice law properties (semantic, i.e. same set of members)
+
+join_commutative :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
+join_commutative a b x =
+  property (member (join a b) x == member (join b a) x)
+
+join_idempotent :: (1 <= n) => Domain n -> Integer -> Property
+join_idempotent a x =
+  property (member (join a a) x == member a x)
+
+meet_commutative :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
+meet_commutative a b x =
+  property (member (meet a b) x == member (meet b a) x)
+
+meet_idempotent :: (1 <= n) => Domain n -> Integer -> Property
+meet_idempotent a x =
+  property (member (meet a a) x == member a x)
+
+join_top :: (1 <= n) => NatRepr n -> Domain n -> Integer -> Property
+join_top n a x =
+  property (member (join a (top n)) x)
+
+join_bottom :: (1 <= n) => NatRepr n -> Domain n -> Integer -> Property
+join_bottom n a x =
+  property (member (join a (bottom n)) x == member a x)
+
+meet_top :: (1 <= n) => NatRepr n -> Domain n -> Integer -> Property
+meet_top n a x =
+  property (member (meet a (top n)) x == member a x)
+
+meet_bottom :: (1 <= n) => NatRepr n -> Domain n -> Integer -> Property
+meet_bottom n a x =
+  property (Prelude.not (member (meet a (bottom n)) x))
+
+leq_reflexive :: Domain n -> Property
+leq_reflexive a = property (leq a a)
+
+join_upper_bound :: (1 <= n) => Domain n -> Domain n -> Property
+join_upper_bound a b = property (leq a (join a b))
+
+join_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+join_proper n a b = property (proper n (join a b))
+
+meet_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+meet_proper n a b = property (proper n c || isBottom c)
+  where c = meet a b
 
 correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'

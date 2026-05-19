@@ -30,6 +30,13 @@ module What4.Domains.BV.Bitwise
   , bitbounds
   , ubounds
   , sbounds
+  -- * Lattice operations
+  , top
+  , bottom
+  , join
+  , meet
+  , leq
+  , isBottom
   -- * Operations
   , any
   , singleton
@@ -81,6 +88,23 @@ module What4.Domains.BV.Bitwise
   , correct_overlap
   , correct_union
   , correct_intersection
+  , correct_join
+  , correct_meet
+  , precise_meet
+  , correct_leq
+  -- ** Lattice laws
+  , join_commutative
+  , join_idempotent
+  , meet_commutative
+  , meet_idempotent
+  , join_top
+  , join_bottom
+  , meet_top
+  , meet_bottom
+  , leq_reflexive
+  , join_upper_bound
+  , join_proper
+  , meet_proper
   , correct_zero_ext
   , correct_sign_ext
   , correct_concat
@@ -256,14 +280,14 @@ singleton w x = BVBitInterval mask x' x'
   mask = maxUnsigned w
 
 -- | /O(w)/. Bitwise domain containing every bitvector value.
+{-# DEPRECATED any "Use 'top' instead" #-}
 any :: NatRepr w -> Domain w
-any w = BVBitInterval mask 0 mask
-  where
-  mask = maxUnsigned w
+any = top
+{-# INLINE any #-}
 
 -- | /O(w)/. Returns true iff the domains have some value in common.
 domainsOverlap :: Domain w -> Domain w -> Bool
-domainsOverlap a b = nonempty (intersection a b)
+domainsOverlap a b = nonempty (meet a b)
 
 -- | /O(w)/. Decide equality of two domains: 'Just True' if both are the same
 -- singleton, 'Just False' if they're disjoint, 'Nothing' otherwise.
@@ -276,15 +300,55 @@ eq a b
   | Prelude.not (domainsOverlap a b) = Just False
   | otherwise = Nothing
 
--- | /O(w)/. Greatest lower bound of two domains.
-intersection :: Domain w -> Domain w -> Domain w
-intersection (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
-  BVBitInterval mask (alo .|. blo) (ahi .&. bhi)
+------------------------------------------------------------------------
+-- Lattice operations
 
--- | /O(w)/. Least upper bound of two domains.
-union :: Domain w -> Domain w -> Domain w
-union (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
+-- | /O(1)/. Top element of the lattice: represents all bitvectors of width @w@.
+top :: NatRepr w -> Domain w
+top w = BVBitInterval mask 0 mask
+  where
+  mask = maxUnsigned w
+{-# INLINE top #-}
+
+-- | /O(1)/. Bottom element of the lattice: represents the empty set of bitvectors.
+-- This is an improper domain whose membership predicate is unsatisfiable.
+bottom :: NatRepr w -> Domain w
+bottom w = BVBitInterval mask mask 0
+  where
+  mask = maxUnsigned w
+{-# INLINE bottom #-}
+
+-- | /O(w)/. Lattice join: pointwise least upper bound on the bit-level @bitle@ ordering.
+join :: Domain w -> Domain w -> Domain w
+join (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
   BVBitInterval mask (alo .&. blo) (ahi .|. bhi)
+
+-- | /O(w)/. Lattice meet: pointwise greatest lower bound on the bit-level @bitle@ ordering.
+-- If both inputs are proper (or bottom), so is the result.
+meet :: Domain w -> Domain w -> Domain w
+meet (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi)
+  | bitle lo hi = BVBitInterval mask lo hi
+  | otherwise   = BVBitInterval mask mask 0  -- canonical bottom
+  where
+    lo = alo .|. blo
+    hi = ahi .&. bhi
+
+-- | /O(w)/. Lattice ordering: @leq a b@ returns 'True' if every concrete value
+-- represented by @a@ is also represented by @b@.
+leq :: Domain w -> Domain w -> Bool
+leq (BVBitInterval _ alo ahi) (BVBitInterval _ blo bhi) =
+  bitle blo alo && bitle ahi bhi
+{-# INLINE leq #-}
+
+{-# DEPRECATED intersection "Use 'meet' instead" #-}
+intersection :: Domain w -> Domain w -> Domain w
+intersection = meet
+{-# INLINE intersection #-}
+
+{-# DEPRECATED union "Use 'join' instead" #-}
+union :: Domain w -> Domain w -> Domain w
+union = join
+{-# INLINE union #-}
 
 -- | /O(u + v)/. @concat a y@ returns a domain where each element in @a@ has
 -- been concatenated with an element in @y@. The most-significant bits are
@@ -736,6 +800,75 @@ correct_union n a b x =
 correct_intersection :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
 correct_intersection a b x = -- NB, intersection might not be proper
   member a x && member b x ==> member (intersection a b) x
+
+correct_join :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
+correct_join n a b x =
+  member a x || member b x ==> pmember n (join a b) x
+
+correct_meet :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
+correct_meet a b x =
+  member a x && member b x ==> member (meet a b) x
+
+-- | Precision of meet: if @x@ is a member of @meet a b@, then @x@ is
+-- a member of both @a@ and @b@.
+precise_meet :: (1 <= n) => Domain n -> Domain n -> Integer -> Property
+precise_meet a b x =
+  member (meet a b) x ==> (member a x && member b x)
+
+correct_leq :: Domain n -> Domain n -> Integer -> Property
+correct_leq a b x =
+  (leq a b && member a x) ==> member b x
+
+------------------------------------------------------------------------
+-- Lattice law properties (semantic, i.e. same set of members)
+
+join_commutative :: Domain n -> Domain n -> Integer -> Property
+join_commutative a b x =
+  property (member (join a b) x == member (join b a) x)
+
+join_idempotent :: Domain n -> Integer -> Property
+join_idempotent a x =
+  property (member (join a a) x == member a x)
+
+meet_commutative :: Domain n -> Domain n -> Integer -> Property
+meet_commutative a b x =
+  property (member (meet a b) x == member (meet b a) x)
+
+meet_idempotent :: Domain n -> Integer -> Property
+meet_idempotent a x =
+  property (member (meet a a) x == member a x)
+
+join_top :: NatRepr n -> Domain n -> Integer -> Property
+join_top n a x =
+  property (member (join a (top n)) x)
+
+join_bottom :: NatRepr n -> Domain n -> Integer -> Property
+join_bottom n a x =
+  property (member (join a (bottom n)) x == member a x)
+
+meet_top :: NatRepr n -> Domain n -> Integer -> Property
+meet_top n a x =
+  property (member (meet a (top n)) x == member a x)
+
+meet_bottom :: NatRepr n -> Domain n -> Integer -> Property
+meet_bottom n a x =
+  property (Prelude.not (member (meet a (bottom n)) x))
+
+leq_reflexive :: Domain n -> Property
+leq_reflexive a = property (leq a a)
+
+join_upper_bound :: Domain n -> Domain n -> Property
+join_upper_bound a b = property (leq a (join a b))
+
+join_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+join_proper n a b = property (proper n (join a b))
+
+meet_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+meet_proper n a b = property (proper n c || isBottom c)
+  where c = meet a b
+
+isBottom :: Domain w -> Bool
+isBottom (BVBitInterval mask lo hi) = lo == mask && hi == 0
 
 correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
