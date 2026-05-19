@@ -39,17 +39,17 @@ module What4.Domains.BV.Arith
   , fillright
   -- * Lattice operations
   , top
+  , any
   , bottom
+  , isBottom
   , join
+  , union
   , meet
   , leq
-  , isBottom
     -- * Operations
-  , any
   , singleton
   , range
   , fromAscEltList
-  , union
   , concat
   , select
   , zext
@@ -353,7 +353,12 @@ isUltSumCommonEquiv a b c = if al == ah && bl == bh && al == bl
       ah + hi <= mask && bh + hi <= mask || mask < al + lo && mask < bl + lo
 
 --------------------------------------------------------------------------------
--- Operations
+-- Lattice operations
+
+-- | Top element of the lattice: represents all bitvectors of width @w@.
+top :: (1 <= w) => NatRepr w -> Domain w
+top w = BVDAny (maxUnsigned w)
+{-# INLINE top #-}
 
 -- | Represents all values.
 {-# DEPRECATED any "Use 'top' instead" #-}
@@ -361,37 +366,18 @@ any :: (1 <= w) => NatRepr w -> Domain w
 any = top
 {-# INLINE any #-}
 
--- | Create a bitvector domain representing the integer.
-singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> Domain w
-singleton w x = BVDInterval mask (x .&. mask) 0
-  where mask = maxUnsigned w
+-- | Bottom element of the lattice for the given mask: represents the empty
+-- set of bitvectors. This is an improper domain whose membership predicate
+-- is unsatisfiable.
+bottomForMask :: Integer -> Domain w
+bottomForMask mask = BVDInterval mask 0 (-1)
+{-# INLINE bottomForMask #-}
 
--- | @range w l u@ returns domain containing all bitvectors formed
--- from the @w@ low order bits of some @i@ in @[l,u]@.  Note that per
--- @testBit@, the least significant bit has index @0@.
-range :: NatRepr w -> Integer -> Integer -> Domain w
-range w al ah = interval mask al ((ah - al) .&. mask)
-  where mask = maxUnsigned w
-
--- | Unsafe constructor for internal use only. Caller must ensure that
--- @mask = maxUnsigned w@, and that @aw@ is non-negative.
-interval :: Integer -> Integer -> Integer -> Domain w
-interval mask al aw =
-  if aw >= mask then BVDAny mask else BVDInterval mask (al .&. mask) aw
-
--- | Create an abstract domain from an ascending list of elements.
--- The elements are assumed to be distinct.
-fromAscEltList :: (1 <= w) => NatRepr w -> [Integer] -> Domain w
-fromAscEltList w [] = singleton w 0
-fromAscEltList w [x] = singleton w x
-fromAscEltList w (x0 : x1 : xs) = go (x0, x0) (x1, x1) xs
-  where
-    -- Invariant: the gap between @b@ and @c@ is the biggest we've
-    -- seen between adjacent values so far.
-    go (a, b) (c, d) [] = join (range w a b) (range w c d)
-    go (a, b) (c, d) (e : rest)
-      | e - d > c - b = go (a, d) (e, e) rest
-      | otherwise     = go (a, b) (c, e) rest
+-- | Bottom element of the lattice: represents the empty set of bitvectors.
+-- This is an improper domain whose membership predicate is unsatisfiable.
+bottom :: (1 <= w) => NatRepr w -> Domain w
+bottom w = bottomForMask (maxUnsigned w)
+{-# INLINE bottom #-}
 
 -- | Returns 'True' if this domain has no members (i.e., is 'bottom'),
 --   detected as an improper interval with negative size.
@@ -411,6 +397,23 @@ isBottom (BVDAny _) = False
 -- yields the shorter of the two enclosing arcs — the one that wraps
 -- around zero when appropriate — rather than always going clockwise.
 -- 'interval' then collapses sizes @>= 2^w@ to 'BVDAny'.
+--
+-- @
+--     Visualize the modular number line @[0, mask]@ as a horizontal strip.
+--
+--     midpoints close — naive convex hull is already optimal:
+--            0                                     mask
+--     a:     [-----]
+--     b:               [-----]
+--     naive: [---------------]   (= our result)
+--
+--     midpoints far apart — naive hull is wasteful, wrapping is shorter:
+--            0                                     mask
+--     a:     [-----]
+--     b:                                   [-----]
+--     naive: [-----------------------------------]   (covers nearly everything)
+--     ours:  -----]                        [------   (wraps around; tight)
+-- @
 join :: (1 <= w) => Domain w -> Domain w -> Domain w
 join a b | isBottom a = b
          | isBottom b = a
@@ -436,27 +439,6 @@ join (BVDInterval mask al aw) (BVDInterval _ bl bw) =
 union :: (1 <= w) => Domain w -> Domain w -> Domain w
 union = join
 {-# INLINE union #-}
-
-------------------------------------------------------------------------
--- Lattice operations
-
--- | Top element of the lattice: represents all bitvectors of width @w@.
-top :: (1 <= w) => NatRepr w -> Domain w
-top w = BVDAny (maxUnsigned w)
-{-# INLINE top #-}
-
--- | Bottom element of the lattice for the given mask: represents the empty
--- set of bitvectors. This is an improper domain whose membership predicate
--- is unsatisfiable.
-bottomForMask :: Integer -> Domain w
-bottomForMask mask = BVDInterval mask 0 (-1)
-{-# INLINE bottomForMask #-}
-
--- | Bottom element of the lattice: represents the empty set of bitvectors.
--- This is an improper domain whose membership predicate is unsatisfiable.
-bottom :: (1 <= w) => NatRepr w -> Domain w
-bottom w = bottomForMask (maxUnsigned w)
-{-# INLINE bottom #-}
 
 -- | Lattice meet: an over-approximation of the intersection of two domains.
 -- For any concrete value @x@, if @x@ is a member of both @a@ and @b@, then
@@ -489,6 +471,41 @@ leq (BVDAny _) (BVDInterval _ _ _) = False
 leq (BVDInterval mask al aw) (BVDInterval _ bl bw) =
   ((al - bl) .&. mask) + aw <= bw
 {-# INLINE leq #-}
+
+--------------------------------------------------------------------------------
+-- Operations
+
+-- | Create a bitvector domain representing the integer.
+singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> Domain w
+singleton w x = BVDInterval mask (x .&. mask) 0
+  where mask = maxUnsigned w
+
+-- | @range w l u@ returns domain containing all bitvectors formed
+-- from the @w@ low order bits of some @i@ in @[l,u]@.  Note that per
+-- @testBit@, the least significant bit has index @0@.
+range :: NatRepr w -> Integer -> Integer -> Domain w
+range w al ah = interval mask al ((ah - al) .&. mask)
+  where mask = maxUnsigned w
+
+-- | Unsafe constructor for internal use only. Caller must ensure that
+-- @mask = maxUnsigned w@, and that @aw@ is non-negative.
+interval :: Integer -> Integer -> Integer -> Domain w
+interval mask al aw =
+  if aw >= mask then BVDAny mask else BVDInterval mask (al .&. mask) aw
+
+-- | Create an abstract domain from an ascending list of elements.
+-- The elements are assumed to be distinct.
+fromAscEltList :: (1 <= w) => NatRepr w -> [Integer] -> Domain w
+fromAscEltList w [] = singleton w 0
+fromAscEltList w [x] = singleton w x
+fromAscEltList w (x0 : x1 : xs) = go (x0, x0) (x1, x1) xs
+  where
+    -- Invariant: the gap between @b@ and @c@ is the biggest we've
+    -- seen between adjacent values so far.
+    go (a, b) (c, d) [] = join (range w a b) (range w c d)
+    go (a, b) (c, d) (e : rest)
+      | e - d > c - b = go (a, d) (e, e) rest
+      | otherwise     = go (a, b) (c, e) rest
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits

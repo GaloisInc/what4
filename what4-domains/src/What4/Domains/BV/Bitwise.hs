@@ -32,18 +32,18 @@ module What4.Domains.BV.Bitwise
   , sbounds
   -- * Lattice operations
   , top
-  , bottom
-  , join
-  , meet
-  , leq
-  , isBottom
-  -- * Operations
   , any
+  , bottom
+  , isBottom
+  , join
+  , union
+  , meet
+  , intersection
+  , leq
+  -- * Operations
   , singleton
   , range
   , interval
-  , union
-  , intersection
   , concat
   , select
   , zext
@@ -276,18 +276,75 @@ asSingleton (BVBitInterval _ lo hi) = if lo == hi then Just lo else Nothing
 nonempty :: Domain w -> Bool
 nonempty (BVBitInterval _mask lo hi) = bitle lo hi
 
--- | /O(w)/. Return a domain containing just the given value.
-singleton :: NatRepr w -> Integer -> Domain w
-singleton w x = BVBitInterval mask x' x'
+------------------------------------------------------------------------
+-- Lattice operations
+
+-- | /O(1)/. Top element of the lattice: represents all bitvectors of width @w@.
+top :: NatRepr w -> Domain w
+top w = BVBitInterval mask 0 mask
   where
-  x' = x .&. mask
   mask = maxUnsigned w
+{-# INLINE top #-}
 
 -- | /O(w)/. Bitwise domain containing every bitvector value.
 {-# DEPRECATED any "Use 'top' instead" #-}
 any :: NatRepr w -> Domain w
 any = top
 {-# INLINE any #-}
+
+-- | /O(1)/. Bottom element of the lattice: represents the empty set of bitvectors.
+-- This is an improper domain whose membership predicate is unsatisfiable.
+bottom :: NatRepr w -> Domain w
+bottom w = BVBitInterval mask mask 0
+  where
+  mask = maxUnsigned w
+{-# INLINE bottom #-}
+
+-- | /O(1)/.
+isBottom :: Domain w -> Bool
+isBottom (BVBitInterval mask lo hi) = lo == mask && hi == 0
+
+-- | /O(w)/. Lattice join: pointwise least upper bound on the bit-level @bitle@ ordering.
+join :: Domain w -> Domain w -> Domain w
+join (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
+  BVBitInterval mask (alo .&. blo) (ahi .|. bhi)
+
+{-# DEPRECATED union "Use 'join' instead" #-}
+union :: Domain w -> Domain w -> Domain w
+union = join
+{-# INLINE union #-}
+
+-- | /O(w)/. Lattice meet: pointwise greatest lower bound on the bit-level @bitle@ ordering.
+-- If both inputs are proper (or bottom), so is the result.
+meet :: Domain w -> Domain w -> Domain w
+meet (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi)
+  | bitle lo hi = BVBitInterval mask lo hi
+  | otherwise   = BVBitInterval mask mask 0  -- canonical bottom
+  where
+    lo = alo .|. blo
+    hi = ahi .&. bhi
+
+{-# DEPRECATED intersection "Use 'meet' instead" #-}
+intersection :: Domain w -> Domain w -> Domain w
+intersection = meet
+{-# INLINE intersection #-}
+
+-- | /O(w)/. Lattice ordering: @leq a b@ returns 'True' if every concrete value
+-- represented by @a@ is also represented by @b@.
+leq :: Domain w -> Domain w -> Bool
+leq (BVBitInterval _ alo ahi) (BVBitInterval _ blo bhi) =
+  bitle blo alo && bitle ahi bhi
+{-# INLINE leq #-}
+
+------------------------------------------------------------------------
+-- Operations
+
+-- | /O(w)/. Return a domain containing just the given value.
+singleton :: NatRepr w -> Integer -> Domain w
+singleton w x = BVBitInterval mask x' x'
+  where
+  x' = x .&. mask
+  mask = maxUnsigned w
 
 -- | /O(w)/. Returns true iff the domains have some value in common.
 domainsOverlap :: Domain w -> Domain w -> Bool
@@ -303,56 +360,6 @@ eq a b
 
   | Prelude.not (domainsOverlap a b) = Just False
   | otherwise = Nothing
-
-------------------------------------------------------------------------
--- Lattice operations
-
--- | /O(1)/. Top element of the lattice: represents all bitvectors of width @w@.
-top :: NatRepr w -> Domain w
-top w = BVBitInterval mask 0 mask
-  where
-  mask = maxUnsigned w
-{-# INLINE top #-}
-
--- | /O(1)/. Bottom element of the lattice: represents the empty set of bitvectors.
--- This is an improper domain whose membership predicate is unsatisfiable.
-bottom :: NatRepr w -> Domain w
-bottom w = BVBitInterval mask mask 0
-  where
-  mask = maxUnsigned w
-{-# INLINE bottom #-}
-
--- | /O(w)/. Lattice join: pointwise least upper bound on the bit-level @bitle@ ordering.
-join :: Domain w -> Domain w -> Domain w
-join (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
-  BVBitInterval mask (alo .&. blo) (ahi .|. bhi)
-
--- | /O(w)/. Lattice meet: pointwise greatest lower bound on the bit-level @bitle@ ordering.
--- If both inputs are proper (or bottom), so is the result.
-meet :: Domain w -> Domain w -> Domain w
-meet (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi)
-  | bitle lo hi = BVBitInterval mask lo hi
-  | otherwise   = BVBitInterval mask mask 0  -- canonical bottom
-  where
-    lo = alo .|. blo
-    hi = ahi .&. bhi
-
--- | /O(w)/. Lattice ordering: @leq a b@ returns 'True' if every concrete value
--- represented by @a@ is also represented by @b@.
-leq :: Domain w -> Domain w -> Bool
-leq (BVBitInterval _ alo ahi) (BVBitInterval _ blo bhi) =
-  bitle blo alo && bitle ahi bhi
-{-# INLINE leq #-}
-
-{-# DEPRECATED intersection "Use 'meet' instead" #-}
-intersection :: Domain w -> Domain w -> Domain w
-intersection = meet
-{-# INLINE intersection #-}
-
-{-# DEPRECATED union "Use 'join' instead" #-}
-union :: Domain w -> Domain w -> Domain w
-union = join
-{-# INLINE union #-}
 
 -- | /O(u + v)/. @concat a y@ returns a domain where each element in @a@ has
 -- been concatenated with an element in @y@. The most-significant bits are
@@ -873,9 +880,6 @@ join_proper n a b = property (proper n (join a b))
 meet_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
 meet_proper n a b = property (proper n c || isBottom c)
   where c = meet a b
-
-isBottom :: Domain w -> Bool
-isBottom (BVBitInterval mask lo hi) = lo == mask && hi == 0
 
 correct_zero_ext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Integer -> Property
 correct_zero_ext w a u x = member a x' ==> pmember u (zext a u) x'
