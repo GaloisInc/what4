@@ -51,6 +51,11 @@ union a b = { lomask = a.lomask && b.lomask, himask = a.himask || b.himask }
 ////////////////////////////////////////////////////////////
 // Lattice operations
 
+/** Bottom element of the lattice: an improper domain whose
+    membership predicate is unsatisfiable. */
+bottom : {n} (fin n) => Dom n
+bottom = { lomask = ~0, himask = 0 }
+
 /** Lattice join (least upper bound). Synonym for `union`. */
 join : {n} (fin n) => Dom n -> Dom n -> Dom n
 join = union
@@ -59,11 +64,6 @@ join = union
     Note: meet may produce an improper domain. */
 meet : {n} (fin n) => Dom n -> Dom n -> Dom n
 meet = intersection
-
-/** Bottom element of the lattice: an improper domain whose
-    membership predicate is unsatisfiable. */
-bottom : {n} (fin n) => Dom n
-bottom = { lomask = ~0, himask = 0 }
 
 /** Lattice ordering: every element of `a` is also in `b`. */
 leq : {n} (fin n) => Dom n -> Dom n -> Bit

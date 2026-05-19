@@ -130,13 +130,13 @@ union a b =
 ////////////////////////////////////////////////////////////
 // Lattice operations
 
-/** Lattice join (least upper bound). Synonym for `union`. */
-join : {n} (fin n) => Dom n -> Dom n -> Dom n
-join = union
-
 /** Bottom element of the lattice: the empty domain. */
 bottom : {n} (fin n) => Dom n
 bottom = { lo = 0, sz = 0, isBot = True }
+
+/** Lattice join (least upper bound). Synonym for `union`. */
+join : {n} (fin n) => Dom n -> Dom n -> Dom n
+join = union
 
 /** Lattice meet (greatest lower bound) - intersection of two intervals. */
 meet : {n} (fin n) => Dom n -> Dom n -> Dom n

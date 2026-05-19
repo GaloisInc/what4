@@ -56,16 +56,17 @@ module What4.Domains.BV
   , B.bitbounds
     -- * Lattice operations
   , top
+  , any
   , bottom
+  , isBottom
   , join
+  , union
   , meet
   , leq
     -- * Operations
-  , any
   , singleton
   , range
   , fromAscEltList
-  , union
   , concat
   , select
   , zext
@@ -452,10 +453,38 @@ isUltSumCommonEquiv a b c =
 top :: (1 <= w) => NatRepr w -> BVDomain w
 top w = BVDBitwise (B.top w)
 
+-- | Represents all values.
+{-# DEPRECATED any "Use 'top' instead" #-}
+any :: (1 <= w) => NatRepr w -> BVDomain w
+any = top
+{-# INLINE any #-}
+
 -- | Bottom element of the lattice: represents the empty set of bitvectors.
 -- This is an improper domain whose membership predicate is unsatisfiable.
 bottom :: (1 <= w) => NatRepr w -> BVDomain w
 bottom w = BVDBitwise (B.bottom w)
+
+isBottom :: BVDomain w -> Bool
+isBottom (BVDArith a) = A.isBottom a
+isBottom (BVDBitwise b) = B.isBottom b
+
+-- | Lattice join (least upper bound) of two domains.
+join :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+join (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.join a b)
+join (BVDArith a) (BVDArith b) = BVDArith (A.join a b)
+join (BVDBitwise a) (BVDArith b) = mixedJoin b a
+join (BVDArith a) (BVDBitwise b) = mixedJoin a b
+
+mixedJoin :: (1 <= w) => A.Domain w -> B.Domain w  -> BVDomain w
+mixedJoin a b
+  | Just _ <- A.asSingleton a = BVDBitwise (B.join (arithToBitwiseDomain a) b)
+  | otherwise = BVDArith (A.join a (bitwiseToArithDomain b))
+
+-- | Return union of two domains.
+{-# DEPRECATED union "Use 'join' instead" #-}
+union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
+union = join
+{-# INLINE union #-}
 
 -- | Lattice meet: an over-approximation of the intersection of two domains.
 -- For any concrete value @x@, if @x@ is a member of both @a@ and @b@, then
@@ -489,12 +518,6 @@ leq (BVDArith a) (BVDBitwise b) = B.leq (arithToBitwiseDomain a) b
 --------------------------------------------------------------------------------
 -- Operations
 
--- | Represents all values.
-{-# DEPRECATED any "Use 'top' instead" #-}
-any :: (1 <= w) => NatRepr w -> BVDomain w
-any = top
-{-# INLINE any #-}
-
 -- | Create a bitvector domain representing the integer.
 singleton :: (HasCallStack, 1 <= w) => NatRepr w -> Integer -> BVDomain w
 singleton w x = BVDArith (A.singleton w x)
@@ -509,24 +532,6 @@ range w al ah = BVDArith (A.range w al ah)
 -- The elements are assumed to be distinct.
 fromAscEltList :: (1 <= w) => NatRepr w -> [Integer] -> BVDomain w
 fromAscEltList w xs = BVDArith (A.fromAscEltList w xs)
-
--- | Return join (least upper bound) of two domains.
-join :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-join (BVDBitwise a) (BVDBitwise b) = BVDBitwise (B.join a b)
-join (BVDArith a) (BVDArith b) = BVDArith (A.join a b)
-join (BVDBitwise a) (BVDArith b) = mixedJoin b a
-join (BVDArith a) (BVDBitwise b) = mixedJoin a b
-
-mixedJoin :: (1 <= w) => A.Domain w -> B.Domain w  -> BVDomain w
-mixedJoin a b
-  | Just _ <- A.asSingleton a = BVDBitwise (B.join (arithToBitwiseDomain a) b)
-  | otherwise = BVDArith (A.join a (bitwiseToArithDomain b))
-
--- | Return union of two domains.
-{-# DEPRECATED union "Use 'join' instead" #-}
-union :: (1 <= w) => BVDomain w -> BVDomain w -> BVDomain w
-union = join
-{-# INLINE union #-}
 
 -- | @concat a y@ returns domain where each element in @a@ has been
 -- concatenated with an element in @y@.  The most-significant bits
