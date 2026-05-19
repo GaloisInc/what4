@@ -155,6 +155,11 @@ library
     mtl >= 2.2.1,
     transformers >= 0.4,
 
+  -- ghc-bignum is wired-in starting with GHC 9.0 (base-4.15); used by
+  -- What4.Domains.Arithmetic for a fast primop-backed integerLog2.
+  if impl(ghc >= 9.0)
+    build-depends: ghc-bignum >= 1.0 && < 2
+
   hs-source-dirs: src
 
   exposed-modules:

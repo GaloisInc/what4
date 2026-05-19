@@ -8,9 +8,12 @@
 -- Stability        : provisional
 ------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 module What4.Domains.Arithmetic
   ( ctz
   , clz
+  , intLog2
+  , bitsBelow
   , rotateLeft
   , rotateRight
   ) where
@@ -18,6 +21,11 @@ module What4.Domains.Arithmetic
 import Data.Bits (Bits(..), xor, shiftL, shiftR)
 
 import Data.Parameterized.NatRepr
+
+#if MIN_VERSION_base(4,15,0)
+-- GHC 9.0+: ghc-bignum exposes a fast primop-backed integerLog2.
+import qualified GHC.Num.Integer as Integer
+#endif
 
 -- | Count trailing zeros
 ctz :: NatRepr w -> Integer -> Integer
@@ -34,6 +42,30 @@ clz w x = go 0
  go !i
    | i < toInteger (natValue w) && testBit x (widthVal w - fromInteger i - 1) == False = go (i + 1)
    | otherwise = i
+
+-- | @intLog2 n@ for @n >= 1@: floor of base-2 logarithm. Undefined for
+-- @n <= 0@. On GHC 9.0+ this delegates to a fast primop in @ghc-bignum@;
+-- on earlier GHCs it falls back to a shift loop.
+intLog2 :: Integer -> Int
+#if MIN_VERSION_base(4,15,0)
+intLog2 n = fromIntegral (Integer.integerLog2 n)
+#else
+intLog2 = go 0
+  where
+  go !k m
+    | m <= 1    = k
+    | otherwise = go (k + 1) (m `shiftR` 1)
+#endif
+{-# INLINE intLog2 #-}
+
+-- | @bitsBelow n@ returns the smallest mask of the form @2^k - 1@ that is at
+-- least @n@. That is, @2^(floor(log2 n) + 1) - 1@ for @n > 0@, or @0@ for
+-- @n <= 0@. Every value in @[0..n]@ has all its set bits within this mask.
+bitsBelow :: Integer -> Integer
+bitsBelow n
+  | n <= 0    = 0
+  | otherwise = bit (intLog2 n + 1) - 1
+{-# INLINE bitsBelow #-}
 
 rotateRight ::
   NatRepr w {- ^ width -} ->

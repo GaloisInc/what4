@@ -362,6 +362,30 @@ bitwiseDomainTests =
   , genTest "correct_mul" $
       do SW n <- genWidth
          B.correct_mul n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_udiv" $
+      do SW n <- genWidth
+         B.correct_udiv n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_urem" $
+      do SW n <- genWidth
+         B.correct_urem n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_sdiv" $
+      do SW n <- genWidth
+         B.correct_sdiv n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_srem" $
+      do SW n <- genWidth
+         B.correct_srem n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_udivSmtlib" $
+      do SW n <- genWidth
+         B.correct_udivSmtlib n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_uremSmtlib" $
+      do SW n <- genWidth
+         B.correct_uremSmtlib n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_sdivSmtlib" $
+      do SW n <- genWidth
+         B.correct_sdivSmtlib n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_sremSmtlib" $
+      do SW n <- genWidth
+         B.correct_sremSmtlib n <$> B.genPair n <*> B.genPair n
   ]
 
 overallDomainTests :: TestTree
