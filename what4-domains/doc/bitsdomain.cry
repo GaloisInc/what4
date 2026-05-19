@@ -203,6 +203,92 @@ foldl f z xs = (zs : [_]a) ! 0
   zs = [z] # [ f y x | y <- zs | x <- xs ]
 
 ////////////////////////////////////////////////////////////
+// Division and remainder
+//
+// All four operations assume the divisor is nonzero, matching the
+// convention of What4.Domains.BV.Arith.
+
+// bitsBelow x: smallest mask of the form 2^k - 1 that is >= x.
+// Computed by repeatedly smearing the highest set bit downward.
+// Every value in [0, x] has all its set bits within bitsBelow x.
+bitsBelow : {n} (fin n, n >= 1) => [n] -> [n]
+bitsBelow x = ys ! 0
+  where
+  ys = [x] # [ y || (y >> 1) | y <- ys | _ <- [0 .. n - 1] ]
+
+// Unsigned division. When the divisor is a singleton power of
+// two 2^k, the result is exact (a logical shift right by k);
+// otherwise, the result is bounded above by aMax / bMin and we
+// keep only its leading-zero structure.
+udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+udiv a b =
+  if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
+    then { lomask = av / bv, himask = (av || am) / bv }
+    else { lomask = 0, himask = bitsBelow qMax }
+  where
+  (av, am) = toTnum a
+  (bv, bm) = toTnum b
+  aMax = av || am
+  // bv may be 0 if b.lomask = 0; we substitute 1 to avoid division
+  // by zero in this Cryptol expression. The result of the else
+  // branch is sound regardless: x/y <= x <= aMax for any y >= 1.
+  bSafe = if bv == 0 then 1 else bv
+  qMax = aMax / bSafe
+
+// Unsigned remainder. When the divisor is a singleton power of
+// two 2^k, the result is exact (the low k bits of the dividend);
+// otherwise, the result is bounded above by min(aMax, bMax-1).
+urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+urem a b =
+  if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
+    then { lomask = av % bv, himask = (av || am) % bv }
+    else { lomask = 0, himask = bitsBelow rMax }
+  where
+  (av, am) = toTnum a
+  (bv, bm) = toTnum b
+  aMax = av || am
+  bMax = bv || bm
+  rMax = if bMax == 0 then 0 else (if aMax < bMax - 1 then aMax else bMax - 1)
+
+// splitSign a returns (zero_circle, one_circle), where the first
+// is a's restriction to non-negative values (sign bit cleared)
+// and the second is its restriction to negative values (sign bit
+// set). Either circle may be empty (lomask not bitle himask),
+// which is fine: empty inputs make the soundness implication
+// vacuously true, and union accepts any well-formed pair.
+splitSign : {n} (fin n, n >= 1) => Dom n -> (Dom n, Dom n)
+splitSign a = (zero_circle, one_circle)
+  where
+  signbit = 1 << (`n - 1 : [n]) : [n]
+  zero_circle = { lomask = a.lomask, himask = a.himask && (~ signbit) }
+  one_circle  = { lomask = a.lomask || signbit, himask = a.himask }
+
+// Signed division (rounds toward zero). Splits both operands on
+// the sign bit, calls udiv on absolute values, and negates the
+// sub-result when the input signs differ. Joins all four cases.
+sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+sdiv a b = union (union r00 r11) (union r01 r10)
+  where
+  (aPos, aNeg) = splitSign a
+  (bPos, bNeg) = splitSign b
+  r00 = udiv aPos bPos                              // (+,+) -> +
+  r01 = bneg (udiv aPos (bneg bNeg))                // (+,-) -> -
+  r10 = bneg (udiv (bneg aNeg) bPos)                // (-,+) -> -
+  r11 = udiv (bneg aNeg) (bneg bNeg)                // (-,-) -> +
+
+// Signed remainder. Same shape as sdiv, but the result takes the
+// dividend's sign rather than the XOR of the input signs.
+srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+srem a b = union (union r00 r01) (union r10 r11)
+  where
+  (aPos, aNeg) = splitSign a
+  (bPos, bNeg) = splitSign b
+  r00 = urem aPos bPos                              // dividend +
+  r01 = urem aPos (bneg bNeg)                       // dividend +
+  r10 = bneg (urem (bneg aNeg) bPos)                // dividend -
+  r11 = bneg (urem (bneg aNeg) (bneg bNeg))         // dividend -
+
+////////////////////////////////////////////////////////////
 // Soundness properties
 
 correct_top : {n} (fin n) => [n] -> Bit
@@ -319,6 +405,22 @@ correct_mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_mul a b x y =
   mem a x ==> mem b y ==> mem (mul a b) (x * y)
 
+correct_udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_udiv a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (udiv a b) (x / y)
+
+correct_urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_urem a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (urem a b) (x % y)
+
+correct_sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_sdiv a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (sdiv a b) (x /$ y)
+
+correct_srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_srem a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (srem a b) (x %$ y)
+
 correct_ult : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_ult a b x y =
   ult a b ==> mem a x ==> mem b y ==> x < y
@@ -360,6 +462,10 @@ property a6 = correct_mul`{8}
 property a7 = correct_scale`{8}
 property a8 = correct_ult`{8}
 property a9 = correct_slt`{8}
+property a10 = correct_udiv`{8}
+property a11 = correct_urem`{8}
+property a12 = correct_sdiv`{8}
+property a13 = correct_srem`{8}
 
 
 ////////////////////////////////////////////////////////////

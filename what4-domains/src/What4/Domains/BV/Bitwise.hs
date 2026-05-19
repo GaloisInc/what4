@@ -54,6 +54,15 @@ module What4.Domains.BV.Bitwise
   , negate
   , scale
   , mul
+  , udiv
+  , urem
+  , sdiv
+  , srem
+  -- ** arithmetic (SMT-LIB div-by-zero semantics)
+  , udivSmtlib
+  , uremSmtlib
+  , sdivSmtlib
+  , sremSmtlib
   -- ** bitwise logical
   , and
   , or
@@ -90,6 +99,14 @@ module What4.Domains.BV.Bitwise
   , correct_neg
   , correct_scale
   , correct_mul
+  , correct_udiv
+  , correct_urem
+  , correct_sdiv
+  , correct_srem
+  , correct_udivSmtlib
+  , correct_uremSmtlib
+  , correct_sdivSmtlib
+  , correct_sremSmtlib
   , correct_and
   , correct_or
   , correct_not
@@ -441,6 +458,139 @@ mul :: Domain w -> Domain w -> Domain w
 mul a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.mul mask (toTnum a) (toTnum b))
 
+-- | Unsigned division, assumes the divisor is nonzero.
+--
+-- Compared to the arithmetic-domain @udiv@, this can be more precise when the
+-- divisor is a known power of two: the result is exact, and bit-level structure
+-- of the dividend is preserved (e.g.\ @udiv (any w) (singleton w (2^k))@ has
+-- its top @k@ bits known zero).
+udiv :: Domain w -> Domain w -> Domain w
+udiv a@(BVBitInterval mask _ _) b =
+  fromTnum mask (Tnum.udiv mask (toTnum a) (toTnum b))
+
+-- | Unsigned remainder, assumes the divisor is nonzero.
+--
+-- Like 'udiv', this is more precise when the divisor is a known power of two:
+-- @urem a (singleton w (2^k))@ is exactly the low @k@ bits of @a@.
+urem :: Domain w -> Domain w -> Domain w
+urem a@(BVBitInterval mask _ _) b =
+  fromTnum mask (Tnum.urem mask (toTnum a) (toTnum b))
+
+-- | Signed division (rounds toward zero), assumes the divisor is nonzero.
+--
+-- Implemented by splitting each operand on its sign bit into a non-negative
+-- \"zero circle\" and a negative \"one circle\", applying 'udiv' to the
+-- absolute values, fixing up the sign, and joining the resulting subcases.
+sdiv :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sdiv w = signedOp w udiv flipDiff
+  where
+  -- For sdiv, the result is negated iff the input signs differ.
+  flipDiff sa sb d = if sa == sb then d else negate d
+
+-- | Signed remainder (sign of dividend), assumes the divisor is nonzero.
+--
+-- Implemented like 'sdiv', except the result takes the sign of the dividend
+-- rather than the XOR of the input signs.
+srem :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+srem w = signedOp w urem flipByDividend
+  where
+  -- For srem, the result has the sign of the dividend.
+  flipByDividend SNeg _ d = negate d
+  flipByDividend SNonneg _ d = d
+
+-- | Helper for signed div/rem: split each operand on its sign bit,
+--   call the unsigned operation on the absolute values, fix up the
+--   result's sign per the operation's rule, and union all subcases.
+signedOp ::
+  (1 <= w) =>
+  NatRepr w ->
+  (Domain w -> Domain w -> Domain w) {- ^ unsigned op on absolute values -} ->
+  (Sign -> Sign -> Domain w -> Domain w) {- ^ result fix-up given signs -} ->
+  Domain w -> Domain w ->
+  Domain w
+signedOp w uop fixup a b =
+  Prelude.foldr1 union
+    [ fixup sa sb (uop (absVal sa a') (absVal sb b'))
+    | (sa, a') <- splitSign w a
+    , (sb, b') <- splitSign w b
+    ]
+  where
+  absVal SNonneg d = d
+  absVal SNeg    d = negate d
+
+data Sign = SNonneg | SNeg
+  deriving Eq
+
+-- | If the sign bit is known, return its value; otherwise 'Nothing'.
+signOf :: (1 <= w) => NatRepr w -> Domain w -> Maybe Sign
+signOf w (BVBitInterval _ lo hi)
+  | Bits.testBit lo i && Bits.testBit hi i = Just SNeg
+  | Prelude.not (Bits.testBit lo i || Bits.testBit hi i) = Just SNonneg
+  | otherwise = Nothing
+  where i = widthVal w - 1
+
+-- | Split a domain on its sign bit, returning each restriction tagged with
+--   its sign. If the sign bit is already known, returns a singleton list.
+splitSign :: (1 <= w) => NatRepr w -> Domain w -> [(Sign, Domain w)]
+splitSign w d@(BVBitInterval mask lo hi) =
+  case signOf w d of
+    Just s  -> [(s, d)]
+    Nothing -> [ (SNonneg, BVBitInterval mask lo (hi `Bits.xor` signbit))
+               , (SNeg,    BVBitInterval mask (lo .|. signbit) hi)
+               ]
+  where
+  signbit = bit (widthVal w - 1)
+
+-- | Like 'udiv', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+--   div-by-zero semantics: @bvudiv s 0@ is the all-ones bitvector. See @Note
+--   [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+udivSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
+udivSmtlib a b
+  | Just 0 <- asSingleton b = mkSingleton mask mask
+  | member b 0              = union (udiv a b) (mkSingleton mask mask)
+  | otherwise               = udiv a b
+  where
+  mask = bvdMask a
+
+-- | Like 'urem', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+--   div-by-zero semantics: @bvurem s 0@ is the dividend itself (@s@). See @Note
+--   [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+uremSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
+uremSmtlib a b
+  | Just 0 <- asSingleton b = a
+  | member b 0              = union (urem a b) a
+  | otherwise               = urem a b
+
+-- | Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero convention:
+--   @bvsdiv s 0@ is all-ones when @s@ is non-negative and @1@ when @s@ is
+--   negative. See @Note [SMT-LIB division]@ in "What4.Interface" for the design
+--   rationale.
+sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sdivSmtlib w a b
+  | Just 0 <- asSingleton b = sdivByZero w a
+  | member b 0              = union (sdiv w a b) (sdivByZero w a)
+  | otherwise               = sdiv w a b
+
+-- | The result of @bvsdiv s 0@ as a function of @s@'s sign: all-ones when @s >=
+--   0@, @1@ when @s < 0@.
+sdivByZero :: (1 <= w) => NatRepr w -> Domain w -> Domain w
+sdivByZero w a =
+  case signOf w a of
+    Just SNonneg -> mkSingleton mask mask
+    Just SNeg    -> mkSingleton mask 1
+    Nothing      -> union (mkSingleton mask 1) (mkSingleton mask mask)
+  where
+  mask = bvdMask a
+
+-- | Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero convention:
+--   @bvsrem s 0@ is the dividend itself (@s@). See @Note [SMT-LIB division]@ in
+--   "What4.Interface" for the design rationale.
+sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sremSmtlib w a b
+  | Just 0 <- asSingleton b = a
+  | member b 0              = union (srem w a b) a
+  | otherwise               = srem w a b
+
 
 ---------------------------------------------------------------------------------------
 -- Correctness properties
@@ -597,4 +747,77 @@ correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
 
 correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
+
+correct_udiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_udiv n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_urem :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_urem n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (urem a b) (x' `rem` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_sdiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sdiv n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (sdiv n a b) (x' `quot` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+
+correct_srem :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_srem n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (srem n a b) (x' `rem` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+
+correct_udivSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_udivSmtlib n (a,x) (b,y) =
+  member a x' ==> member b y' ==>
+    pmember n (udivSmtlib a b)
+      (if y' == 0 then maxUnsigned n else x' `quot` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_uremSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_uremSmtlib n (a,x) (b,y) =
+  member a x' ==> member b y' ==>
+    pmember n (uremSmtlib a b) (if y' == 0 then x' else x' `rem` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_sdivSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sdivSmtlib n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    pmember n (sdivSmtlib n a b) result
+  where
+  x' = toSigned n x
+  y' = toSigned n y
+  result
+    | y' /= 0   = x' `quot` y'
+    | x' >= 0   = maxUnsigned n
+    | otherwise = 1
+
+correct_sremSmtlib ::
+  (1 <= n) =>
+  NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sremSmtlib n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    pmember n (sremSmtlib n a b) (if y' == 0 then x' else x' `rem` y')
+  where
+  x' = toSigned n x
+  y' = toSigned n y
 

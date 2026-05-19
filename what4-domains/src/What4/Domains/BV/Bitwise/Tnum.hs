@@ -17,8 +17,12 @@ abstract-domain element with bit-pattern bounds @(v, v .|. m)@.
 This module is for internal use by 'What4.Domains.BV.Bitwise' only and is not
 part of the public API.
 
-See "Sound, Precise, and Fast Abstract Interpretation with Tristate Numbers"
-https://arxiv.org/abs/2105.05398.
+For 'add' and 'mul', see "Sound, Precise, and Fast Abstract Interpretation with
+Tristate Numbers" https://arxiv.org/abs/2105.05398.
+
+For 'udiv' and 'urem', see "Program Analysis Combining Generalized Bit-Level
+and Word-Level Abstractions " https://dl.acm.org/doi/abs/10.1145/3728905, and
+especially their Clam code artifact https://zenodo.org/records/14001988.
 -}
 
 {-# LANGUAGE BangPatterns #-}
@@ -30,10 +34,14 @@ module What4.Domains.BV.Bitwise.Tnum
   , mk
   , add
   , mul
+  , udiv
+  , urem
   ) where
 
 import qualified Control.Exception as X
 import           Data.Bits
+
+import           What4.Domains.Arithmetic (bitsBelow)
 
 -- | A tristate-number representation.
 --
@@ -91,3 +99,44 @@ mul bvmask (Tnum av0 am0) (Tnum bv0 bm0) = go av0 am0 bv0 bm0 acc0
         in go (av `shiftR` 1) (am `shiftR` 1)
               (bv `shiftL` 1) (bm `shiftL` 1)
               acc'
+
+-- | Tristate-number unsigned division, with the result truncated to @bvmask@.
+-- Assumes the divisor is nonzero. When the divisor is a known power of two, the
+-- result is exact (a logical right shift); otherwise the result is bounded by
+-- leading-zero analysis on @aMax `quot` bMin@.
+udiv ::
+  Integer {- ^ bvmask -} ->
+  Tnum {- ^ a -} ->
+  Tnum {- ^ b -} ->
+  Tnum
+udiv bvmask (Tnum av am) (Tnum bv bm)
+  | bm == 0, bv > 0, bv .&. (bv - 1) == 0 =
+      -- bv is a power of two, so popCount (bv - 1) is its trailing-zero count.
+      let k = popCount (bv - 1)
+      in mk ((av `shiftR` k) .&. bvmask) ((am `shiftR` k) .&. bvmask)
+  | otherwise = mk 0 (bitsBelow qMax .&. bvmask)
+  where
+  aMax = (av .|. am) .&. bvmask
+  qMax = aMax `quot` max 1 bv
+{-# INLINE udiv #-}
+
+-- | Tristate-number unsigned remainder, with the result truncated to @bvmask@.
+-- When the divisor is a known power of two, the result is exact (a bitwise
+-- mask); otherwise the result is bounded by leading-zero analysis on @min(aMax,
+-- bMax-1)@.
+urem ::
+  Integer {- ^ bvmask -} ->
+  Tnum {- ^ a -} ->
+  Tnum {- ^ b -} ->
+  Tnum
+urem bvmask (Tnum av am) (Tnum bv bm)
+  | bm == 0, bv > 0, bv .&. (bv - 1) == 0 =
+      let m = bv - 1
+      in mk (av .&. m) (am .&. m)
+  | otherwise = mk 0 (bitsBelow rMax .&. bvmask)
+  where
+  aMax = (av .|. am) .&. bvmask
+  bMax = (bv .|. bm) .&. bvmask
+  rMax = min aMax (max 0 (bMax - 1))
+{-# INLINE urem #-}
+
