@@ -84,12 +84,12 @@ add bvmask (Tnum av am) (Tnum bv bm) = mk resv resm
 --   * at least @ctzA + ctzB@ trailing zero bits, where @ctzA@ is the longest
 --     prefix of low bits that are known-zero in @a@ (i.e.\ both 'tnumValue' and
 --     'tnumMask' have that bit clear), and similarly for @ctzB@; and
---   * known leading bits derived from the arithmetic interval
---     @[aMin*bMin, aMax*bMax]@ when that interval fits in @bvmask@. This
---     captures both leading zeros (when the upper bound is small) and
---     leading ones (when the lower bound is large) — every bit above the
---     highest disagreement between the bounds has the same value in every
---     product.
+--   * known bits derived from the arithmetic interval @[aMin*bMin, aMax*bMax]@
+--     reduced modulo @bvmask+1@ (see 'wrappedKnownBitsOfInterval'). When the
+--     interval fits within one modulus, bits above the highest disagreement
+--     between the wrapped bounds are determined; when it crosses a modulus
+--     boundary once, we recover bits the two halves agree on; if it spans a
+--     full modulus, no high bits are determined.
 --
 -- Special case: when both operands are concrete singletons (mask == 0), the
 -- result is the exact concrete product.
@@ -108,15 +108,12 @@ mul bvmask (Tnum av am) (Tnum bv bm)
   ctzB = countTrailingZerosOr0 (bv .|. bm)
   lowZeros = (bit (ctzA + ctzB) - 1) .&. bvmask
   -- Interval analysis: the product lies in [aMin*bMin, aMax*bMax] (computed
-  -- in unbounded Integer). If the upper bound exceeds @bvmask@, the n-bit
-  -- result wraps and the high bits are unconstrained. Otherwise, bits above
-  -- the highest disagreement between the bounds are determined.
+  -- in unbounded Integer). 'wrappedKnownBitsOfInterval' reduces this modulo
+  -- @bvmask+1@ and extracts known bits whether or not the interval crosses a
+  -- modulus boundary.
   prodMin = av * bv
   prodMax = (av .|. am) * (bv .|. bm)
-  overflows = prodMax > bvmask
-  (highValue, highUnknown)
-    | overflows = (0, bvmask)
-    | otherwise = knownBitsOfInterval prodMin prodMax
+  (highValue, highUnknown) = wrappedKnownBitsOfInterval bvmask prodMin prodMax
 {-# INLINE mul #-}
 
 -- | /O(w)/. @knownBitsOfInterval lo hi@ analyzes the arithmetic interval @[lo, hi]@
@@ -136,6 +133,38 @@ knownBitsOfInterval lo hi = (lo .&. complement varying, varying)
   -- Bits at-or-below the highest position where lo and hi disagree.
   varying = bitsBelow (lo `xor` hi)
 {-# INLINE knownBitsOfInterval #-}
+
+-- | /O(w)/. Like 'knownBitsOfInterval', but for the image of @[lo, hi]@ under
+-- reduction modulo @bvmask + 1@ (where @0 <= lo <= hi@ and @bvmask@ is of the
+-- form @2^w - 1@).
+--
+-- Three cases:
+--
+--   * @hi - lo + 1 >= bvmask + 1@: the image covers every residue, so no bits
+--     are determined (returns @(0, bvmask)@).
+--   * @lo \`quot\` (bvmask+1) == hi \`quot\` (bvmask+1)@: the interval fits
+--     entirely within one modulus, so the wrapped bounds @lo \`rem\` (bvmask+1)@
+--     and @hi \`rem\` (bvmask+1)@ are still ordered and we use
+--     'knownBitsOfInterval' on them.
+--   * Otherwise the interval crosses exactly one modulus boundary: the image is
+--     @[wLo, bvmask] \\cup [0, wHi]@ where @wLo = lo \`rem\` (bvmask+1)@ and
+--     @wHi = hi \`rem\` (bvmask+1)@. We analyze each half with
+--     'knownBitsOfInterval' and join: a bit is known only when both halves
+--     agree on it.
+wrappedKnownBitsOfInterval :: Integer -> Integer -> Integer -> (Integer, Integer)
+wrappedKnownBitsOfInterval bvmask lo hi
+  | hi - lo >= modulus = (0, bvmask)
+  | wLo <= wHi = knownBitsOfInterval wLo wHi
+  | otherwise =
+      let (vA, mA) = knownBitsOfInterval wLo bvmask
+          (vB, mB) = knownBitsOfInterval 0 wHi
+          mAB = mA .|. mB .|. (vA `xor` vB)
+      in (vA .&. complement mAB, mAB)
+  where
+  modulus = bvmask + 1
+  wLo = lo `rem` modulus
+  wHi = hi `rem` modulus
+{-# INLINE wrappedKnownBitsOfInterval #-}
 
 -- | Count trailing zeros of a non-negative 'Integer', returning @0@ for input
 -- @0@. ('Data.Bits.countTrailingZeros' requires 'FiniteBits', which 'Integer'
