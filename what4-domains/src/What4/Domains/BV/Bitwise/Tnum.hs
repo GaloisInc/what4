@@ -178,6 +178,14 @@ countTrailingZerosOr0 0 = 0
 countTrailingZerosOr0 n = popCount ((n .&. negate n) - 1)
 {-# INLINE countTrailingZerosOr0 #-}
 
+-- | Test whether @n@ is a positive power of two. Uses the bit-trick
+-- @n .&. (n - 1) == 0@: subtracting one from a power of two flips its single
+-- set bit and sets all lower bits, so the AND is zero. (The same identity
+-- holds for @n == 0@, hence the explicit positivity check.)
+isPowerOfTwo :: Integer -> Bool
+isPowerOfTwo n = n > 0 && n .&. (n - 1) == 0
+{-# INLINE isPowerOfTwo #-}
+
 -- | @log2OfPowerOfTwo n@ returns @k@ such that @n == 2^k@. Asserts that @n@
 -- is a positive power of two, and that the fast computation
 -- @popCount (n - 1)@ agrees with the general 'countTrailingZerosOr0'.
@@ -186,7 +194,7 @@ countTrailingZerosOr0 n = popCount ((n .&. negate n) - 1)
 -- @n .&. -n@ isolation step.
 log2OfPowerOfTwo :: Integer -> Int
 log2OfPowerOfTwo n =
-  X.assert (n > 0 && n .&. (n - 1) == 0) $
+  X.assert (isPowerOfTwo n) $
   X.assert (k == countTrailingZerosOr0 n) $
   k
   where
@@ -236,7 +244,7 @@ udiv ::
   Tnum {- ^ b -} ->
   Tnum
 udiv bvmask (Tnum av am) (Tnum bv bm)
-  | bm == 0, bv > 0, bv .&. (bv - 1) == 0 =
+  | bm == 0, isPowerOfTwo bv =
       let k = log2OfPowerOfTwo bv
       in mk ((av `shiftR` k) .&. bvmask) ((am `shiftR` k) .&. bvmask)
   | otherwise = mk (highValue .&. bvmask) (highUnknown .&. bvmask)
@@ -264,7 +272,7 @@ urem ::
   Tnum {- ^ b -} ->
   Tnum
 urem bvmask (Tnum av am) (Tnum bv bm)
-  | bm == 0, bv > 0, bv .&. (bv - 1) == 0 =
+  | bm == 0, isPowerOfTwo bv =
       let m = bv - 1
       in mk (av .&. m) (am .&. m)
   | otherwise = mk 0 (bitsBelow rMax .&. bvmask)

@@ -581,8 +581,7 @@ transferTests = testGroup "Transfer"
 -- Arithmetic Optimizations Tests
 
 -- | Tests that optimized primop-based implementations match reference
--- loop-based implementations for ctz, clz, and intLog2.
--- Note: isPow2Integer (unique to What4.Utils.Arithmetic) is tested in what4/test/ExprsTest.hs
+-- loop-based implementations for ctz, clz, intLog2, and isPow2Integer.
 arithmeticOptimiztionTests :: TestTree
 arithmeticOptimiztionTests = testGroup "Arithmetic Optimizations"
   [ genTest "ctz: optimized matches reference" $
@@ -604,4 +603,7 @@ arithmeticOptimiztionTests = testGroup "Arithmetic Optimizations"
   , genTest "intLog2: optimized matches reference" $
       do x <- chooseInteger (1, 2 ^ (128 :: Int))
          pure $ BoolProperty $ ArithOpt.intLog2Opt x == ArithOpt.intLog2Ref x
+  , genTest "isPow2Integer: optimized matches reference" $
+      do x <- chooseInteger (1, 2 ^ (128 :: Int))
+         pure $ BoolProperty $ ArithOpt.isPow2IntegerOpt x == ArithOpt.isPow2IntegerRef x
   ]

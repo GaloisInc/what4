@@ -134,11 +134,6 @@ library
     what4-domains,
     zenc >= 0.1.0 && < 0.2.0,
 
-  -- ghc-bignum is wired-in starting with GHC 9.0 (base-4.15); used by
-  -- What4.Utils.Arithmetic.Internal for isPow2IntegerOpt
-  if impl(ghc >= 9.0)
-    build-depends: ghc-bignum >= 1.0 && < 2
-
   default-extensions:
      NondecreasingIndentation
 
@@ -219,7 +214,6 @@ library
     What4.Utils.AbstractDomains
     What4.Utils.AnnotatedMap
     What4.Utils.Arithmetic
-    What4.Utils.Arithmetic.Internal
     What4.Utils.BVDomain
     What4.Utils.BVDomain.Arith
     What4.Utils.BVDomain.Bitwise
