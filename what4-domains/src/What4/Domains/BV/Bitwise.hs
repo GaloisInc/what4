@@ -161,15 +161,19 @@ member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
 
 -- | /O(w)/. Compute how many concrete elements are in the abstract domain.
 size :: Domain w -> Integer
-size (BVBitInterval _ lo hi)
-  | bitle lo hi = Bits.bit p
+size d@(BVBitInterval _ lo hi)
+  | bitle lo hi = Bits.bit (Bits.popCount (unknownBits d))
   | otherwise   = 0
- where
- u = Bits.xor lo hi
- p = Bits.popCount u
 
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
+
+-- | /O(1)/. The set of bit positions whose values are not constant
+-- throughout the domain — i.e.\ the tristate-number mask. Bits set here
+-- vary; bits clear here are determined (and equal in @lo@ and @hi@).
+unknownBits :: Domain w -> Integer
+unknownBits (BVBitInterval _ lo hi) = lo `Bits.xor` hi
+{-# INLINE unknownBits #-}
 
 -- | /O(1)/. Return the bitvector mask value from this domain.
 bvdMask :: Domain w -> Integer
@@ -191,12 +195,12 @@ genDomain w =
 -- the domain, then stripes them out among
 -- the unknown bit positions.
 genElement :: Domain w -> Gen Integer
-genElement (BVBitInterval _mask lo hi) =
+genElement d@(BVBitInterval _mask lo _) =
   do x <- chooseInteger (0, bit bs - 1)
      pure $ stripe lo x 0
 
  where
- u = Bits.xor lo hi
+ u = unknownBits d
  bs = Bits.popCount u
  stripe val x i
    | x == 0 = val
@@ -389,12 +393,10 @@ or (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
 
 -- | /O(w)/. Bitwise XOR of two domains.
 xor :: Domain w -> Domain w -> Domain w
-xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask clo chi
+xor a@(BVBitInterval mask alo _) b@(BVBitInterval _ blo _) = BVBitInterval mask clo chi
   where
-  au  = alo `Bits.xor` ahi
-  bu  = blo `Bits.xor` bhi
   c   = alo `Bits.xor` blo
-  cu  = au .|. bu
+  cu  = unknownBits a .|. unknownBits b
   chi = c  .|. cu
   clo = chi `Bits.xor` cu
 
@@ -409,11 +411,16 @@ xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask 
 ubounds :: Domain w -> (Integer, Integer)
 ubounds = bitbounds
 
+-- | /O(1)/. The mask with just the sign bit set: @bit (w - 1)@.
+signBit :: (1 <= w) => NatRepr w -> Integer
+signBit w = bit (widthVal w - 1)
+{-# INLINE signBit #-}
+
 -- | /O(w)/. Signed bounds for the domain.
 sbounds :: (1 <= w) => NatRepr w -> Domain w -> (Integer, Integer)
 sbounds w (BVBitInterval _ lo hi) = (toSigned w lo', toSigned w hi')
   where
-  signbit = bit (widthVal w - 1)
+  signbit = signBit w
   -- If the sign bit is known (lo and hi agree on it), the bit-pattern
   -- bounds are also the signed bounds. If the sign bit is unknown, the
   -- most-negative value sets the sign bit and clears all other unknowns,
@@ -449,7 +456,7 @@ slt w a b
 
 -- | Convert a domain into its tristate-number form.
 toTnum :: Domain w -> Tnum
-toTnum (BVBitInterval _ lo hi) = Tnum.mk lo (lo `Bits.xor` hi)
+toTnum d@(BVBitInterval _ lo _) = Tnum.mk lo (unknownBits d)
 
 -- | Convert a tristate-number back into a domain at the given @bvmask@.
 fromTnum :: Integer -> Tnum -> Domain w
@@ -639,11 +646,11 @@ data Sign = SNonneg | SNeg
 
 -- | If the sign bit is known, return its value; otherwise 'Nothing'.
 signOf :: (1 <= w) => NatRepr w -> Domain w -> Maybe Sign
-signOf w (BVBitInterval _ lo hi)
-  | Bits.testBit lo i && Bits.testBit hi i = Just SNeg
-  | Prelude.not (Bits.testBit lo i || Bits.testBit hi i) = Just SNonneg
-  | otherwise = Nothing
-  where i = widthVal w - 1
+signOf w d =
+  case testBit d (fromIntegral (widthVal w - 1)) of
+    Just True  -> Just SNeg
+    Just False -> Just SNonneg
+    Nothing    -> Nothing
 
 -- | Split a domain on its sign bit, returning each restriction tagged with
 --   its sign. If the sign bit is already known, returns a singleton list.
@@ -655,7 +662,7 @@ splitSign w d@(BVBitInterval mask lo hi) =
                , (SNeg,    BVBitInterval mask (lo .|. signbit) hi)
                ]
   where
-  signbit = bit (widthVal w - 1)
+  signbit = signBit w
 
 -- | /O(w)/. Like 'udiv', but using the SMT-LIB @FixedSizeBitVectors@ theory's
 -- div-by-zero semantics: @bvudiv s 0@ is the all-ones bitvector. See @Note

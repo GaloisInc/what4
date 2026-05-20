@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedSums #-}
 
 -- | Internal module exposing both optimized and reference implementations
 -- for property testing. Items in this module should /not/ be considered part
@@ -10,10 +11,12 @@ module What4.Domains.Arithmetic.Internal
     ctzRef
   , clzRef
   , intLog2Ref
+  , isPow2IntegerRef
     -- * Optimized implementations (GHC 9.0+ only)
   , ctzOpt
   , clzOpt
   , intLog2Opt
+  , isPow2IntegerOpt
   ) where
 
 import Data.Bits (Bits(..), testBit, shiftR)
@@ -33,7 +36,7 @@ import GHC.Exts (Word(..), ctz#, int2Word#)
 ctzRef :: NatRepr w -> Integer -> Integer
 ctzRef w x = go 0
  where
- go !i
+ go i
    | i < toInteger (natValue w) && testBit x (fromInteger i) == False = go (i + 1)
    | otherwise = i
 {-# INLINABLE ctzRef #-}
@@ -42,7 +45,7 @@ ctzRef w x = go 0
 clzRef :: NatRepr w -> Integer -> Integer
 clzRef w x = go 0
  where
- go !i
+ go i
    | i < toInteger (natValue w) && testBit x (widthVal w - fromInteger i - 1) == False = go (i + 1)
    | otherwise = i
 {-# INLINABLE clzRef #-}
@@ -55,6 +58,11 @@ intLog2Ref = go 0
     | m <= 1    = k
     | otherwise = go (k + 1) (m `shiftR` 1)
 {-# INLINABLE intLog2Ref #-}
+
+-- | Reference implementation: Check if Integer is power of two
+isPow2IntegerRef :: Integer -> Bool
+isPow2IntegerRef x = x .&. (x-1) == 0
+{-# INLINE isPow2IntegerRef #-}
 
 ------------------------------------------------------------------------
 -- Optimized implementations (GHC 9.0+ primops)
@@ -103,3 +111,14 @@ intLog2Opt n = fromIntegral (Integer.integerLog2 n)
 intLog2Opt = intLog2Ref
 #endif
 {-# INLINE intLog2Opt #-}
+
+-- | Optimized implementation: Check if Integer is power of two using primops
+isPow2IntegerOpt :: Integer -> Bool
+#if MIN_VERSION_base(4,15,0)
+isPow2IntegerOpt x = case Integer.integerIsPowerOf2# x of
+  (# _ | #) -> False
+  (# | _ #) -> True
+#else
+isPow2IntegerOpt = isPow2IntegerRef
+#endif
+{-# INLINE isPow2IntegerOpt #-}

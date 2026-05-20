@@ -8,9 +8,6 @@
 -- Stability        : provisional
 ------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE MagicHash #-}
-{-# LANGUAGE UnboxedSums #-}
 module What4.Utils.Arithmetic
   ( -- * Arithmetic utilities
     isPow2
@@ -36,7 +33,7 @@ import Data.Ratio
 
 import Data.Parameterized.NatRepr
 
-import What4.Utils.Arithmetic.Internal
+import What4.Domains.Arithmetic.Internal
   ( ctzOpt, clzOpt, intLog2Opt, isPow2IntegerOpt )
 
 -- | Returns true if number is a power of two.
@@ -67,7 +64,7 @@ intLog2 = intLog2Opt
 {-# INLINE intLog2 #-}
 
 -- | Returns ceil of log base 2. Polymorphic over bit-like types.
---   We define @lgCeil 0 = 0@
+--   We define @lgCeil 0 = 0@ and @lgCeil 1 = 0@.
 --
 -- Note: For @Integer@ specifically, prefer 'intLogCeil' which uses fast primops
 -- on GHC 9.0+.

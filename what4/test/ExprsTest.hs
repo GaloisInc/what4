@@ -28,9 +28,7 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           Test.Tasty.Hedgehog hiding (testProperty)
-import qualified What4.Utils.Arithmetic.Internal as ArithOpt
-import           Test.Tasty.Hedgehog.Alt (testProperty)
+import           Test.Tasty.Hedgehog.Alt
 import           What4.Concrete
 import           What4.Expr
 import           What4.Interface
@@ -378,19 +376,6 @@ testIntegerToBV = testGroup "integerToBV"
   ]
 
 ----------------------------------------------------------------------
--- Arithmetic Optimizations
-
--- | Test that What4.Utils.Arithmetic optimized primop implementations
--- match reference implementations. Note that ctz, clz, and intLog2 are
--- tested in what4-domains since they delegate to What4.Domains.Arithmetic.Internal.
-testArithmeticOptimizations :: TestTree
-testArithmeticOptimizations = testGroup "Arithmetic Optimizations"
-  [ testProperty "isPow2Integer: optimized matches reference" $ property $ do
-      x <- forAll $ Gen.integral (Range.exponential 1 (2 ^ (128 :: Int)))
-      ArithOpt.isPow2IntegerOpt x === ArithOpt.isPow2IntegerRef x
-  ]
-
-----------------------------------------------------------------------
 
 main :: IO ()
 main = defaultMain $ testGroup "What4 Expressions"
@@ -398,7 +383,6 @@ main = defaultMain $ testGroup "What4 Expressions"
      testCase "assertions enabled" $ do
        assertsEnabled <- assertionsEnabled
        assertBool "assertions should be enabled" assertsEnabled
-  , testArithmeticOptimizations
   , testIntDivModProps
   , testBvIsNeg
   , testInt
