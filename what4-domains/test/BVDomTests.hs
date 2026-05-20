@@ -25,6 +25,7 @@ implementations, which are transliterated from the Cryptol.
 -}
 
 import qualified Data.Bits as Bits
+import           Numeric.Natural
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           What4.Domains.Verification
@@ -37,6 +38,7 @@ import qualified What4.Domains.BV.Arith as A
 import qualified What4.Domains.BV.Bitwise as B
 import qualified What4.Domains.BV.XOR as X
 import           What4.Domains.Internal (assertionsEnabled)
+import qualified What4.Domains.Arithmetic.Internal as ArithOpt
 
 
 main :: IO ()
@@ -48,6 +50,7 @@ main = defaultMain $
       testCase "assertions enabled" $ do
         assertsEnabled <- assertionsEnabled
         assertBool "assertions should be enabled" assertsEnabled
+    , arithmeticOptimiztionTests
     , arithDomainTests
     , bitwiseDomainTests
     , xorDomainTests
@@ -572,4 +575,33 @@ transferTests = testGroup "Transfer"
   , genTest "correct_fromXorDomain" $
      do SW n <- genWidth
         O.correct_fromXorDomain n <$> X.genPair n
+  ]
+
+------------------------------------------------------------------------
+-- Arithmetic Optimizations Tests
+
+-- | Tests that optimized primop-based implementations match reference
+-- loop-based implementations for ctz, clz, and intLog2.
+-- Note: isPow2Integer (unique to What4.Utils.Arithmetic) is tested in what4/test/ExprsTest.hs
+arithmeticOptimiztionTests :: TestTree
+arithmeticOptimiztionTests = testGroup "Arithmetic Optimizations"
+  [ genTest "ctz: optimized matches reference" $
+      do w <- chooseInt (1, 256)
+         case someNat (fromIntegral w :: Natural) of
+           Just (Some n)
+             | Just LeqProof <- isPosNat n ->
+                 do x <- chooseInteger (0, (2 ^ w) - 1)
+                    pure $ BoolProperty $ ArithOpt.ctzOpt n x == ArithOpt.ctzRef n x
+           _ -> error "test panic! ctz width"
+  , genTest "clz: optimized matches reference" $
+      do w <- chooseInt (1, 256)
+         case someNat (fromIntegral w :: Natural) of
+           Just (Some n)
+             | Just LeqProof <- isPosNat n ->
+                 do x <- chooseInteger (0, (2 ^ w) - 1)
+                    pure $ BoolProperty $ ArithOpt.clzOpt n x == ArithOpt.clzRef n x
+           _ -> error "test panic! clz width"
+  , genTest "intLog2: optimized matches reference" $
+      do x <- chooseInteger (1, 2 ^ (128 :: Int))
+         pure $ BoolProperty $ ArithOpt.intLog2Opt x == ArithOpt.intLog2Ref x
   ]
