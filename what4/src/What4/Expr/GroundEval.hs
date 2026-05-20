@@ -450,7 +450,7 @@ evalGroundApp f a0 = do
             myRem u v = BV.urem u v
     BVSdiv w x y -> myDiv <$> f x <*> f y
       where myDiv _ (BV.BV 0) = BV.zero w
-            myDiv u v = BV.sdiv w u v
+            myDiv u v = BV.squot w u v
     BVSrem w x y -> myRem <$> f x <*> f y
       where myRem u (BV.BV 0) = u
             myRem u v = BV.srem w u v

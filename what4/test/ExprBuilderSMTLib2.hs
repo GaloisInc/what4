@@ -1203,6 +1203,47 @@ issue377Test sym solver = do
 
       _ -> fail "expected satisfible model"
 
+-- | A regression test for #391.
+issue391Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue391Test sym solver = do
+    -- Construct the following proposition (written in Cryptol):
+    --
+    --   \(x : [32]) (y : [32]) -> x == xLit /\ y == yLit
+    --     where
+    --       xLit, yLit : [32]
+    --       xLit = 7
+    --       yLit = -3
+    --
+    --       zLit, zSdiv : [32]
+    --       zLit = xLit /$ yLit
+    --       zSdiv = x /$ y
+    let w32 :: NatRepr 32
+        w32 = knownNat
+    x <- freshConstant sym (safeSymbol "x") (BaseBVRepr w32)
+    y <- freshConstant sym (safeSymbol "y") (BaseBVRepr w32)
+    xLit <- bvLit sym w32 (BV.mkBV w32 7)
+    yLit <- bvLit sym w32 (BV.mkBV w32 (-3))
+    xp <- bvEq sym x xLit
+    yp <- bvEq sym y yLit
+    zLit <- bvSdiv sym xLit yLit
+    zSdiv <- bvSdiv sym x y
+    p <- andPred sym xp yp
+
+    -- Check that the proposition is satisfiable and that the model that what4
+    -- computes evaluates both `zLit` and `zSdiv` to `-2`.
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do zLitEval <- groundEval fn zLit
+           zSdivEval <- groundEval fn zSdiv
+           let expected = BV.mkBV w32 (-2)
+           (all (== expected) [zLitEval, zSdivEval]) @? "result other than -2"
+
+      _ -> fail "expected satisfible model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1368,6 +1409,7 @@ main = do
         , testCase "Z3 #315 test case" $ withOnlineZ3 issue315Test
         , testCase "Z3 #329 test case" $ withOnlineZ3 issue329Test
         , testCase "Z3 #377 test case" $ withOnlineZ3 issue377Test
+        , testCase "Z3 #391 test case" $ withOnlineZ3 issue391Test
 
         , arrayCopyTest
         , arraySetTest
@@ -1421,6 +1463,7 @@ main = do
         , cvcTestCase "#315 test case" $ withCVC issue315Test
         , cvcTestCase "#329 test case" $ withCVC issue329Test
         , cvcTestCase "#377 test case" $ withCVC issue377Test
+        , cvcTestCase "#391 test case" $ withCVC issue391Test
         ]
   let cvc4Tests = cvcTests CVC4
   let cvc5Tests = cvcTests CVC5
@@ -1436,6 +1479,7 @@ main = do
         , testCase "Yices #182 test case" $ withYices issue182Test
         , testCase "Yices #315 test case" $ withYices issue315Test
         , testCase "Yices #329 test case" $ withYices issue329Test
+        , testCase "Yices #391 test case" $ withYices issue391Test
         ]
   let bitwuzlaTests =
         [ testCase "Bitwuzla multidim array" $ withBitwuzla multidimArrayTest
