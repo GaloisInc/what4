@@ -7,6 +7,7 @@ Maintainer  : huffman@galois.com
 Provides a bitwise implementation of bitvector abstract domains.
 -}
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -55,6 +56,16 @@ module What4.Domains.BV.Bitwise
   , ashr
   , rol
   , ror
+  , shlAbstract
+  , lshrAbstract
+  , ashrAbstract
+  , rolAbstract
+  , rorAbstract
+  , shlAbstractSpec
+  , lshrAbstractSpec
+  , ashrAbstractSpec
+  , rolAbstractSpec
+  , rorAbstractSpec
   -- ** arithmetic
   , add
   , sub
@@ -116,6 +127,16 @@ module What4.Domains.BV.Bitwise
   , correct_ashr
   , correct_rol
   , correct_ror
+  , correct_shlAbstract
+  , correct_lshrAbstract
+  , correct_ashrAbstract
+  , correct_rolAbstract
+  , correct_rorAbstract
+  , correct_equiv_shlAbstract
+  , correct_equiv_lshrAbstract
+  , correct_equiv_ashrAbstract
+  , correct_equiv_rolAbstract
+  , correct_equiv_rorAbstract
   , correct_eq
   , correct_ult
   , correct_slt
@@ -446,6 +467,286 @@ ashr w (BVBitInterval mask lo hi) y = BVBitInterval mask (shr lo) (shr hi)
   where
   y' = fromInteger (min y (intValue w))
   shr x = ((toSigned w x) `shiftR` y') .&. mask
+
+-- | Conflict ("empty") domain: invariant @lo [= hi@ is violated.
+-- Used as the meet identity when intersecting per-shift contributions.
+conflict :: Integer -> Domain w
+conflict mask = BVBitInterval mask mask 0
+
+isConflict :: Domain w -> Bool
+isConflict (BVBitInterval _ lo hi) = Prelude.not (bitle lo hi)
+
+-- | Is this the fully unknown domain, @[0, mask]@?
+isAny :: Domain w -> Bool
+isAny (BVBitInterval mask lo hi) = lo == 0 && hi == mask
+
+-- | Decompose @b@'s bounds into two bitmasks, @(zeros, ones)@:
+--
+-- * @zeros@ has a @1@ at every position where every member of @b@ has a @0@.
+-- * @ones@ has a @1@ at every position where every member of @b@ has a @1@.
+--
+-- This is the same encoding LLVM's @KnownBits@ uses, and is paired with
+-- 'memberMask' to check membership using bitwise operations alone.
+knownZerosOnes :: Domain w -> (Integer, Integer)
+knownZerosOnes (BVBitInterval mask lo hi) = (mask `Bits.xor` hi, lo)
+
+-- | Equivalent to 'member' @b@ @s@, given @(zeros, ones) = knownZerosOnes b@.
+-- Cheaper than 'member' (no @[lo, hi]@ ordering check) and lets the inner
+-- loop hoist @(zeros, ones)@ outside the iteration.
+memberMask :: Integer -> Integer -> Integer -> Bool
+memberMask zeros ones s = (zeros .&. s) == 0 && (ones .|. s) == s
+
+-- | Generic shift skeleton shared by 'shlAbstract', 'lshrAbstract', and
+-- 'ashrAbstract'.
+--
+-- The idea: try every concrete shift amount @s@ that @b@ could be, apply
+-- @op s@, and union the results. \"Union\" here means \"a result bit is
+-- known to be 0 only if every per-shift result agrees it's 0, known to
+-- be 1 only if every result agrees it's 1, otherwise unknown\".
+--
+-- Three optimizations make this fast:
+--
+-- * Don't iterate past the width. Every shift amount @>= w@ produces
+--   the same result for a given @op@ (all zeros for @shl@/@lshr@, the
+--   sign-extended pattern for @ashr@), so we iterate
+--   @[bl, min bh w]@ and (if @bh > w@) collapse the rest into one
+--   call @op w@.
+-- * Skip impossible amounts. If @b@'s low bit is known to be 1, only
+--   odd shift amounts are reachable; we use 'memberMask' to skip the
+--   rest with a cheap pair of bitwise tests.
+-- * Stop early. If the running union is already \"fully unknown\",
+--   nothing more can be inferred.
+--
+-- Same iteration strategy as LLVM's @KnownBits::shl@, @KnownBits::lshr@,
+-- and @KnownBits::ashr@.
+{-# INLINE foldShifts #-}
+foldShifts ::
+  NatRepr w ->
+  Domain w {- ^ shift-amount domain -} ->
+  (Int -> Domain w) {- ^ per-shift transfer; @s@ ranges over @[0..w]@ -} ->
+  Domain w
+foldShifts w b op = collapse (go bl (conflict mask))
+  where
+  mask = bvdMask b
+  wI = intValue w
+  (bl, bh) = ubounds b
+  (zeros, ones) = knownZerosOnes b
+  iterEnd = min bh wI
+  go !s !acc
+    | isAny acc = acc
+    | s <= iterEnd =
+        if memberMask zeros ones s
+          then go (s + 1) (union acc (op (fromInteger s)))
+          else go (s + 1) acc
+    | bh > wI =
+        -- @b@'s high bound itself is a member of @b@ that exceeds @w@,
+        -- so at least one shift amount falls in the saturated tail.
+        union acc (op (fromInteger wI))
+    | otherwise = acc
+
+  collapse d
+    | isConflict d = BVBitInterval mask 0 0
+    | otherwise    = d
+
+-- | /O(w²)/. Shift left by an amount drawn from the domain @b@. See
+-- 'foldShifts' for the algorithm.
+--
+-- More precisely, /O(n · w)/ where @w@ is the bitvector width and
+-- @n = min(bh − bl + 1, w + 1)@ is the number of candidate shift amounts
+-- considered, with @bl@ and @bh@ the unsigned bounds of @b@.
+shlAbstract :: NatRepr w -> Domain w -> Domain w -> Domain w
+shlAbstract w a@(BVBitInterval mask aLo aHi) b
+  -- Fast path: a fully unknown @a@ shifts in zeros at the bottom. Bits
+  -- @[0..min bl w - 1]@ are forced to 0 because every concrete shift
+  -- amount is at least @bl@ (and shift @>= w@ kills every bit).
+  | isAny a =
+      let k = fromInteger (min bl (intValue w))
+          lowZeros = bit k - 1
+      in BVBitInterval mask 0 (mask .&. complement lowZeros)
+  | otherwise = foldShifts w b shiftBy
+  where
+  (bl, _) = ubounds b
+  shiftBy s = BVBitInterval mask ((aLo `shiftL` s) .&. mask)
+                                 ((aHi `shiftL` s) .&. mask)
+
+-- | /O(w²)/. Logical (zero-fill) shift right by an amount drawn from
+-- the domain @b@. See 'foldShifts' for the algorithm.
+--
+-- More precisely, /O(n · w)/ where @w@ is the bitvector width and
+-- @n = min(bh − bl + 1, w + 1)@ is the number of candidate shift amounts
+-- considered, with @bl@ and @bh@ the unsigned bounds of @b@.
+lshrAbstract :: NatRepr w -> Domain w -> Domain w -> Domain w
+lshrAbstract w a@(BVBitInterval mask aLo aHi) b
+  -- Fast path: every shift @>= bl@ forces the top @min bl w@ bits of
+  -- the result to 0.
+  | isAny a =
+      let k = fromInteger (min bl (intValue w))
+          highMask = mask `shiftR` k
+      in BVBitInterval mask 0 highMask
+  | otherwise = foldShifts w b shiftBy
+  where
+  (bl, _) = ubounds b
+  shiftBy s = BVBitInterval mask (aLo `shiftR` s) (aHi `shiftR` s)
+
+-- | /O(w²)/. Arithmetic (sign-extending) shift right by an amount drawn
+-- from the domain @b@. See 'foldShifts' for the algorithm.
+--
+-- More precisely, /O(n · w)/ where @w@ is the bitvector width and
+-- @n = min(bh − bl + 1, w + 1)@ is the number of candidate shift amounts
+-- considered, with @bl@ and @bh@ the unsigned bounds of @b@.
+ashrAbstract :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+ashrAbstract w (BVBitInterval mask aLo aHi) b =
+  foldShifts w b shiftBy
+  where
+  -- Sign-extending shift on the @lo@ and @hi@ bounds independently is
+  -- sound: if every member of @a@ has a known-1 at position @i >= sign@,
+  -- so does every member's @ashr s@; same for known-0.
+  shiftBy s = BVBitInterval mask
+                ((toSigned w aLo `shiftR` s) .&. mask)
+                ((toSigned w aHi `shiftR` s) .&. mask)
+
+-- | /O(w²)/. Rotate left by an amount drawn from the domain @b@. See
+-- 'foldRotates' for the algorithm.
+--
+-- More precisely, /O(r · w)/ where @w@ is the bitvector width and @r@ is
+-- the number of distinct residues mod @w@ that are reachable from @b@
+-- (at most @w@).
+rolAbstract :: NatRepr w -> Domain w -> Domain w -> Domain w
+rolAbstract w (BVBitInterval mask aLo aHi) b = foldRotates w b rotBy fullDom
+  where
+  -- Fast path: if every residue in @[0, w-1]@ is reachable from @b@,
+  -- every output bit could come from any input bit, so the answer is
+  -- determined by @a@'s global structure alone.
+  fullDom = fullCoverage mask aLo aHi
+  rotBy s = BVBitInterval mask
+              (Arith.rotateLeft w aLo (toInteger s))
+              (Arith.rotateLeft w aHi (toInteger s))
+
+-- | /O(w²)/. Rotate right by an amount drawn from the domain @b@.
+-- Mirrors 'rolAbstract'.
+--
+-- More precisely, /O(r · w)/ where @w@ is the bitvector width and @r@ is
+-- the number of distinct residues mod @w@ that are reachable from @b@
+-- (at most @w@).
+rorAbstract :: NatRepr w -> Domain w -> Domain w -> Domain w
+rorAbstract w (BVBitInterval mask aLo aHi) b = foldRotates w b rotBy fullDom
+  where
+  fullDom = fullCoverage mask aLo aHi
+  rotBy s = BVBitInterval mask
+              (Arith.rotateRight w aLo (toInteger s))
+              (Arith.rotateRight w aHi (toInteger s))
+
+-- | Generic rotate skeleton shared by 'rolAbstract' and 'rorAbstract'.
+--
+-- Rotating by @s@ is the same as rotating by @s `mod` w@, so we only
+-- ever care about @w@ distinct rotation amounts. The trick is figuring
+-- out which residues mod @w@ some member of @b@ can produce, then
+-- unioning @op r@ over those residues. Two cases:
+--
+-- * Power-of-two width (the common case): @s `mod` w@ is just the low
+--   @log2 w@ bits of @s@. So the reachable residues are exactly the
+--   values consistent with @b@'s known bits restricted to those low
+--   bits, and we use the same @KnownBits@-style mask check as
+--   'foldShifts' to skip residues no member of @b@ can produce. This
+--   gives the smallest sound result.
+--
+-- * Non-power-of-two width: there's no clean correspondence between
+--   @b@'s bits and residues mod @w@. We fall back to bounds: the
+--   residues reachable from @[bl, bh]@ form a (possibly wrapping)
+--   range in @[0, w-1]@, which we iterate without further skipping.
+--   Sound, sometimes loose.
+--
+-- Iteration is always at most @w@ steps, never over the (possibly
+-- enormous) integer range @[bl, bh]@.
+{-# INLINE foldRotates #-}
+foldRotates ::
+  NatRepr w ->
+  Domain w {- ^ rotate-amount domain -} ->
+  (Int -> Domain w) {- ^ per-amount transfer; argument is residue mod @w@ -} ->
+  Domain w {- ^ result when all residues are reachable -} ->
+  Domain w
+foldRotates w b op fullDom
+  | Arith.isPow2Integer wI =
+      let residueMask = wI - 1
+          zerosLow = zeros .&. residueMask
+          onesLow = ones .&. residueMask
+          allResiduesReachable = zerosLow == 0 && onesLow == 0
+          skip r = Prelude.not (memberMask zerosLow onesLow (toInteger r))
+      in if allResiduesReachable
+           then fullDom
+           else iterRanges skip [(0, fromInteger wI - 1)] (conflict mask)
+  | otherwise =
+      case residueRanges of
+        Nothing     -> fullDom
+        Just ranges -> iterRanges (\_ -> False) ranges (conflict mask)
+  where
+  mask = bvdMask b
+  wI = intValue w
+  (bl, bh) = ubounds b
+  (zeros, ones) = knownZerosOnes b
+
+  -- Reduce @[bl, bh]@ mod @w@ to a list of residue ranges in @[0, w-1]@.
+  -- @Nothing@ means every residue is reachable; otherwise the list has
+  -- one or two ranges (two when the residue range wraps around @0@).
+  residueRanges
+    | bh - bl + 1 >= wI = Nothing
+    | otherwise =
+        let (ql, rl) = bl `divMod` wI
+            (qh, rh) = bh `divMod` wI
+        in if qh == ql
+             then Just [(fromInteger rl, fromInteger rh)]
+             else Just [(0, fromInteger rh), (fromInteger rl, fromInteger wI - 1)]
+
+  iterRanges _ [] acc = acc
+  iterRanges skip ((lo, hi) : rest) acc = iterRanges skip rest (iter skip lo hi acc)
+
+  iter skip !s !hi !acc
+    | isAny acc = acc
+    | s > hi    = acc
+    | skip s    = iter skip (s + 1) hi acc
+    | otherwise = iter skip (s + 1) hi (union acc (op s))
+
+-- | Declarative reference: union of @op s@ over every member @s@ of
+-- @b@. /O(|b| · w / W)/, exponential in @w@, only suitable as a
+-- correctness oracle, not for production.
+foldShiftsSpec ::
+  Integer  {- ^ mask -} ->
+  Domain w {- ^ shift-amount domain -} ->
+  (Integer -> Domain w) {- ^ per-amount transfer -} ->
+  Domain w
+foldShiftsSpec mask b op =
+  Prelude.foldr (\s acc -> if member b s then union acc (op s) else acc)
+                (conflict mask)
+                [0 .. mask]
+
+-- | Declarative reference variant of 'shlAbstract': for every member
+-- @y@ of the shift-amount domain, compute the per-shift result and
+-- union them all. Strictly slower; used to validate 'shlAbstract'.
+shlAbstractSpec :: NatRepr w -> Domain w -> Domain w -> Domain w
+shlAbstractSpec w a b = foldShiftsSpec (bvdMask a) b (\y -> shl w a y)
+
+lshrAbstractSpec :: NatRepr w -> Domain w -> Domain w -> Domain w
+lshrAbstractSpec w a b = foldShiftsSpec (bvdMask a) b (\y -> lshr w a y)
+
+ashrAbstractSpec :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+ashrAbstractSpec w a b = foldShiftsSpec (bvdMask a) b (\y -> ashr w a y)
+
+rolAbstractSpec :: NatRepr w -> Domain w -> Domain w -> Domain w
+rolAbstractSpec w a b = foldShiftsSpec (bvdMask a) b (\y -> rol w a y)
+
+rorAbstractSpec :: NatRepr w -> Domain w -> Domain w -> Domain w
+rorAbstractSpec w a b = foldShiftsSpec (bvdMask a) b (\y -> ror w a y)
+
+-- | The result of rotating @a@ by every position in @[0, w-1]@: each
+-- output bit could come from any input bit, so the result is
+-- determined by global properties of @a@. It's the all-zeros singleton
+-- if @a = {0}@, the all-ones singleton if @a@ is the singleton mask,
+-- and fully unknown otherwise.
+fullCoverage :: Integer -> Integer -> Integer -> Domain w
+fullCoverage mask aLo aHi = BVBitInterval mask outLo outHi
+  where
+  outHi = if aHi == 0 then 0 else mask
+  outLo = if aLo == mask then mask else 0
 
 -- | /O(w)/. Bitwise complement.
 not :: Domain w -> Domain w
@@ -942,6 +1243,67 @@ correct_rol n (a,x) y = member a x ==> pmember n (rol n a y) (Arith.rotateLeft n
 
 correct_ror :: (1 <= n) => NatRepr n -> (Domain n,Integer) -> Integer -> Property
 correct_ror n (a,x) y = member a x ==> pmember n (ror n a y) (Arith.rotateRight n x y)
+
+correct_shlAbstract ::
+  (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_shlAbstract n (a,x) (b,y) =
+  member a x ==> member b y ==> pmember n (shlAbstract n a b) z
+  where
+  z = (toUnsigned n x) `shiftL` fromInteger (min (intValue n) (toUnsigned n y))
+
+correct_lshrAbstract ::
+  (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_lshrAbstract n (a,x) (b,y) =
+  member a x ==> member b y ==> pmember n (lshrAbstract n a b) z
+  where
+  z = (toUnsigned n x) `shiftR` fromInteger (min (intValue n) (toUnsigned n y))
+
+correct_ashrAbstract ::
+  (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_ashrAbstract n (a,x) (b,y) =
+  member a x ==> member b y ==> pmember n (ashrAbstract n a b) z
+  where
+  z = (toSigned n x) `shiftR` fromInteger (min (intValue n) (toUnsigned n y))
+
+correct_rolAbstract ::
+  (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_rolAbstract n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    pmember n (rolAbstract n a b) (Arith.rotateLeft n x (toUnsigned n y))
+
+correct_rorAbstract ::
+  (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_rorAbstract n (a,x) (b,y) =
+  member a x ==> member b y ==>
+    pmember n (rorAbstract n a b) (Arith.rotateRight n x (toUnsigned n y))
+
+-- | The optimized 'shlAbstract' produces the same domain as the
+-- declarative 'shlAbstractSpec'. Together with 'correct_shlAbstract',
+-- this proves 'shlAbstract' is point-wise optimal at this domain.
+correct_equiv_shlAbstract ::
+  (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+correct_equiv_shlAbstract n a b =
+  property (shlAbstract n a b == shlAbstractSpec n a b)
+
+correct_equiv_lshrAbstract ::
+  (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+correct_equiv_lshrAbstract n a b =
+  property (lshrAbstract n a b == lshrAbstractSpec n a b)
+
+correct_equiv_ashrAbstract ::
+  (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+correct_equiv_ashrAbstract n a b =
+  property (ashrAbstract n a b == ashrAbstractSpec n a b)
+
+correct_equiv_rolAbstract ::
+  (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+correct_equiv_rolAbstract n a b =
+  property (rolAbstract n a b == rolAbstractSpec n a b)
+
+correct_equiv_rorAbstract ::
+  (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
+correct_equiv_rorAbstract n a b =
+  property (rorAbstract n a b == rorAbstractSpec n a b)
 
 correct_not :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
 correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
