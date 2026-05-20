@@ -706,6 +706,6 @@ arithmeticOptimiztionTests = testGroup "Arithmetic Optimizations"
       do x <- chooseInteger (1, 2 ^ (128 :: Int))
          pure $ BoolProperty $ ArithOpt.intLog2Opt x == ArithOpt.intLog2Ref x
   , genTest "isPow2Integer: optimized matches reference" $
-      do x <- chooseInteger (1, 2 ^ (128 :: Int))
+      do x <- chooseInteger (0, 2 ^ (128 :: Int))
          pure $ BoolProperty $ ArithOpt.isPow2IntegerOpt x == ArithOpt.isPow2IntegerRef x
   ]

@@ -12,6 +12,7 @@ module What4.Domains.Arithmetic
   ( ctz
   , clz
   , intLog2
+  , isPow2Integer
   , bitsBelow
   , rotateLeft
   , rotateRight
@@ -22,7 +23,7 @@ import Data.Bits (Bits(..), xor, shiftL, shiftR)
 import Data.Parameterized.NatRepr
 
 import What4.Domains.Arithmetic.Internal
-  ( ctzOpt, clzOpt, intLog2Opt )
+  ( ctzOpt, clzOpt, intLog2Opt, isPow2IntegerOpt )
 
 -- | /O(w)/. Count trailing zeros, capped at the width.
 ctz :: NatRepr w -> Integer -> Integer
@@ -38,6 +39,13 @@ clz = clzOpt
 intLog2 :: Integer -> Int
 intLog2 = intLog2Opt
 {-# INLINE intLog2 #-}
+
+-- | /O(w)/. Test whether @n@ is a positive power of two. On GHC 9.0+ this
+-- uses the @integerIsPowerOf2#@ primop; on earlier GHCs it uses
+-- @n .&. (n - 1) == 0@.
+isPow2Integer :: Integer -> Bool
+isPow2Integer = isPow2IntegerOpt
+{-# INLINE isPow2Integer #-}
 
 -- | /O(w)/. @bitsBelow n@ returns the smallest mask of the form @2^k - 1@
 -- that is at least @n@. That is, @2^(floor(log2 n) + 1) - 1@ for @n > 0@,
