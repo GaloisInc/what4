@@ -119,6 +119,7 @@ import           GHC.Stack
 import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
+import qualified What4.Domains.Arithmetic as Arith
 import           What4.Domains.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 --------------------------------------------------------------------------------
@@ -772,13 +773,8 @@ bitle x y = (x .|. y) == y
 
 -- | @fillright x@ rounds up @x@ to the nearest 2^n-1.
 fillright :: Integer -> Integer
-fillright = go 1
-  where
-  go :: Int -> Integer -> Integer
-  go i x
-    | x' == x = x
-    | otherwise = go (2 * i) x'
-    where x' = x .|. (x `shiftR` i)
+fillright = Arith.bitsBelow
+{-# INLINE fillright #-}
 
 ------------------------------------------------------------------
 -- Correctness properties
