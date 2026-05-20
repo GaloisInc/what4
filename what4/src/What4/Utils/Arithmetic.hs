@@ -9,11 +9,16 @@
 ------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedSums #-}
 module What4.Utils.Arithmetic
   ( -- * Arithmetic utilities
     isPow2
+  , isPow2Integer
   , lg
+  , intLog2
   , lgCeil
+  , intLogCeil
   , nextMultiple
   , nextPow2Multiple
   , tryIntSqrt
@@ -31,40 +36,64 @@ import Data.Ratio
 
 import Data.Parameterized.NatRepr
 
+import What4.Utils.Arithmetic.Internal
+  ( ctzOpt, clzOpt, intLog2Opt, isPow2IntegerOpt )
+
 -- | Returns true if number is a power of two.
 isPow2 :: (Bits a, Num a) => a -> Bool
 isPow2 x = x .&. (x-1) == 0
 
--- | Returns floor of log base 2.
+-- | Returns true if Integer is a power of two. On GHC 9.0+ this uses a fast
+-- primop from @ghc-bignum@; on earlier GHCs it falls back to 'isPow2'.
+isPow2Integer :: Integer -> Bool
+isPow2Integer = isPow2IntegerOpt
+{-# INLINE isPow2Integer #-}
+
+-- | Returns floor of log base 2. Polymorphic over bit-like types.
+--
+-- Note: For @Integer@ specifically, prefer 'intLog2' which uses fast primops
+-- on GHC 9.0+.
 lg :: (Bits a, Num a, Ord a) => a -> Int
 lg i0 | i0 > 0 = go 0 (i0 `shiftR` 1)
       | otherwise = error "lg given number that is not positive."
   where go r 0 = r
         go r n = go (r+1) (n `shiftR` 1)
 
--- | Returns ceil of log base 2.
+-- | @intLog2 n@ for @n >= 1@: floor of base-2 logarithm. Undefined for
+-- @n <= 0@. On GHC 9.0+ this delegates to a fast primop in @ghc-bignum@;
+-- on earlier GHCs it falls back to 'lg'.
+intLog2 :: Integer -> Int
+intLog2 = intLog2Opt
+{-# INLINE intLog2 #-}
+
+-- | Returns ceil of log base 2. Polymorphic over bit-like types.
 --   We define @lgCeil 0 = 0@
+--
+-- Note: For @Integer@ specifically, prefer 'intLogCeil' which uses fast primops
+-- on GHC 9.0+.
 lgCeil :: (Bits a, Num a, Ord a) => a -> Int
 lgCeil 0 = 0
 lgCeil 1 = 0
 lgCeil i | i > 1 = 1 + lg (i-1)
          | otherwise = error "lgCeil given number that is not positive."
 
+-- | @intLogCeil n@ for @n >= 0@: ceiling of base-2 logarithm. We define
+-- @intLogCeil 0 = 0@ and @intLogCeil 1 = 0@. On GHC 9.0+ this uses fast primops
+-- from @ghc-bignum@; on earlier GHCs it falls back to 'lgCeil'.
+intLogCeil :: Integer -> Int
+intLogCeil 0 = 0
+intLogCeil 1 = 0
+intLogCeil i | i > 1 = 1 + intLog2 (i - 1)
+             | otherwise = error "intLogCeil given number that is not positive."
+{-# INLINE intLogCeil #-}
+
 -- | Count trailing zeros
 ctz :: NatRepr w -> Integer -> Integer
-ctz w x = go 0
- where
- go !i
-   | i < toInteger (natValue w) && testBit x (fromInteger i) == False = go (i+1)
-   | otherwise = i
+ctz = ctzOpt
 
 -- | Count leading zeros
 clz :: NatRepr w -> Integer -> Integer
-clz w x = go 0
- where
- go !i
-   | i < toInteger (natValue w) && testBit x (widthVal w - fromInteger i - 1) == False = go (i+1)
-   | otherwise = i
+clz = clzOpt
 
 rotateRight ::
   NatRepr w {- ^ width -} ->

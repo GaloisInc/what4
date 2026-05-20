@@ -8,7 +8,6 @@
 -- Stability        : provisional
 ------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
 module What4.Domains.Arithmetic
   ( ctz
   , clz
@@ -22,40 +21,22 @@ import Data.Bits (Bits(..), xor, shiftL, shiftR)
 
 import Data.Parameterized.NatRepr
 
-#if MIN_VERSION_base(4,15,0)
--- GHC 9.0+: ghc-bignum exposes a fast primop-backed integerLog2.
-import qualified GHC.Num.Integer as Integer
-#endif
+import What4.Domains.Arithmetic.Internal
+  ( ctzOpt, clzOpt, intLog2Opt )
 
 -- | /O(w)/. Count trailing zeros, capped at the width.
 ctz :: NatRepr w -> Integer -> Integer
-ctz w x = go 0
- where
- go !i
-   | i < toInteger (natValue w) && testBit x (fromInteger i) == False = go (i + 1)
-   | otherwise = i
+ctz = ctzOpt
 
 -- | /O(w)/. Count leading zeros, capped at the width.
 clz :: NatRepr w -> Integer -> Integer
-clz w x = go 0
- where
- go !i
-   | i < toInteger (natValue w) && testBit x (widthVal w - fromInteger i - 1) == False = go (i + 1)
-   | otherwise = i
+clz = clzOpt
 
 -- | /O(w)/. @intLog2 n@ for @n >= 1@: floor of base-2 logarithm. Undefined
 -- for @n <= 0@. On GHC 9.0+ this delegates to a primop in @ghc-bignum@
 -- (constant-time per limb); on earlier GHCs it uses a shift loop.
 intLog2 :: Integer -> Int
-#if MIN_VERSION_base(4,15,0)
-intLog2 n = fromIntegral (Integer.integerLog2 n)
-#else
-intLog2 = go 0
-  where
-  go !k m
-    | m <= 1    = k
-    | otherwise = go (k + 1) (m `shiftR` 1)
-#endif
+intLog2 = intLog2Opt
 {-# INLINE intLog2 #-}
 
 -- | /O(w)/. @bitsBelow n@ returns the smallest mask of the form @2^k - 1@
