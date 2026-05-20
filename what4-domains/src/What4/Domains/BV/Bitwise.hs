@@ -140,7 +140,7 @@ data Domain (w :: Nat) =
   --  @mask@ caches the value of @2^w - 1@
   deriving (Eq, Ord, Show)
 
--- | Test if the domain satisfies its invariants
+-- | /O(w)/. Test if the domain satisfies its invariants.
 proper :: NatRepr w -> Domain w -> Bool
 proper w (BVBitInterval mask lo hi) =
   mask == maxUnsigned w &&
@@ -148,12 +148,12 @@ proper w (BVBitInterval mask lo hi) =
   bitle hi mask &&
   bitle lo hi
 
--- | Test if the given integer value is a member of the abstract domain
+-- | /O(w)/. Test if the given integer value is a member of the abstract domain.
 member :: Domain w -> Integer -> Bool
 member (BVBitInterval mask lo hi) x = bitle lo x' && bitle x' hi
   where x' = x .&. mask
 
--- | Compute how many concrete elements are in the abstract domain
+-- | /O(w)/. Compute how many concrete elements are in the abstract domain.
 size :: Domain w -> Integer
 size (BVBitInterval _ lo hi)
   | bitle lo hi = Bits.bit p
@@ -165,7 +165,7 @@ size (BVBitInterval _ lo hi)
 bitle :: Integer -> Integer -> Bool
 bitle x y = (x .|. y) == y
 
--- | Return the bitvector mask value from this domain
+-- | /O(1)/. Return the bitvector mask value from this domain.
 bvdMask :: Domain w -> Integer
 bvdMask (BVBitInterval mask _ _) = mask
 
@@ -217,11 +217,11 @@ genPair w =
      x <- genElement a
      return (a,x)
 
--- | Unsafe constructor for internal use.
+-- | /O(1)/. Unsafe constructor for internal use.
 interval :: Integer -> Integer -> Integer -> Domain w
 interval mask lo hi = BVBitInterval mask lo hi
 
--- | Construct a domain from bitwise lower and upper bounds
+-- | /O(w)/. Construct a domain from bitwise lower and upper bounds.
 range :: NatRepr w -> Integer -> Integer -> Domain w
 range w lo hi = BVBitInterval (maxUnsigned w) lo' hi'
   where
@@ -229,36 +229,38 @@ range w lo hi = BVBitInterval (maxUnsigned w) lo' hi'
   hi'  = hi .&. mask
   mask = maxUnsigned w
 
--- | Bitwise lower and upper bounds
+-- | /O(1)/. Bitwise lower and upper bounds.
 bitbounds :: Domain w -> (Integer, Integer)
 bitbounds (BVBitInterval _ lo hi) = (lo, hi)
 
--- | Test if this domain contains a single value, and return it if so
+-- | /O(w)/. Test if this domain contains a single value, and return it if so.
 asSingleton :: Domain w -> Maybe Integer
 asSingleton (BVBitInterval _ lo hi) = if lo == hi then Just lo else Nothing
 
--- | Returns true iff there is at least on element
---   in this bitwise domain.
+-- | /O(w)/. Returns true iff there is at least one element
+-- in this bitwise domain.
 nonempty :: Domain w -> Bool
 nonempty (BVBitInterval _mask lo hi) = bitle lo hi
 
--- | Return a domain containing just the given value
+-- | /O(w)/. Return a domain containing just the given value.
 singleton :: NatRepr w -> Integer -> Domain w
 singleton w x = BVBitInterval mask x' x'
   where
   x' = x .&. mask
   mask = maxUnsigned w
 
--- | Bitwise domain containing every bitvector value
+-- | /O(w)/. Bitwise domain containing every bitvector value.
 any :: NatRepr w -> Domain w
 any w = BVBitInterval mask 0 mask
   where
   mask = maxUnsigned w
 
--- | Returns true iff the domains have some value in common
+-- | /O(w)/. Returns true iff the domains have some value in common.
 domainsOverlap :: Domain w -> Domain w -> Bool
 domainsOverlap a b = nonempty (intersection a b)
 
+-- | /O(w)/. Decide equality of two domains: 'Just True' if both are the same
+-- singleton, 'Just False' if they're disjoint, 'Nothing' otherwise.
 eq :: Domain w -> Domain w -> Maybe Bool
 eq a b
   | Just x <- asSingleton a
@@ -268,17 +270,19 @@ eq a b
   | Prelude.not (domainsOverlap a b) = Just False
   | otherwise = Nothing
 
+-- | /O(w)/. Greatest lower bound of two domains.
 intersection :: Domain w -> Domain w -> Domain w
 intersection (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
   BVBitInterval mask (alo .|. blo) (ahi .&. bhi)
 
+-- | /O(w)/. Least upper bound of two domains.
 union :: Domain w -> Domain w -> Domain w
 union (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
   BVBitInterval mask (alo .&. blo) (ahi .|. bhi)
 
--- | @concat a y@ returns domain where each element in @a@ has been
--- concatenated with an element in @y@.  The most-significant bits
--- are @a@, and the least significant bits are @y@.
+-- | /O(u + v)/. @concat a y@ returns a domain where each element in @a@ has
+-- been concatenated with an element in @y@. The most-significant bits are
+-- @a@, and the least significant bits are @y@.
 concat :: NatRepr u -> Domain u -> NatRepr v -> Domain v -> Domain (u + v)
 concat u (BVBitInterval _ alo ahi) v (BVBitInterval _ blo bhi) =
     BVBitInterval mask (cat alo blo) (cat ahi bhi)
@@ -286,7 +290,7 @@ concat u (BVBitInterval _ alo ahi) v (BVBitInterval _ blo bhi) =
     cat i j = (i `shiftL` widthVal v) + j
     mask = maxUnsigned (addNat u v)
 
--- | @shrink i a@ drops the @i@ least significant bits from @a@.
+-- | /O(w)/. @shrink i a@ drops the @i@ least significant bits from @a@.
 shrink ::
   NatRepr i ->
   Domain (i + n) -> Domain n
@@ -294,7 +298,7 @@ shrink i (BVBitInterval mask lo hi) = BVBitInterval (shr mask) (shr lo) (shr hi)
   where
   shr x = x `shiftR` widthVal i
 
--- | @trunc n d@ selects the @n@ least significant bits from @d@.
+-- | /O(w)/. @trunc n d@ selects the @n@ least significant bits from @d@.
 trunc ::
   (n <= w) =>
   NatRepr n ->
@@ -302,7 +306,7 @@ trunc ::
   Domain n
 trunc n (BVBitInterval _ lo hi) = range n lo hi
 
--- | @select i n a@ selects @n@ bits starting from index @i@ from @a@.
+-- | /O(w)/. @select i n a@ selects @n@ bits starting from index @i@ from @a@.
 select ::
   (1 <= n, i + n <= w) =>
   NatRepr i ->
@@ -310,15 +314,20 @@ select ::
   Domain w -> Domain n
 select i n a = shrink i (trunc (addNat i n) a)
 
+-- | /O(w)/. Zero-extend a domain to a larger width.
 zext :: (1 <= w, w + 1 <= u) => Domain w -> NatRepr u -> Domain u
 zext (BVBitInterval _ lo hi) u = range u lo hi
 
+-- | /O(w)/. Sign-extend a domain to a larger width.
 sext :: (1 <= w, w + 1 <= u) => NatRepr w -> Domain w -> NatRepr u -> Domain u
 sext w (BVBitInterval _ lo hi) u = range u lo' hi'
   where
   lo' = toSigned w lo
   hi' = toSigned w hi
 
+-- | /O(w)/. Test bit @i@ of every value in the domain: 'Just True' if it is
+-- set in every member, 'Just False' if clear in every member, 'Nothing' if
+-- it varies.
 testBit :: Domain w -> Natural -> Maybe Bool
 testBit (BVBitInterval _mask lo hi) i = if lob == hib then Just lob else Nothing
   where
@@ -326,44 +335,53 @@ testBit (BVBitInterval _mask lo hi) i = if lob == hib then Just lob else Nothing
   hib = Bits.testBit hi j
   j = fromIntegral i
 
+-- | /O(w)/. Shift left by a known amount.
 shl :: NatRepr w -> Domain w -> Integer -> Domain w
 shl w (BVBitInterval mask lo hi) y = BVBitInterval mask (shleft lo) (shleft hi)
   where
   y' = fromInteger (min y (intValue w))
   shleft x = (x `shiftL` y') .&. mask
 
+-- | /O(w)/. Rotate left by a known amount.
 rol :: NatRepr w -> Domain w -> Integer -> Domain w
 rol w (BVBitInterval mask lo hi) y =
   BVBitInterval mask (Arith.rotateLeft w lo y) (Arith.rotateLeft w hi y)
 
+-- | /O(w)/. Rotate right by a known amount.
 ror :: NatRepr w -> Domain w -> Integer -> Domain w
 ror w (BVBitInterval mask lo hi) y =
   BVBitInterval mask (Arith.rotateRight w lo y) (Arith.rotateRight w hi y)
 
+-- | /O(w)/. Logical (zero-fill) shift right by a known amount.
 lshr :: NatRepr w -> Domain w -> Integer -> Domain w
 lshr w (BVBitInterval mask lo hi) y = BVBitInterval mask (shr lo) (shr hi)
   where
   y' = fromInteger (min y (intValue w))
   shr x = x `shiftR` y'
 
+-- | /O(w)/. Arithmetic (sign-extending) shift right by a known amount.
 ashr :: (1 <= w) => NatRepr w -> Domain w -> Integer -> Domain w
 ashr w (BVBitInterval mask lo hi) y = BVBitInterval mask (shr lo) (shr hi)
   where
   y' = fromInteger (min y (intValue w))
   shr x = ((toSigned w x) `shiftR` y') .&. mask
 
+-- | /O(w)/. Bitwise complement.
 not :: Domain w -> Domain w
 not (BVBitInterval mask alo ahi) =
   BVBitInterval mask (ahi `Bits.xor` mask) (alo `Bits.xor` mask)
 
+-- | /O(w)/. Bitwise AND of two domains.
 and :: Domain w -> Domain w -> Domain w
 and (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
   BVBitInterval mask (alo .&. blo) (ahi .&. bhi)
 
+-- | /O(w)/. Bitwise OR of two domains.
 or :: Domain w -> Domain w -> Domain w
 or (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) =
   BVBitInterval mask (alo .|. blo) (ahi .|. bhi)
 
+-- | /O(w)/. Bitwise XOR of two domains.
 xor :: Domain w -> Domain w -> Domain w
 xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask clo chi
   where
@@ -378,13 +396,14 @@ xor (BVBitInterval mask alo ahi) (BVBitInterval _ blo bhi) = BVBitInterval mask 
 ---------------------------------------------------------------------------------------
 -- Bounds and comparisons
 
--- | Unsigned bounds for the domain. The low bit-pattern bound is also the
---   unsigned minimum, and the high bit-pattern bound is also the unsigned
---   maximum: setting unknown bits to 0 minimizes, setting them to 1 maximizes.
+-- | /O(1)/. Unsigned bounds for the domain. The low bit-pattern bound is
+-- also the unsigned minimum, and the high bit-pattern bound is also the
+-- unsigned maximum: setting unknown bits to 0 minimizes, setting them to
+-- 1 maximizes.
 ubounds :: Domain w -> (Integer, Integer)
 ubounds = bitbounds
 
--- | Signed bounds for the domain.
+-- | /O(w)/. Signed bounds for the domain.
 sbounds :: (1 <= w) => NatRepr w -> Domain w -> (Integer, Integer)
 sbounds w (BVBitInterval _ lo hi) = (toSigned w lo', toSigned w hi')
   where
@@ -397,8 +416,8 @@ sbounds w (BVBitInterval _ lo hi) = (toSigned w lo', toSigned w hi')
     | (lo .&. signbit) == (hi .&. signbit) = (lo, hi)
     | otherwise = (lo .|. signbit, hi .&. complement signbit)
 
--- | Check if all elements in one domain are unsigned-less-than all
---   elements in the other.
+-- | /O(w)/. Check if all elements in one domain are unsigned-less-than all
+-- elements in the other.
 ult :: Domain w -> Domain w -> Maybe Bool
 ult a b
   | ah < bl  = Just True
@@ -408,8 +427,8 @@ ult a b
   (al, ah) = ubounds a
   (bl, bh) = ubounds b
 
--- | Check if all elements in one domain are signed-less-than all
---   elements in the other.
+-- | /O(w)/. Check if all elements in one domain are signed-less-than all
+-- elements in the other.
 slt :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Maybe Bool
 slt w a b
   | ah < bl  = Just True
@@ -436,29 +455,29 @@ mkSingleton :: Integer -> Integer -> Domain w
 mkSingleton mask x = BVBitInterval mask x' x'
   where x' = x .&. mask
 
--- | Add two bitwise domains.
+-- | /O(w)/. Add two bitwise domains.
 add :: Domain w -> Domain w -> Domain w
 add a@(BVBitInterval mask _ _) b = fromTnum mask (Tnum.add mask (toTnum a) (toTnum b))
 
--- | Two's complement negation: @negate a = not a + 1@.
+-- | /O(w)/. Two's complement negation: @negate a = not a + 1@.
 negate :: Domain w -> Domain w
 negate a = add (not a) (mkSingleton (bvdMask a) 1)
 
--- | Subtract: @sub a b = add a (negate b)@.
+-- | /O(w)/. Subtract: @sub a b = add a (negate b)@.
 sub :: Domain w -> Domain w -> Domain w
 sub a b = add a (negate b)
 
--- | Multiply by a constant.
+-- | /O(w²)/. Multiply by a constant.
 scale :: Integer -> Domain w -> Domain w
 scale k a = mul (mkSingleton (bvdMask a) k) a
 
--- | Multiply two bitwise domains, using the shift-and-add tristate-number
---   algorithm (BPF @tnum_mul@).
+-- | /O(w²)/. Multiply two bitwise domains via the shift-and-add
+-- tristate-number algorithm (BPF @tnum_mul@).
 mul :: Domain w -> Domain w -> Domain w
 mul a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.mul mask (toTnum a) (toTnum b))
 
--- | Unsigned division, assumes the divisor is nonzero.
+-- | /O(w)/. Unsigned division. Assumes the divisor is nonzero.
 --
 -- Compared to the arithmetic-domain @udiv@, this can be more precise when the
 -- divisor is a known power of two: the result is exact, and bit-level structure
@@ -468,7 +487,7 @@ udiv :: Domain w -> Domain w -> Domain w
 udiv a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.udiv mask (toTnum a) (toTnum b))
 
--- | Unsigned remainder, assumes the divisor is nonzero.
+-- | /O(w)/. Unsigned remainder. Assumes the divisor is nonzero.
 --
 -- Like 'udiv', this is more precise when the divisor is a known power of two:
 -- @urem a (singleton w (2^k))@ is exactly the low @k@ bits of @a@.
@@ -476,7 +495,8 @@ urem :: Domain w -> Domain w -> Domain w
 urem a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.urem mask (toTnum a) (toTnum b))
 
--- | Signed division (rounds toward zero), assumes the divisor is nonzero.
+-- | /O(w)/. Signed division (rounds toward zero). Assumes the divisor is
+-- nonzero.
 --
 -- Implemented by splitting each operand on its sign bit into a non-negative
 -- \"zero circle\" and a negative \"one circle\", applying 'udiv' to the
@@ -487,7 +507,8 @@ sdiv w = signedOp w udiv flipDiff
   -- For sdiv, the result is negated iff the input signs differ.
   flipDiff sa sb d = if sa == sb then d else negate d
 
--- | Signed remainder (sign of dividend), assumes the divisor is nonzero.
+-- | /O(w)/. Signed remainder (sign of dividend). Assumes the divisor is
+-- nonzero.
 --
 -- Implemented like 'sdiv', except the result takes the sign of the dividend
 -- rather than the XOR of the input signs.
@@ -541,9 +562,9 @@ splitSign w d@(BVBitInterval mask lo hi) =
   where
   signbit = bit (widthVal w - 1)
 
--- | Like 'udiv', but using the SMT-LIB @FixedSizeBitVectors@ theory's
---   div-by-zero semantics: @bvudiv s 0@ is the all-ones bitvector. See @Note
---   [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+-- | /O(w)/. Like 'udiv', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+-- div-by-zero semantics: @bvudiv s 0@ is the all-ones bitvector. See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
 udivSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
 udivSmtlib a b
   | Just 0 <- asSingleton b = mkSingleton mask mask
@@ -552,19 +573,19 @@ udivSmtlib a b
   where
   mask = bvdMask a
 
--- | Like 'urem', but using the SMT-LIB @FixedSizeBitVectors@ theory's
---   div-by-zero semantics: @bvurem s 0@ is the dividend itself (@s@). See @Note
---   [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+-- | /O(w)/. Like 'urem', but using the SMT-LIB @FixedSizeBitVectors@ theory's
+-- div-by-zero semantics: @bvurem s 0@ is the dividend itself (@s@). See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
 uremSmtlib :: (1 <= w) => Domain w -> Domain w -> Domain w
 uremSmtlib a b
   | Just 0 <- asSingleton b = a
   | member b 0              = union (urem a b) a
   | otherwise               = urem a b
 
--- | Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero convention:
---   @bvsdiv s 0@ is all-ones when @s@ is non-negative and @1@ when @s@ is
---   negative. See @Note [SMT-LIB division]@ in "What4.Interface" for the design
---   rationale.
+-- | /O(w)/. Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero
+-- convention: @bvsdiv s 0@ is all-ones when @s@ is non-negative and @1@
+-- when @s@ is negative. See @Note [SMT-LIB division]@ in "What4.Interface"
+-- for the design rationale.
 sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sdivSmtlib w a b
   | Just 0 <- asSingleton b = sdivByZero w a
@@ -582,9 +603,9 @@ sdivByZero w a =
   where
   mask = bvdMask a
 
--- | Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero convention:
---   @bvsrem s 0@ is the dividend itself (@s@). See @Note [SMT-LIB division]@ in
---   "What4.Interface" for the design rationale.
+-- | /O(w)/. Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero
+-- convention: @bvsrem s 0@ is the dividend itself (@s@). See @Note
+-- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
 sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sremSmtlib w a b
   | Just 0 <- asSingleton b = a

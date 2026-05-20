@@ -27,7 +27,7 @@ import Data.Parameterized.NatRepr
 import qualified GHC.Num.Integer as Integer
 #endif
 
--- | Count trailing zeros
+-- | /O(w)/. Count trailing zeros, capped at the width.
 ctz :: NatRepr w -> Integer -> Integer
 ctz w x = go 0
  where
@@ -35,7 +35,7 @@ ctz w x = go 0
    | i < toInteger (natValue w) && testBit x (fromInteger i) == False = go (i + 1)
    | otherwise = i
 
--- | Count leading zeros
+-- | /O(w)/. Count leading zeros, capped at the width.
 clz :: NatRepr w -> Integer -> Integer
 clz w x = go 0
  where
@@ -43,9 +43,9 @@ clz w x = go 0
    | i < toInteger (natValue w) && testBit x (widthVal w - fromInteger i - 1) == False = go (i + 1)
    | otherwise = i
 
--- | @intLog2 n@ for @n >= 1@: floor of base-2 logarithm. Undefined for
--- @n <= 0@. On GHC 9.0+ this delegates to a fast primop in @ghc-bignum@;
--- on earlier GHCs it falls back to a shift loop.
+-- | /O(w)/. @intLog2 n@ for @n >= 1@: floor of base-2 logarithm. Undefined
+-- for @n <= 0@. On GHC 9.0+ this delegates to a primop in @ghc-bignum@
+-- (constant-time per limb); on earlier GHCs it uses a shift loop.
 intLog2 :: Integer -> Int
 #if MIN_VERSION_base(4,15,0)
 intLog2 n = fromIntegral (Integer.integerLog2 n)
@@ -58,15 +58,17 @@ intLog2 = go 0
 #endif
 {-# INLINE intLog2 #-}
 
--- | @bitsBelow n@ returns the smallest mask of the form @2^k - 1@ that is at
--- least @n@. That is, @2^(floor(log2 n) + 1) - 1@ for @n > 0@, or @0@ for
--- @n <= 0@. Every value in @[0..n]@ has all its set bits within this mask.
+-- | /O(w)/. @bitsBelow n@ returns the smallest mask of the form @2^k - 1@
+-- that is at least @n@. That is, @2^(floor(log2 n) + 1) - 1@ for @n > 0@,
+-- or @0@ for @n <= 0@. Every value in @[0..n]@ has all its set bits within
+-- this mask.
 bitsBelow :: Integer -> Integer
 bitsBelow n
   | n <= 0    = 0
   | otherwise = bit (intLog2 n + 1) - 1
 {-# INLINE bitsBelow #-}
 
+-- | /O(w)/. Rotate a @w@-bit value right by @n@ positions (mod @w@).
 rotateRight ::
   NatRepr w {- ^ width -} ->
   Integer {- ^ value to rotate -} ->
@@ -77,6 +79,7 @@ rotateRight w x n = xor (shiftR x' n') (toUnsigned w (shiftL x' (widthVal w - n'
  x' = toUnsigned w x
  n' = fromInteger (n `rem` intValue w)
 
+-- | /O(w)/. Rotate a @w@-bit value left by @n@ positions (mod @w@).
 rotateLeft ::
   NatRepr w {- ^ width -} ->
   Integer {- ^ value to rotate -} ->
