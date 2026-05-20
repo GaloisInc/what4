@@ -34,6 +34,7 @@ module What4.Domains.BV.Bitwise.Tnum
   , mk
   , add
   , mul
+  , mulPrecise
   , udiv
   , urem
   ) where
@@ -76,14 +77,104 @@ add bvmask (Tnum av am) (Tnum bv bm) = mk resv resm
   resv  = (sv .&. complement resm) .&. bvmask
 {-# INLINE add #-}
 
--- | /O(w²)/. Tristate-number multiply via shift-and-add (BPF @tnum_mul@),
--- with the result truncated to @bvmask@.
+-- | /O(w)/. Tristate-number multiply via interval and trailing-zero analysis.
+--
+-- The result has:
+--
+--   * at least @ctzA + ctzB@ trailing zero bits, where @ctzA@ is the longest
+--     prefix of low bits that are known-zero in @a@ (i.e.\ both 'tnumValue' and
+--     'tnumMask' have that bit clear), and similarly for @ctzB@; and
+--   * known leading bits derived from the arithmetic interval
+--     @[aMin*bMin, aMax*bMax]@ when that interval fits in @bvmask@. This
+--     captures both leading zeros (when the upper bound is small) and
+--     leading ones (when the lower bound is large) — every bit above the
+--     highest disagreement between the bounds has the same value in every
+--     product.
+--
+-- Special case: when both operands are concrete singletons (mask == 0), the
+-- result is the exact concrete product.
 mul ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
   Tnum {- ^ b -} ->
   Tnum
-mul bvmask (Tnum av0 am0) (Tnum bv0 bm0) = go av0 am0 bv0 bm0 acc0
+mul bvmask (Tnum av am) (Tnum bv bm)
+  | am == 0, bm == 0 = mk ((av * bv) .&. bvmask) 0
+  | otherwise = mk (highValue .&. bvmask) (highUnknown .&. complement lowZeros .&. bvmask)
+  where
+  -- Trailing-zero analysis: ctz(value | mask) is the lowest bit that is not
+  -- known-zero in each operand.
+  ctzA = countTrailingZerosOr0 (av .|. am)
+  ctzB = countTrailingZerosOr0 (bv .|. bm)
+  lowZeros = (bit (ctzA + ctzB) - 1) .&. bvmask
+  -- Interval analysis: the product lies in [aMin*bMin, aMax*bMax] (computed
+  -- in unbounded Integer). If the upper bound exceeds @bvmask@, the n-bit
+  -- result wraps and the high bits are unconstrained. Otherwise, bits above
+  -- the highest disagreement between the bounds are determined.
+  prodMin = av * bv
+  prodMax = (av .|. am) * (bv .|. bm)
+  overflows = prodMax > bvmask
+  (highValue, highUnknown)
+    | overflows = (0, bvmask)
+    | otherwise = knownBitsOfInterval prodMin prodMax
+{-# INLINE mul #-}
+
+-- | /O(w)/. @knownBitsOfInterval lo hi@ analyzes the arithmetic interval @[lo, hi]@
+-- (where @0 <= lo <= hi@) and returns @(value, mask)@ in tnum form: the bits
+-- on which all values in @[lo, hi]@ agree are known (recorded in @value@),
+-- and the bits below the highest disagreement are unknown (set in @mask@).
+--
+-- For example, if @lo = 0b1100@ and @hi = 0b1110@, every value in
+-- @[lo, hi]@ has bits 3 and 2 set; bits 1 and 0 vary. So @value = 0b1100@
+-- and @mask = 0b0011@.
+--
+-- This subsumes leading-zero analysis (when @lo = 0@) and adds leading-1
+-- (and arbitrary leading-prefix) analysis when @lo > 0@.
+knownBitsOfInterval :: Integer -> Integer -> (Integer, Integer)
+knownBitsOfInterval lo hi = (lo .&. complement varying, varying)
+  where
+  -- Bits at-or-below the highest position where lo and hi disagree.
+  varying = bitsBelow (lo `xor` hi)
+{-# INLINE knownBitsOfInterval #-}
+
+-- | Count trailing zeros of a non-negative 'Integer', returning @0@ for input
+-- @0@. ('Data.Bits.countTrailingZeros' requires 'FiniteBits', which 'Integer'
+-- doesn't have.)
+--
+-- Uses the bit-trick @popCount ((n .&. -n) - 1)@: @n .&. -n@ isolates the
+-- lowest set bit (always a single power-of-two bit, for any nonzero @n@), and
+-- @popCount@ of one less than that is the bit's position.
+countTrailingZerosOr0 :: Integer -> Int
+countTrailingZerosOr0 0 = 0
+countTrailingZerosOr0 n = popCount ((n .&. negate n) - 1)
+{-# INLINE countTrailingZerosOr0 #-}
+
+-- | @log2OfPowerOfTwo n@ returns @k@ such that @n == 2^k@. Asserts that @n@
+-- is a positive power of two, and that the fast computation
+-- @popCount (n - 1)@ agrees with the general 'countTrailingZerosOr0'.
+--
+-- Faster than 'countTrailingZerosOr0' for known powers of two: skips the
+-- @n .&. -n@ isolation step.
+log2OfPowerOfTwo :: Integer -> Int
+log2OfPowerOfTwo n =
+  X.assert (n > 0 && n .&. (n - 1) == 0) $
+  X.assert (k == countTrailingZerosOr0 n) $
+  k
+  where
+  k = popCount (n - 1)
+
+-- | /O(w²)/. Tristate-number multiply via shift-and-add (BPF
+-- @tnum_mul@). The result is truncated to @bvmask@.
+--
+-- Strictly more precise than 'mul' on its own, but quadratic in @w@.
+-- Captures bit-level structure of the product that trailing-zero
+-- analysis can't see.
+mulPrecise ::
+  Integer {- ^ bvmask -} ->
+  Tnum {- ^ a -} ->
+  Tnum {- ^ b -} ->
+  Tnum
+mulPrecise bvmask (Tnum av0 am0) (Tnum bv0 bm0) = go av0 am0 bv0 bm0 acc0
   where
   acc0 = mk ((av0 * bv0) .&. bvmask) 0
   -- Accumulate contributions from each bit of a. A known-1 bit at
@@ -101,11 +192,15 @@ mul bvmask (Tnum av0 am0) (Tnum bv0 bm0) = go av0 am0 bv0 bm0 acc0
         in go (av `shiftR` 1) (am `shiftR` 1)
               (bv `shiftL` 1) (bm `shiftL` 1)
               acc'
+{-# INLINE mulPrecise #-}
 
 -- | /O(w)/. Tristate-number unsigned division, with the result truncated to
--- @bvmask@. Assumes the divisor is nonzero. When the divisor is a known
--- power of two, the result is exact (a logical right shift); otherwise the
--- result is bounded by leading-zero analysis on @aMax `quot` bMin@.
+-- @bvmask@.
+--
+-- Assumes the divisor is nonzero. When the divisor is a known power of two,
+-- the result is exact (a logical right shift); otherwise the result is bounded
+-- by interval analysis: every bit above the highest disagreement between
+-- @aMin \`quot\` bMax@ and @aMax \`quot\` bMin@ is determined.
 udiv ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
@@ -113,19 +208,27 @@ udiv ::
   Tnum
 udiv bvmask (Tnum av am) (Tnum bv bm)
   | bm == 0, bv > 0, bv .&. (bv - 1) == 0 =
-      -- bv is a power of two, so popCount (bv - 1) is its trailing-zero count.
-      let k = popCount (bv - 1)
+      let k = log2OfPowerOfTwo bv
       in mk ((av `shiftR` k) .&. bvmask) ((am `shiftR` k) .&. bvmask)
-  | otherwise = mk 0 (bitsBelow qMax .&. bvmask)
+  | otherwise = mk (highValue .&. bvmask) (highUnknown .&. bvmask)
   where
+  aMin = av .&. bvmask
   aMax = (av .|. am) .&. bvmask
-  qMax = aMax `quot` max 1 bv
+  bMin = max 1 bv
+  bMax = max 1 ((bv .|. bm) .&. bvmask)
+  -- a / b lies in [aMin/bMax, aMax/bMin]. Both quotients are non-negative
+  -- and within @bvmask@, so no overflow check is needed.
+  qMin = aMin `quot` bMax
+  qMax = aMax `quot` bMin
+  (highValue, highUnknown) = knownBitsOfInterval qMin qMax
 {-# INLINE udiv #-}
 
 -- | /O(w)/. Tristate-number unsigned remainder, with the result truncated to
--- @bvmask@. Assumes the divisor is nonzero. When the divisor is a known
--- power of two, the result is exact (a bitwise mask); otherwise the result
--- is bounded by leading-zero analysis on @min(aMax, bMax-1)@.
+-- @bvmask@.
+--
+-- When the divisor is a known power of two, the result is exact (a bitwise
+-- mask); otherwise the result is bounded by leading-zero analysis on @min(aMax,
+-- bMax-1)@.
 urem ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
