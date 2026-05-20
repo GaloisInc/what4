@@ -54,12 +54,13 @@ data Tnum = Tnum
     -- ^ The unknown bits.
   }
 
--- | Smart constructor that asserts the disjointness invariant.
+-- | /O(w)/. Smart constructor that asserts the disjointness invariant
+-- (@v .&. m == 0@).
 mk :: Integer -> Integer -> Tnum
 mk v m = X.assert (v .&. m == 0) (Tnum v m)
 {-# INLINE mk #-}
 
--- | Tristate-number add, with the result truncated to @bvmask@.
+-- | /O(w)/. Tristate-number add, with the result truncated to @bvmask@.
 add ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
@@ -75,7 +76,8 @@ add bvmask (Tnum av am) (Tnum bv bm) = mk resv resm
   resv  = (sv .&. complement resm) .&. bvmask
 {-# INLINE add #-}
 
--- | Tristate-number multiply, with the result truncated to @bvmask@.
+-- | /O(w²)/. Tristate-number multiply via shift-and-add (BPF @tnum_mul@),
+-- with the result truncated to @bvmask@.
 mul ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
@@ -100,10 +102,10 @@ mul bvmask (Tnum av0 am0) (Tnum bv0 bm0) = go av0 am0 bv0 bm0 acc0
               (bv `shiftL` 1) (bm `shiftL` 1)
               acc'
 
--- | Tristate-number unsigned division, with the result truncated to @bvmask@.
--- Assumes the divisor is nonzero. When the divisor is a known power of two, the
--- result is exact (a logical right shift); otherwise the result is bounded by
--- leading-zero analysis on @aMax `quot` bMin@.
+-- | /O(w)/. Tristate-number unsigned division, with the result truncated to
+-- @bvmask@. Assumes the divisor is nonzero. When the divisor is a known
+-- power of two, the result is exact (a logical right shift); otherwise the
+-- result is bounded by leading-zero analysis on @aMax `quot` bMin@.
 udiv ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
@@ -120,10 +122,10 @@ udiv bvmask (Tnum av am) (Tnum bv bm)
   qMax = aMax `quot` max 1 bv
 {-# INLINE udiv #-}
 
--- | Tristate-number unsigned remainder, with the result truncated to @bvmask@.
--- When the divisor is a known power of two, the result is exact (a bitwise
--- mask); otherwise the result is bounded by leading-zero analysis on @min(aMax,
--- bMax-1)@.
+-- | /O(w)/. Tristate-number unsigned remainder, with the result truncated to
+-- @bvmask@. Assumes the divisor is nonzero. When the divisor is a known
+-- power of two, the result is exact (a bitwise mask); otherwise the result
+-- is bounded by leading-zero analysis on @min(aMax, bMax-1)@.
 urem ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
