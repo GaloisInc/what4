@@ -54,10 +54,13 @@ module What4.Domains.BV.Bitwise
   , negate
   , scale
   , mul
+  , mulPrecise
   , udiv
   , urem
   , sdiv
   , srem
+  , udivPrecise
+  , uremPrecise
   -- ** arithmetic (SMT-LIB div-by-zero semantics)
   , udivSmtlib
   , uremSmtlib
@@ -99,10 +102,13 @@ module What4.Domains.BV.Bitwise
   , correct_neg
   , correct_scale
   , correct_mul
+  , correct_mulPrecise
   , correct_udiv
   , correct_urem
   , correct_sdiv
   , correct_srem
+  , correct_udivPrecise
+  , correct_uremPrecise
   , correct_udivSmtlib
   , correct_uremSmtlib
   , correct_sdivSmtlib
@@ -467,33 +473,122 @@ negate a = add (not a) (mkSingleton (bvdMask a) 1)
 sub :: Domain w -> Domain w -> Domain w
 sub a b = add a (negate b)
 
--- | /O(w²)/. Multiply by a constant.
+-- | /O(w²)/. Multiply by a constant. Uses 'mulPrecise' since the
+-- shift-and-add algorithm gives bit-level precision when one operand
+-- is concrete.
 scale :: Integer -> Domain w -> Domain w
-scale k a = mul (mkSingleton (bvdMask a) k) a
+scale k a = mulPrecise (mkSingleton (bvdMask a) k) a
 
--- | /O(w²)/. Multiply two bitwise domains via the shift-and-add
--- tristate-number algorithm (BPF @tnum_mul@).
+-- | /O(w)/. Multiply two bitwise domains via interval and trailing-zero
+-- analysis. Captures known leading bits (both 0s and 1s) derived from
+-- @[aMin*bMin, aMax*bMax]@, plus known trailing zeros from the operands.
+--
+-- See 'Tnum.mul' for the algorithm. 'mulPrecise' is strictly more
+-- precise; this is the cheaper alternative when middle-bit precision
+-- doesn't matter.
 mul :: Domain w -> Domain w -> Domain w
 mul a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.mul mask (toTnum a) (toTnum b))
 
--- | /O(w)/. Unsigned division. Assumes the divisor is nonzero.
+-- | /O(w²)/. Multiply two bitwise domains, combining the shift-and-add
+-- tristate-number algorithm (BPF @tnum_mul@) with the interval and
+-- trailing-zero analysis of 'mul'. Strictly at least as precise as 'mul'.
+mulPrecise :: Domain w -> Domain w -> Domain w
+mulPrecise a@(BVBitInterval mask _ _) b =
+  intersection
+    (fromTnum mask (Tnum.mulPrecise mask (toTnum a) (toTnum b)))
+    (mul a b)
+
+-- | /O(w)/. Unsigned division via interval analysis on the quotient bounds.
+-- Assumes the divisor is nonzero.
 --
--- Compared to the arithmetic-domain @udiv@, this can be more precise when the
--- divisor is a known power of two: the result is exact, and bit-level structure
--- of the dividend is preserved (e.g.\ @udiv (any w) (singleton w (2^k))@ has
--- its top @k@ bits known zero).
+-- Captures known leading bits (both 0s and 1s) derived from
+-- @[aMin \`quot\` bMax, aMax \`quot\` bMin]@. When the divisor is a known
+-- power of two, the result is exact (bit-level structure of the dividend
+-- is preserved, e.g.\ @udiv (any w) (singleton w (2^k))@ has its top @k@
+-- bits known zero). 'udivPrecise' is strictly more precise; this is the
+-- cheaper alternative when middle-bit precision doesn't matter.
 udiv :: Domain w -> Domain w -> Domain w
 udiv a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.udiv mask (toTnum a) (toTnum b))
 
--- | /O(w)/. Unsigned remainder. Assumes the divisor is nonzero.
+-- | /O(w)/. Unsigned remainder via leading-zero analysis. Assumes the divisor
+-- is nonzero.
 --
--- Like 'udiv', this is more precise when the divisor is a known power of two:
+-- The result is bounded above by @min(aMax, bMax - 1)@; bits above that are
+-- known zero. (The remainder's lower bound is trivially 0, so the same
+-- interval-agreement analysis used in 'udiv' would not yield additional
+-- leading bits here.) When the divisor is a known power of two,
 -- @urem a (singleton w (2^k))@ is exactly the low @k@ bits of @a@.
 urem :: Domain w -> Domain w -> Domain w
 urem a@(BVBitInterval mask _ _) b =
   fromTnum mask (Tnum.urem mask (toTnum a) (toTnum b))
+
+-- | /O(w²)/. Unsigned division combining abstract schoolbook long division
+-- with the interval analysis of 'udiv'. Assumes the divisor is nonzero.
+-- Strictly at least as precise as 'udiv'.
+--
+-- The result is the 'intersection' of 'udiv' (interval analysis on the
+-- quotient bounds, plus an exact path for power-of-two divisors) and the
+-- schoolbook result (which captures middle-bit structure that interval
+-- analysis can't see, but joins through any undetermined comparison and so
+-- loses on power-of-two divisors).
+udivPrecise :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+udivPrecise w a b = intersection (fst (longDivision w a b)) (udiv a b)
+
+-- | /O(w²)/. Unsigned remainder combining schoolbook long division with the
+-- leading-zero analysis of 'urem'. Assumes the divisor is nonzero. Strictly
+-- at least as precise as 'urem'.
+uremPrecise :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+uremPrecise w a b = intersection (snd (longDivision w a b)) (urem a b)
+
+-- | Abstract schoolbook long division: simultaneously computes the
+-- quotient and remainder by walking the bits of the dividend from MSB to
+-- LSB, maintaining a running partial remainder @r@ as a 'Domain'.
+--
+-- At each step, @r@ is shifted left and the next bit of the dividend is
+-- shifted in. If @r >= b@ definitely, we subtract and set the corresponding
+-- bit of the quotient. If @r < b@ definitely, we leave it. If the
+-- comparison is undetermined, we union both possibilities into @r@ and
+-- leave the quotient bit unknown.
+longDivision :: forall w. (1 <= w) => NatRepr w -> Domain w -> Domain w -> (Domain w, Domain w)
+longDivision w a b = go (widthVal w - 1) (singleton w 0) (singleton w 0)
+  where
+  -- Loop from bit (w-1) down to 0. @q@ accumulates the quotient,
+  -- @r@ is the partial remainder.
+  go :: Int -> Domain w -> Domain w -> (Domain w, Domain w)
+  go i q r
+    | i < 0     = (q, r)
+    | otherwise =
+        let r'        = injectBit r (testBit a (fromIntegral i))
+            r'MinusB  = sub r' b
+            (q'', r'')= case ult r' b of
+              Just True  -> (q,                       r')
+              Just False -> (setBitDom q i,           r'MinusB)
+              Nothing    -> (unknownBitDom q i,       union r' r'MinusB)
+        in go (i - 1) q'' r''
+
+  -- Shift @r@ left by 1 and OR in a fresh low bit, whose value is
+  -- determined by the @testBit@ result on the dividend.
+  injectBit :: Domain w -> Maybe Bool -> Domain w
+  injectBit r mb =
+    let r1 = shl w r 1
+        bit_dom = case mb of
+          Just True  -> singleton w 1
+          Just False -> singleton w 0
+          Nothing    -> range w 0 1
+    in or r1 bit_dom
+
+  -- Set bit @i@ of a domain that is known to have bit @i@ = 0 going in
+  -- (q starts at 0 and we only ever set bits, so this is safe).
+  setBitDom :: Domain w -> Int -> Domain w
+  setBitDom (BVBitInterval mask lo hi) i =
+    BVBitInterval mask (Bits.setBit lo i) (Bits.setBit hi i)
+
+  -- Mark bit @i@ of a domain as unknown.
+  unknownBitDom :: Domain w -> Int -> Domain w
+  unknownBitDom (BVBitInterval mask lo hi) i =
+    BVBitInterval mask lo (Bits.setBit hi i)
 
 -- | /O(w)/. Signed division (rounds toward zero). Assumes the divisor is
 -- nonzero.
@@ -583,9 +678,9 @@ uremSmtlib a b
   | otherwise               = urem a b
 
 -- | /O(w)/. Like 'sdiv', but using the SMT-LIB QF_BV logic's div-by-zero
--- convention: @bvsdiv s 0@ is all-ones when @s@ is non-negative and @1@
--- when @s@ is negative. See @Note [SMT-LIB division]@ in "What4.Interface"
--- for the design rationale.
+-- convention: @bvsdiv s 0@ is all-ones when @s@ is non-negative and @1@ when
+-- @s@ is negative. See @Note [SMT-LIB division]@ in "What4.Interface" for the
+-- design rationale.
 sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sdivSmtlib w a b
   | Just 0 <- asSingleton b = sdivByZero w a
@@ -604,8 +699,8 @@ sdivByZero w a =
   mask = bvdMask a
 
 -- | /O(w)/. Like 'srem', but using the SMT-LIB QF_BV logic's div-by-zero
--- convention: @bvsrem s 0@ is the dividend itself (@s@). See @Note
--- [SMT-LIB division]@ in "What4.Interface" for the design rationale.
+-- convention: @bvsrem s 0@ is the dividend itself (@s@). See @Note [SMT-LIB
+-- division]@ in "What4.Interface" for the design rationale.
 sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 sremSmtlib w a b
   | Just 0 <- asSingleton b = a
@@ -769,6 +864,9 @@ correct_scale n k (a,x) = member a x ==> pmember n (scale k' a) (k' * x)
 correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
 
+correct_mulPrecise :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_mulPrecise n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mulPrecise a b) (x * y)
+
 correct_udiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_udiv n (a,x) (b,y) =
   member a x ==> member b y ==> y' /= 0 ==> pmember n (udiv a b) (x' `quot` y')
@@ -796,6 +894,22 @@ correct_srem n (a,x) (b,y) =
   where
   x' = toSigned n x
   y' = toSigned n y
+
+correct_udivPrecise :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_udivPrecise n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (udivPrecise n a b) (x' `quot` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+correct_uremPrecise :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_uremPrecise n (a,x) (b,y) =
+  member a x ==> member b y ==> y' /= 0 ==> pmember n (uremPrecise n a b) (x' `rem` y')
+  where
+  x' = toUnsigned n x
+  y' = toUnsigned n y
+
+
 
 correct_udivSmtlib ::
   (1 <= n) =>

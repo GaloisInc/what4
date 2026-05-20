@@ -170,18 +170,77 @@ bneg a = add (bnot a) (singleton 1)
 sub : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 sub a b = add a (bneg b)
 
+// scale uses the precise (shift-and-add) multiplication so that
+// constant-by-domain products preserve bit-level structure.
 scale : {n} (fin n, n >= 1) => [n] -> Dom n -> Dom n
-scale k a = mul (singleton k) a
+scale k a = mulPrecise (singleton k) a
 
-// Multiply via shift-and-add over the bits of a.
+// Population count: number of 1 bits.
+popcount : {n} (fin n, n >= 1) => [n] -> [n]
+popcount x = sum [ zero # [b] | b <- x ]
+
+// Count trailing zeros, returning n for x == 0. Computed via the
+// bit-trick popcount ((x .&. -x) - 1): x .&. -x isolates the lowest
+// set bit, and the popcount of one less than that gives its position.
+ctz : {n} (fin n, n >= 1) => [n] -> [n]
+ctz x = if x == 0 then `n else popcount ((x && (- x)) - 1)
+
+// knownBitsOfInterval lo hi: given an arithmetic interval [lo, hi]
+// (with 0 <= lo <= hi), return (value, mask) in tnum form. Bits above
+// the highest disagreement between lo and hi are determined (recorded
+// in value); bits at-or-below it are unknown (set in mask).
+//
+// Subsumes leading-zero analysis (when lo = 0) and adds leading-1
+// (and arbitrary leading-prefix) analysis when lo > 0.
+knownBitsOfInterval : {n} (fin n, n >= 1) => [n] -> [n] -> ([n], [n])
+knownBitsOfInterval lo hi = (lo && (~ varying), varying)
+  where
+  varying = bitsBelow (lo ^ hi)
+
+// Fast multiply via interval and trailing-zero analysis.
+//
+// The result has at least ctzA + ctzB trailing zero bits, where ctzA
+// is ctz(av | am) and similarly for B. Above that, known leading bits
+// are derived from the arithmetic interval [aMin*bMin, aMax*bMax] when
+// that interval fits in n bits; otherwise the high bits wrap and are
+// unconstrained. This captures both leading 0s (small upper bound) and
+// leading 1s (large lower bound).
+mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+mul a b =
+  if a.lomask == a.himask /\ b.lomask == b.himask
+    then singleton (a.lomask * b.lomask)
+    else { lomask = highValue, himask = highValue || (highUnknown && (~ lowZeros)) }
+  where
+  (av, am) = toTnum a
+  (bv, bm) = toTnum b
+  tz = ctz (av || am) + ctz (bv || bm)
+  lowZeros = (1 << tz) - 1
+  // Compute aMin*bMin and aMax*bMax in 2n-bit width so we can tell when
+  // the product overflows n bits.
+  aMinExt = (zext av : [n + n])
+  bMinExt = (zext bv : [n + n])
+  aMaxExt = (zext (av || am) : [n + n])
+  bMaxExt = (zext (bv || bm) : [n + n])
+  prodMin = aMinExt * bMinExt
+  prodMax = aMaxExt * bMaxExt
+  // The product overflows iff the high half of aMax*bMax is non-zero.
+  overflows = take`{n} prodMax != 0
+  (highValue, highUnknown) =
+    if overflows
+      then (zero, ~ zero)
+      else knownBitsOfInterval (drop`{n} prodMin) (drop`{n} prodMax)
+
+// Precise multiply via shift-and-add over the bits of a (BPF tnum_mul).
 //
 // At bit position i, when av_i = 1 we add bm shifted to position i
 // (the bv contribution is already accounted for by the initial
 // av*bv product). When am_i = 1 (unknown bit), we add (bv|bm) shifted
 // to position i, since b might or might not contribute.
-mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-mul a b = fromTnum resv resm
+mulPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+mulPrecise a b = intersection schoolbook fast
   where
+  fast = mul a b
+  schoolbook = fromTnum resv resm
   (av, am) = toTnum a
   (bv, bm) = toTnum b
   // Initial value-by-value product
@@ -218,22 +277,27 @@ bitsBelow x = ys ! 0
 
 // Unsigned division. When the divisor is a singleton power of
 // two 2^k, the result is exact (a logical shift right by k);
-// otherwise, the result is bounded above by aMax / bMin and we
-// keep only its leading-zero structure.
+// otherwise, the result is bounded by interval analysis on
+// [aMin/bMax, aMax/bMin], keeping every bit above the highest
+// disagreement between the bounds.
 udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 udiv a b =
   if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
     then { lomask = av / bv, himask = (av || am) / bv }
-    else { lomask = 0, himask = bitsBelow qMax }
+    else { lomask = highValue, himask = highValue || highUnknown }
   where
   (av, am) = toTnum a
   (bv, bm) = toTnum b
+  aMin = av
   aMax = av || am
-  // bv may be 0 if b.lomask = 0; we substitute 1 to avoid division
-  // by zero in this Cryptol expression. The result of the else
-  // branch is sound regardless: x/y <= x <= aMax for any y >= 1.
-  bSafe = if bv == 0 then 1 else bv
-  qMax = aMax / bSafe
+  // bv = 0 means b.lomask = 0, i.e. b's domain might contain zero. We use
+  // max 1 to avoid division by zero; the result is sound under our
+  // assumption that b is nonzero.
+  bMin = if bv == 0 then 1 else bv
+  bMax = if (bv || bm) == 0 then 1 else (bv || bm)
+  qMin = aMin / bMax
+  qMax = aMax / bMin
+  (highValue, highUnknown) = knownBitsOfInterval qMin qMax
 
 // Unsigned remainder. When the divisor is a singleton power of
 // two 2^k, the result is exact (the low k bits of the dividend);
@@ -250,12 +314,90 @@ urem a b =
   bMax = bv || bm
   rMax = if bMax == 0 then 0 else (if aMax < bMax - 1 then aMax else bMax - 1)
 
+// 3-valued unsigned-less-than on Doms: returns 0 (definitely false),
+// 1 (definitely true), or 2 (unknown). Used by long division.
+ultMaybe : {n} (fin n) => Dom n -> Dom n -> [2]
+ultMaybe a b =
+  if a.himask < b.lomask then 1
+  else if a.lomask >= b.himask then 0
+  else 2
+
+// Long division: walk the bits of a from high to low, maintaining a
+// running partial remainder r as a Dom. At each step, shift r left
+// and inject the corresponding bit of a; then compare to b. If r >= b
+// definitely, subtract and set the quotient bit. If r < b definitely,
+// leave the quotient bit clear. If undetermined, union both branches
+// into r and leave the quotient bit unknown.
+//
+// Returns (quotient, remainder) Doms.
+longDivision : {n} (fin n, n >= 1) => Dom n -> Dom n -> (Dom n, Dom n)
+longDivision a b = (states ! 0).0
+  where
+  // states !! i is (qDom, rDom) after processing the i-th iteration
+  // (from MSB down).
+  states : [n + 1]((Dom n, Dom n), [width n])
+  states = [((singleton 0, singleton 0), 0)]
+         # [ step s i | s <- states | i <- [0 .. n - 1] ]
+  step ((q, r), _) i =
+    ((q', r'), i + 1)
+    where
+    bitIdx = `n - 1 - i
+    aBit = testBitDom a bitIdx
+    rShifted = shl r 1
+    rPrime = bor rShifted aBit
+    rMinusB = sub rPrime b
+    cmp = ultMaybe rPrime b
+    (q', r') =
+      if cmp == 1                       // rPrime < b: quotient bit 0
+        then (q, rPrime)
+        else if cmp == 0                // rPrime >= b: quotient bit 1
+          then (setBitDom q bitIdx, rMinusB)
+          else (unknownBitDom q bitIdx, union rPrime rMinusB)
+
+// Get bit i of a Dom as a 1-bit-wide Dom (in width n: low bit only).
+testBitDom : {n} (fin n, n >= 1) => Dom n -> [width n] -> Dom n
+testBitDom a i =
+  if a.lomask @ idx
+    then singleton 1                    // bit known set
+    else if a.himask @ idx
+      then { lomask = 0, himask = 1 }   // bit unknown
+      else singleton 0                  // bit known clear
+  where
+  // Cryptol indexes from the MSB; convert from LSB index i.
+  idx : [width n]
+  idx = `n - 1 - i
+
+// Set bit i of a Dom (assumes it was previously known to be 0).
+setBitDom : {n} (fin n, n >= 1) => Dom n -> [width n] -> Dom n
+setBitDom a i = bor a (singleton (1 << i))
+
+// Mark bit i of a Dom as unknown (assumes it was previously known to be 0).
+unknownBitDom : {n} (fin n, n >= 1) => Dom n -> [width n] -> Dom n
+unknownBitDom a i =
+  { lomask = a.lomask, himask = a.himask || (1 << i) }
+
+// Unsigned division combining schoolbook long division with the
+// leading-zero analysis of udiv. Strictly at least as precise as udiv.
+udivPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+udivPrecise a b = intersection (longDivision a b).0 (udiv a b)
+
+// Unsigned remainder combining schoolbook long division with the
+// leading-zero analysis of urem. Strictly at least as precise as urem.
+uremPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+uremPrecise a b = intersection (longDivision a b).1 (urem a b)
+
 // splitSign a returns (zero_circle, one_circle), where the first
 // is a's restriction to non-negative values (sign bit cleared)
 // and the second is its restriction to negative values (sign bit
-// set). Either circle may be empty (lomask not bitle himask),
-// which is fine: empty inputs make the soundness implication
-// vacuously true, and union accepts any well-formed pair.
+// set).
+//
+// One of the two circles may be empty in the sense that
+// (lomask || himask) != himask: if a's sign bit is already known,
+// clearing or setting it in only one of the masks produces a
+// pair that no concrete value can satisfy. That's fine here: any
+// x that satisfied the input ends up in the *other* circle, the
+// soundness implication is vacuously true on the empty side, and
+// union with an empty domain contributes nothing.
 splitSign : {n} (fin n, n >= 1) => Dom n -> (Dom n, Dom n)
 splitSign a = (zero_circle, one_circle)
   where
@@ -405,6 +547,10 @@ correct_mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_mul a b x y =
   mem a x ==> mem b y ==> mem (mul a b) (x * y)
 
+correct_mulPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_mulPrecise a b x y =
+  mem a x ==> mem b y ==> mem (mulPrecise a b) (x * y)
+
 correct_udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_udiv a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (udiv a b) (x / y)
@@ -412,6 +558,14 @@ correct_udiv a b x y =
 correct_urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_urem a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (urem a b) (x % y)
+
+correct_udivPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_udivPrecise a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (udivPrecise a b) (x / y)
+
+correct_uremPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_uremPrecise a b x y =
+  mem a x ==> mem b y ==> y != 0 ==> mem (uremPrecise a b) (x % y)
 
 correct_sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
 correct_sdiv a b x y =
@@ -466,6 +620,9 @@ property a10 = correct_udiv`{8}
 property a11 = correct_urem`{8}
 property a12 = correct_sdiv`{8}
 property a13 = correct_srem`{8}
+property a14 = correct_mulPrecise`{8}
+property a15 = correct_udivPrecise`{8}
+property a16 = correct_uremPrecise`{8}
 
 
 ////////////////////////////////////////////////////////////
