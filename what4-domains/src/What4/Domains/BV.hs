@@ -565,44 +565,29 @@ sext w (BVDBitwise b) u = BVDBitwise (B.sext w b u)
 --------------------------------------------------------------------------------
 -- Shifts
 
--- An arbitrary value; if we have to union together more than this many
--- bitwise shifts or rotates we'll fall back on some default instead
-shiftBound :: Integer
-shiftBound = 16
+-- Bitwise captures per-bit structure (e.g. known trailing zeros); arith
+-- captures interval bounds. Each can be tighter than the other on different
+-- inputs, so we always compute both and intersect.
+--
+-- The result is always collapsed to 'BVDBitwise'.
 
 shl :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-shl w (BVDBitwise a) (asArithDomain -> b)
-  | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.join [ B.shl w a y | y <- [lo .. hi'] ]
-  where
-  (lo, hi) = A.ubounds b
-  hi' = max hi (intValue w)
-
-shl w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.shl w a b)
-
+shl w a b =
+  BVDBitwise $ B.meet
+    (B.shlAbstract w (asBitwiseDomain a) (asBitwiseDomain b))
+    (arithToBitwiseDomain (A.shl w (asArithDomain a) (asArithDomain b)))
 
 lshr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-lshr w (BVDBitwise a) (asArithDomain -> b)
-  | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.join [ B.lshr w a y | y <- [lo .. hi'] ]
-  where
-  (lo, hi) = A.ubounds b
-  hi' = max hi (intValue w)
-
-lshr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.lshr w a b)
-
-
+lshr w a b =
+  BVDBitwise $ B.meet
+    (B.lshrAbstract w (asBitwiseDomain a) (asBitwiseDomain b))
+    (arithToBitwiseDomain (A.lshr w (asArithDomain a) (asArithDomain b)))
 
 ashr :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
-ashr w (BVDBitwise a) (asArithDomain -> b)
-  | lo <= hi' && hi' - lo <= shiftBound =
-      BVDBitwise $ foldl1 B.join [ B.ashr w a y | y <- [lo .. hi'] ]
-  where
-  (lo, hi) = A.ubounds b
-  hi' = max hi (intValue w)
-
-ashr w (asArithDomain -> a) (asArithDomain -> b) = BVDArith (A.ashr w a b)
-
+ashr w a b =
+  BVDBitwise $ B.meet
+    (B.ashrAbstract w (asBitwiseDomain a) (asBitwiseDomain b))
+    (arithToBitwiseDomain (A.ashr w (asArithDomain a) (asArithDomain b)))
 
 rol :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
 
@@ -611,14 +596,7 @@ rol _w a@(asSingleton -> Just x) _
   | x == 0 = a
   | x == bvdMask a = a
 
-rol w (asBitwiseDomain -> a) (asArithDomain -> b) =
-    if (lo <= hi && hi - lo <= shiftBound) then
-      BVDBitwise $ foldl1 B.join [ B.rol w a y | y <- [lo .. hi] ]
-    else
-      any w
-
-  where
-  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
+rol w a b = BVDBitwise (B.rolAbstract w (asBitwiseDomain a) (asBitwiseDomain b))
 
 
 ror :: (1 <= w) => NatRepr w -> BVDomain w -> BVDomain w -> BVDomain w
@@ -628,14 +606,7 @@ ror _w a@(asSingleton -> Just x) _
   | x == 0 = a
   | x == bvdMask a = a
 
-ror w (asBitwiseDomain -> a) (asArithDomain -> b) =
-    if (lo <= hi && hi - lo <= shiftBound) then
-      BVDBitwise $ foldl1 B.join [ B.ror w a y | y <- [lo .. hi] ]
-    else
-      any w
-
-  where
-  (lo, hi) = A.ubounds (A.urem b (A.singleton w (intValue w)))
+ror w a b = BVDBitwise (B.rorAbstract w (asBitwiseDomain a) (asBitwiseDomain b))
 
 --------------------------------------------------------------------------------
 -- Arithmetic

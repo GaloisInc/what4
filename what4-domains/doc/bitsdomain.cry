@@ -127,6 +127,41 @@ rol a x = { lomask = a.lomask <<< x, himask = a.himask <<< x }
 ror : {n} (fin n) => Dom n -> [n] -> Dom n
 ror a x = { lomask = a.lomask >>> x, himask = a.himask >>> x }
 
+// Range-analysis variants: the shift/rotate amount is itself a Dom.
+// These declarative specifications union per-shift results over every
+// member of @b@. The Haskell in @What4.Domains.BV.Bitwise@ has
+// performance-optimized implementations (LLVM @KnownBits@-style
+// tristate skip, bounded iteration, saturation collapse, early exit)
+// that are property-tested to be equivalent to these specs.
+
+emptyDom : {n} (fin n) => Dom n
+emptyDom = { lomask = ~0, himask = 0 }
+
+shlAbstract : {n} (fin n) => Dom n -> Dom n -> Dom n
+shlAbstract a b = foldl union emptyDom contribs
+  where
+  contribs = [ if mem b y then shl a y else emptyDom | y <- take`{2^^n} [0 ...] ]
+
+lshrAbstract : {n} (fin n) => Dom n -> Dom n -> Dom n
+lshrAbstract a b = foldl union emptyDom contribs
+  where
+  contribs = [ if mem b y then lshr a y else emptyDom | y <- take`{2^^n} [0 ...] ]
+
+ashrAbstract : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+ashrAbstract a b = foldl union emptyDom contribs
+  where
+  contribs = [ if mem b y then ashr a y else emptyDom | y <- take`{2^^n} [0 ...] ]
+
+rolAbstract : {n} (fin n) => Dom n -> Dom n -> Dom n
+rolAbstract a b = foldl union emptyDom contribs
+  where
+  contribs = [ if mem b y then rol a y else emptyDom | y <- take`{2^^n} [0 ...] ]
+
+rorAbstract : {n} (fin n) => Dom n -> Dom n -> Dom n
+rorAbstract a b = foldl union emptyDom contribs
+  where
+  contribs = [ if mem b y then ror a y else emptyDom | y <- take`{2^^n} [0 ...] ]
+
 ////////////////////////////////////////////////////////////
 // Bounds and comparisons
 
@@ -631,6 +666,26 @@ correct_ror : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
 correct_ror a x y =
   mem a x ==> mem (ror a y) (x >>> y)
 
+correct_shlAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_shlAbstract a x b y =
+  mem a x ==> mem b y ==> mem (shlAbstract a b) (x << y)
+
+correct_lshrAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_lshrAbstract a x b y =
+  mem a x ==> mem b y ==> mem (lshrAbstract a b) (x >> y)
+
+correct_ashrAbstract : {n} (fin n, n >= 1) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_ashrAbstract a x b y =
+  mem a x ==> mem b y ==> mem (ashrAbstract a b) (x >>$ y)
+
+correct_rolAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_rolAbstract a x b y =
+  mem a x ==> mem b y ==> mem (rolAbstract a b) (x <<< y)
+
+correct_rorAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_rorAbstract a x b y =
+  mem a x ==> mem b y ==> mem (rorAbstract a b) (x >>> y)
+
 correct_ubounds : {n} (fin n) => Dom n -> [n] -> Bit
 correct_ubounds a x =
   mem a x ==> lo <= x /\ x <= hi
@@ -722,6 +777,11 @@ property s2 = correct_lshr`{16}
 property s3 = correct_ashr`{16}
 property s4 = correct_rol`{16}
 property s5 = correct_ror`{16}
+property s6 = correct_shlAbstract`{8}
+property s7 = correct_lshrAbstract`{8}
+property s8 = correct_ashrAbstract`{8}
+property s9 = correct_rolAbstract`{8}
+property s10 = correct_rorAbstract`{8}
 
 property a1 = correct_ubounds`{8}
 property a2 = correct_sbounds`{8}

@@ -70,6 +70,28 @@ genWidth =
          | Just LeqProof <- isPosNat n -> pure (SW n)
        _ -> error "test panic! genWidth"
 
+-- | Like 'genWidth' but capped at 6, for tests whose oracle is
+-- exponential in the width.
+genWidthSmall :: Gen SomeWidth
+genWidthSmall =
+  do x <- chooseInt (1, 6)
+     case someNat x of
+       Just (Some n)
+         | Just LeqProof <- isPosNat n -> pure (SW n)
+       _ -> error "test panic! genWidthSmall"
+
+-- | A small power-of-two width, capped at 8, for equivalence tests
+-- whose oracle iterates over @[0, 2^w - 1]@. Power-of-two widths matter
+-- for rotate equivalence: at those widths @s mod w == s & (w-1)@,
+-- enabling an LLVM-style tristate decomposition.
+genWidthPow2Small :: Gen SomeWidth
+genWidthPow2Small =
+  do i <- chooseInt (0, 3)
+     case someNat (([1, 2, 4, 8] :: [Natural]) !! i) of
+       Just (Some n)
+         | Just LeqProof <- isPosNat n -> pure (SW n)
+       _ -> error "test panic! genWidthPow2Small"
+
 genBV :: NatRepr w -> Gen Integer
 genBV w = chooseInteger (minUnsigned w, maxUnsigned w)
 
@@ -412,6 +434,40 @@ bitwiseDomainTests =
   , genTest "correct_ror" $
       do SW n <- genWidth
          B.correct_ror n <$> B.genPair n <*> chooseInteger (0, intValue n)
+  , genTest "correct_shlAbstract" $
+      do SW n <- genWidth
+         B.correct_shlAbstract n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_lshrAbstract" $
+      do SW n <- genWidth
+         B.correct_lshrAbstract n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_ashrAbstract" $
+      do SW n <- genWidth
+         B.correct_ashrAbstract n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_rolAbstract" $
+      do SW n <- genWidth
+         B.correct_rolAbstract n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_rorAbstract" $
+      do SW n <- genWidth
+         B.correct_rorAbstract n <$> B.genPair n <*> B.genPair n
+  , genTest "correct_equiv_shlAbstract" $
+      do SW n <- genWidthSmall
+         B.correct_equiv_shlAbstract n <$> B.genDomain n <*> B.genDomain n
+  , genTest "correct_equiv_lshrAbstract" $
+      do SW n <- genWidthSmall
+         B.correct_equiv_lshrAbstract n <$> B.genDomain n <*> B.genDomain n
+  , genTest "correct_equiv_ashrAbstract" $
+      do SW n <- genWidthSmall
+         B.correct_equiv_ashrAbstract n <$> B.genDomain n <*> B.genDomain n
+  -- Rotate equivalence holds only at power-of-two widths (where
+  -- @s mod w == s & (w-1)@ enables an LLVM-style tristate decomposition).
+  -- At non-power-of-two widths the optimized version is sound but may
+  -- be less precise than the spec.
+  , genTest "correct_equiv_rolAbstract" $
+      do SW n <- genWidthPow2Small
+         B.correct_equiv_rolAbstract n <$> B.genDomain n <*> B.genDomain n
+  , genTest "correct_equiv_rorAbstract" $
+      do SW n <- genWidthPow2Small
+         B.correct_equiv_rorAbstract n <$> B.genDomain n <*> B.genDomain n
   , genTest "correct_eq" $
       do SW n <- genWidth
          B.correct_eq n <$> B.genPair n <*> B.genPair n
