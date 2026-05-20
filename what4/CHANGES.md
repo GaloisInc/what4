@@ -19,6 +19,8 @@
 * Replace `lens` with `microlens-{,-mtl,-th}`.
 * Fix a bug where `what4` could produce incorrect models involving the
   `floatToBV` operation when using the `RNA` rounding mode.
+* Fix a bug where `what4` could produce incorrect models involving the `bvSDiv`
+  operation.
 * Add `bvUdivSmtlib`, `bvUremSmtlib`, `bvSdivSmtlib`, and `bvSremSmtlib` to
   `IsExprBuilder`. These mirror the existing `bv{U,S}{Div,Rem}` operations
   but follow the SMT-LIB-specified div-by-zero semantics
