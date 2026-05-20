@@ -190,6 +190,10 @@ ctz x = if x == 0 then `n else popcount ((x && (- x)) - 1)
 // the highest disagreement between lo and hi are determined (recorded
 // in value); bits at-or-below it are unknown (set in mask).
 //
+// For example, if lo = 0b1100 and hi = 0b1110, every value in [lo, hi]
+// has bits 3 and 2 set; bits 1 and 0 vary. So value = 0b1100 and
+// mask = 0b0011.
+//
 // Subsumes leading-zero analysis (when lo = 0) and adds leading-1
 // (and arbitrary leading-prefix) analysis when lo > 0.
 knownBitsOfInterval : {n} (fin n, n >= 1) => [n] -> [n] -> ([n], [n])
@@ -197,14 +201,48 @@ knownBitsOfInterval lo hi = (lo && (~ varying), varying)
   where
   varying = bitsBelow (lo ^ hi)
 
+// Like knownBitsOfInterval but for the image of [lo, hi] under
+// reduction mod 2^n. Three cases:
+//
+//   * the interval is at least 2^n wide -- every residue is reached, so
+//     no bits are determined;
+//   * the interval fits in one modulus -- use knownBitsOfInterval on
+//     the wrapped bounds directly;
+//   * the interval crosses one modulus boundary -- analyze each half
+//     and join (a bit is known only when both halves agree on it).
+//
+// The inputs are 2n-bit so they can represent the unbounded product of
+// two n-bit values.
+wrappedKnownBitsOfInterval : {n} (fin n, n >= 1) => [n + n] -> [n + n] -> ([n], [n])
+wrappedKnownBitsOfInterval lo hi =
+  if take`{n} (hi - lo) != 0
+    then (zero, ~ zero)
+    else if wLo <= wHi
+      then knownBitsOfInterval wLo wHi
+      else
+        // wraps: [wLo, ~zero] U [0, wHi]
+        (vA && (~ mAB), mAB)
+        where
+        (vA, mA) = knownBitsOfInterval wLo (~ zero)
+        (vB, mB) = knownBitsOfInterval 0 wHi
+        mAB = mA || mB || (vA ^ vB)
+  where
+  wLo = drop`{n} lo
+  wHi = drop`{n} hi
+
 // Fast multiply via interval and trailing-zero analysis.
 //
-// The result has at least ctzA + ctzB trailing zero bits, where ctzA
-// is ctz(av | am) and similarly for B. Above that, known leading bits
-// are derived from the arithmetic interval [aMin*bMin, aMax*bMax] when
-// that interval fits in n bits; otherwise the high bits wrap and are
-// unconstrained. This captures both leading 0s (small upper bound) and
-// leading 1s (large lower bound).
+// The result has:
+//
+//   * at least ctzA + ctzB trailing zero bits, where ctzA is the
+//     longest prefix of low bits that are known-zero in a (i.e. both
+//     av and am have that bit clear), and similarly for ctzB; and
+//   * known bits derived from the arithmetic interval
+//     [aMin*bMin, aMax*bMax] reduced mod 2^n
+//     (see wrappedKnownBitsOfInterval).
+//
+// Special case: when both operands are concrete singletons (mask == 0),
+// the result is the exact concrete product.
 mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 mul a b =
   if a.lomask == a.himask /\ b.lomask == b.himask
@@ -215,27 +253,26 @@ mul a b =
   (bv, bm) = toTnum b
   tz = ctz (av || am) + ctz (bv || bm)
   lowZeros = (1 << tz) - 1
-  // Compute aMin*bMin and aMax*bMax in 2n-bit width so we can tell when
-  // the product overflows n bits.
+  // Compute aMin*bMin and aMax*bMax in 2n-bit width so the product is
+  // exact (no overflow); wrappedKnownBitsOfInterval handles wrap-around.
   aMinExt = (zext av : [n + n])
   bMinExt = (zext bv : [n + n])
   aMaxExt = (zext (av || am) : [n + n])
   bMaxExt = (zext (bv || bm) : [n + n])
   prodMin = aMinExt * bMinExt
   prodMax = aMaxExt * bMaxExt
-  // The product overflows iff the high half of aMax*bMax is non-zero.
-  overflows = take`{n} prodMax != 0
-  (highValue, highUnknown) =
-    if overflows
-      then (zero, ~ zero)
-      else knownBitsOfInterval (drop`{n} prodMin) (drop`{n} prodMax)
+  (highValue, highUnknown) = wrappedKnownBitsOfInterval`{n} prodMin prodMax
 
 // Precise multiply via shift-and-add over the bits of a (BPF tnum_mul).
+// Strictly more precise than mul on its own, but quadratic in n.
+// Captures bit-level structure of the product that trailing-zero
+// analysis can't see.
 //
-// At bit position i, when av_i = 1 we add bm shifted to position i
-// (the bv contribution is already accounted for by the initial
-// av*bv product). When am_i = 1 (unknown bit), we add (bv|bm) shifted
-// to position i, since b might or might not contribute.
+// Accumulate contributions from each bit of a. A known-1 bit at
+// position i adds bm shifted to position i (b's value bits are already
+// included via the initial av*bv product). An unknown bit at position
+// i adds (bv|bm) shifted in, since the bit might or might not
+// contribute b.
 mulPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 mulPrecise a b = intersection schoolbook fast
   where
@@ -301,7 +338,12 @@ udiv a b =
 
 // Unsigned remainder. When the divisor is a singleton power of
 // two 2^k, the result is exact (the low k bits of the dividend);
-// otherwise, the result is bounded above by min(aMax, bMax-1).
+// otherwise, the result is bounded above by min(aMax, bMax-1) and
+// every bit above that is known zero.
+//
+// (The remainder's lower bound is trivially 0, so the same
+// interval-agreement analysis used in udiv would not yield additional
+// leading bits here.)
 urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 urem a b =
   if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
@@ -620,7 +662,7 @@ property a10 = correct_udiv`{8}
 property a11 = correct_urem`{8}
 property a12 = correct_sdiv`{8}
 property a13 = correct_srem`{8}
-property a14 = correct_mulPrecise`{8}
+property a14 = correct_mulPrecise`{8}  // NB: takes 60s
 property a15 = correct_udivPrecise`{8}
 property a16 = correct_uremPrecise`{8}
 
