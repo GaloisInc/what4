@@ -59,9 +59,9 @@ intLog2Ref = go 0
     | otherwise = go (k + 1) (m `shiftR` 1)
 {-# INLINABLE intLog2Ref #-}
 
--- | Reference implementation: Check if Integer is power of two
+-- | Reference implementation: Check if Integer is a positive power of two.
 isPow2IntegerRef :: Integer -> Bool
-isPow2IntegerRef x = x .&. (x-1) == 0
+isPow2IntegerRef x = x > 0 && x .&. (x - 1) == 0
 {-# INLINE isPow2IntegerRef #-}
 
 ------------------------------------------------------------------------
