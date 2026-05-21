@@ -248,6 +248,12 @@ popcount x = sum [ zero # [b] | b <- x ]
 ctz : {n} (fin n, n >= 1) => [n] -> [n]
 ctz x = if x == 0 then `n else popcount ((x && (- x)) - 1)
 
+// Count leading zeros, returning n for x == 0. Smearing the highest
+// set bit downward (bitsBelow) yields a 2^k-1 mask whose popcount is
+// the position of the highest set bit plus one; subtract from n.
+clz : {n} (fin n, n >= 1) => [n] -> [n]
+clz x = `n - popcount (bitsBelow x)
+
 // knownBitsOfInterval lo hi: given an arithmetic interval [lo, hi]
 // (with 0 <= lo <= hi), return (value, mask) in tnum form. Bits above
 // the highest disagreement between lo and hi are determined (recorded
@@ -551,8 +557,14 @@ sdiv a b = union (union r00 r11) (union r01 r10)
 
 // Signed remainder. Same shape as sdiv, but the result takes the
 // dividend's sign rather than the XOR of the input signs.
+//
+// After the union, refine using the LLVM KnownBits::srem sign/magnitude
+// bound: srem has the dividend's sign (or is zero), and |x %$ y| is
+// bounded by both |x| and |y|, so the result has at least
+// max(clz |x|, signBits y) identical sign bits. See @lemma_srem_*@
+// properties below.
 srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-srem a b = union (union r00 r01) (union r10 r11)
+srem a b = meet base (signMagnitudeBound a b base)
   where
   (aPos, aNeg) = splitSign a
   (bPos, bNeg) = splitSign b
@@ -560,6 +572,35 @@ srem a b = union (union r00 r01) (union r10 r11)
   r01 = urem aPos (bneg bNeg)                       // dividend +
   r10 = bneg (urem (bneg aNeg) bPos)                // dividend -
   r11 = bneg (urem (bneg aNeg) (bneg bNeg))         // dividend -
+  base = union (union r00 r01) (union r10 r11)
+
+// Sign/magnitude refinement for srem. If the dividend's sign is
+// known, the result's leading bits replicate that sign; how many
+// such bits is bounded by the magnitudes of both operands.
+signMagnitudeBound : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n -> Dom n
+signMagnitudeBound a b base =
+  if (signbit && a.himask) == 0
+    // dividend known non-negative: |x %$ y| <= min(|x|, |y|-1).
+    then { lomask = 0, himask = (~0 : [n]) >> leadZ }
+    else if (signbit && a.lomask) != 0 /\ ~ (mem base 0)
+      // dividend known negative and result definitely nonzero:
+      // result has at least `leading` leading 1 bits.
+      then { lomask = ~ ((~0 : [n]) >> leading), himask = ~0 }
+      else top
+  where
+  signbit = 1 << (`n - 1 : [n]) : [n]
+  // Minimum number of identical sign bits guaranteed in b's magnitude.
+  // Non-negative b: leading zeros come from himask (upper bound).
+  // Negative b: leading ones come from lomask (lower bound).
+  bSignBits =
+    if (signbit && b.himask) == 0
+      then clz b.himask
+      else if (signbit && b.lomask) != 0
+        then clz (~ b.lomask)
+        else 1
+  leadZ   = max (clz a.himask) bSignBits
+  leadO   = clz (~ a.lomask)
+  leading = max leadO bSignBits
 
 ////////////////////////////////////////////////////////////
 // Soundness properties
