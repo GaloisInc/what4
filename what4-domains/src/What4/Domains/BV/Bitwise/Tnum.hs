@@ -256,8 +256,12 @@ udiv bvmask (Tnum av am) (Tnum bv bm)
 -- @bvmask@.
 --
 -- When the divisor is a known power of two, the result is exact (a bitwise
--- mask); otherwise the result is bounded by leading-zero analysis on @min(aMax,
--- bMax-1)@.
+-- mask); otherwise the result is bounded by:
+--
+--   * leading-zero analysis on @min(aMax, bMax-1)@; and
+--   * low-bit preservation: if the divisor has @k@ known trailing zeros
+--     (i.e.\ is definitely divisible by @2^k@), then @x rem y@ preserves the
+--     low @k@ bits of @x@.
 urem ::
   Integer {- ^ bvmask -} ->
   Tnum {- ^ a -} ->
@@ -267,7 +271,18 @@ urem bvmask (Tnum av am) (Tnum bv bm)
   | bm == 0, isPow2Integer bv =
       let m = bv - 1
       in mk (av .&. m) (am .&. m)
-  | otherwise = mk 0 (bitsBelow rMax .&. bvmask)
+  | otherwise =
+      let highUnknown = bitsBelow rMax .&. bvmask
+          -- If the divisor has k known trailing zeros (both value and mask
+          -- bits are 0 in the low k positions), the remainder preserves the
+          -- dividend's low k bits exactly.
+          rhsTrailingZeros = countTrailingZerosOr0 (bv .|. bm)
+          lowMask = (bit rhsTrailingZeros - 1) .&. bvmask
+          lowValue = av .&. lowMask
+          lowUnknown = am .&. lowMask
+          resUnknown = (highUnknown .&. complement lowMask) .|. lowUnknown
+          resValue = lowValue .&. complement resUnknown
+      in mk (resValue .&. bvmask) (resUnknown .&. bvmask)
   where
   aMax = (av .|. am) .&. bvmask
   bMax = (bv .|. bm) .&. bvmask
