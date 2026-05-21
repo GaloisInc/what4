@@ -293,16 +293,19 @@ wrappedKnownBitsOfInterval lo hi =
   wLo = drop`{n} lo
   wHi = drop`{n} hi
 
-// Fast multiply via interval and trailing-zero analysis.
+// Fast multiply via interval, trailing-zero, and low-bit analysis.
 //
 // The result has:
 //
 //   * at least ctzA + ctzB trailing zero bits, where ctzA is the
 //     longest prefix of low bits that are known-zero in a (i.e. both
-//     av and am have that bit clear), and similarly for ctzB; and
+//     av and am have that bit clear), and similarly for ctzB;
 //   * known bits derived from the arithmetic interval
 //     [aMin*bMin, aMax*bMax] reduced mod 2^n
-//     (see wrappedKnownBitsOfInterval).
+//     (see wrappedKnownBitsOfInterval); and
+//   * exact low bits from multiplying the known-one values: the bottom
+//     min(trailBitsKnownA - ctzA, trailBitsKnownB - ctzB) + trailZ
+//     bits of aMin*bMin are exact (LLVM KnownBits::mul trick).
 //
 // Special case: when both operands are concrete singletons (mask == 0),
 // the result is the exact concrete product.
@@ -310,12 +313,13 @@ mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 mul a b =
   if a.lomask == a.himask /\ b.lomask == b.himask
     then singleton (a.lomask * b.lomask)
-    else { lomask = highValue, himask = highValue || (highUnknown && (~ lowZeros)) }
+    else { lomask = resValue, himask = resValue || resUnknown }
   where
   (av, am) = toTnum a
   (bv, bm) = toTnum b
-  tz = ctz (av || am) + ctz (bv || bm)
-  lowZeros = (1 << tz) - 1
+  ctzA = ctz (av || am)
+  ctzB = ctz (bv || bm)
+  trailZ = ctzA + ctzB
   // Compute aMin*bMin and aMax*bMax in 2n-bit width so the product is
   // exact (no overflow); wrappedKnownBitsOfInterval handles wrap-around.
   aMinExt = (zext av : [n + n])
@@ -325,6 +329,20 @@ mul a b =
   prodMin = aMinExt * bMinExt
   prodMax = aMaxExt * bMaxExt
   (highValue, highUnknown) = wrappedKnownBitsOfInterval`{n} prodMin prodMax
+  // Low-bit multiplication: consecutive known bits from LSB in each operand
+  trailBitsKnownA : [n]
+  trailBitsKnownA = if am == 0 then `n else ctz am
+  trailBitsKnownB : [n]
+  trailBitsKnownB = if bm == 0 then `n else ctz bm
+  smallestOperand = min (trailBitsKnownA - ctzA) (trailBitsKnownB - ctzB)
+  resultBitsKnown = min (smallestOperand + trailZ) `n
+  bottomKnown : [n]
+  bottomKnown = av * bv
+  lowKnownMask : [n]
+  lowKnownMask = (1 << resultBitsKnown) - 1
+  // Combine: unknown only where both sources are unknown
+  resUnknown = highUnknown && (~ lowKnownMask)
+  resValue = (highValue || (bottomKnown && lowKnownMask)) && (~ resUnknown)
 
 // Precise multiply via shift-and-add over the bits of a (BPF tnum_mul).
 // Strictly more precise than mul on its own, but quadratic in n.

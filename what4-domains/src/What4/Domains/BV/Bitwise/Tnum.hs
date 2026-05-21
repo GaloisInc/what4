@@ -100,13 +100,13 @@ mul ::
   Tnum
 mul bvmask (Tnum av am) (Tnum bv bm)
   | am == 0, bm == 0 = mk ((av * bv) .&. bvmask) 0
-  | otherwise = mk (highValue .&. bvmask) (highUnknown .&. complement lowZeros .&. bvmask)
+  | otherwise = mk (resValue .&. bvmask) (resUnknown .&. bvmask)
   where
   -- Trailing-zero analysis: ctz(value | mask) is the lowest bit that is not
   -- known-zero in each operand.
   ctzA = countTrailingZerosOr0 (av .|. am)
   ctzB = countTrailingZerosOr0 (bv .|. bm)
-  lowZeros = (bit (ctzA + ctzB) - 1) .&. bvmask
+  trailZ = ctzA + ctzB
   -- Interval analysis: the product lies in [aMin*bMin, aMax*bMax] (computed
   -- in unbounded Integer). 'wrappedKnownBitsOfInterval' reduces this modulo
   -- @bvmask+1@ and extracts known bits whether or not the interval crosses a
@@ -114,6 +114,21 @@ mul bvmask (Tnum av am) (Tnum bv bm)
   prodMin = av * bv
   prodMax = (av .|. am) * (bv .|. bm)
   (highValue, highUnknown) = wrappedKnownBitsOfInterval bvmask prodMin prodMax
+  -- Low-bit multiplication (LLVM KnownBits::mul trick): the number of
+  -- consecutive known low bits in each operand (after removing trailing zeros)
+  -- determines how many low bits of the product are exactly computable from
+  -- the product of the known-one values alone.
+  w = popCount bvmask
+  trailBitsKnownA = if am == 0 then w else countTrailingZerosOr0 am
+  trailBitsKnownB = if bm == 0 then w else countTrailingZerosOr0 bm
+  smallestOperand = min (trailBitsKnownA - ctzA) (trailBitsKnownB - ctzB)
+  resultBitsKnown = min (smallestOperand + trailZ) w
+  bottomKnown = prodMin  -- av * bv
+  lowKnownMask = (bit resultBitsKnown - 1) .&. bvmask
+  -- Combine interval analysis with low-bit knowledge via intersection:
+  -- unknown only where BOTH are unknown; value is the OR of both known values.
+  resUnknown = highUnknown .&. complement lowKnownMask
+  resValue = (highValue .|. (bottomKnown .&. lowKnownMask)) .&. complement resUnknown
 {-# INLINE mul #-}
 
 -- | /O(w)/. @knownBitsOfInterval lo hi@ analyzes the arithmetic interval @[lo, hi]@
