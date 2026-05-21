@@ -1006,8 +1006,14 @@ srem w a b = meet base signMagnitudeBound
   flipByDividend SNeg _ d = negate d
   flipByDividend SNonneg _ d = d
   -- Sign/magnitude refinement (LLVM KnownBits::srem approach):
-  -- The srem result is bounded in magnitude by both |dividend| and |divisor|-1.
-  -- This translates to known leading zeros/ones.
+  -- (1) srem has the sign of the dividend (or is zero):
+  --     x >= 0  ==>  x %$ y >= 0           (lemma_srem_nonneg_leading_zeros)
+  --     x <  0  ==>  x %$ y <= 0           (lemma_srem_neg_sign)
+  -- (2) |x %$ y| < |y|, so if |y| < 2^(w-k) then the result has at least
+  --     k sign bits (lemma_srem_magnitude_bound). Similarly |x %$ y| <= |x|
+  --     bounds the result by the dividend's magnitude.
+  -- We take the max of both bounds to get the tightest leading-bit constraint.
+  -- See @lemma_srem_*@ properties in bitsdomain.cry.
   mask = maxUnsigned w
   (alo, ahi) = bitbounds a
   (blo, bhi) = bitbounds b

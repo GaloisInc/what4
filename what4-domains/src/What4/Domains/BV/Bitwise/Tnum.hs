@@ -114,14 +114,19 @@ mul bvmask (Tnum av am) (Tnum bv bm)
   prodMin = av * bv
   prodMax = (av .|. am) * (bv .|. bm)
   (highValue, highUnknown) = wrappedKnownBitsOfInterval bvmask prodMin prodMax
-  -- Low-bit multiplication (LLVM KnownBits::mul trick): the number of
-  -- consecutive known low bits in each operand (after removing trailing zeros)
-  -- determines how many low bits of the product are exactly computable from
-  -- the product of the known-one values alone.
+  -- Low-bit multiplication (LLVM KnownBits::mul trick):
+  -- (x * y) mod 2^k depends only on (x mod 2^k) and (y mod 2^k) — carries
+  -- propagate upward, not downward. So if we know the low nA bits of A and
+  -- low nB bits of B, we know the low min(nA,nB) bits of A*B exactly, and
+  -- they equal (av * bv) mod 2^min(nA,nB) since the unknown bits are all
+  -- above those positions. Combined with trailing zeros: resultBitsKnown =
+  -- min(nA,nB) + ctzA + ctzB. See @lemma_mul_low_bits@ in bitsdomain.cry.
   w = popCount bvmask
   trailBitsKnownA = if am == 0 then w else countTrailingZerosOr0 am
   trailBitsKnownB = if bm == 0 then w else countTrailingZerosOr0 bm
-  smallestOperand = min (trailBitsKnownA - ctzA) (trailBitsKnownB - ctzB)
+  smallestOperand =
+    X.assert (trailBitsKnownA >= ctzA && trailBitsKnownB >= ctzB) $
+    min (trailBitsKnownA - ctzA) (trailBitsKnownB - ctzB)
   resultBitsKnown = min (smallestOperand + trailZ) w
   bottomKnown = prodMin  -- av * bv
   lowKnownMask = (bit resultBitsKnown - 1) .&. bvmask
@@ -289,8 +294,12 @@ urem bvmask (Tnum av am) (Tnum bv bm)
   | otherwise =
       let highUnknown = bitsBelow rMax .&. bvmask
           -- If the divisor has k known trailing zeros (both value and mask
-          -- bits are 0 in the low k positions), the remainder preserves the
-          -- dividend's low k bits exactly.
+          -- bits are 0 in the low k positions), every concrete divisor is
+          -- divisible by 2^k. Since (x rem y) differs from x by a multiple
+          -- of y, and every multiple of y is divisible by 2^k, we have
+          -- (x rem y) mod 2^k == x mod 2^k. So we copy the dividend's low
+          -- k bits (value and mask) into the result directly.
+          -- See @lemma_urem_low_bits@ in bitsdomain.cry.
           rhsTrailingZeros = countTrailingZerosOr0 (bv .|. bm)
           lowMask = (bit rhsTrailingZeros - 1) .&. bvmask
           lowValue = av .&. lowMask
