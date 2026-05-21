@@ -29,6 +29,8 @@
 * Add `fpNegZero`, `fpPosZero`, `fpRem`, `fpNe`, `fpNeIEEE`, `fpLeIEEE`,
   `fpGeIEEE`, `fpIsPos`, `fpCast`, `fpFromBV`, `fpFromSBV`, `fpToBV`, and
   `fpToSBV` to `What4.SFloat`.
+* Fix a bug in which `fpToRational` could return an invalid rational number
+  with a zero denominator.
 
 # 1.7.3 -- 2026-01-26
 

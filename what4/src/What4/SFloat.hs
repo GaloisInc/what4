@@ -514,11 +514,15 @@ fpToRational sym fp =
   do r    <- fpToReal sym fp
      x    <- freshConstant sym emptySymbol BaseIntegerRepr
      y    <- freshConstant sym emptySymbol BaseIntegerRepr
+     one  <- intLit sym 1
+     -- Avoid rationals with zero denominators, which are invalid.
+     yPos <- intLt sym one y
      num  <- integerToReal sym x
      den  <- integerToReal sym y
      res  <- realDiv sym num den
      same <- realEq sym r res
-     pure (same, x, y)
+     rel  <- andPred sym yPos same
+     pure (rel, x, y)
 
 -- | Change the precision of a floating point number (see 'floatCast').
 fpCast ::
