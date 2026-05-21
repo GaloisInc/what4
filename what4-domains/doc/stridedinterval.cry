@@ -1,0 +1,1536 @@
+/*
+
+This file contains a Cryptol implementation of the strided-interval
+abstract domain operations from
+What4.Domains.BV.StridedInterval in what4-domains.
+
+A strided interval at width n represents
+  { (base + i * stride) mod 2^n | 0 <= i <= range }.
+The empty set is encoded by `stride = 0`; non-empty SIs require `stride
+>= 1`, leaving that slot free for the bottom sentinel. Field names and
+the encoding match the Haskell module exactly.
+
+In addition to the algorithms themselves, this file also contains
+specifications of correctness for each of the operations. All of the
+correctness properties can be formally proven (each at some specific
+bit width) by loading this file in cryptol and entering ":prove".
+
+Stride-1 operations delegate to `arithdomain.cry` (imported as `A`); this
+mirrors how the Haskell module routes through `What4.Domains.BV.Arith` for
+the same paths.
+
+*/
+module stridedinterval where
+
+import arithdomain as A
+
+////////////////////////////////////////////////////////////
+// Library
+
+/** Greatest common divisor of two unsigned bitvectors. Iterates the
+Euclidean step `(a, b) ↦ (b, a mod b)` until `b` reaches 0; this
+terminates in at most 2n steps for n-bit inputs (Fibonacci bound). */
+gcd : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+gcd x y = (steps ! 0).0
+  where
+  step : ([n], [n]) -> ([n], [n])
+  step (a, b) = if b == 0 then (a, 0) else (b, a % b)
+  steps : [2*n]([n], [n])
+  steps = take`{2*n} (iterate step (x, y))
+
+/** True iff `x + y` overflows the unsigned [n] range. */
+overflow_add : {n} (fin n) => [n] -> [n] -> Bit
+overflow_add x y = carry x y
+
+/** True iff `x * y` overflows the unsigned [n] range. */
+overflow_mul : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+overflow_mul x y = take`{n} (zext`{2*n} x * zext y) != 0
+
+/** Least common multiple of two unsigned bitvectors. Returns `0` when
+either input is `0`. Computed via `(x * y) / gcd x y`; we widen to `2n`
+for the multiplication so it doesn't wrap, and conservatively return `0`
+(meaning "saturated") when the true `lcm` doesn't fit in `[n]`. */
+lcm : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+lcm x y =
+  if x == 0 \/ y == 0 then 0
+  else if hi == 0 then lo else 0
+  where
+  prod : [2*n]
+  prod = zext x * zext y
+  q    = prod / zext (gcd x y)
+  hi   = take`{n} q
+  lo   = drop`{n} q
+
+////////////////////////////////////////////////////////////
+// Diophantine helpers
+//
+// `glb` (greatest lower bound) needs to solve
+//
+//     a * x - b * y = c
+//
+// for nonnegative bounded integers x, y. We work in `Integer` so that
+// intermediate Bezout coefficients can grow without overflow, mirroring
+// the Haskell implementation in What4.Domains.BV.StridedInterval.Internal,
+// which uses unbounded `Integer` arithmetic.
+
+/** Extended Euclidean algorithm. Returns `(g, n', m')` with `g >= 0`
+and `n' * a + m' * b = g`. When `a` and `b` are both nonzero,
+`g = gcd a b`. We unfold a finite number of Euclidean steps; for any
+inputs with `gcd <= 2^k`, `4k + 4` iterations is safely sufficient,
+matching the Fibonacci-style bound on the iteration count. The
+`{steps}` type parameter selects this iteration cap; callers should
+pick `steps` large enough for the scale of inputs they're proving
+about (we use `4*n + 4` for the bit-width-`n` proofs). */
+eGCD :
+  {steps} (fin steps) =>
+  Integer -> Integer -> (Integer, Integer, Integer)
+eGCD a0 b0 = if final.0 < 0 then (- final.0, - final.1, - final.2) else final
+  where
+  step (a, b, x0, x1, y0, y1) =
+    if b == 0 then (a, 0, x0, x1, y0, y1)
+    // Haskell uses `quot`/`rem` (truncated toward zero), which is what
+    // `sIntegerQuot`/`sIntegerRem` model; built-in `/` and `%` on
+    // Integer are floor div / floor mod and would diverge for negative
+    // operands.
+    else (b, sIntegerRem a b,
+          x1, x0 - sIntegerQuot a b * x1,
+          y1, y0 - sIntegerQuot a b * y1)
+  iters : [steps](Integer, Integer, Integer, Integer, Integer, Integer)
+  iters = take`{steps} (iterate step (a0, b0, 1, 0, 0, 1))
+  finalState  = iters ! 0
+  final = (finalState.0, finalState.2, finalState.4)
+
+/** Signed quotient on `Integer` (Haskell `quot`): truncated toward zero. */
+sIntegerQuot : Integer -> Integer -> Integer
+sIntegerQuot x y =
+  if (x < 0) ^ (y < 0) then - (sIntegerAbs x / sIntegerAbs y)
+                       else sIntegerAbs x / sIntegerAbs y
+
+sIntegerAbs : Integer -> Integer
+sIntegerAbs v = if v < 0 then -v else v
+
+/** Signed remainder on `Integer` (Haskell `rem`): sign matches dividend. */
+sIntegerRem : Integer -> Integer -> Integer
+sIntegerRem x y = x - sIntegerQuot x y * y
+
+/** `ceiling(x / y)` on `Integer`. Requires `y > 0`. Mirrors the Haskell
+`ceilDivPos x y = negate (negate x \`div\` y)` where `div` is floor
+division on `Integer`. */
+ceilDivPos : Integer -> Integer -> Integer
+ceilDivPos x y = - integerFloorDiv (-x) y
+
+/** `floor(x / y)` on `Integer`. Requires `y > 0`. Mirrors the Haskell
+`floorDivPos x y = x \`div\` y`. */
+floorDivPos : Integer -> Integer -> Integer
+floorDivPos x y = integerFloorDiv x y
+
+/** Floor division on `Integer` (mirrors Haskell `div`): rounds toward
+negative infinity. */
+integerFloorDiv : Integer -> Integer -> Integer
+integerFloorDiv u v =
+  if (u < 0) ^ (v < 0) /\ sIntegerRem u v != 0
+    then sIntegerQuot u v - 1
+    else sIntegerQuot u v
+
+/** Solve `a * x - b * y = c` for nonnegative `x`, `y` with `x <= a_max`
+and `y <= b_max`. Assumes `a > 0`, `b > 0`, `a_max >= 0`, `b_max >= 0`,
+and `c /= 0`. Returns `(False, _, _)` when no such pair exists. Works
+on `Integer` to mirror the unbounded-integer arithmetic of the Haskell
+counterpart. The `{steps}` parameter caps the eGCD iteration count. */
+solveLinearDiophantine :
+  {steps} (fin steps) =>
+  Integer -> Integer -> Integer -> Integer -> Integer ->
+  (Bit, Integer, Integer)
+solveLinearDiophantine a b c a_max b_max =
+  if cr != 0 then (False, 0, 0)
+  else if t <= t_upper then (True, n_co * cq + bq * t, m_co * cq + aq * t)
+  else (False, 0, 0)
+  where
+  egcd_res = eGCD`{steps} a (-b)
+  g    = egcd_res.0
+  n_co = egcd_res.1
+  m_co = egcd_res.2
+  cq   = sIntegerQuot c g
+  cr   = sIntegerRem c g
+  aq   = sIntegerQuot a g
+  bq   = sIntegerQuot b g
+  nc   = n_co * c
+  mc   = m_co * c
+  t       = maxI (ceilDivPos (-nc) b) (ceilDivPos (-mc) a)
+  t_upper = minI (floorDivPos (a_max * g - nc) b)
+                 (floorDivPos (b_max * g - mc) a)
+  // Local max/min on Integer (the Cryptol prelude versions are over
+  // ordered bitvectors and don't fire here without help).
+  maxI u v = if u < v then v else u
+  minI u v = if u < v then u else v
+
+////////////////////////////////////////////////////////////
+// Domain type
+//
+// Field names and encoding match the Haskell record exactly. Empty SIs
+// are represented by `stride = 0`; the `stride >= 1` invariant on
+// non-empty SIs leaves that slot free for the bottom sentinel. The
+// canonical bottom shape pins `base = 0, siRange = 0, stride = 0`.
+
+/** Strided-interval domain element at width n.
+
+When `stride >= 1` the represented set is
+@{ (base + i * stride) mod 2^n | 0 <= i <= siRange }@. When `stride = 0`
+the domain is the empty set; `base` and `siRange` are pinned to `0`
+(see `proper`). */
+type StridedInterval n =
+  { base : [n], siRange : [n], stride : [n] }
+
+/** Largest element of a non-empty SI, before the mod-2^n reduction.
+Undefined for empty. */
+intervalEnd : {n} (fin n, n >= 1) => StridedInterval n -> [n]
+intervalEnd a = a.base + a.siRange * a.stride
+
+/** Cardinality of the SI (0 when empty). Mirrors Haskell `size`. */
+size : {n} (fin n, n >= 1) => StridedInterval n -> [n]
+size a = if isBottom a then 0 else a.siRange + 1
+
+isSingleton : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+isSingleton a = ~ isBottom a /\ a.siRange == 0
+
+/** True iff `a` is the full domain @[0, 2^n - 1]@ (canonical `top`). */
+isAny : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+isAny a = a == (top : StridedInterval n)
+
+/** Defining membership: `x` is in the SI iff `x = (base + i * stride) mod 2^n`
+for some `0 <= i <= siRange`.  We compute this without overflow by working
+modulo 2^n and then dividing by stride. */
+member : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+member a x =
+  ~ isBottom a /\ (s == 1 \/ d % s == 0) /\ d / s <= a.siRange
+  where
+  d = x - a.base  // Already mod 2^n thanks to bitvector arithmetic.
+  // For non-bottom proper SIs the stride is >= 1; the guard is a no-op
+  // there, but keeps the division well-defined when this is called on
+  // a bottom SI before the `~ isBottom` check short-circuits.
+  s = if a.stride == 0 then 1 else a.stride
+
+/** Proper-and-member. Mirrors Haskell `pmember`. */
+pmember : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+pmember a x = proper a /\ member a x
+
+/** Width invariant: every public SI is bottom (in canonical form) or
+non-empty with stride >= 1 and `(siRange + 1) * stride <= 2^n`.
+Mirrors `What4.Domains.BV.StridedInterval.proper`. */
+proper : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+proper a =
+  if isBottom a
+    then a.base == 0 /\ a.siRange == 0
+    else a.stride >= 1 /\
+         ~ (overflow_mul a.siRange a.stride) /\
+         ~ overflowsModulus /\
+         ~ uncanonical_full /\
+         ~ uncanonical_singleton
+  where
+  // (siRange + 1) * stride <= 2^n: same condition the Haskell uses,
+  // expressed without subtraction-induced wrap.
+  prod = zext`{2*n} a.siRange * zext a.stride + zext a.stride
+  overflowsModulus = prod > zext (~0 : [n]) + 1
+  // Canonicalize "full set" shapes to `top` (base = 0).
+  uncanonical_full = a.siRange == ~0 /\ a.stride == 1 /\ a.base != 0
+  // Canonicalize singletons to stride 1 (the constructor's choice).
+  uncanonical_singleton = a.siRange == 0 /\ a.stride != 1
+
+////////////////////////////////////////////////////////////
+// Constructors
+
+/** Singleton interval at value `v`. */
+singleton : {n} (fin n, n >= 1) => [n] -> StridedInterval n
+singleton v = { base = v, siRange = 0, stride = 1 }
+
+/** Contiguous (stride-1) interval of width covering `[lo, hi]` (mod 2^n).
+Mirrors Haskell `range`, which delegates to Arith's `range`. */
+range : {n} (fin n, n >= 1) => [n] -> [n] -> StridedInterval n
+range lo hi = fromArith (A::range lo hi)
+
+/** Construct an SI starting at `lo` with stride `s` whose largest
+element is at most `hi`. When `roundUp` is true the upper bound is
+rounded up to `lo + r * s`; otherwise it's rounded down. Returns `bottom`
+when `hi < lo`. Stride 0 (or range 0) collapses to a singleton. Mirrors
+Haskell `mkStridedInterval`. */
+mkStridedInterval :
+  {n} (fin n, n >= 1) => Bit -> [n] -> [n] -> [n] -> StridedInterval n
+mkStridedInterval roundUp lo hi s =
+  if hi < lo then bottom
+  else if s == 0 then singleton lo
+  else if r == 0 then singleton lo
+  else normalize { base = lo, siRange = r, stride = s }
+  where
+  // Round-up the difference in [n+1] to avoid `+(s-1)` overflowing.
+  rWide : [n+1]
+  rWide = if roundUp then (zext (hi - lo) + zext (s - 1)) / zext s
+                     else zext (hi - lo) / zext s
+  r = drop`{1} rWide
+
+/** Force a possibly-out-of-range SI into proper form. Mirrors Haskell
+`normalize`: drops to a stride-1 contiguous cover when the size cap is
+exceeded but the residues fit in one cycle; otherwise clamps to `top`.
+Singletons are canonicalized to stride 1. The dewrap step rotates one-
+step-wrap APs to a non-wrapping representation when residues form an
+AP starting at 0. */
+normalize : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n
+normalize a =
+  if isBottom a then bottom
+  else if a.siRange == 0 then singleton a.base
+  else if fits then
+    if a.siRange == ~0 /\ a.stride == 1
+      then top
+      else dewrap a  // base already mod 2^n by bitvector arithmetic
+  else if spanWide >= mWide - 1 then top
+  else { base = a.base
+       , siRange = a.siRange * a.stride
+       , stride = 1 }
+  where
+  prod : [2*n]
+  prod = zext a.siRange * zext a.stride + zext a.stride
+  mWide : [2*n]
+  mWide = (zext (~0 : [n]) : [2*n]) + 1
+  spanWide : [2*n]
+  spanWide = zext a.siRange * zext a.stride
+  fits = prod <= mWide
+
+/** Internal: rotate a one-step-wrap SI to a non-wrapping
+representation. Applies when `(range+1)*stride == 2^n` (so the last
+residue wraps and the wrap distance equals the stride). The new base
+is `(base - stride) mod 2^n`, which is the smallest residue in the
+sorted-AP form. */
+dewrap : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n
+dewrap a =
+  if isFullCycle /\ a.base >= a.stride
+    then { base = a.base - a.stride, siRange = a.siRange, stride = a.stride }
+    else a
+  where
+  // (range+1) * stride == 2^n, computed in [n+1] to avoid overflow.
+  prod : [n+1]
+  prod = (zext a.siRange + 1) * zext a.stride
+  m_n1 : [n+1]
+  m_n1 = (zext (~0 : [n]) : [n+1]) + 1
+  isFullCycle = prod == m_n1
+
+////////////////////////////////////////////////////////////
+// Conversion to/from Arith
+
+/** Project a stride-1 SI into an Arith domain /exactly/. Mirrors
+Haskell `asArith`: returns `(False, _)` for bottom or stride > 1
+(which Arith cannot represent precisely). */
+asArith : {n} (fin n, n >= 1) => StridedInterval n -> (Bit, A::Dom n)
+asArith a =
+  if isBottom a then (False, A::top)
+  else if a.stride == 1 then (True, A::interval a.base a.siRange)
+  else (False, A::top)
+
+/** Project /any/ SI into an Arith domain by coarsening to its
+contiguous unsigned cover. Empty SIs map to Arith bottom; for stride > 1
+the result is a sound over-approximation. Mirrors Haskell `toArith`. */
+toArith : {n} (fin n, n >= 1) => StridedInterval n -> A::Dom n
+toArith a =
+  if isBottom a then A::bottom
+  // Stride-1 case is exact.
+  else if a.stride == 1 then A::interval a.base a.siRange
+  // For stride > 1 use the contiguous cover. Wrapping is preserved
+  // because Arith's interval natively supports it (sz can be such
+  // that lo + sz wraps).
+  else A::interval a.base (a.siRange * a.stride)
+
+/** Lift an Arith domain to a stride-1 SI. Mirrors Haskell `fromArith`:
+canonicalizes the full-set Arith shape to `top` and bottom to `bottom`. */
+fromArith : {n} (fin n, n >= 1) => A::Dom n -> StridedInterval n
+fromArith d =
+  if d.isBot then bottom
+  else if d.sz == ~0 then top
+  else { base = d.lo, siRange = d.sz, stride = 1 }
+
+////////////////////////////////////////////////////////////
+// Lattice operations
+
+/** Top element of the lattice: the full domain. */
+top : {n} (fin n, n >= 1) => StridedInterval n
+top = { base = 0, siRange = ~0, stride = 1 }
+
+/** Bottom element of the lattice: the empty set. */
+bottom : {n} (fin n, n >= 1) => StridedInterval n
+bottom = { base = 0, siRange = 0, stride = 0 }
+
+/** True iff this domain has no members (i.e., is `bottom`). */
+isBottom : {n} (fin n) => StridedInterval n -> Bit
+isBottom a = a.stride == 0
+
+/** Lattice join (least upper bound). Mirrors Haskell `join`: picks
+representatives whose midpoints are within `2^(n-1)` of each other
+(lifting one operand by `2^n` when not), then takes the gcd-of-strides
+cover. The lifting picks the wrap-shorter of the two arcs, matching
+`A::join`'s centroid trick. */
+join : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+join a b =
+  if isBottom a then b
+  else if isBottom b then a
+  // Stride-1 fast path: route through Arith for the canonical shape.
+  else if t1.0 /\ t2.0 then fromArith (A::join t1.1 t2.1)
+  else if r == 0 then singleton (drop`{2} lower)
+  // If `r >= 2^n` the result spans more than one full cycle and won't
+  // fit at width `[n]` — fall back to `top`. (Haskell's unbounded
+  // Integer arithmetic in `mkStridedInterval` then `normalize` reaches
+  // the same result; we have to detect the overflow explicitly.)
+  else if r >= m_n2 then top
+  else normalize { base = drop`{2} lower
+                 , siRange = drop`{2} r
+                 , stride = drop`{2} s }
+  where
+  t1 = asArith a
+  t2 = asArith b
+  // Twice each interval's midpoint, in the [n+2] representation. We
+  // need [n+2] (not [n+1]) because `ac = 2*base + range*stride` can
+  // reach `3*2^n - 3` for non-trivial inputs, and the comparisons
+  // `ac + (m-1) < bc` need an extra bit of headroom on top.
+  acBase : [n+2]
+  acBase = 2 * zext a.base + zext (a.siRange * a.stride)
+  bcBase : [n+2]
+  bcBase = 2 * zext b.base + zext (b.siRange * b.stride)
+  // m_n2 = 2^n, expressed in the [n+2] type.
+  m_n2 : [n+2]
+  m_n2 = zext (~0 : [n]) + 1
+  b1 : [n+2]
+  b1 = if acBase + (m_n2 - 1) < bcBase then zext a.base + m_n2 else zext a.base
+  b2 : [n+2]
+  b2 = if bcBase + (m_n2 - 1) < acBase then zext b.base + m_n2 else zext b.base
+  lower : [n+2]
+  lower = min b1 b2
+  upper : [n+2]
+  upper = max (b1 + zext (a.siRange * a.stride))
+              (b2 + zext (b.siRange * b.stride))
+  // Singleton inputs have stride = 1 by canonicalization, but that
+  // stride is meaningless (one-element set). Drop it from the gcd so
+  // the gap stride can be inherited.
+  s1 : [n]
+  s1 = if a.siRange == 0 then 0 else a.stride
+  s2 : [n]
+  s2 = if b.siRange == 0 then 0 else b.stride
+  s : [n+2]
+  s = gcd (zext (gcd s1 s2)) (max b1 b2 - lower)
+  // Round-up division: r = ceil((upper - lower) / s). All in [n+2] to
+  // match the widened centroid arithmetic above.
+  r : [n+2]
+  r = if s == 0 then 0 else (upper - lower + (s - 1)) / s
+
+/** Lattice meet: a sound /over/-approximation of intersection. For any
+concrete value `x`, if `x` is in both `a` and `b`, then `x` is in
+`meet a b`. When `a ⊑ b` or `b ⊑ a` the result is the smaller operand
+exactly (preserving stride); otherwise routes through `A::meet` on the
+contiguous Arith covers. Distinct from `glb`, which is an
+/under/-approximation. */
+meet : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+meet a b =
+  if isBottom a then a
+  else if isBottom b then b
+  else if isAny a then b
+  else if isAny b then a
+  else if a == b then a
+  else if leq a b then a
+  else if leq b a then b
+  else fromArith (A::meet (toArith a) (toArith b))
+
+/** Lattice ordering: every element of `a` is also in `b`. Sound under-
+approximation of subset; may report `False` for proper subsets that hold
+by wrap. Mirrors the Haskell `leq`. */
+leq : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+leq a b =
+  if isBottom a then True
+  else if isBottom b then False
+  else if isAny b then True
+  else if isSingleton a then member b a.base
+  else if a.stride == 1 /\ b.stride == 1 then A::leq (toCoverA a) (toCoverA b)
+  else if b.stride > gcd a.stride b.stride then False
+  else if ~ member b a.base then False
+  // Otherwise check every element. Bounded by `siRange + 1` from the
+  // size cap; for proof purposes we Cryptol-fold the membership over
+  // `[0..2^n)` and short-circuit at `siRange`.
+  else allMembers
+  where
+  toCoverA s = A::interval s.base s.siRange
+  // For 0 <= i <= a.siRange, check that `a.base + i * a.stride` is in b.
+  // We enumerate all 2^n indices (the full range of [n]) and
+  // short-circuit on the siRange bound.
+  indices : [2^^n][n]
+  indices = take`{2^^n} [0 ...]
+  allMembers = and [ ~ (i <= a.siRange) \/ member b (a.base + i * a.stride)
+                   | i <- indices
+                   ]
+
+/** `join` specialized to a singleton. Mirrors Haskell `unionSingleton`. */
+unionSingleton : {n} (fin n, n >= 1) => [n] -> StridedInterval n -> StridedInterval n
+unionSingleton v a = join (singleton v) a
+
+/** Greatest lower bound: a strided interval that under-approximates the
+true intersection. Exact when one operand is a singleton. Mirrors Haskell
+`glb`, including the size-cap clamp on `r` to keep the result a sound
+under-approximation. */
+glb : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+glb a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton a then (if member b a.base then a else bottom)
+  else if isSingleton b then (if member a b.base then b else bottom)
+  else if a.base == b.base then build a.base
+  else if ok /\ fitsBase then build newbase
+  else bottom
+  where
+  upper = min_unsigned (intervalEnd a) (intervalEnd b)
+  s_lcm = lcm a.stride b.stride
+  // General case: solve the Diophantine equation in `Integer` to mirror
+  // the unbounded-integer Haskell helper. The eGCD iteration cap
+  // `4*n + 4` matches the Fibonacci bound on Euclidean steps for inputs
+  // bounded by `2^n`.
+  c        : Integer
+  c        = toInteger b.base - toInteger a.base
+  sld_res  = solveLinearDiophantine`{4*n + 4}
+               (toInteger a.stride) (toInteger b.stride)
+               c (toInteger a.siRange) (toInteger b.siRange)
+  ok       = sld_res.0
+  n_step   = sld_res.1
+  newbaseInt : Integer
+  newbaseInt = toInteger a.base + n_step * toInteger a.stride
+  fitsBase = 0 <= newbaseInt /\ newbaseInt <= toInteger (~0 : [n])
+  newbase  = fromInteger newbaseInt : [n]
+  // Cap `r` at the size-cap so `mkStridedInterval` below doesn't widen
+  // to `any` (which is *not* a sound under-approximation of glb).
+  build lo =
+    if s_lcm == 0 then bottom
+    else if upper < lo then bottom
+    else mkStridedInterval False lo (lo + r lo * s_lcm) s_lcm
+
+  m : [2*n]
+  m = (zext (~0 : [n]) : [2*n]) + 1
+  rFromUpper lo = (upper - lo) / s_lcm
+  rFromCap : [n]
+  rFromCap = drop`{n} ((m / zext s_lcm) - 1)
+  r lo = if rFromUpper lo <= rFromCap then rFromUpper lo else rFromCap
+
+  min_unsigned u v = if u <= v then u else v
+
+////////////////////////////////////////////////////////////
+// Arithmetic
+//
+// All arithmetic is modulo 2^n. Stride-1 paths delegate to `arithdomain`
+// to mirror the Haskell module's routing through Arith.
+
+/** Addition modulo 2^n. Mirrors Haskell `add`. The combined range
+`r = range_a*(stride_a/s) + range_b*(stride_b/s)` can exceed `2^n`
+(producing an oversized SI that `normalize` then clamps to the cover);
+we compute it in `[2*n]` so the intermediate doesn't wrap before
+`normalize` sees it. */
+add : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+add a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton a then normalize { base = a.base + b.base
+                                       , siRange = b.siRange, stride = b.stride }
+  else if isSingleton b then normalize { base = a.base + b.base
+                                       , siRange = a.siRange, stride = a.stride }
+  // Stride-aware integer-AP cover anchored at `base a + base b` with
+  // stride `gcd(a.stride, b.stride)`. The cover spans `r1*s1 + r2*s2`
+  // integers — the same total span as the Arith cover — but sparser
+  // by a factor of `s`, so it's always at least as precise as routing
+  // through `A.add` on the contiguous covers. When the strided shape
+  // exceeds the size cap, `normalize` falls back to a stride-1 cover
+  // with the same span, which is exactly the Arith cover. Mirrors
+  // Haskell `add`.
+  else if rWide >= mWide then top
+  else normalize { base = a.base + b.base
+                 , siRange = drop`{n} rWide, stride = s }
+  where
+  s = gcd a.stride b.stride
+  rWide : [2*n]
+  rWide = (zext a.siRange * zext (a.stride / s)) +
+          (zext b.siRange * zext (b.stride / s))
+  mWide : [2*n]
+  mWide = (zext (~0 : [n]) : [2*n]) + 1
+
+/** Add-with-carry. `(False, _)` is `Nothing` (unknown carry-in, widens
+range by 1); `(True, b)` is `Just b`. Mirrors Haskell `adc`. */
+adc :
+  {n} (fin n, n >= 1) =>
+  StridedInterval n -> StridedInterval n -> (Bit, Bit) -> StridedInterval n
+adc a b cIn =
+  if isBottom a \/ isBottom b then bottom
+  else if cIn.0 then add a (add b (singleton cBit))
+  else join (adc a b (True, False)) (adc a b (True, True))
+  where
+  cBit : [n]
+  cBit = if cIn.1 then 1 else 0
+
+/** Negation modulo 2^n. Mirrors Haskell `negate`. */
+negate : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n
+negate a =
+  if isBottom a then bottom
+  else normalize { base = - intervalEnd a
+                 , siRange = a.siRange, stride = a.stride }
+
+/** Subtraction modulo 2^n. Mirrors Haskell `sub`.
+
+Anchors at `a.base - b.base - b.range*b.stride` (the smallest corner
+of the difference rectangle - the most negative `a_i - b_j`) and uses
+`gcd(a.stride, b.stride)` as the new stride. Going native rather than
+`add a (negate b)` matters because `negate` canonicalizes via
+`normalize`'s `dewrap` step, which dewraps `(range+1)*stride == 2^n`
+shapes to a non-wrapping anchor; that loses the rotation that
+`A::negate` picks for the contiguous cover. */
+sub : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+sub a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton b then normalize { base = a.base - b.base
+                                       , siRange = a.siRange, stride = a.stride }
+  else if rWide >= mWide then top
+  else normalize { base = a.base - b.base - b.siRange * b.stride
+                 , siRange = drop`{n} rWide, stride = s }
+  where
+  s = gcd a.stride b.stride
+  rWide : [2*n]
+  rWide = (zext a.siRange * zext (a.stride / s)) +
+          (zext b.siRange * zext (b.stride / s))
+  mWide : [2*n]
+  mWide = (zext (~0 : [n]) : [2*n]) + 1
+
+/** Multiply every element by a scalar `k` modulo 2^n. Mirrors Haskell
+`scale`. The Cryptol `*` is already mod-2^n, so we don't need separate
+overflow checks — `normalize` clamps to `any` when the size cap is
+exceeded. */
+scale : {n} (fin n, n >= 1) => [n] -> StridedInterval n -> StridedInterval n
+scale k a =
+  if isBottom a then bottom
+  else if k == 0 then singleton 0
+  // When `stride * k` is a multiple of `2^n` (i.e. wraps to 0), every
+  // element scales to the same residue `base * k`; the result is a
+  // singleton. Detected via `[2*n]` widening so we don't lose the
+  // wrap.
+  else if drop`{n} sWide == 0 then singleton (a.base * k)
+  else normalize { base = a.base * k
+                 , siRange = a.siRange, stride = drop`{n} sWide }
+  where
+  sWide : [2*n]
+  sWide = zext a.stride * zext k
+
+/** Multiplication modulo 2^n. Uses the Haskell `mul`'s corner-product
+method on signed representatives: the product @(b1 + i*s1)(b2 + j*s2)@
+is bilinear in @(i, j)@ over the rectangle @[0,r1] x [0,r2]@, so its
+integer-valued extrema lie at the four corners. The result SI covers
+@[min_corner, max_corner]@ with stride = gcd of the three cross-term
+step strides. Intermediate products use wide signed bitvectors
+(@[3*n+2]@) to avoid modular overflow. */
+mul : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+mul a b =
+  if isBottom a \/ isBottom b then bottom
+  else if s > mask_w then top
+  else normalize { base = drop`{2*n+2} baseMod
+                 , siRange = if s == 0 then 0 else drop`{2*n+2} rW
+                 , stride = if s == 0 then 1 else drop`{2*n+2} s }
+  where
+  type W = 3*n + 2
+  m_w : [W]
+  m_w = (zext (~0 : [n]) : [W]) + 1
+  mask_w : [W]
+  mask_w = zext (~0 : [n])
+  smodW : [W] -> [W]
+  smodW x = if x <$ 0 then (x + k * m_w) else x - (x / m_w) * m_w
+    where k = (-(x + 1)) / m_w + 1
+  lift : StridedInterval n -> [W]
+  lift si =
+    if 2 * (zext si.base : [W]) + (zext si.siRange : [W]) * (zext si.stride : [W]) > mask_w
+      then (zext si.base : [W]) - m_w
+      else (zext si.base : [W])
+  lo1 : [W]
+  lo1 = lift a
+  lo2 : [W]
+  lo2 = lift b
+  hi1 : [W]
+  hi1 = lo1 + (zext a.siRange : [W]) * (zext a.stride : [W])
+  hi2 : [W]
+  hi2 = lo2 + (zext b.siRange : [W]) * (zext b.stride : [W])
+  ll : [W]
+  ll = lo1 * lo2
+  lh : [W]
+  lh = lo1 * hi2
+  hl : [W]
+  hl = hi1 * lo2
+  hh : [W]
+  hh = hi1 * hi2
+  sminW : [W] -> [W] -> [W]
+  sminW x y = if x <$ y then x else y
+  smaxW : [W] -> [W] -> [W]
+  smaxW x y = if x >$ y then x else y
+  cl : [W]
+  cl = sminW (sminW ll lh) (sminW hl hh)
+  ch : [W]
+  ch = smaxW (smaxW ll lh) (smaxW hl hh)
+  absW : [W] -> [W]
+  absW x = if x <$ 0 then -x else x
+  step1 : [W]
+  step1 = if a.siRange == 0 then 0 else absW ((zext a.stride : [W]) * lo2)
+  step2 : [W]
+  step2 = if b.siRange == 0 then 0 else absW ((zext b.stride : [W]) * lo1)
+  step12 : [W]
+  step12 = if a.siRange == 0 \/ b.siRange == 0 then 0
+           else (zext a.stride : [W]) * (zext b.stride : [W])
+  sRaw : [W]
+  sRaw = gcd (gcd step1 step2) step12
+  s : [W]
+  s = if sRaw == 0 then 1 else sRaw
+  baseMod : [W]
+  baseMod = smodW cl
+  rW : [W]
+  rW = if s == 0 then 0
+       else if (ch - cl) / s > mask_w then mask_w
+       else (ch - cl) / s
+
+/** Bitwise complement modulo 2^n. Mirrors Haskell `not`. */
+bvNot : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n
+bvNot a =
+  if isBottom a then bottom
+  else normalize { base = ~0 - intervalEnd a
+                 , siRange = a.siRange, stride = a.stride }
+
+////////////////////////////////////////////////////////////
+// Routed-through-Arith ops
+//
+// SI has no precise refinement for these. The Haskell module routes
+// through Arith on stride-1 inputs and falls back to `any` otherwise;
+// we do the same.
+
+udiv : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+udiv a b =
+  if isBottom a \/ isBottom b then bottom
+  else fromArith (A::udiv (toArith a) (toArith b))
+
+urem : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+urem a b =
+  if isBottom a \/ isBottom b then bottom
+  else fromArith (A::urem (toArith a) (toArith b))
+
+sdiv : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+sdiv a b =
+  if isBottom a \/ isBottom b then bottom
+  else fromArith (A::sdiv (toArith a) (toArith b))
+
+srem : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+srem a b =
+  if isBottom a \/ isBottom b then bottom
+  else fromArith (A::srem (toArith a) (toArith b))
+
+/** Left shift. When the shift amount is a singleton `k`, scales by
+`2^k` (preserving stride structure); otherwise routes through `A::shl`. */
+shl : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+shl a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton b then
+    (if b.base >= `n then singleton 0
+     else scale (1 << b.base) a)
+  else fromArith (A::shl (toArith a) (toArith b))
+
+/** Logical right shift. When the shift amount is a singleton `k`,
+divides every element by `2^k` (preserving stride when the operand's
+stride is divisible by `2^k`); otherwise routes through `A::lshr`. */
+lshr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+lshr a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton b then
+    (if b.base >= `n then singleton 0
+     else lshrConst a b.base)
+  else fromArith (A::lshr (toArith a) (toArith b))
+
+/** Internal: shift @a@ right by @k@ bits, preserving stride when
+@a@ is non-wrapping and its stride is divisible by @2^k@. Mirrors
+Haskell `lshrConst`. */
+lshrConst : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> StridedInterval n
+lshrConst a k =
+  if k == 0 then a
+  // Wrapping in integer view ⇒ lose precision; fall back.
+  else if endRes < a.base then arithFallback
+  else if a.stride % shift_k == 0 then
+    normalize { base = a.base >> k
+              , siRange = a.siRange
+              , stride = a.stride / shift_k }
+  else arithFallback
+  where
+  shift_k = 1 << k
+  endRes = a.base + a.siRange * a.stride
+  arithFallback = fromArith (A::lshr (toArith a) (A::interval k 0))
+
+ashr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> StridedInterval n
+ashr a b =
+  if isBottom a \/ isBottom b then bottom
+  else fromArith (A::ashr (toArith a) (toArith b))
+
+////////////////////////////////////////////////////////////
+// Width manipulation
+
+/** Zero-extend. Mirrors Haskell `zext`. The Haskell version splits
+wrapping intervals into the union of two non-wrapping segments; here we
+do the same by routing through Arith. */
+zextSI :
+  {n, u} (fin n, fin u, n >= 1, u >= n + 1) => StridedInterval n -> StridedInterval u
+zextSI a =
+  if isBottom a then bottom
+  // Non-wrapping: relabel directly (residues unchanged at the wider
+  // width, since they're already < 2^n <= 2^u).
+  else if endRes >= a.base then
+    { base = zext a.base, siRange = zext a.siRange, stride = zext a.stride }
+  // Wrapping: cover by the union of the two non-wrapping segments
+  // `[base, 2^n - 1]` and `[0, endRes]`, expressed at the wider width.
+  else join (range (zext a.base) (zext (~0 : [n])))
+            (range 0 (zext endRes))
+  where
+  endRes = a.base + a.siRange * a.stride
+
+/** Restrict an SI to elements in the unsigned interval `[lo, hi]`,
+preserving stride. Returns `(False, _)` when no elements fall in the
+range; otherwise `(True, result)`. Internal helper for `sextSI`;
+assumes `0 <= lo <= hi < 2^n`.
+
+Mirrors Haskell `clipUnsigned`. We use `Integer` for the index/residue
+arithmetic so that `i*stride` doesn't wrap. */
+clipUnsigned :
+  {n} (fin n, n >= 1) =>
+  StridedInterval n -> [n] -> [n] -> (Bit, StridedInterval n)
+clipUnsigned a lo hi =
+  if isBottom a then (False, bottom)
+  else if preBit /\ postBit then (True, join pre post)
+  else if preBit then (True, pre)
+  else if postBit then (True, post)
+  else (False, bottom)
+  where
+  s : Integer
+  s = toInteger a.stride
+  m : Integer
+  m = 2 ^^ (`n : Integer)
+  rng : Integer
+  rng = toInteger a.siRange
+  b : Integer
+  b = toInteger a.base
+  loI : Integer
+  loI = toInteger lo
+  hiI : Integer
+  hiI = toInteger hi
+  // First wrap-around index: smallest `i` with `b + i*s >= m`. If this
+  // exceeds `rng`, the SI doesn't wrap.
+  iWrap = ceilDivPosI (m - b) s
+  // Pre-wrap segment: `i in [0, min (iWrap - 1) rng]`, residues
+  // `b, b+s, ..., b + i*s` (no wrap).
+  preEnd = if iWrap - 1 < rng then iWrap - 1 else rng
+  preResult = clipSegment 0 preEnd b
+  preBit = preResult.0
+  pre    = preResult.1
+  // Post-wrap segment: `i in [iWrap, rng]`, residues start at
+  // `b + iWrap*s - m` and march by `s`.
+  postResult =
+    if iWrap > rng then (False, bottom)
+    else clipSegment iWrap rng (b + iWrap * s - m)
+  postBit = postResult.0
+  post    = postResult.1
+  // Clip a contiguous AP segment to `[loI, hiI]`. The set of
+  // qualifying `i`s in `[iLo, iHi]` forms a contiguous integer range.
+  clipSegment : Integer -> Integer -> Integer -> (Bit, StridedInterval n)
+  clipSegment iLo iHi startBase =
+    if iLo > iHi then (False, bottom)
+    else if endRes < loI then (False, bottom)        // entirely below
+    else if startBase > hiI then (False, bottom)     // entirely above
+    else if firstI <= lastI then
+      (True, { base = fromInteger ((b + firstI * s) % m)
+             , siRange = fromInteger (lastI - firstI)
+             , stride = a.stride })
+    else (False, bottom)
+    where
+    endRes = startBase + (iHi - iLo) * s
+    firstI = sIntegerMax iLo (iLo + ceilDivPosI (loI - startBase) s)
+    lastI  = sIntegerMin iHi (iLo + (hiI - startBase) / s)
+  // Ceiling division by a positive divisor; returns 0 when `x <= 0`.
+  ceilDivPosI : Integer -> Integer -> Integer
+  ceilDivPosI x y = if x <= 0 then 0 else (x + y - 1) / y
+  sIntegerMin x y = if x < y then x else y
+  sIntegerMax x y = if x > y then x else y
+
+/** Sign-extend. Mirrors Haskell `sext` exactly, including the
+straddling/wrapping case where the SI is split at the sign boundary
+into a non-negative part and a negative part (each with stride
+preserved by `clipUnsigned`), and the negative part is shifted by the
+sign-extension amount. */
+sextSI :
+  {n, u} (fin n, fin u, n >= 1, u >= n + 1) => StridedInterval n -> StridedInterval u
+sextSI a =
+  if isBottom a then bottom
+  // Non-wrapping, all non-negative: relabel at the new width.
+  else if endRes >= a.base /\ endRes < half then
+    { base = zext a.base, siRange = zext a.siRange, stride = zext a.stride }
+  // Non-wrapping, all negative: shift the base into the sign-extended range.
+  else if endRes >= a.base /\ a.base >= half then
+    { base = (zext a.base) + signExt
+           , siRange = zext a.siRange
+           , stride = zext a.stride }
+  // Straddles the sign boundary or wraps: split via `clipUnsigned` into
+  // non-negative `[0, half-1]` and negative `[half, m_old-1]` parts,
+  // shift the negative part by `signExt`, and join.
+  else if posPart /\ negPart then join (widen pos) (shiftedNeg neg)
+  else if posPart then widen pos
+  else if negPart then shiftedNeg neg
+  else bottom
+  where
+  endRes = a.base + a.siRange * a.stride
+  // half = 2^(n-1) (the signed midpoint of [n]).
+  half : [n]
+  half = 1 << (`n - 1 : [n])
+  signExt : [u]
+  signExt = (~0 : [u]) - (zext (~0 : [n])) // = 2^u - 2^n
+  posResult = clipUnsigned a 0 (half - 1)
+  negResult = clipUnsigned a half (~0 : [n])
+  posPart   = posResult.0
+  pos       = posResult.1
+  negPart   = negResult.0
+  neg       = negResult.1
+  // Widen an SI from [n] to [u] (zero-extending all fields).
+  widen : StridedInterval n -> StridedInterval u
+  widen s =
+    { base = zext s.base, siRange = zext s.siRange, stride = zext s.stride }
+  // Widen and add `signExt` to the base, shifting the negative segment
+  // into the sign-extended range of `[u]`.
+  shiftedNeg : StridedInterval n -> StridedInterval u
+  shiftedNeg s =
+    { base = zext s.base + signExt
+    , siRange = zext s.siRange
+    , stride = zext s.stride }
+
+/** Truncate to a strictly narrower width. Mirrors the Haskell
+`trunc` shape: relabel when in-range; cover all residues when stride
+divides the modulus; otherwise widen to `any`. */
+truncSI :
+  {n, v} (fin n, fin v, v >= 1, n >= v + 1) => StridedInterval n -> StridedInterval v
+truncSI a =
+  if isBottom a then bottom
+  else if isAny a then top
+  // Already fits the size cap at the new width `(range+1)*stride <= m_v`:
+  // relabel and let `normalize` canonicalize. Computed in `[2*n]` to
+  // avoid overflow in the multiplication.
+  else if ((zext a.siRange + 1) * zext a.stride : [2*n]) <= zext m then
+    normalize { base = drop`{n - v} base_v_n
+              , siRange = drop`{n - v} a.siRange
+              , stride = drop`{n - v} a.stride }
+  // Stride divides modulus: every residue class is hit.
+  else if a.stride != 0 /\ m % a.stride == 0
+       then if a.stride == m
+              then singleton (drop`{n - v} base_v_n)
+              else normalize
+                   { base = drop`{n - v} ((base_v_n
+                              + a.stride * ceilDivU (m - base_v_n) a.stride) % m)
+                   , siRange = drop`{n - v} ((m / a.stride) - 1)
+                   , stride = drop`{n - v} a.stride }
+  else top
+  where
+  // `m = 2^v`, computed at width `[n]` (fits because `n > v`).
+  m : [n]
+  m = (zext (~0 : [v]) : [n]) + 1
+  mMinus1 : [n]
+  mMinus1 = m - 1
+  base_v_n : [n]
+  base_v_n = a.base % m
+  ceilDivU : [n] -> [n] -> [n]
+  ceilDivU x y = (x + y - 1) / y
+
+/** Concatenation. The result is `{a * 2^v + b | a ∈ a_dom, b ∈ b_dom}`.
+When `b` is a singleton, the high bits inherit `a`'s stride scaled by
+`2^v`. When `a` is a singleton and `b` is non-wrapping, the high bits
+are constant and `b`'s shape carries through. Otherwise routes through
+`A::concat` on the contiguous covers. Mirrors Haskell `concatSI`. */
+concatSI :
+  {u, v} (fin u, fin v, u >= 1, v >= 1) =>
+  StridedInterval u -> StridedInterval v -> StridedInterval (u + v)
+concatSI a b =
+  if isBottom a \/ isBottom b then bottom
+  else if isSingleton b then
+    // {a_i * 2^v + bv}: stride scales by 2^v, range preserved.
+    normalize { base = (zext a.base) * shift_v + (zext b.base : [u + v])
+              , siRange = zext a.siRange
+              , stride = (zext a.stride) * shift_v }
+  else if isSingleton a /\ b.base + b.siRange * b.stride >= b.base then
+    // {av * 2^v + b_j} with non-wrapping b: shift b's shape.
+    normalize { base = (zext a.base) * shift_v + (zext b.base : [u + v])
+              , siRange = zext b.siRange
+              , stride = zext b.stride }
+  else fromArith (A::concat (toArith a) (toArith b))
+  where
+  shift_v : [u + v]
+  shift_v = 1 << (`v : [u + v])
+
+////////////////////////////////////////////////////////////
+// Destructors
+
+/** Inclusive unsigned bounds. For wrapping or `any` SIs, returns
+(0, ~0). Mirrors Haskell `ubounds`. */
+ubounds : {n} (fin n, n >= 1) => StridedInterval n -> ([n], [n])
+ubounds a =
+  if isBottom a then (0, ~0)
+  else if isAny a then (0, ~0)
+  else if endRes >= a.base then (a.base, endRes)
+  else (0, ~0)
+  where
+  endRes = a.base + a.siRange * a.stride
+
+/** Equality test. Mirrors Haskell `eq`. The first component is a
+"definite" flag; when `True` the second is the answer. */
+eq : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> (Bit, Bit)
+eq a b =
+  if isSingleton a /\ isSingleton b then (True, a.base == b.base)
+  else if ~ domainsOverlap a b then (True, False)
+  else (False, False)
+
+/** Conservative overlap predicate. Mirrors Haskell `domainsOverlap`.
+Adds a residue-class disjointness check: if `(base a - base b) mod
+gcd(stride a, stride b)` is non-zero and neither operand wraps, the
+sets are integer-disjoint, so they're modular-disjoint too. The residue
+check is computed in `[2*n]` to avoid the difference wrapping mod 2^n. */
+domainsOverlap : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+domainsOverlap a b =
+  if isBottom a \/ isBottom b then False
+  else if isAny a \/ isAny b then True
+  else if g != 0 /\ residueDiff != 0 /\ ~ wraps a /\ ~ wraps b
+       then False
+  else A::overlap (toArith a) (toArith b)
+  where
+  g : [2*n]
+  g = zext (gcd a.stride b.stride)
+  // Compare integer differences |aBase - bBase| mod g, widening to
+  // [2*n] so the difference doesn't wrap.
+  aBase : [2*n]
+  aBase = zext a.base
+  bBase : [2*n]
+  bBase = zext b.base
+  residueDiff = if aBase >= bBase then (aBase - bBase) % g
+                                  else (bBase - aBase) % g
+  wraps si = si.base + si.siRange * si.stride < si.base
+
+////////////////////////////////////////////////////////////
+// Correctness properties: invariant postconditions
+
+correct_proper_bottom : {n} (fin n, n >= 1) => Bit
+correct_proper_bottom = proper`{n} bottom
+
+correct_proper_singleton : {n} (fin n, n >= 1) => [n] -> Bit
+correct_proper_singleton v = proper (singleton v)
+
+correct_proper_top : {n} (fin n, n >= 1) => Bit
+correct_proper_top = proper`{n} top
+
+correct_proper_mkStridedInterval :
+  {n} (fin n, n >= 1) => Bit -> [n] -> [n] -> [n] -> Bit
+correct_proper_mkStridedInterval roundUp lo hi s =
+  proper (mkStridedInterval roundUp lo hi s)
+
+correct_proper_range : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+correct_proper_range lo hi = proper (range lo hi)
+
+correct_proper_join : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_join a b = proper a ==> proper b ==> proper (join a b)
+
+correct_proper_unionSingleton :
+  {n} (fin n, n >= 1) => [n] -> StridedInterval n -> Bit
+correct_proper_unionSingleton v a = proper a ==> proper (unionSingleton v a)
+
+correct_proper_glb : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_glb a b = proper a ==> proper b ==> proper (glb a b)
+
+correct_proper_add : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_add a b = proper a ==> proper b ==> proper (add a b)
+
+correct_proper_adc :
+  {n} (fin n, n >= 1) =>
+  StridedInterval n -> StridedInterval n -> (Bit, Bit) -> Bit
+correct_proper_adc a b c = proper a ==> proper b ==> proper (adc a b c)
+
+correct_proper_sub : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_sub a b = proper a ==> proper b ==> proper (sub a b)
+
+correct_proper_negate : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_proper_negate a = proper a ==> proper (negate a)
+
+correct_proper_scale : {n} (fin n, n >= 1) => [n] -> StridedInterval n -> Bit
+correct_proper_scale k a = proper a ==> proper (scale k a)
+
+correct_proper_mul : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_mul a b = proper a ==> proper b ==> proper (mul a b)
+
+correct_proper_not : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_proper_not a = proper a ==> proper (bvNot a)
+
+correct_proper_shl : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_shl a b = proper a ==> proper b ==> proper (shl a b)
+
+correct_proper_lshr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_lshr a b = proper a ==> proper b ==> proper (lshr a b)
+
+correct_proper_ashr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_ashr a b = proper a ==> proper b ==> proper (ashr a b)
+
+correct_proper_udiv : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_udiv a b = proper a ==> proper b ==> proper (udiv a b)
+
+correct_proper_urem : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_urem a b = proper a ==> proper b ==> proper (urem a b)
+
+correct_proper_sdiv : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_sdiv a b = proper a ==> proper b ==> proper (sdiv a b)
+
+correct_proper_srem : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+correct_proper_srem a b = proper a ==> proper b ==> proper (srem a b)
+
+correct_proper_zext :
+  {n, u} (fin n, fin u, n >= 1, u >= n + 1) => StridedInterval n -> Bit
+correct_proper_zext a = proper a ==> proper (zextSI`{n, u} a)
+
+correct_proper_sext :
+  {n, u} (fin n, fin u, n >= 1, u >= n + 1) => StridedInterval n -> Bit
+correct_proper_sext a = proper a ==> proper (sextSI`{n, u} a)
+
+correct_proper_trunc :
+  {n, v} (fin n, fin v, v >= 1, n >= v + 1) => StridedInterval n -> Bit
+correct_proper_trunc a = proper a ==> proper (truncSI`{n, v} a)
+
+correct_proper_concat :
+  {u, v} (fin u, fin v, u >= 1, v >= 1) =>
+  StridedInterval u -> StridedInterval v -> Bit
+correct_proper_concat a b = proper a ==> proper b ==> proper (concatSI a b)
+
+////////////////////////////////////////////////////////////
+// Correctness properties: helpers (eGCD, ceilDivPos, floorDivPos,
+// solveLinearDiophantine). These pin down the algebraic spec of the
+// internals that `glb` depends on. The corresponding macaw-side bug
+// (an incorrect `t` and a buggy `ceil_quot`) was caught by direct
+// helper tests after the integrated `glb`-level properties missed it
+// for years; these are the Cryptol equivalents.
+
+correct_eGCD_bezout : {k} (fin k, k >= 1) => [k] -> [k] -> Bit
+correct_eGCD_bezout aBits bBits =
+  egcd_res.1 * a + egcd_res.2 * b == egcd_res.0
+  where
+  a = toSignedInteger aBits
+  b = toSignedInteger bBits
+  egcd_res = eGCD`{4*k + 4} a b
+
+correct_eGCD_nonNegative : {k} (fin k, k >= 1) => [k] -> [k] -> Bit
+correct_eGCD_nonNegative aBits bBits = ~ ((eGCD`{4*k + 4} a b).0 < 0)
+  where
+  a = toSignedInteger aBits
+  b = toSignedInteger bBits
+
+correct_ceilDivPos : {k} (fin k, k >= 1) => [k] -> [k] -> Bit
+correct_ceilDivPos xBits yBits =
+  y > 0 ==> q * y >= x /\ (q - 1) * y < x
+  where
+  x = toSignedInteger xBits
+  y = toSignedInteger yBits
+  q = ceilDivPos x y
+
+correct_floorDivPos : {k} (fin k, k >= 1) => [k] -> [k] -> Bit
+correct_floorDivPos xBits yBits =
+  y > 0 ==> q * y <= x /\ (q + 1) * y > x
+  where
+  x = toSignedInteger xBits
+  y = toSignedInteger yBits
+  q = floorDivPos x y
+
+correct_sld_sound :
+  {k} (fin k, k >= 1) =>
+  [k] -> [k] -> [k] -> [k] -> [k] -> [k] -> Bit
+correct_sld_sound aBits bBits aMaxBits bMaxBits x0Bits y0Bits =
+  a > 0 ==> b > 0 ==> a_max >= 0 ==> b_max >= 0 ==>
+  0 <= x0 ==> x0 <= a_max ==>
+  0 <= y0 ==> y0 <= b_max ==>
+  c != 0 ==>
+  res.0 /\
+  (0 <= res.1 /\ res.1 <= a_max /\
+   0 <= res.2 /\ res.2 <= b_max /\
+   a * res.1 - b * res.2 == c)
+  where
+  a     = toSignedInteger aBits
+  b     = toSignedInteger bBits
+  a_max = toSignedInteger aMaxBits
+  b_max = toSignedInteger bMaxBits
+  x0    = toSignedInteger x0Bits
+  y0    = toSignedInteger y0Bits
+  c     = a * x0 - b * y0
+  res   = solveLinearDiophantine`{4*k + 4} a b c a_max b_max
+
+/** Reinterpret a bitvector as a signed integer. Used to lift universal
+quantification over bitvectors into universal quantification over
+integers in a bounded range, while retaining the `:prove` exhaustive
+search Cryptol does over bitvector domains. */
+toSignedInteger : {k} (fin k, k >= 1) => [k] -> Integer
+toSignedInteger v =
+  if v @ 0 then toInteger v - 2 ^^ (`k : Integer)
+           else toInteger v
+
+////////////////////////////////////////////////////////////
+// Correctness properties: size-cap algebraic justifications
+//
+// The size cap `(siRange + 1) * stride <= 2^n` is a sufficient condition
+// for the residues `(base + i * stride) mod 2^n` to be pairwise distinct
+// for `0 <= i <= siRange`, and under that cap the simple `member`
+// formula coincides with the defining set. These are the Cryptol
+// counterparts of the Haskell test-suite properties of the same names.
+
+/** Holds when the size cap (siRange + 1) * stride <= 2^n is satisfied.
+Mirrors the `(r + 1) * s <= m` precondition in the Haskell tests; we
+widen to [n+1] to avoid wrap when computing the product. */
+sizeCapHolds : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+sizeCapHolds r s = s >= 1 /\ ((zext r * zext s + zext s) : [2*n]) <= zext (~0 : [n]) + 1
+
+/** Algebraic justification of the size cap: when (r + 1) * s <= 2^n,
+the residues @(b + i * s) mod 2^n@ for @0 <= i <= r@ are pairwise
+distinct. We express "pairwise" as a universal over two indices i, j;
+the conclusion @i == j@ then follows from equal residues. */
+correct_size_cap_distinct :
+  {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> [n] -> [n] -> Bit
+correct_size_cap_distinct b r s i j =
+  sizeCapHolds`{n} r s ==>
+  i <= r ==> j <= r ==>
+  b + i * s == b + j * s ==>
+  i == j
+
+/** Forward direction of the simple-`member` formula: when the size cap
+holds, any `x` whose offset is divisible by `s` and within `r` strides
+of `b` lies in the defining set @{ b + i * s | 0 <= i <= r }@. The
+witness index is @(x - b) / s@. */
+correct_size_cap_simple_member_forward :
+  {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> [n] -> Bit
+correct_size_cap_simple_member_forward b r s x =
+  sizeCapHolds`{n} r s ==>
+  s != 0 ==>
+  d % s == 0 ==>
+  d / s <= r ==>
+  i <= r /\ b + i * s == x
+  where
+  d = x - b
+  i = d / s
+
+/** Backward direction: when the size cap holds, every member of the
+defining set @{ b + i * s | 0 <= i <= r }@ satisfies the simple-`member`
+formula. Together with the forward direction this pins the formula to
+the set's characteristic function. */
+correct_size_cap_simple_member_backward :
+  {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> [n] -> Bit
+correct_size_cap_simple_member_backward b r s i =
+  sizeCapHolds`{n} r s ==>
+  s != 0 ==>
+  i <= r ==>
+  d % s == 0 /\ d / s <= r
+  where
+  x = b + i * s
+  d = x - b
+
+////////////////////////////////////////////////////////////
+// Correctness properties: predicates
+
+correct_singleton : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+correct_singleton v x = member (singleton v) x == (x == v)
+
+correct_top : {n} (fin n, n >= 1) => [n] -> Bit
+correct_top x = member`{n} top x
+
+correct_isSingleton : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+correct_isSingleton a x =
+  proper a ==> isSingleton a ==> member a x == (x == a.base)
+
+correct_domainsOverlap : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+correct_domainsOverlap a b x =
+  proper a ==> proper b ==> member a x ==> member b x ==> domainsOverlap a b
+
+////////////////////////////////////////////////////////////
+// Correctness properties: lattice operations
+
+correct_join : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+correct_join a b x =
+  proper a ==> proper b ==>
+    (member a x \/ member b x) ==> member (join a b) x
+
+correct_meet : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+correct_meet a b x =
+  proper a ==> proper b ==>
+    (member a x /\ member b x) ==> member (meet a b) x
+
+correct_leq : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+correct_leq a b x =
+  proper a ==> proper b ==>
+    (leq a b /\ member a x) ==> member b x
+
+correct_unionSingleton : {n} (fin n, n >= 1) => [n] -> StridedInterval n -> Bit
+correct_unionSingleton v a = proper a ==> member (unionSingleton v a) v
+
+correct_glb : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+correct_glb a b x =
+  proper a ==> proper b ==> member (glb a b) x ==> (member a x /\ member b x)
+
+correct_glb_singleton_left :
+  {n} (fin n, n >= 1) => [n] -> StridedInterval n -> Bit
+correct_glb_singleton_left v a =
+  proper a ==> member a v ==> member (glb (singleton v) a) v
+
+correct_glb_singleton_right :
+  {n} (fin n, n >= 1) => [n] -> StridedInterval n -> Bit
+correct_glb_singleton_right v a =
+  proper a ==> member a v ==> member (glb a (singleton v)) v
+
+////////////////////////////////////////////////////////////
+// Correctness properties: lattice laws
+
+join_commutative : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+join_commutative a b x =
+  proper a ==> proper b ==>
+    member (join a b) x == member (join b a) x
+
+join_idempotent : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+join_idempotent a x =
+  proper a ==> member (join a a) x == member a x
+
+meet_commutative : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> Bit
+meet_commutative a b x =
+  proper a ==> proper b ==>
+    member (meet a b) x == member (meet b a) x
+
+meet_idempotent : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+meet_idempotent a x =
+  proper a ==> member (meet a a) x == member a x
+
+join_top : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+join_top a x =
+  proper a ==> member (join a top) x
+
+join_bottom : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+join_bottom a x =
+  proper a ==> member (join a bottom) x == member a x
+
+meet_top : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+meet_top a x =
+  proper a ==> member (meet a top) x == member a x
+
+meet_bottom : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+meet_bottom a x =
+  proper a ==> ~ member (meet a bottom) x
+
+leq_reflexive : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+leq_reflexive a = proper a ==> leq a a
+
+join_upper_bound : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+join_upper_bound a b = proper a ==> proper b ==> leq a (join a b)
+
+join_proper : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+join_proper a b = proper a ==> proper b ==> proper (join a b)
+
+meet_proper : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> Bit
+meet_proper a b = proper a ==> proper b ==> proper (meet a b)
+
+////////////////////////////////////////////////////////////
+// Correctness properties: width manipulation
+
+correct_zext :
+  {n, u} (fin n, fin u, n >= 1, u >= n + 1) => StridedInterval n -> [n] -> Bit
+correct_zext a x =
+  proper a ==> member a x ==>
+    member (zextSI`{n, u} a) (zext x : [u])
+
+correct_trunc :
+  {n, v} (fin n, fin v, v >= 1, n >= v + 1) => StridedInterval n -> [n] -> Bit
+correct_trunc a x =
+  proper a ==> member a x ==>
+    member (truncSI`{n, v} a) (drop`{n - v} x)
+
+////////////////////////////////////////////////////////////
+// Correctness properties: arithmetic
+//
+// All arithmetic is modulo 2^n. The Cryptol bitvector arithmetic is
+// already modular at width n, so `x + y` here is `(x + y) mod 2^n`.
+
+correct_add : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_add a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+  member (add a b) (x + y)
+
+correct_adc :
+  {n} (fin n, n >= 1) =>
+  StridedInterval n -> StridedInterval n -> (Bit, Bit) -> [n] -> [n] -> Bit
+correct_adc a b cIn x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+  if cIn.0
+    then member (adc a b cIn) (x + y + (if cIn.1 then 1 else 0))
+    else member (adc a b cIn) (x + y) /\
+         member (adc a b cIn) (x + y + 1)
+
+correct_sub : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_sub a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+  member (sub a b) (x - y)
+
+correct_negate : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+correct_negate a x =
+  proper a ==> member a x ==> member (negate a) (- x)
+
+correct_scale : {n} (fin n, n >= 1) => [n] -> StridedInterval n -> [n] -> Bit
+correct_scale k a x =
+  proper a ==> member a x ==> member (scale k a) (k * x)
+
+correct_mul : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_mul a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+  member (mul a b) (x * y)
+
+correct_not : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+correct_not a x =
+  proper a ==> member a x ==> member (bvNot a) (~ x)
+
+correct_shl : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_shl a b x k =
+  proper a ==> proper b ==> member a x ==> member b k ==>
+  member (shl a b) (x << k)
+
+correct_lshr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_lshr a b x k =
+  proper a ==> proper b ==> member a x ==> member b k ==>
+  member (lshr a b) (x >> k)
+
+correct_ashr : {n} (fin n, n >= 1) => StridedInterval n -> StridedInterval n -> [n] -> [n] -> Bit
+correct_ashr a b x k =
+  proper a ==> proper b ==> member a x ==> member b k ==>
+  member (ashr a b) (x >>$ k)
+
+////////////////////////////////////////////////////////////
+// Correctness properties: destructors
+
+correct_size : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_size a = proper a ==> ~ isBottom a ==> size a == a.siRange + 1
+
+correct_ubounds : {n} (fin n, n >= 1) => StridedInterval n -> [n] -> Bit
+correct_ubounds a x =
+  proper a ==> member a x ==>
+    (ubounds a).0 <= x /\ x <= (ubounds a).1
+
+////////////////////////////////////////////////////////////
+// Correctness properties: bottom edge cases
+
+correct_glb_bottom_left : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_glb_bottom_left a = proper a ==> isBottom (glb bottom a)
+
+correct_glb_bottom_right : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_glb_bottom_right a = proper a ==> isBottom (glb a bottom)
+
+correct_add_bottom_left : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_add_bottom_left a = proper a ==> isBottom (add bottom a)
+
+correct_add_bottom_right : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_add_bottom_right a = proper a ==> isBottom (add a bottom)
+
+correct_mul_bottom_left : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_mul_bottom_left a = proper a ==> isBottom (mul bottom a)
+
+correct_mul_bottom_right : {n} (fin n, n >= 1) => StridedInterval n -> Bit
+correct_mul_bottom_right a = proper a ==> isBottom (mul a bottom)
+
+////////////////////////////////////////////////////////////
+// Property witnesses for default proof bit widths.
+
+property pe   = correct_proper_bottom`{8}
+property ps   = correct_proper_singleton`{8}
+property pany = correct_proper_top`{8}
+property pmk  = correct_proper_mkStridedInterval`{8}
+property pr   = correct_proper_range`{8}
+property plu  = correct_proper_join`{8}
+property plus = correct_proper_unionSingleton`{8}
+property pa   = correct_proper_add`{8}
+property pn   = correct_proper_negate`{8}
+property psu  = correct_proper_sub`{8}
+property psc  = correct_proper_scale`{8}
+property pco  = correct_proper_not`{8}
+property psh  = correct_proper_shl`{8}
+property plsh = correct_proper_lshr`{8}
+property pash = correct_proper_ashr`{8}
+property pud  = correct_proper_udiv`{8}
+property pur  = correct_proper_urem`{8}
+property psd  = correct_proper_sdiv`{8}
+property psr  = correct_proper_srem`{8}
+// `glb` involves the Diophantine solver, which is significantly more
+// expensive to discharge than the simpler arithmetic ops.
+property pglb = correct_proper_glb`{4}
+
+// Helper-level properties. The helpers themselves work in `Integer`,
+// so the bit width `k` only controls the `:prove` exhaustive-search
+// quantification range over `[k]` lifted to `Integer`. The eGCD
+// iteration cap is `4*k + 4` — generous for the Fibonacci bound on
+// Euclidean steps for inputs in `[-2^(k-1), 2^(k-1) - 1]`.
+// `correct_eGCD_bezout` is slow (~2.5 min in :prove): the unbounded
+// Integer Bezout coefficients blow up the SMT problem.
+property ebez = correct_eGCD_bezout`{4}
+property enng = correct_eGCD_nonNegative`{4}
+property cdp  = correct_ceilDivPos`{4}
+property fdp  = correct_floorDivPos`{4}
+// `solveLinearDiophantine` proof at width 2: the helper operates over
+// unbounded `Integer`; `4*2 + 4 = 12` iterations cover all width-2 inputs.
+property sld  = correct_sld_sound`{2}
+
+property cs   = correct_singleton`{8}
+property ct   = correct_top`{8}
+property cis  = correct_isSingleton`{8}
+property cb   = correct_ubounds`{8}
+property cdo  = correct_domainsOverlap`{8}
+property csz  = correct_size`{8}
+property cus  = correct_unionSingleton`{4}
+// `correct_glb` at width 3: the Integer Diophantine solver makes width
+// 4 intractable (~10+ min); width 3 completes in ~50s.
+property cgl  = correct_glb`{3}
+property cgsl = correct_glb_singleton_left`{8}
+property cgsr = correct_glb_singleton_right`{8}
+property ca   = correct_add`{4}
+property cn   = correct_negate`{8}
+property csu  = correct_sub`{4}
+property csc  = correct_scale`{4}
+property cco  = correct_not`{8}
+property csh  = correct_shl`{4}
+property cael = correct_add_bottom_left`{8}
+property caer = correct_add_bottom_right`{8}
+property cgel = correct_glb_bottom_left`{8}
+property cger = correct_glb_bottom_right`{8}
+
+// Properties for `mul`/`adc`. These use the same iterative gcd as
+// `add`, so they share the width-4 budget for soundness.
+property pmul = correct_proper_mul`{4}
+property padc = correct_proper_adc`{4}
+property cm   = correct_mul`{4}
+property cadc = correct_adc`{4}
+property cmel = correct_mul_bottom_left`{8}
+property cmer = correct_mul_bottom_right`{8}
+// Lattice laws.
+property cjn = correct_join`{4}
+property cmt = correct_meet`{4}
+property clq = correct_leq`{4}
+property jcm = join_commutative`{4}
+property jid = join_idempotent`{4}
+property mcm = meet_commutative`{4}
+property mid = meet_idempotent`{4}
+property jtp = join_top`{4}
+property jbt = join_bottom`{4}
+property mtp = meet_top`{4}
+property mbt = meet_bottom`{4}
+property lqr = leq_reflexive`{4}
+property jub = join_upper_bound`{4}
+property jpr = join_proper`{4}
+property mpr = meet_proper`{4}
+// Width manipulation.
+property pzd  = correct_proper_zext`{4, 8}
+property ptd  = correct_proper_trunc`{8, 4}
+property psed = correct_proper_sext`{4, 8}
+property czd  = correct_zext`{4, 8}
+property ctd  = correct_trunc`{8, 4}
+
+// Size-cap algebraic justifications. The Haskell test-suite versions of
+// these run as randomized properties; here they are exhaustively proven
+// at small widths, which is what the Cryptol module's role calls for.
+// Width 4 keeps the 4-quantifier `correct_size_cap_distinct` proof
+// tractable (4^5 = 1024 cases per residue equality).
+property csscd  = correct_size_cap_distinct`{4}
+property csscmf = correct_size_cap_simple_member_forward`{4}
+property csscmb = correct_size_cap_simple_member_backward`{4}
