@@ -402,22 +402,30 @@ udiv a b =
 // Unsigned remainder. When the divisor is a singleton power of
 // two 2^k, the result is exact (the low k bits of the dividend);
 // otherwise, the result is bounded above by min(aMax, bMax-1) and
-// every bit above that is known zero.
-//
-// (The remainder's lower bound is trivially 0, so the same
-// interval-agreement analysis used in udiv would not yield additional
-// leading bits here.)
+// every bit above that is known zero. Additionally, if the divisor
+// has k known trailing zeros (definitely divisible by 2^k), the
+// remainder preserves the dividend's low k bits exactly.
 urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 urem a b =
   if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
     then { lomask = av % bv, himask = (av || am) % bv }
-    else { lomask = 0, himask = bitsBelow rMax }
+    else { lomask = resValue, himask = resValue || resUnknown }
   where
   (av, am) = toTnum a
   (bv, bm) = toTnum b
   aMax = av || am
   bMax = bv || bm
   rMax = if bMax == 0 then 0 else (if aMax < bMax - 1 then aMax else bMax - 1)
+  highUnknown = bitsBelow rMax
+  // If the divisor has k trailing zeros, the remainder preserves
+  // the dividend's low k bits.
+  rhsTrailingZeros = ctz (bv || bm)
+  lowMask : [n]
+  lowMask = (1 << rhsTrailingZeros) - 1
+  lowValue = av && lowMask
+  lowUnknown = am && lowMask
+  resUnknown = (highUnknown && (~ lowMask)) || lowUnknown
+  resValue = lowValue && (~ resUnknown)
 
 // 3-valued unsigned-less-than on Doms: returns 0 (definitely false),
 // 1 (definitely true), or 2 (unknown). Used by long division.
