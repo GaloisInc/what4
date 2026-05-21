@@ -423,6 +423,11 @@ udiv a b =
 // every bit above that is known zero. Additionally, if the divisor
 // has k known trailing zeros (definitely divisible by 2^k), the
 // remainder preserves the dividend's low k bits exactly.
+//
+//
+// (The remainder's lower bound is trivially 0, so the same
+// interval-agreement analysis used in udiv would not yield additional
+// leading bits here.)
 urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 urem a b =
   if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
@@ -957,6 +962,57 @@ singleton_lshr x y =
 singleton_ashr : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
 singleton_ashr x y =
   ashr (singleton x) y == singleton (x >>$ y)
+
+////////////////////////////////////////////////////////////
+// Sub-lemma properties: prove key techniques used in mul, urem, srem.
+
+// Lemma: low bits of a product depend only on low bits of the operands.
+// Specifically, (x * y) % 2^k == ((x % 2^k) * (y % 2^k)) % 2^k.
+// This justifies using av * bv (the known-one values) to determine
+// the low bits of the product when those low bits are fully known.
+lemma_mul_low_bits : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
+lemma_mul_low_bits x y k =
+  k < `n ==>
+  ((x * y) && mask) == (((x && mask) * (y && mask)) && mask)
+  where mask = (1 << k) - 1
+
+// Lemma: if y is divisible by 2^k (i.e., y % 2^k == 0 and y != 0),
+// then (x % y) preserves the low k bits of x: (x % y) % 2^k == x % 2^k.
+// Proof sketch: write y = 2^k * q. Then x = y*d + r with 0 <= r < y.
+// Reducing mod 2^k: x ≡ r (mod 2^k), so r's low k bits equal x's.
+lemma_urem_low_bits : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
+lemma_urem_low_bits x y k =
+  k < `n ==> y != 0 ==> (y && mask) == 0 ==>
+  ((x % y) && mask) == (x && mask)
+  where mask = (1 << k) - 1
+
+// Lemma: if the dividend x >= 0 (as signed), then x %$ y >= 0 and
+// x %$ y <= x (as unsigned), so clz(x %$ y) >= clz(x).
+lemma_srem_nonneg_leading_zeros : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_nonneg_leading_zeros x y =
+  y != 0 ==> x >=$ 0 ==> (x %$ y) >=$ 0
+
+// Lemma: if x %$ y != 0 and x <$ 0, then x %$ y <$ 0.
+// (srem has the sign of the dividend, unless the result is zero.)
+lemma_srem_neg_sign : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_neg_sign x y =
+  y != 0 ==> x <$ 0 ==> (x %$ y == 0 \/ x %$ y <$ 0)
+
+// Lemma: |x %$ y| < |y|, so if |y| < 2^(w-k) then |x %$ y| < 2^(w-k),
+// meaning the result has at least k sign bits.
+lemma_srem_magnitude_bound : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_magnitude_bound x y =
+  y != 0 ==>
+  (if x %$ y >=$ 0
+    then x %$ y < (abs_val y)
+    else (- (x %$ y)) < (abs_val y))
+  where abs_val v = if v >=$ 0 then v else - v
+
+property lem1 = lemma_mul_low_bits`{8}
+property lem2 = lemma_urem_low_bits`{8}
+property lem3 = lemma_srem_nonneg_leading_zeros`{16}
+property lem4 = lemma_srem_neg_sign`{16}
+property lem5 = lemma_srem_magnitude_bound`{8}
 
 property i01 = singleton_overlap`{16}
 property i02 = singleton_zero_ext`{32, 16}
