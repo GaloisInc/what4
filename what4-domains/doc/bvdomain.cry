@@ -11,6 +11,11 @@ import arithdomain as A
 import bitsdomain as B
 import xordomain as X
 
+// Alias used to mark predicates that are intended to be checked as
+// properties.  The TestCoverage Haskell test uses this alias to
+// identify which Cryptol functions correspond to PBT properties.
+type Property = Bit
+
 
 // Precondition `x <= mask`.  Find the (arithmetically) smallest
 //  `z` above `x` which is bitwise above `mask`.  In other words
@@ -21,18 +26,18 @@ bitwise_round_above x mask = (x && ~q) ^ (mask && q)
   where
   q = A::fillright_alt ((x || mask) ^ x)
 
-bra_correct1 : {n} (fin n, n>=1) => [n] -> [n] -> Bit
-bra_correct1 x mask = mask <= x ==> (x <= q /\ B::bitle mask q)
+correct_bra1 : {n} (fin n, n>=1) => [n] -> [n] -> Property
+correct_bra1 x mask = mask <= x ==> (x <= q /\ B::bitle mask q)
   where
   q = bitwise_round_above x mask
 
-bra_correct2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Bit
-bra_correct2 x mask q' = (x <= q' /\ B::bitle mask q') ==> q <= q'
+correct_bra2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Property
+correct_bra2 x mask q' = (x <= q' /\ B::bitle mask q') ==> q <= q'
   where
   q = bitwise_round_above x mask
 
-property bra1 = bra_correct1`{64}
-property bra2 = bra_correct2`{64}
+property bra1 = correct_bra1`{64}
+property bra2 = correct_bra2`{64}
 
 
 // Precondition `lomask <= x <= himask` and `lomask || himask == himask`.
@@ -73,21 +78,21 @@ bitwise_round_between x lomask himask = if r == 0 then loup else final
   loup = bitwise_round_above x lomask
 
 
-brb_correct1 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Bit
-brb_correct1 x lomask himask =
+correct_brb1 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> Property
+correct_brb1 x lomask himask =
     (B::bitle lomask himask /\ lomask <= x /\ x <= himask) ==>
     (x <= q /\ B::bitle lomask q /\ B::bitle q himask)
 
   where
   q = bitwise_round_between x lomask himask
 
-brb_correct2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> [n] -> Bit
-brb_correct2 x lomask himask q' = (x <= q' /\ B::bitle lomask q' /\ B::bitle q' himask) ==> q <= q'
+correct_brb2 : {n} (fin n, n>=1) => [n] -> [n] -> [n] -> [n] -> Property
+correct_brb2 x lomask himask q' = (x <= q' /\ B::bitle lomask q' /\ B::bitle q' himask) ==> q <= q'
   where
   q = bitwise_round_between x lomask himask
 
-property brb1 = brb_correct1`{64}
-property brb2 = brb_correct2`{64}
+property brb1 = correct_brb1`{64}
+property brb2 = correct_brb2`{64}
 
 // Interesting fact about arithmetic domains: the low values of the two domains
 // represent overlap candidates.  If neither low value is contained in the other domain,
@@ -134,7 +139,7 @@ mixed_domain_overlap a b =
   A::mem a b.lomask \/ A::mem a b.himask \/ A::mem a (bitwise_round_between a.lo b.lomask b.himask)
 
 // If mixed domains have a common element, the overlap test will be true.
-correct_mixed_domain_overlap : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> [n] -> Bit
+correct_mixed_domain_overlap : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> [n] -> Property
 correct_mixed_domain_overlap a b x =
   A::mem a x ==>
   B::mem b x ==>
@@ -142,7 +147,7 @@ correct_mixed_domain_overlap a b x =
 
 // If the overlap test is true, then we can find some element they share in common,
 // provided the bitwise domain is nonempty.
-correct_mixed_domain_overlap_inv : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> Bit
+correct_mixed_domain_overlap_inv : {n} (fin n, n >= 1) => A::Dom n -> B::Dom n -> Property
 correct_mixed_domain_overlap_inv a b =
   B::nonempty b ==> mixed_domain_overlap a b ==> (A::mem a witness /\ B::mem b witness)
 
@@ -220,41 +225,41 @@ ctz b = A::range lo hi
 //////////////////////////////////////////////////////////////
 // Correctness properties
 
-correct_arithToBitDom : {n} (fin n, n >= 1) => A::Dom n -> [n] -> Bit
-correct_arithToBitDom a x =
+correct_arithToBitwise : {n} (fin n, n >= 1) => A::Dom n -> [n] -> Property
+correct_arithToBitwise a x =
   A::mem a x ==> B::mem (arithToBitDom a) x
 
-correct_bitToArithDom : {n} (fin n) => B::Dom n -> [n] -> Bit
-correct_bitToArithDom b x =
+correct_bitwiseToArith : {n} (fin n) => B::Dom n -> [n] -> Property
+correct_bitwiseToArith b x =
   B::mem b x ==> A::mem (bitToArithDom b) x
 
-correct_bitToXorDom : {n} (fin n) => B::Dom n -> [n] -> Bit
-correct_bitToXorDom b x =
+correct_bitwiseToXorDomain : {n} (fin n) => B::Dom n -> [n] -> Property
+correct_bitwiseToXorDomain b x =
   B::mem b x == X::mem (bitToXorDom b) x
 
-correct_xorToBitDom : {n} (fin n) => X::Dom n -> [n] -> Bit
-correct_xorToBitDom b x =
+correct_xorToBitwiseDomain : {n} (fin n) => X::Dom n -> [n] -> Property
+correct_xorToBitwiseDomain b x =
   X::mem b x == B::mem (xorToBitDom b) x
 
-correct_arithToXorDom : {n} (fin n, n >= 1) => A::Dom n -> [n] -> Bit
-correct_arithToXorDom a x =
+correct_arithToXorDomain : {n} (fin n, n >= 1) => A::Dom n -> [n] -> Property
+correct_arithToXorDomain a x =
   A::mem a x ==> X::mem (arithToXorDom a) x
 
-property t1 = correct_arithToBitDom`{16}
-property t2 = correct_bitToArithDom`{16}
-property t3 = correct_bitToXorDom`{16}
-property t4 = correct_xorToBitDom`{16}
-property t5 = correct_arithToXorDom`{16}
+property t1 = correct_arithToBitwise`{16}
+property t2 = correct_bitwiseToArith`{16}
+property t3 = correct_bitwiseToXorDomain`{16}
+property t4 = correct_xorToBitwiseDomain`{16}
+property t5 = correct_arithToXorDomain`{16}
 
-correct_popcnt : {n} (fin n, n>=1) => B::Dom n -> [n] -> Bit
+correct_popcnt : {n} (fin n, n>=1) => B::Dom n -> [n] -> Property
 correct_popcnt a x =
   B::mem a x ==> A::mem (popcnt a) (popcount x)
 
-correct_clz : {n} (fin n, n>=1) => B::Dom n -> [n] -> Bit
+correct_clz : {n} (fin n, n>=1) => B::Dom n -> [n] -> Property
 correct_clz a x =
   B::mem a x ==> A::mem (clz a) (countLeadingZeros x)
 
-correct_ctz : {n} (fin n, n>=1) => B::Dom n -> [n] -> Bit
+correct_ctz : {n} (fin n, n>=1) => B::Dom n -> [n] -> Property
 correct_ctz a x =
   B::mem a x ==> A::mem (ctz a) (countTrailingZeros x)
 

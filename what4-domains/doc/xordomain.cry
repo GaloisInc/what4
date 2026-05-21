@@ -14,6 +14,11 @@ module xordomain where
 // bits whose values are not concretely known
 type Dom n = { val : [n], unknown : [n] }
 
+// Alias used to mark predicates that are intended to be checked as
+// properties.  The TestCoverage Haskell test uses this alias to
+// identify which Cryptol functions correspond to PBT properties.
+type Property = Bit
+
 // Membership predicate for the XOR bitwise domain
 mem : {n} (fin n) => Dom n -> [n] -> Bit
 mem a x = a.val == x || a.unknown
@@ -36,18 +41,18 @@ band_scalar a x = { val = a.val && x, unknown = a.unknown && x }
 ////////////////////////////////////////////////////////////
 // Soundness properties
 
-correct_bxor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
-correct_bxor a b x y =
+correct_xor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_xor a b x y =
   mem a x ==> mem b y ==> mem (bxor a b) (x ^ y)
 
-correct_band : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
-correct_band a b x y =
+correct_and : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_and a b x y =
   mem a x ==> mem b y ==> mem (band a b) (x && y)
 
-correct_band_scalar : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
-correct_band_scalar a x y =
+correct_and_scalar : {n} (fin n) => Dom n -> [n] -> [n] -> Property
+correct_and_scalar a x y =
   mem a x ==> mem (band_scalar a y) (x && y)
 
-property x1 = correct_bxor`{16}
-property x2 = correct_band`{16}
-property x3 = correct_band_scalar`{16}
+property x1 = correct_xor`{16}
+property x2 = correct_and`{16}
+property x3 = correct_and_scalar`{16}

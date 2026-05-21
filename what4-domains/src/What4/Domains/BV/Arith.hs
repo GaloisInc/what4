@@ -84,6 +84,9 @@ module What4.Domains.BV.Arith
   , correct_sbounds
   , correct_singleton
   , correct_overlap
+  , correct_overlap_inv
+  , correct_asSingleton
+  , correct_mulRange
   , correct_union
   , correct_join
   , correct_meet
@@ -924,6 +927,30 @@ correct_singleton n x y = property (pmember n (singleton n x') y' == (x' == y'))
 correct_overlap :: Domain n -> Domain n -> Integer -> Property
 correct_overlap a b x =
   member a x && member b x ==> domainsOverlap a b
+
+-- | If 'domainsOverlap' returns 'True', then a shared witness exists
+-- among the low-bound candidates of either domain.
+correct_overlap_inv :: Domain n -> Domain n -> Property
+correct_overlap_inv a b =
+  domainsOverlap a b ==>
+    (member a witness && member b witness)
+  where
+    witness = case (arithDomainData a, arithDomainData b) of
+      (Just (alo, _), _) | member b alo -> alo
+      (_, Just (blo, _)) -> blo
+      _ -> 0
+
+correct_asSingleton :: (1 <= n) => NatRepr n -> Domain n -> Property
+correct_asSingleton n a =
+  case asSingleton a of
+    Just x -> property (a == singleton n x)
+    Nothing -> property True
+
+correct_mulRange :: (Integer, Integer) -> (Integer, Integer) -> Integer -> Integer -> Property
+correct_mulRange a b x y =
+  inRange a x && inRange b y ==> inRange (mulRange a b) (x * y)
+  where
+    inRange (lo, hi) v = lo <= v && v <= hi
 
 correct_union :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
 correct_union n a b x =

@@ -196,3 +196,15 @@ test-suite bvdomain_tests_hh
 
   other-modules: VerifyBindings
 
+
+test-suite bvdomain_coverage
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: TestCoverage.hs
+  build-depends: base >= 4.10 && < 5
+               , containers
+               , tasty >= 0.10
+               , tasty-hunit >= 0.9
+               , text
+

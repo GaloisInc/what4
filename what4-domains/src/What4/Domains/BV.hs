@@ -130,6 +130,9 @@ module What4.Domains.BV
   , correct_singleton
   , correct_overlap
   , precise_overlap
+  , correct_asSingleton
+  , correct_mixed_domain_overlap
+  , correct_mixed_domain_overlap_inv
   , correct_union
   , correct_join
   , correct_meet
@@ -797,6 +800,26 @@ correct_overlap a b x =
 precise_overlap :: BVDomain n -> BVDomain n -> Property
 precise_overlap a b =
   domainsOverlap a b ==> List.or [ member a x && member b x | x <- overlapCandidates a b ]
+
+correct_asSingleton :: (1 <= n) => NatRepr n -> BVDomain n -> Property
+correct_asSingleton n a =
+  case asSingleton a of
+    Just x -> property (member a x && pmember n a x)
+    Nothing -> property True
+
+-- | If an arithmetic and a bitwise domain share a common element,
+-- then 'mixedDomainsOverlap' returns 'True'.
+correct_mixed_domain_overlap :: A.Domain n -> B.Domain n -> Integer -> Property
+correct_mixed_domain_overlap a b x =
+  A.member a x && B.member b x ==> mixedDomainsOverlap a b
+
+-- | If 'mixedDomainsOverlap' returns 'True' (and the bitwise domain
+-- is non-empty), then a shared witness exists among
+-- 'mixedCandidates'.
+correct_mixed_domain_overlap_inv :: A.Domain n -> B.Domain n -> Property
+correct_mixed_domain_overlap_inv a b =
+  B.nonempty b && mixedDomainsOverlap a b ==>
+    List.or [ A.member a w && B.member b w | w <- mixedCandidates a b ]
 
 correct_union :: (1 <= n) => NatRepr n -> BVDomain n -> BVDomain n -> Integer -> Property
 correct_union n a b x =

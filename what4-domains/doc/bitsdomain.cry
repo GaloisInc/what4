@@ -19,6 +19,11 @@ module bitsdomain where
 // of being nonempty (implied by their various soundness properties).
 type Dom n = { lomask : [n] , himask : [n] }
 
+// Alias used to mark predicates that are intended to be checked as
+// properties.  The TestCoverage Haskell test uses this alias to
+// identify which Cryptol functions correspond to PBT properties.
+type Property = Bit
+
 /** Membership predicate that defines the set of concrete values
 represented by a bitwise abstract domain element. */
 mem : {n} (fin n) => Dom n -> [n] -> Bit
@@ -533,228 +538,246 @@ srem a b = union (union r00 r01) (union r10 r11)
 ////////////////////////////////////////////////////////////
 // Soundness properties
 
-correct_top : {n} (fin n) => [n] -> Bit
-correct_top x = mem top x
+correct_any : {n} (fin n) => [n] -> Property
+correct_any x = mem top x
 
-correct_singleton : {n} (fin n) => [n] -> [n] -> Bit
+correct_singleton : {n} (fin n) => [n] -> [n] -> Property
 correct_singleton x y = mem (singleton x) y == (x == y)
 
-correct_overlap : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_overlap : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_overlap a b x =
   mem a x ==> mem b x ==> overlap a b
 
-correct_overlap_inv : {n} (fin n) => Dom n -> Dom n -> Bit
+correct_overlap_inv : {n} (fin n) => Dom n -> Dom n -> Property
 correct_overlap_inv a b =
   overlap a b ==> (mem a (a.lomask || b.lomask) /\ mem b (a.lomask || b.lomask))
 
-correct_union : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_union : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_union a b x =
   (mem a x \/ mem b x) ==> mem (union a b) x
 
-correct_intersection : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_intersection : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_intersection a b x =
   (mem a x /\ mem b x) == mem (intersection a b) x
 
-correct_join : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_join : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_join a b x =
   (mem a x \/ mem b x) ==> mem (join a b) x
 
-correct_meet : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+correct_meet : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_meet a b x =
   (mem a x /\ mem b x) ==> mem (meet a b) x
 
-correct_leq : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+// Precision of meet: not just sound, but tight - any element of the
+// meet really is in both arguments.  (Bitwise meet is the exact
+// intersection of masks, so this holds with equality on the
+// implication.)
+precise_meet : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
+precise_meet a b x =
+  mem (meet a b) x ==> (mem a x /\ mem b x)
+
+correct_leq : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 correct_leq a b x =
   (leq a b /\ mem a x) ==> mem b x
 
 // Lattice laws
 
-join_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+join_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 join_commutative a b x =
   mem (join a b) x == mem (join b a) x
 
-join_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+join_idempotent : {n} (fin n) => Dom n -> [n] -> Property
 join_idempotent a x =
   mem (join a a) x == mem a x
 
-meet_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Bit
+meet_commutative : {n} (fin n) => Dom n -> Dom n -> [n] -> Property
 meet_commutative a b x =
   mem (meet a b) x == mem (meet b a) x
 
-meet_idempotent : {n} (fin n) => Dom n -> [n] -> Bit
+meet_idempotent : {n} (fin n) => Dom n -> [n] -> Property
 meet_idempotent a x =
   mem (meet a a) x == mem a x
 
-join_top : {n} (fin n) => Dom n -> [n] -> Bit
+join_top : {n} (fin n) => Dom n -> [n] -> Property
 join_top a x = mem (join a top) x
 
-join_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+join_bottom : {n} (fin n) => Dom n -> [n] -> Property
 join_bottom a x =
   mem (join a bottom) x == mem a x
 
-meet_top : {n} (fin n) => Dom n -> [n] -> Bit
+meet_top : {n} (fin n) => Dom n -> [n] -> Property
 meet_top a x =
   mem (meet a top) x == mem a x
 
-meet_bottom : {n} (fin n) => Dom n -> [n] -> Bit
+meet_bottom : {n} (fin n) => Dom n -> [n] -> Property
 meet_bottom a x =
   ~ (mem (meet a bottom) x)
 
-leq_reflexive : {n} (fin n) => Dom n -> Bit
+leq_reflexive : {n} (fin n) => Dom n -> Property
 leq_reflexive a = leq a a
 
-join_upper_bound : {n} (fin n) => Dom n -> Dom n -> Bit
+join_upper_bound : {n} (fin n) => Dom n -> Dom n -> Property
 join_upper_bound a b = leq a (join a b)
 
-correct_zero_ext : {m, n} (fin m, m >= n) => Dom n -> [n] -> Bit
+// `join` preserves non-emptiness: the union of two non-empty domains
+// is non-empty.
+join_proper : {n} (fin n) => Dom n -> Dom n -> Property
+join_proper a b = (nonempty a /\ nonempty b) ==> nonempty (join a b)
+
+// `meet` cannot conjure elements: if the meet is non-empty, both
+// inputs must have been.
+meet_proper : {n} (fin n) => Dom n -> Dom n -> Property
+meet_proper a b = nonempty (meet a b) ==> (nonempty a /\ nonempty b)
+
+correct_zero_ext : {m, n} (fin m, m >= n) => Dom n -> [n] -> Property
 correct_zero_ext a x =
   mem a x ==> mem (zero_ext`{m} a) (zext`{m} x)
 
-correct_sign_ext : {m, n} (fin m, m >= n, n >= 1) => Dom n -> [n] -> Bit
+correct_sign_ext : {m, n} (fin m, m >= n, n >= 1) => Dom n -> [n] -> Property
 correct_sign_ext a x =
   mem a x ==> mem (sign_ext`{m} a) (sext`{m} x)
 
-correct_concat : {m, n} (fin m, fin n) => Dom m -> Dom n -> [m] -> [n] -> Bit
+correct_concat : {m, n} (fin m, fin n) => Dom m -> Dom n -> [m] -> [n] -> Property
 correct_concat a b x y =
   mem a x ==> mem b y ==> mem (concat a b) (x # y)
 
-correct_shrink : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Bit
+correct_shrink : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Property
 correct_shrink a x =
   mem a x ==> mem (shrink`{m} a) (take`{m} x)
 
-correct_trunc : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Bit
+correct_trunc : {m, n} (fin m, fin n) => Dom (m + n) -> [m+n] -> Property
 correct_trunc a x =
   mem a x ==> mem (trunc`{m} a) (drop`{m} x)
 
-correct_isSingleton : {n} (fin n) => Dom n -> Bit
-correct_isSingleton a =
+correct_asSingleton : {n} (fin n) => Dom n -> Property
+correct_asSingleton a =
   isSingleton a ==> a == singleton a.lomask
 
-correct_bnot : {n} (fin n) => Dom n -> [n] -> Bit
-correct_bnot a x =
+correct_not : {n} (fin n) => Dom n -> [n] -> Property
+correct_not a x =
   mem a x == mem (bnot a) (~ x)
 
-correct_band : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
-correct_band a b x y =
+correct_and : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_and a b x y =
   mem a x ==> mem b y ==> mem (band a b) (x && y)
 
-correct_bor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
-correct_bor a b x y =
+correct_or : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_or a b x y =
   mem a x ==> mem b y ==> mem (bor a b) (x || y)
 
-correct_bxor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
-correct_bxor a b x y =
+correct_xor : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_xor a b x y =
   mem a x ==> mem b y ==> mem (bxor a b) (x ^ y)
 
-correct_shl : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_shl : {n} (fin n) => Dom n -> [n] -> [n] -> Property
 correct_shl a x y =
   mem a x ==> mem (shl a y) (x << y)
 
-correct_lshr : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_lshr : {n} (fin n) => Dom n -> [n] -> [n] -> Property
 correct_lshr a x y =
   mem a x ==> mem (lshr a y) (x >> y)
 
-correct_ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> [n] -> Bit
+correct_ashr : {n} (fin n, n >= 1) => Dom n -> [n] -> [n] -> Property
 correct_ashr a x y =
   mem a x ==> mem (ashr a y) (x >>$ y)
 
-correct_rol : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_rol : {n} (fin n) => Dom n -> [n] -> [n] -> Property
 correct_rol a x y =
   mem a x ==> mem (rol a y) (x <<< y)
 
-correct_ror : {n} (fin n) => Dom n -> [n] -> [n] -> Bit
+correct_ror : {n} (fin n) => Dom n -> [n] -> [n] -> Property
 correct_ror a x y =
   mem a x ==> mem (ror a y) (x >>> y)
 
-correct_shlAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_shlAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Property
 correct_shlAbstract a x b y =
   mem a x ==> mem b y ==> mem (shlAbstract a b) (x << y)
 
-correct_lshrAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_lshrAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Property
 correct_lshrAbstract a x b y =
   mem a x ==> mem b y ==> mem (lshrAbstract a b) (x >> y)
 
-correct_ashrAbstract : {n} (fin n, n >= 1) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_ashrAbstract : {n} (fin n, n >= 1) => Dom n -> [n] -> Dom n -> [n] -> Property
 correct_ashrAbstract a x b y =
   mem a x ==> mem b y ==> mem (ashrAbstract a b) (x >>$ y)
 
-correct_rolAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_rolAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Property
 correct_rolAbstract a x b y =
   mem a x ==> mem b y ==> mem (rolAbstract a b) (x <<< y)
 
-correct_rorAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Bit
+correct_rorAbstract : {n} (fin n) => Dom n -> [n] -> Dom n -> [n] -> Property
 correct_rorAbstract a x b y =
   mem a x ==> mem b y ==> mem (rorAbstract a b) (x >>> y)
 
-correct_ubounds : {n} (fin n) => Dom n -> [n] -> Bit
+correct_ubounds : {n} (fin n) => Dom n -> [n] -> Property
 correct_ubounds a x =
   mem a x ==> lo <= x /\ x <= hi
   where
   (lo, hi) = ubounds a
 
-correct_sbounds : {n} (fin n, n >= 1) => Dom n -> [n] -> Bit
+correct_sbounds : {n} (fin n, n >= 1) => Dom n -> [n] -> Property
 correct_sbounds a x =
   mem a x ==> lo <=$ x /\ x <=$ hi
   where
   (lo, hi) = sbounds a
 
-correct_add : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_add : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_add a b x y =
   mem a x ==> mem b y ==> mem (add a b) (x + y)
 
-correct_sub : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_sub : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_sub a b x y =
   mem a x ==> mem b y ==> mem (sub a b) (x - y)
 
-correct_neg : {n} (fin n, n >= 1) => Dom n -> [n] -> Bit
+correct_neg : {n} (fin n, n >= 1) => Dom n -> [n] -> Property
 correct_neg a x =
   mem a x ==> mem (bneg a) (- x)
 
-correct_scale : {n} (fin n, n >= 1) => [n] -> Dom n -> [n] -> Bit
+correct_scale : {n} (fin n, n >= 1) => [n] -> Dom n -> [n] -> Property
 correct_scale k a x =
   mem a x ==> mem (scale k a) (k * x)
 
-correct_mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_mul a b x y =
   mem a x ==> mem b y ==> mem (mul a b) (x * y)
 
-correct_mulPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_mulPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_mulPrecise a b x y =
   mem a x ==> mem b y ==> mem (mulPrecise a b) (x * y)
 
-correct_udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_udiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_udiv a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (udiv a b) (x / y)
 
-correct_urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_urem a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (urem a b) (x % y)
 
-correct_udivPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_udivPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_udivPrecise a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (udivPrecise a b) (x / y)
 
-correct_uremPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_uremPrecise : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_uremPrecise a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (uremPrecise a b) (x % y)
 
-correct_sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_sdiv : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_sdiv a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (sdiv a b) (x /$ y)
 
-correct_srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_srem a b x y =
   mem a x ==> mem b y ==> y != 0 ==> mem (srem a b) (x %$ y)
 
-correct_ult : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_ult : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_ult a b x y =
   ult a b ==> mem a x ==> mem b y ==> x < y
 
-correct_slt : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Bit
+correct_slt : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_slt a b x y =
   slt a b ==> mem a x ==> mem b y ==> x <$ y
 
-property b1 = correct_top`{16}
+property b1 = correct_any`{16}
 property b2 = correct_singleton`{16}
 property b3 = correct_overlap`{16}
 property b4 = correct_overlap_inv`{16}
@@ -765,12 +788,12 @@ property b8 = correct_sign_ext`{32, 16}
 property b9 = correct_concat`{16, 16}
 property b10 = correct_shrink`{8, 8}
 property b11 = correct_trunc`{8, 8}
-property b12 = correct_isSingleton`{16}
+property b12 = correct_asSingleton`{16}
 
-property l1 = correct_bnot`{16}
-property l2 = correct_band`{16}
-property l3 = correct_bor`{16}
-property l4 = correct_bxor`{16}
+property l1 = correct_not`{16}
+property l2 = correct_and`{16}
+property l3 = correct_or`{16}
+property l4 = correct_xor`{16}
 
 property s1 = correct_shl`{16}
 property s2 = correct_lshr`{16}
