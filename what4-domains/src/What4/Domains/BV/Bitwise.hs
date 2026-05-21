@@ -97,6 +97,8 @@ module What4.Domains.BV.Bitwise
   , correct_any
   , correct_singleton
   , correct_overlap
+  , correct_overlap_inv
+  , correct_asSingleton
   , correct_union
   , correct_intersection
   , correct_join
@@ -1107,6 +1109,22 @@ correct_singleton n x y = property (pmember n (singleton n x') y' == (x' == y'))
 correct_overlap :: Domain n -> Domain n -> Integer -> Property
 correct_overlap a b x =
   member a x && member b x ==> domainsOverlap a b
+
+-- | If 'domainsOverlap' returns 'True', then a shared witness exists
+-- at the bitwise OR of the two low masks.
+correct_overlap_inv :: Domain n -> Domain n -> Property
+correct_overlap_inv a b =
+  domainsOverlap a b ==> (member a witness && member b witness)
+  where
+    (alo, _) = bitbounds a
+    (blo, _) = bitbounds b
+    witness  = alo Bits..|. blo
+
+correct_asSingleton :: (1 <= n) => NatRepr n -> Domain n -> Property
+correct_asSingleton n a =
+  case asSingleton a of
+    Just x -> property (a == singleton n x)
+    Nothing -> property True
 
 correct_union :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Integer -> Property
 correct_union n a b x =

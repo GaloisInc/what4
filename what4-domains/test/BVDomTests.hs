@@ -41,6 +41,7 @@ import           What4.Domains.Internal (assertionsEnabled)
 import qualified What4.Domains.Arithmetic.Internal as ArithOpt
 
 
+
 main :: IO ()
 main = defaultMain $
   setTestOptions $
@@ -113,6 +114,19 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_overlap" $
       do SW n <- genWidth
          A.correct_overlap <$> A.genDomain n <*> A.genDomain n <*> genBV n
+  , genTest "correct_overlap_inv" $
+      do SW n <- genWidth
+         A.correct_overlap_inv <$> A.genDomain n <*> A.genDomain n
+  , genTest "correct_asSingleton" $
+      do SW n <- genWidth
+         A.correct_asSingleton n <$> A.genDomain n
+  , genTest "correct_mulRange" $
+      do SW n <- genWidth
+         a <- (,) <$> genBV n <*> genBV n
+         b <- (,) <$> genBV n <*> genBV n
+         x <- genBV n
+         y <- genBV n
+         pure $ A.correct_mulRange a b x y
   , genTest "correct_union" $
       do SW n <- genWidth
          A.correct_union n <$> A.genDomain n <*> A.genDomain n <*> genBV n
@@ -316,6 +330,12 @@ bitwiseDomainTests =
   , genTest "correct_overlap" $
       do SW n <- genWidth
          B.correct_overlap <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "correct_overlap_inv" $
+      do SW n <- genWidth
+         B.correct_overlap_inv <$> B.genDomain n <*> B.genDomain n
+  , genTest "correct_asSingleton" $
+      do SW n <- genWidth
+         B.correct_asSingleton n <$> B.genDomain n
   , genTest "correct_union1" $
       do SW n <- genWidth
          (a,x) <- B.genPair n
@@ -590,6 +610,15 @@ overallDomainTests = testGroup "Overall Domain"
   , genTest "precise_overlap" $
       do SW n <- genWidth
          O.precise_overlap <$> O.genDomain n <*> O.genDomain n
+  , genTest "correct_asSingleton" $
+      do SW n <- genWidth
+         O.correct_asSingleton n <$> O.genDomain n
+  , genTest "correct_mixed_domain_overlap" $
+      do SW n <- genWidth
+         O.correct_mixed_domain_overlap <$> A.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "correct_mixed_domain_overlap_inv" $
+      do SW n <- genWidth
+         O.correct_mixed_domain_overlap_inv <$> A.genDomain n <*> B.genDomain n
   , genTest "correct_union" $
       do SW n <- genWidth
          O.correct_union n <$> O.genDomain n <*> O.genDomain n <*> genBV n
