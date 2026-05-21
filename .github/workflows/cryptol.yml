@@ -1,0 +1,47 @@
+name: Check Cryptol specs
+
+on:
+  push:
+    paths:
+      - 'what4-domains/doc/*.cry'
+      - '.github/workflows/cryptol.yml'
+  pull_request:
+    paths:
+      - 'what4-domains/doc/*.cry'
+      - '.github/workflows/cryptol.yml'
+
+env:
+  CRYPTOL_VERSION: 3.5.0
+  # Cryptol 3.5.0 is built against ubuntu-22.04. The release tarball
+  # bundles the solvers it needs, so we don't have to fetch them
+  # separately.
+  CRYPTOL_ASSET: cryptol-3.5.0-ubuntu-22.04-X64-with-solvers
+  CRYPTOL_TARBALL: cryptol-3.5.0-ubuntu-22.04-X64-with-solvers.tar.gz
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prove:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Cryptol (with bundled solvers)
+        run: |
+          url="https://github.com/GaloisInc/cryptol/releases/download/${CRYPTOL_VERSION}/${CRYPTOL_TARBALL}"
+          curl --fail --location --silent --show-error "$url" | tar -xzf - -C /opt
+          echo "/opt/${CRYPTOL_ASSET}/bin" >> "$GITHUB_PATH"
+
+      - name: Prove all Cryptol specs
+        run: |
+          cryptol --version
+          for f in what4-domains/doc/*.cry; do
+            echo "=== $f ==="
+            cryptol --command=":prove" "$f"
+          done
