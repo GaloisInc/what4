@@ -11,6 +11,8 @@ bit width) by loading this file in cryptol and entering ":prove".
 */
 module arithdomain where
 
+import bitsdomain as B
+
 ////////////////////////////////////////////////////////////
 // Library
 
@@ -209,6 +211,9 @@ add a b = withBot (a.isBot \/ b.isBot)
   (if carry a.sz b.sz then top
    else interval (a.lo + b.lo) (a.sz .+. b.sz))
 
+sub : {n} (fin n) => Dom n -> Dom n -> Dom n
+sub a b = add a (neg b)
+
 neg : {n} (fin n) => Dom n -> Dom n
 neg a = withBot a.isBot (interval (- (a.lo + a.sz)) a.sz)
 
@@ -217,6 +222,28 @@ neg a = withBot a.isBot (interval (- (a.lo + a.sz)) a.sz)
 bnot : {n} (fin n) => Dom n -> Dom n
 bnot a = withBot a.isBot (interval (~ ah) a.sz)
   where ah = a.lo + a.sz
+
+toBitwise : {n} (fin n, n >= 1) => Dom n -> B::Dom n
+toBitwise a = { lomask = hi ^ u, himask = hi }
+  where
+    u  = unknowns a
+    hi = a.lo || u
+
+fromBitwise : {n} (fin n) => B::Dom n -> Dom n
+fromBitwise bw = if bw.himask - bw.lomask == ~0 then top
+                 else interval bw.lomask (bw.himask - bw.lomask)
+
+band : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+band a b = withBot (a.isBot \/ b.isBot)
+  (fromBitwise (B::band (toBitwise a) (toBitwise b)))
+
+bor : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+bor a b = withBot (a.isBot \/ b.isBot)
+  (fromBitwise (B::bor (toBitwise a) (toBitwise b)))
+
+bxor : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+bxor a b = withBot (a.isBot \/ b.isBot)
+  (fromBitwise (B::bxor (toBitwise a) (toBitwise b)))
 
 mul : {n} (fin n) => Dom n -> Dom n -> Dom n
 mul a b = withBot (a.isBot \/ b.isBot)
@@ -345,6 +372,14 @@ ashr a b = withBot (a.isBot \/ b.isBot) (interval cl (ch - cl))
     (bl, bh) = ubounds b
     cl = al >>$ (if al <$ 0 then bl else bh)
     ch = ah >>$ (if ah <$ 0 then bh else bl)
+
+rol : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+rol a b = withBot (a.isBot \/ b.isBot)
+  (fromBitwise (B::rolAbstract (toBitwise a) (toBitwise b)))
+
+ror : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
+ror a b = withBot (a.isBot \/ b.isBot)
+  (fromBitwise (B::rorAbstract (toBitwise a) (toBitwise b)))
 
 ////////////////////////////////////////////////////////////
 // Comparisons
@@ -528,6 +563,10 @@ correct_add : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_add a b x y =
   mem a x ==> mem b y ==> mem (add a b) (x + y)
 
+correct_sub : {n} (fin n) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_sub a b x y =
+  mem a x ==> mem b y ==> mem (sub a b) (x - y)
+
 correct_neg : {n} (fin n) => Dom n -> [n] -> Property
 correct_neg a x =
   mem a x <==> mem (neg a) (- x)
@@ -576,6 +615,14 @@ correct_ashr : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_ashr a b x y =
   mem a x ==> mem b y ==> mem (ashr a b) (x >>$ y)
 
+correct_rol : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_rol a b x y =
+  mem a x ==> mem b y ==> mem (rol a b) (x <<< y)
+
+correct_ror : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_ror a b x y =
+  mem a x ==> mem b y ==> mem (ror a b) (x >>> y)
+
 correct_slt : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
 correct_slt a b x y =
   slt a b ==> mem a x ==> mem b y ==> x <$ y
@@ -603,6 +650,18 @@ correct_not : {n} (fin n) => Dom n -> [n] -> Property
 correct_not a x =
   mem a x <==> mem (bnot a) (~ x)
 
+correct_and : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_and a b x y =
+  mem a x ==> mem b y ==> mem (band a b) (x && y)
+
+correct_or : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_or a b x y =
+  mem a x ==> mem b y ==> mem (bor a b) (x || y)
+
+correct_xor : {n} (fin n, n >= 1) => Dom n -> Dom n -> [n] -> [n] -> Property
+correct_xor a b x y =
+  mem a x ==> mem b y ==> mem (bxor a b) (x ^ y)
+
 correct_asSingleton : {n} (fin n) => Dom n -> Property
 correct_asSingleton a =
   isSingleton a ==> a == singleton a.lo
@@ -610,6 +669,14 @@ correct_asSingleton a =
 correct_unknowns : {n} (fin n, n >= 1) => Dom n -> [n] -> [n] -> Property
 correct_unknowns a x y =
   mem a x ==> mem a y ==> (x || unknowns a) == (y || unknowns a)
+
+correct_toBitwise : {n} (fin n, n >= 1) => Dom n -> [n] -> Property
+correct_toBitwise a x =
+  mem a x ==> B::mem (toBitwise a) x
+
+correct_fromBitwise : {n} (fin n, n >= 1) => B::Dom n -> [n] -> Property
+correct_fromBitwise bw x =
+  B::mem bw x ==> mem (fromBitwise bw) x
 
 property p1 = correct_any`{16}
 property p2 = correct_ubounds`{16}
@@ -625,20 +692,28 @@ property p10 = correct_shrink`{8, 8}
 property p11 = correct_trunc`{8, 8}
 property p12 = correct_unknowns`{16}
 property p13 = correct_asSingleton`{16}
+property p14 = correct_toBitwise`{16}
+property p15 = correct_fromBitwise`{16}
 
 property a1 = correct_add`{8}
-property a2 = correct_neg`{16}
-property a3 = correct_mul`{4}
-property a4 = correct_udiv`{8}
-property a5 = correct_urem`{6}
-property a6 = correct_sdiv`{6}
-property a7 = correct_srem`{6}
-property a8 = correct_not`{16}
+property a2 = correct_sub`{8}
+property a3 = correct_neg`{16}
+property a4 = correct_mul`{4}
+property a5 = correct_udiv`{8}
+property a6 = correct_urem`{6}
+property a7 = correct_sdiv`{6}
+property a8 = correct_srem`{6}
 property a9 = correct_sdivRange`{6}
+property a10 = correct_not`{16}
+property a11 = correct_and`{8}
+property a12 = correct_or`{8}
+property a13 = correct_xor`{8}
 
 property s1 = correct_shl`{8}
 property s2 = correct_lshr`{8}
 property s3 = correct_ashr`{8}
+property s4 = correct_rol`{8}
+property s5 = correct_ror`{8}
 
 property o1 = correct_slt`{16}
 property o2 = correct_sle`{16}
