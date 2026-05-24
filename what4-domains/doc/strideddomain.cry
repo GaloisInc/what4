@@ -1,0 +1,30 @@
+// A spec for "What4.Domains.BV.StridedInterval".
+module strideddomain where
+
+import clp as Clp
+import clp (Clp)
+
+type Property = Bit
+
+enum Domain n
+  = BVDBot
+  | BVDClp (Clp n)
+
+// ------------------------------------------------------------------
+// * Queries
+
+member : {n} (fin n, n >= 2) => Domain n -> [n] -> Bit
+member d x = case d of
+  BVDBot -> False
+  BVDClp c -> Clp::member c x
+
+// ------------------------------------------------------------------
+// * Correctness properties
+
+// ------------------------------------------------------------------
+// ** Queries
+
+memberBottom : {n} (fin n, n >= 2) => [n] -> Property
+memberBottom x = ~ (member`{n} BVDBot x)
+
+property p_memberBottom = memberBottom`{8}

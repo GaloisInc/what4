@@ -12,19 +12,23 @@ module What4.Domains.Arithmetic.Internal
   , clzRef
   , intLog2Ref
   , isPow2IntegerRef
+  , isPow2NaturalRef
     -- * Optimized implementations (GHC 9.0+ only)
   , ctzOpt
   , clzOpt
   , intLog2Opt
   , isPow2IntegerOpt
+  , isPow2NaturalOpt
   ) where
 
 import Data.Bits (Bits(..), testBit, shiftR)
+import Numeric.Natural (Natural)
 
 import Data.Parameterized.NatRepr
 
 #if MIN_VERSION_base(4,15,0)
 import qualified GHC.Num.Integer as Integer
+import qualified GHC.Num.Natural as Natural
 import qualified GHC.Num.BigNat as BigNat
 import GHC.Exts (Word(..), ctz#, int2Word#)
 #endif
@@ -63,6 +67,11 @@ intLog2Ref = go 0
 isPow2IntegerRef :: Integer -> Bool
 isPow2IntegerRef x = x > 0 && x .&. (x - 1) == 0
 {-# INLINE isPow2IntegerRef #-}
+
+-- | Reference implementation: Check if Natural is a positive power of two.
+isPow2NaturalRef :: Natural -> Bool
+isPow2NaturalRef x = x > 0 && x .&. (x - 1) == 0
+{-# INLINE isPow2NaturalRef #-}
 
 ------------------------------------------------------------------------
 -- Optimized implementations (GHC 9.0+ primops)
@@ -122,3 +131,14 @@ isPow2IntegerOpt x = case Integer.integerIsPowerOf2# x of
 isPow2IntegerOpt = isPow2IntegerRef
 #endif
 {-# INLINE isPow2IntegerOpt #-}
+
+-- | Optimized implementation: Check if Natural is power of two using primops
+isPow2NaturalOpt :: Natural -> Bool
+#if MIN_VERSION_base(4,15,0)
+isPow2NaturalOpt x = case Natural.naturalIsPowerOf2# x of
+  (# _ | #) -> False
+  (# | _ #) -> True
+#else
+isPow2NaturalOpt = isPow2NaturalRef
+#endif
+{-# INLINE isPow2NaturalOpt #-}

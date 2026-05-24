@@ -42,20 +42,25 @@ import qualified Test.Tasty as TT
 import           Test.Tasty.HUnit
 
 -- | A Haskell source file holding properties, together with the qualifier under
--- which @BVDomTests@ imports it.
+-- which the test driver imports it, and the test file that should invoke its
+-- properties.
 data HsModule = HsModule
   { hsModFile :: FilePath
   , hsModQual :: Text
+  , hsModTestFile :: FilePath
   }
 
-arithMod, bitwiseMod, xorMod, overallMod :: HsModule
-arithMod   = HsModule "src/What4/Domains/BV/Arith.hs"   "A"
-bitwiseMod = HsModule "src/What4/Domains/BV/Bitwise.hs" "B"
-xorMod     = HsModule "src/What4/Domains/BV/XOR.hs"     "X"
-overallMod = HsModule "src/What4/Domains/BV.hs"         "O"
+arithMod, bitwiseMod, xorMod, overallMod, clpMod, stridedMod :: HsModule
+arithMod   = HsModule "src/What4/Domains/BV/Arith.hs"           "A" "test/BVDomTests.hs"
+bitwiseMod = HsModule "src/What4/Domains/BV/Bitwise.hs"         "B" "test/BVDomTests.hs"
+xorMod     = HsModule "src/What4/Domains/BV/XOR.hs"             "X" "test/BVDomTests.hs"
+overallMod = HsModule "src/What4/Domains/BV.hs"                 "O" "test/BVDomTests.hs"
+clpMod     = HsModule "src/What4/Domains/BV/CLP.hs"             "C" "test/CLP.hs"
+stridedMod = HsModule "src/What4/Domains/BV/StridedInterval.hs" "S" "test/StridedInterval.hs"
 
 allHsModules :: [HsModule]
-allHsModules = [arithMod, bitwiseMod, xorMod, overallMod]
+allHsModules =
+  [arithMod, bitwiseMod, xorMod, overallMod, clpMod, stridedMod]
 
 cryptolFiles :: [FilePath]
 cryptolFiles =
@@ -63,10 +68,9 @@ cryptolFiles =
   , "doc/bitsdomain.cry"
   , "doc/xordomain.cry"
   , "doc/bvdomain.cry"
+  , "doc/clp.cry"
+  , "doc/strideddomain.cry"
   ]
-
-testsFile :: FilePath
-testsFile = "test/BVDomTests.hs"
 
 main :: IO ()
 main = TT.defaultMain $ TT.testGroup "Test coverage"
@@ -85,7 +89,7 @@ haskellInvocationTests = TT.testGroup "Haskell predicates are invoked"
 checkModuleInvoked :: HsModule -> Assertion
 checkModuleInvoked m = do
   src     <- TIO.readFile (hsModFile m)
-  testSrc <- TIO.readFile testsFile
+  testSrc <- TIO.readFile (hsModTestFile m)
   let names = extractHsPredicates src
   assertNonEmpty (hsModFile m) "Property" names
   let missing = [ n | n <- names, not (isInvokedAs (hsModQual m) n testSrc) ]
@@ -94,7 +98,7 @@ checkModuleInvoked m = do
     _  -> assertFailure $ T.unpack $ T.unlines $
             ("Predicates defined in " <> T.pack (hsModFile m)
              <> " but never invoked as " <> hsModQual m <> ".<name> in "
-             <> T.pack testsFile <> ":")
+             <> T.pack (hsModTestFile m) <> ":")
             : map ("  " <>) (Set.toAscList (Set.fromList missing))
 
 -- | Sanity check: the source extractor should always find at least one property
@@ -174,6 +178,11 @@ haskellOnly = Set.fromList
   , "correct_equiv_shlAbstract", "correct_equiv_lshrAbstract"
   , "correct_equiv_ashrAbstract"
   , "correct_equiv_rolAbstract", "correct_equiv_rorAbstract"
+  -- 'toList' enumerates a CLP's elements; the natural specification is an
+  -- unbounded list, which Cryptol's fixed-size sequences can't represent
+  -- directly. The 'memberBottom' Cryptol property already pins down 'member'
+  -- on the bottom case, so the toList round-trips are Haskell-only.
+  , "toListMember", "memberToList"
   ]
 
 cryptolCorrespondenceTests :: TT.TestTree

@@ -42,7 +42,12 @@ module What4.Domains.BV.Bitwise.Tnum
 import qualified Control.Exception as X
 import           Data.Bits
 
-import           What4.Domains.Arithmetic (bitsBelow, isPow2Integer)
+import           What4.Domains.Arithmetic
+                  ( bitsBelow
+                  , countTrailingZerosOr0
+                  , isPow2Integer
+                  , log2OfPowerOfTwo
+                  )
 
 -- | A tristate-number representation.
 --
@@ -165,32 +170,6 @@ wrappedKnownBitsOfInterval bvmask lo hi
   wLo = lo `rem` modulus
   wHi = hi `rem` modulus
 {-# INLINE wrappedKnownBitsOfInterval #-}
-
--- | Count trailing zeros of a non-negative 'Integer', returning @0@ for input
--- @0@. ('Data.Bits.countTrailingZeros' requires 'FiniteBits', which 'Integer'
--- doesn't have.)
---
--- Uses the bit-trick @popCount ((n .&. -n) - 1)@: @n .&. -n@ isolates the
--- lowest set bit (always a single power-of-two bit, for any nonzero @n@), and
--- @popCount@ of one less than that is the bit's position.
-countTrailingZerosOr0 :: Integer -> Int
-countTrailingZerosOr0 0 = 0
-countTrailingZerosOr0 n = popCount ((n .&. negate n) - 1)
-{-# INLINE countTrailingZerosOr0 #-}
-
--- | @log2OfPowerOfTwo n@ returns @k@ such that @n == 2^k@. Asserts that @n@
--- is a positive power of two, and that the fast computation
--- @popCount (n - 1)@ agrees with the general 'countTrailingZerosOr0'.
---
--- Faster than 'countTrailingZerosOr0' for known powers of two: skips the
--- @n .&. -n@ isolation step.
-log2OfPowerOfTwo :: Integer -> Int
-log2OfPowerOfTwo n =
-  X.assert (isPow2Integer n) $
-  X.assert (k == countTrailingZerosOr0 n) $
-  k
-  where
-  k = popCount (n - 1)
 
 -- | /O(w²)/. Tristate-number multiply via shift-and-add (BPF
 -- @tnum_mul@). The result is truncated to @bvmask@.

@@ -40,6 +40,8 @@ import qualified What4.Domains.BV.XOR as X
 import           What4.Domains.Internal (assertionsEnabled)
 import qualified What4.Domains.Arithmetic.Internal as ArithOpt
 
+import qualified CLP
+import qualified StridedInterval
 
 
 main :: IO ()
@@ -57,6 +59,8 @@ main = defaultMain $
     , xorDomainTests
     , overallDomainTests
     , transferTests
+    , CLP.tests
+    , StridedInterval.tests
     ]
 
 data SomeWidth where

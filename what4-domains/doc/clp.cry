@@ -1,0 +1,110 @@
+// A spec for "What4.Domains.BV.CLP".
+module clp where
+
+type Property = Bit
+
+type Clp n
+  = { start : [n]
+    , end : [n]
+    , stride : [n]
+    }
+
+proper : {n} (fin n, n >= 1) => Clp n -> Bool
+proper c = c.stride > 0 /\ (c.end - c.start) % strideGcd c == 0
+
+// ------------------------------------------------------------------
+// * Internal helpers
+
+modNeg : {n} (fin n, n >= 1) => [n] -> [n]
+modNeg x = - x
+
+wrapOffset : {n} (fin n, n >= 1) => Clp n -> [n] -> [n]
+wrapOffset c v = v + modNeg c.start
+
+strideGcd : {n} (fin n, n >= 1) => Clp n -> [n]
+strideGcd c = c.stride && modNeg c.stride
+
+divByPow2 : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+divByPow2 x p = x / p
+
+invModPow2 : {n} (fin n, n >= 2) => [n] -> [n]
+invModPow2 a = (iterate step 1) @ `n
+  where step x = x * (2 - a * x)
+
+valueIndex : {n} (fin n, n >= 2) => Clp n -> [n] -> [n]
+valueIndex c v = divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g)
+  where g = strideGcd c
+
+circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
+circLeq x a b = a - x <= b - x
+
+// ------------------------------------------------------------------
+// * Queries
+
+member : {n} (fin n, n >= 2) => Clp n -> [n] -> Bit
+member c v = wrapOffset c v % strideGcd c == 0
+          /\ valueIndex c v <= valueIndex c c.end
+
+// ------------------------------------------------------------------
+// * Correctness properties
+
+// ------------------------------------------------------------------
+// ** Internal helpers
+
+modNegCorrect : {n} (fin n, n >= 1) => [n] -> Property
+modNegCorrect x = x + modNeg x == 0
+
+wrapOffsetCorrect : {n} (fin n, n >= 1) => Clp n -> [n] -> Property
+wrapOffsetCorrect c v = proper c ==> c.start + wrapOffset c v == v
+
+strideGcdDividesStride : {n} (fin n, n >= 1) => Clp n -> Property
+strideGcdDividesStride c = proper c ==> c.stride % strideGcd c == 0
+
+strideGcdIsPow2 : {n} (fin n, n >= 1) => Clp n -> Property
+strideGcdIsPow2 c = proper c ==> g != 0 /\ g && (g - 1) == 0
+  where g = strideGcd c
+
+divByPow2Correct : {n} (fin n, n >= 1) => [n] -> [n] -> Property
+divByPow2Correct x p = isPow2 ==> x % p == 0 ==> divByPow2 x p * p == x
+  where isPow2 = p != 0 /\ (p && (p - 1)) == 0
+
+invModPow2Correct : {n} (fin n, n >= 2) => [n] -> Property
+invModPow2Correct a = isOdd ==> a * invModPow2 a == 1
+  where isOdd = a ! 0
+
+valueIndexCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+valueIndexCorrect c v =
+  proper c ==> wrapOffset c v % strideGcd c == 0 ==>
+    c.start + valueIndex c v * c.stride == v
+
+circLeqAtZero : {n} (fin n, n >= 1) => [n] -> [n] -> Property
+circLeqAtZero a b = circLeq 0 a b == (a <= b)
+
+circLeqAnchorMin : {n} (fin n, n >= 1) => [n] -> [n] -> Property
+circLeqAnchorMin x v = circLeq x x v
+
+circLeqAnchorMax : {n} (fin n, n >= 1) => [n] -> [n] -> Property
+circLeqAnchorMax x v = circLeq x v (x - 1)
+
+property p_modNegCorrect           = modNegCorrect`{8}
+property p_wrapOffsetCorrect       = wrapOffsetCorrect`{8}
+property p_strideGcdDividesStride  = strideGcdDividesStride`{8}
+property p_strideGcdIsPow2         = strideGcdIsPow2`{8}
+property p_divByPow2Correct        = divByPow2Correct`{8}
+property p_invModPow2Correct       = invModPow2Correct`{8}
+property p_valueIndexCorrect       = valueIndexCorrect`{8}
+property p_circLeqAtZero           = circLeqAtZero`{8}
+property p_circLeqAnchorMin        = circLeqAnchorMin`{8}
+property p_circLeqAnchorMax        = circLeqAnchorMax`{8}
+
+// ------------------------------------------------------------------
+// ** Queries
+
+startMember : {n} (fin n, n >= 2) => Clp n -> Property
+startMember c = proper c ==> member c c.start
+
+endMember : {n} (fin n, n >= 2) => Clp n -> Property
+endMember c = proper c ==> member c c.end
+
+property p_startMember = startMember`{8}
+property p_endMember = endMember`{8}
