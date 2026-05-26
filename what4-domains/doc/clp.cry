@@ -46,6 +46,18 @@ circLeq x a b = a - x <= b - x
 isMultiWrap : {n} (fin n, n >= 2) => Clp n -> Bit
 isMultiWrap c = zext`{2*n} (valueIndex c c.end) * zext`{2*n} c.stride >= 2^^`n
 
+liftArith1 : {n} (fin n, n >= 2) => (Dom n -> Dom n) -> Clp n -> Clp n
+liftArith1 f c = fromArith (f (toArith c))
+
+liftArith2 : {n} (fin n, n >= 2) => (Dom n -> Dom n -> Dom n) -> Clp n -> Clp n -> Clp n
+liftArith2 f a b = fromArith (f (toArith a) (toArith b))
+
+liftBitwise1 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n) -> Clp n -> Clp n
+liftBitwise1 f c = fromBitwise (f (toBitwise c))
+
+liftBitwise2 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n -> Bits::Dom n) -> Clp n -> Clp n -> Clp n
+liftBitwise2 f a b = fromBitwise (f (toBitwise a) (toBitwise b))
+
 // ------------------------------------------------------------------
 // * Conversion
 
@@ -70,6 +82,75 @@ fromBitwise b = fromArith (BV::bitToArithDom b)
 member : {n} (fin n, n >= 2) => Clp n -> [n] -> Bit
 member c v = wrapOffset c v % strideGcd c == 0
           /\ valueIndex c v <= valueIndex c c.end
+
+// ------------------------------------------------------------------
+// * Arithmetic
+
+neg : {n} (fin n, n >= 2) => Clp n -> Clp n
+neg = liftArith1 Arith::neg
+
+add : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+add = liftArith2 Arith::add
+
+mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+mul = liftArith2 Arith::mul
+
+udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+udiv = liftArith2 Arith::udiv
+
+urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+urem = liftArith2 Arith::urem
+
+sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+sdiv = liftArith2 Arith::sdiv
+
+srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+srem = liftArith2 Arith::srem
+
+// ------------------------------------------------------------------
+// * Bitwise
+
+bnot : {n} (fin n, n >= 2) => Clp n -> Clp n
+bnot = liftBitwise1 Bits::bnot
+
+band : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+band = liftBitwise2 Bits::band
+
+bor : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+bor = liftBitwise2 Bits::bor
+
+bxor : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+bxor = liftBitwise2 Bits::bxor
+
+// ------------------------------------------------------------------
+// * Concatenation, extension, selection, and truncation
+
+zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> Clp m
+zero_ext c = fromArith (Arith::zero_ext`{m} (toArith c))
+
+sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> Clp m
+sign_ext c = fromArith (Arith::sign_ext`{m} (toArith c))
+
+concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> Clp (m + n)
+concat a b = fromArith (Arith::concat (toArith a) (toArith b))
+
+// ------------------------------------------------------------------
+// * Shifts and rotations
+
+shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+shl = liftArith2 Arith::shl
+
+lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+lshr = liftArith2 Arith::lshr
+
+ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+ashr = liftArith2 Arith::ashr
+
+rol : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+rol = liftBitwise2 Bits::rolAbstract
+
+ror : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+ror = liftBitwise2 Bits::rorAbstract
 
 // ------------------------------------------------------------------
 // * Correctness properties
@@ -158,3 +239,127 @@ property p_fromArithCorrect = fromArithCorrect`{8}
 property p_roundtripArith = roundtripArith`{8}
 property p_toBitwiseCorrect = toBitwiseCorrect`{8}
 property p_fromBitwiseCorrect = fromBitwiseCorrect`{8}
+
+// ------------------------------------------------------------------
+// ** Arithmetic
+
+correct_neg : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+correct_neg a x = proper a ==> member a x ==> member (neg a) (- x)
+
+correct_add : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_add a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (add a b) (x + y)
+
+correct_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_mul a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (mul a b) (x * y)
+
+correct_udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_udiv a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
+    member (udiv a b) (x / y)
+
+correct_urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_urem a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
+    member (urem a b) (x % y)
+
+correct_sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_sdiv a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
+    member (sdiv a b) (x /$ y)
+
+correct_srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_srem a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
+    member (srem a b) (x %$ y)
+
+property p_correct_neg = correct_neg`{4}
+property p_correct_add = correct_add`{4}
+property p_correct_mul = correct_mul`{4}
+property p_correct_udiv = correct_udiv`{4}
+property p_correct_urem = correct_urem`{4}
+property p_correct_sdiv = correct_sdiv`{4}
+property p_correct_srem = correct_srem`{4}
+
+// ------------------------------------------------------------------
+// ** Bitwise
+
+correct_not : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+correct_not a x = proper a ==> member a x ==> member (bnot a) (~ x)
+
+correct_and : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_and a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (band a b) (x && y)
+
+correct_or : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_or a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (bor a b) (x || y)
+
+correct_xor : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_xor a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (bxor a b) (x ^ y)
+
+property p_correct_not = correct_not`{4}
+property p_correct_and = correct_and`{4}
+property p_correct_or  = correct_or`{4}
+property p_correct_xor = correct_xor`{4}
+
+// ------------------------------------------------------------------
+// ** Concatenation, extension, selection, and truncation
+
+correct_zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [n] -> Property
+correct_zero_ext a x =
+  proper a ==> member a x ==> member (zero_ext`{m} a) (zext x)
+
+correct_sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [n] -> Property
+correct_sign_ext a x =
+  proper a ==> member a x ==> member (sign_ext`{m} a) (sext x)
+
+correct_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> [m] -> [n] -> Property
+correct_concat a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (concat a b) (x # y)
+
+property p_correct_zero_ext = correct_zero_ext`{6, 4}
+property p_correct_sign_ext = correct_sign_ext`{6, 4}
+property p_correct_concat   = correct_concat`{2, 2}
+
+// ------------------------------------------------------------------
+// ** Shifts and rotations
+
+correct_shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_shl a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (shl a b) (x << y)
+
+correct_lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_lshr a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (lshr a b) (x >> y)
+
+correct_ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_ashr a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (ashr a b) (x >>$ y)
+
+correct_rol : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_rol a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (rol a b) (x <<< y)
+
+correct_ror : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_ror a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (ror a b) (x >>> y)
+
+property p_correct_shl  = correct_shl`{4}
+property p_correct_lshr = correct_lshr`{4}
+property p_correct_ashr = correct_ashr`{4}
+property p_correct_rol  = correct_rol`{4}
+property p_correct_ror  = correct_ror`{4}

@@ -1,12 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
 module CLP (tests) where
 
 import qualified Test.Tasty as TT
 
-import           Data.Parameterized.NatRepr (NatRepr, isPosNat, someNat, LeqProof(..), maxUnsigned)
+import           Data.Parameterized.NatRepr (NatRepr, addNat, addIsLeq, isPosNat, knownNat, someNat, testLeq, LeqProof(..), maxUnsigned)
 import           Data.Parameterized.Some (Some(..))
 import           GHC.TypeNats (type (<=))
 import           Numeric.Natural (Natural)
@@ -117,4 +118,114 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "fromBitwiseCorrect" $
       do SW n <- genWidth
          C.fromBitwiseCorrect n <$> B.genDomain n <*> chooseInteger (0, maxUnsigned n)
+
+  -- Arithmetic
+  , genTest "correct_neg" $
+      do SW n <- genWidth
+         (\c x -> C.correct_neg n c x) <$> C.genClp n <*> genNatBV n
+  , genTest "correct_add" $
+      do SW n <- genWidth
+         C.correct_add n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_scale" $
+      do SW n <- genWidth
+         C.correct_scale n <$> chooseInteger (0, maxUnsigned n)
+                           <*> C.genClp n <*> genNatBV n
+  , genTest "correct_mul" $
+      do SW n <- genWidth
+         C.correct_mul n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_udiv" $
+      do SW n <- genWidth
+         C.correct_udiv n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_urem" $
+      do SW n <- genWidth
+         C.correct_urem n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_sdiv" $
+      do SW n <- genWidth
+         C.correct_sdiv n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_srem" $
+      do SW n <- genWidth
+         C.correct_srem n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_udivSmtlib" $
+      do SW n <- genWidth
+         C.correct_udivSmtlib n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_uremSmtlib" $
+      do SW n <- genWidth
+         C.correct_uremSmtlib n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_sdivSmtlib" $
+      do SW n <- genWidth
+         C.correct_sdivSmtlib n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_sremSmtlib" $
+      do SW n <- genWidth
+         C.correct_sremSmtlib n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+
+  -- Bitwise
+  , genTest "correct_not" $
+      do SW n <- genWidth
+         (\c x -> C.correct_not n c x) <$> C.genClp n <*> genNatBV n
+  , genTest "correct_and" $
+      do SW n <- genWidth
+         C.correct_and n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_or" $
+      do SW n <- genWidth
+         C.correct_or n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_xor" $
+      do SW n <- genWidth
+         C.correct_xor n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+
+  -- Concatenation, extension, selection, and truncation
+  , genTest "correct_zero_ext" $
+      do SW w <- genWidth
+         SW n <- genWidth
+         let u = addNat w n
+         case testLeq (addNat w (knownNat @1)) u of
+           Nothing -> error "impossible!"
+           Just LeqProof ->
+             do c <- C.genClp w
+                x <- genNatBV w
+                pure (C.correct_zero_ext w c u x)
+  , genTest "correct_sign_ext" $
+      do SW w <- genWidth
+         SW n <- genWidth
+         let u = addNat w n
+         case testLeq (addNat w (knownNat @1)) u of
+           Nothing -> error "impossible!"
+           Just LeqProof ->
+             do c <- C.genClp w
+                x <- genNatBV w
+                pure (C.correct_sign_ext w c u x)
+  , genTest "correct_concat" $
+      do SW m <- genWidth
+         SW n <- genWidth
+         a <- C.genClp m
+         x <- genNatBV m
+         b <- C.genClp n
+         y <- genNatBV n
+         pure (C.correct_concat m a x n b y)
+  , genTest "correct_select" $
+      do SW n <- genWidth
+         SW i <- genWidth
+         SW z <- genWidth
+         let i_n = addNat i n
+         let w = addNat i_n z
+         LeqProof <- pure (addIsLeq i_n z)
+         c <- C.genClp w
+         x <- genNatBV w
+         pure (C.correct_select i n w c x)
+
+  -- Shifts and rotations
+  , genTest "correct_shl" $
+      do SW n <- genWidth
+         C.correct_shl n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_lshr" $
+      do SW n <- genWidth
+         C.correct_lshr n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_ashr" $
+      do SW n <- genWidth
+         C.correct_ashr n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_rol" $
+      do SW n <- genWidth
+         C.correct_rol n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_ror" $
+      do SW n <- genWidth
+         C.correct_ror n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
   ]

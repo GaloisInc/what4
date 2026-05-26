@@ -56,9 +56,12 @@ specification.
 -}
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
 module What4.Domains.BV.CLP
@@ -90,42 +93,36 @@ module What4.Domains.BV.CLP
   -- , slt
   -- , overlap
   -- * Arithmetic
-  -- , negate
-  -- , add
+  , negate
+  , add
   -- , sub
-  -- , scale
-  -- , mul
-  -- , udiv
-  -- , sdiv
-  -- , urem
-  -- , srem
+  , scale
+  , mul
+  , udiv
+  , sdiv
+  , urem
+  , srem
   -- ** Arithmetic (SMT-LIB div-by-zero semantics)
-  -- , udivSmtlib
-  -- , uremSmtlib
-  -- , sdivSmtlib
-  -- , sremSmtlib
+  , udivSmtlib
+  , uremSmtlib
+  , sdivSmtlib
+  , sremSmtlib
   -- * Bitwise operations
-  -- , not
-  -- , and
-  -- , or
-  -- , xor
+  , not
+  , and
+  , or
+  , xor
   -- * Concatenation, extension, selection, and truncation
-  -- , zext
-  -- , sext
-  -- , concat
-  -- , select
+  , zext
+  , sext
+  , concat
+  , select
   -- * Shifts and rotations
-  -- , shl
-  -- , lshr
-  -- , ashr
-  -- , rol
-  -- , ror
-  -- * Lattice operations
-  -- , top
-  -- , bottom
-  -- , join
-  -- , meet
-  -- , leq
+  , shl
+  , lshr
+  , ashr
+  , rol
+  , ror
   -- * Properties
   -- ** Generators
   , genClp
@@ -165,47 +162,51 @@ module What4.Domains.BV.CLP
   -- , correct_slt
   -- , correct_overlap
   -- ** Arithmetic
-  -- , correct_negate
-  -- , correct_add
+  , correct_neg
+  , correct_add
   -- , correct_sub
-  -- , correct_scale
-  -- , correct_mul
-  -- , correct_udiv
-  -- , correct_sdiv
-  -- , correct_urem
-  -- , correct_srem
+  , correct_scale
+  , correct_mul
+  , correct_udiv
+  , correct_sdiv
+  , correct_urem
+  , correct_srem
   -- *** Arithmetic (SMT-LIB div-by-zero semantics)
-  -- , correct_udivSmtlib
-  -- , correct_uremSmtlib
-  -- , correct_sdivSmtlib
-  -- , correct_sremSmtlib
+  , correct_udivSmtlib
+  , correct_uremSmtlib
+  , correct_sdivSmtlib
+  , correct_sremSmtlib
   -- ** Bitwise operations
-  -- , correct_not
-  -- , correct_and
-  -- , correct_or
-  -- , correct_xor
+  , correct_not
+  , correct_and
+  , correct_or
+  , correct_xor
   -- ** Concatenation, extension, selection, and truncation
-  -- , correct_zext
-  -- , correct_sext
-  -- , correct_concat
-  -- , correct_select
+  , correct_zero_ext
+  , correct_sign_ext
+  , correct_concat
+  , correct_select
   -- ** Shifts and rotations
-  -- , correct_shl
-  -- , correct_lshr
-  -- , correct_ashr
-  -- , correct_rol
-  -- , correct_ror
+  , correct_shl
+  , correct_lshr
+  , correct_ashr
+  , correct_rol
+  , correct_ror
   ) where
 
 import           Control.Exception (assert)
 import           Data.Bits ((.&.), popCount, shiftL, shiftR)
-import           GHC.TypeNats (Nat, type (<=))
+import           GHC.TypeNats (Nat, type (+), type (<=))
 import           Numeric.Natural (Natural)
+import           Prelude hiding (negate, not, and, or, concat)
+import qualified Prelude
 
 import qualified Data.Bits as Bits
 import qualified Data.Set as Set
 
-import           Data.Parameterized.NatRepr (NatRepr, maxUnsigned)
+import           Data.Parameterized.NatRepr (NatRepr, LeqProof(..), maxUnsigned)
+import qualified Data.Parameterized.NatRepr as NR
+import qualified What4.Domains.Arithmetic as Arith
 import           What4.Domains.Arithmetic (countTrailingZerosOr0, isPow2Natural)
 import qualified What4.Domains.BV.Arith as A
 import qualified What4.Domains.BV.Bitwise as B
@@ -230,7 +231,7 @@ data Clp (w :: Nat)
 -- | The data-structure invariants of 'Clp'.
 proper :: Clp w -> Bool
 proper c@Clp {start, end, stride, mask} =
-  and
+  Prelude.and
   [ start .&. mask == start
   , end .&. mask == end
   , stride .&. mask == stride
@@ -461,6 +462,173 @@ toList c@Clp{start, end, stride} = assert (proper c) $ go start
       | otherwise = v : go (modMask c (v + stride))
 
 -- ------------------------------------------------------------------
+-- * Lifted operations
+
+-- These helpers convert a CLP to an arithmetic or bitwise domain, apply the
+-- corresponding operation there, and convert back. Since the result of an
+-- @A.*@ or @B.*@ op on a proper input is always proper (never bottom),
+-- @fromArith@\/@fromBitwise@ here always succeed, and we project from the
+-- 'Maybe' with 'fromJustUnsafe'. This loses precision (the round-trip
+-- collapses non-trivial strides), but is sound.
+
+fromJustUnsafe :: String -> Maybe a -> a
+fromJustUnsafe loc = \case
+  Just x  -> x
+  Nothing -> error ("What4.Domains.BV.CLP: " ++ loc ++ ": Nothing")
+{-# INLINE fromJustUnsafe #-}
+
+liftArith1 ::
+  (1 <= w) =>
+  NatRepr w ->
+  (A.Domain w -> A.Domain w) ->
+  Clp w -> Clp w
+liftArith1 w f c =
+  fromJustUnsafe "liftArith1" (fromArith w (f (toArith c)))
+{-# INLINE liftArith1 #-}
+
+liftArith2 ::
+  (1 <= w) =>
+  NatRepr w ->
+  (A.Domain w -> A.Domain w -> A.Domain w) ->
+  Clp w -> Clp w -> Clp w
+liftArith2 w f a b =
+  fromJustUnsafe "liftArith2" (fromArith w (f (toArith a) (toArith b)))
+{-# INLINE liftArith2 #-}
+
+liftBitwise1 ::
+  (1 <= w) =>
+  NatRepr w ->
+  (B.Domain w -> B.Domain w) ->
+  Clp w -> Clp w
+liftBitwise1 w f c =
+  fromJustUnsafe "liftBitwise1" (fromBitwise w (f (toBitwise c)))
+{-# INLINE liftBitwise1 #-}
+
+liftBitwise2 ::
+  (1 <= w) =>
+  NatRepr w ->
+  (B.Domain w -> B.Domain w -> B.Domain w) ->
+  Clp w -> Clp w -> Clp w
+liftBitwise2 w f a b =
+  fromJustUnsafe "liftBitwise2" (fromBitwise w (f (toBitwise a) (toBitwise b)))
+{-# INLINE liftBitwise2 #-}
+
+-- ------------------------------------------------------------------
+-- * Arithmetic
+
+negate :: (1 <= w) => NatRepr w -> Clp w -> Clp w
+negate w = liftArith1 w A.negate
+
+add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+add w = liftArith2 w A.add
+
+scale :: (1 <= w) => NatRepr w -> Integer -> Clp w -> Clp w
+scale w k = liftArith1 w (A.scale k)
+
+mul :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+mul w = liftArith2 w A.mul
+
+udiv :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+udiv w = liftArith2 w A.udiv
+
+urem :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+urem w = liftArith2 w A.urem
+
+sdiv :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+sdiv w = liftArith2 w (A.sdiv w)
+
+srem :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+srem w = liftArith2 w (A.srem w)
+
+-- ------------------------------------------------------------------
+-- ** Arithmetic (SMT-LIB div-by-zero semantics)
+
+udivSmtlib :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+udivSmtlib w = liftArith2 w A.udivSmtlib
+
+uremSmtlib :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+uremSmtlib w = liftArith2 w A.uremSmtlib
+
+sdivSmtlib :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+sdivSmtlib w = liftArith2 w (A.sdivSmtlib w)
+
+sremSmtlib :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+sremSmtlib w = liftArith2 w (A.sremSmtlib w)
+
+-- ------------------------------------------------------------------
+-- * Bitwise operations
+
+not :: (1 <= w) => NatRepr w -> Clp w -> Clp w
+not w = liftBitwise1 w B.not
+
+and :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+and w = liftBitwise2 w B.and
+
+or :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+or w = liftBitwise2 w B.or
+
+xor :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+xor w = liftBitwise2 w B.xor
+
+-- ------------------------------------------------------------------
+-- * Concatenation, extension, selection, and truncation
+
+zext ::
+  forall w u.
+  (1 <= w, w + 1 <= u) =>
+  NatRepr w -> Clp w -> NatRepr u -> Clp u
+zext _w c u =
+  case NR.leqTrans (NR.leqAdd (LeqProof :: LeqProof 1 w) (NR.knownNat @1))
+                   (LeqProof :: LeqProof (w + 1) u) of
+    LeqProof ->
+      fromJustUnsafe "zext" (fromArith u (A.zext (toArith c) u))
+
+sext ::
+  forall w u.
+  (1 <= w, w + 1 <= u) =>
+  NatRepr w -> Clp w -> NatRepr u -> Clp u
+sext w c u =
+  case NR.leqTrans (NR.leqAdd (LeqProof :: LeqProof 1 w) (NR.knownNat @1))
+                   (LeqProof :: LeqProof (w + 1) u) of
+    LeqProof ->
+      fromJustUnsafe "sext" (fromArith u (A.sext w (toArith c) u))
+
+concat ::
+  forall u v.
+  (1 <= u, 1 <= v) =>
+  NatRepr u -> Clp u -> NatRepr v -> Clp v -> Clp (u + v)
+concat u a v b =
+  case NR.leqAddPos u v of
+    LeqProof ->
+      fromJustUnsafe "concat"
+        (fromArith (NR.addNat u v) (A.concat u (toArith a) v (toArith b)))
+
+select ::
+  forall i n w.
+  (1 <= n, 1 <= w, i + n <= w) =>
+  NatRepr i -> NatRepr n -> NatRepr w -> Clp w -> Clp n
+select i n _w c =
+  fromJustUnsafe "select" (fromArith n (A.select i n (toArith c)))
+
+-- ------------------------------------------------------------------
+-- * Shifts and rotations
+
+shl :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+shl w = liftArith2 w (A.shl w)
+
+lshr :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+lshr w = liftArith2 w (A.lshr w)
+
+ashr :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+ashr w = liftArith2 w (A.ashr w)
+
+rol :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+rol w = liftBitwise2 w (B.rolAbstract w)
+
+ror :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+ror w = liftBitwise2 w (B.rorAbstract w)
+
+-- ------------------------------------------------------------------
 -- * Generators
 
 -- | Generator for a proper 'Clp' at width @w@.
@@ -657,4 +825,252 @@ fromBitwiseCorrect w b x =
     case fromBitwise w b of
       Nothing -> property True
       Just c -> property (member c (integerToNatural (x .&. maxUnsigned w)))
+
+-- ------------------------------------------------------------------
+-- ** Arithmetic
+
+correct_neg :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
+correct_neg w c x =
+  proper c ==> member c x ==>
+    property (member (negate w c) (asN w (Prelude.negate (toInteger x))))
+
+correct_add ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_add w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (add w a b) (asN w (toInteger x + toInteger y)))
+
+correct_scale ::
+  (1 <= w) =>
+  NatRepr w -> Integer -> Clp w -> Natural -> Property
+correct_scale w k c x =
+  proper c ==> member c x ==>
+    property (member (scale w k c) (asN w (k * toInteger x)))
+
+correct_mul ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_mul w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (mul w a b) (asN w (toInteger x * toInteger y)))
+
+correct_udiv ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_udiv w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y /= 0 ==>
+    property (member (udiv w a b) (x `quot` y))
+
+correct_urem ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_urem w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==> y /= 0 ==>
+    property (member (urem w a b) (x `rem` y))
+
+correct_sdiv ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_sdiv w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==> ys /= 0 ==>
+    property (member (sdiv w a b) (asN w (xs `quot` ys)))
+  where
+    xs = toSigned w (toInteger x)
+    ys = toSigned w (toInteger y)
+
+correct_srem ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_srem w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==> ys /= 0 ==>
+    property (member (srem w a b) (asN w (xs `rem` ys)))
+  where
+    xs = toSigned w (toInteger x)
+    ys = toSigned w (toInteger y)
+
+-- ------------------------------------------------------------------
+-- *** Arithmetic (SMT-LIB div-by-zero semantics)
+
+correct_udivSmtlib ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_udivSmtlib w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (udivSmtlib w a b) z)
+  where
+    z = if y == 0
+          then fromInteger (maxUnsigned w)
+          else x `quot` y
+
+correct_uremSmtlib ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_uremSmtlib w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (uremSmtlib w a b) z)
+  where
+    z = if y == 0 then x else x `rem` y
+
+correct_sdivSmtlib ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_sdivSmtlib w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (sdivSmtlib w a b) (asN w z))
+  where
+    xs = toSigned w (toInteger x)
+    ys = toSigned w (toInteger y)
+    z  = if ys == 0
+           then if xs >= 0 then -1 else 1
+           else xs `quot` ys
+
+correct_sremSmtlib ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_sremSmtlib w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (sremSmtlib w a b) (asN w z))
+  where
+    xs = toSigned w (toInteger x)
+    ys = toSigned w (toInteger y)
+    z  = if ys == 0 then xs else xs `rem` ys
+
+-- ------------------------------------------------------------------
+-- ** Bitwise operations
+
+correct_not :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
+correct_not w c x =
+  proper c ==> member c x ==>
+    property (member (not w c) (asN w (Bits.complement (toInteger x))))
+
+correct_and ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_and w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (and w a b) (x Bits..&. y))
+
+correct_or ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_or w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (or w a b) (x Bits..|. y))
+
+correct_xor ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_xor w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (xor w a b) (Bits.xor x y))
+
+-- ------------------------------------------------------------------
+-- ** Concatenation, extension, selection, and truncation
+
+correct_zero_ext ::
+  (1 <= w, w + 1 <= u) =>
+  NatRepr w -> Clp w -> NatRepr u -> Natural -> Property
+correct_zero_ext w c u x =
+  proper c ==> member c x ==> property (member (zext w c u) x)
+
+correct_sign_ext ::
+  forall w u.
+  (1 <= w, w + 1 <= u) =>
+  NatRepr w -> Clp w -> NatRepr u -> Natural -> Property
+correct_sign_ext w c u x =
+  case NR.leqTrans (NR.leqAdd (LeqProof :: LeqProof 1 w) (NR.knownNat @1))
+                   (LeqProof :: LeqProof (w + 1) u) of
+    LeqProof ->
+      proper c ==> member c x ==>
+        property (member (sext w c u) (asN u (toSigned w (toInteger x))))
+
+correct_concat ::
+  forall u v.
+  (1 <= u, 1 <= v) =>
+  NatRepr u -> Clp u -> Natural ->
+  NatRepr v -> Clp v -> Natural ->
+  Property
+correct_concat u a x v b y =
+  case NR.leqAddPos u v of
+    LeqProof ->
+      let z = (x `Bits.shiftL` NR.widthVal v) Bits..|. y in
+      proper a ==> proper b ==> member a x ==> member b y ==>
+        property (member (concat u a v b) z)
+
+correct_select ::
+  forall i n w.
+  (1 <= n, i + n <= w) =>
+  NatRepr i -> NatRepr n -> NatRepr w -> Clp w -> Natural -> Property
+correct_select i n w c x =
+  case NR.leqTrans (LeqProof :: LeqProof 1 n)
+                   (NR.leqTrans (NR.addPrefixIsLeq i n)
+                                (LeqProof :: LeqProof (i + n) w)) of
+    LeqProof ->
+      let y = fromInteger ((toInteger x `Bits.shiftR` NR.widthVal i) Bits..&. maxUnsigned n) in
+      proper c ==> member c x ==>
+        property (member (select i n w c) y)
+
+-- ------------------------------------------------------------------
+-- ** Shifts and rotations
+
+correct_shl ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_shl w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (shl w a b) z)
+  where
+    s = fromInteger (min (NR.intValue w) (toInteger y))
+    z = asN w (toInteger x `Bits.shiftL` s)
+
+correct_lshr ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_lshr w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (lshr w a b) z)
+  where
+    s = fromInteger (min (NR.intValue w) (toInteger y))
+    z = fromInteger (toInteger x `Bits.shiftR` s)
+
+correct_ashr ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_ashr w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (ashr w a b) z)
+  where
+    s = fromInteger (min (NR.intValue w) (toInteger y))
+    z = asN w (toSigned w (toInteger x) `Bits.shiftR` s)
+
+correct_rol ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_rol w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (rol w a b) (fromInteger (Arith.rotateLeft w (toInteger x) (toInteger y))))
+
+correct_ror ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_ror w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (ror w a b) (fromInteger (Arith.rotateRight w (toInteger x) (toInteger y))))
+
+-- ------------------------------------------------------------------
+-- ** Helpers
+
+-- | Reduce an 'Integer' modulo @2^w@ and return it as a 'Natural'.
+asN :: NatRepr w -> Integer -> Natural
+asN w x = fromInteger (x Bits..&. maxUnsigned w)
+
+-- | Interpret the unsigned representation @x@ at width @w@ as a signed
+-- 'Integer'.
+toSigned :: (1 <= w) => NatRepr w -> Integer -> Integer
+toSigned w x =
+  if x' Bits..&. signBit == 0 then x' else x' - (signBit `Bits.shiftL` 1)
+  where
+    x' = x Bits..&. maxUnsigned w
+    signBit = 1 `Bits.shiftL` (NR.widthVal w - 1)
 
