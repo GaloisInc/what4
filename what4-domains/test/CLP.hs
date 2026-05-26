@@ -11,6 +11,8 @@ import           Data.Parameterized.Some (Some(..))
 import           GHC.TypeNats (type (<=))
 import           Numeric.Natural (Natural)
 
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
 import qualified What4.Domains.BV.CLP as C
 import           What4.Domains.Verification (Gen, chooseInt, chooseInteger, getSize)
 import           VerifyBindings (genTest)
@@ -82,6 +84,9 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
       C.circLeqAnchorMin <$> genNat <*> genNat <*> genWidthExp
   , genTest "circLeqAnchorMax" $
       C.circLeqAnchorMax <$> genNat <*> genNat <*> genWidthExp
+  , genTest "isMultiWrapViaToList" $
+      do SW n <- genWidthSmall
+         C.isMultiWrapViaToList <$> C.genClp n
   , genTest "startMember" $
       do SW n <- genWidth
          C.startMember <$> C.genClp n
@@ -94,4 +99,22 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "memberToList" $
       do SW n <- genWidthSmall
          C.memberToList <$> C.genClp n <*> genNatBV n
+  , genTest "toListNoDuplicates" $
+      do SW n <- genWidthSmall
+         C.toListNoDuplicates <$> C.genClp n
+  , genTest "toArithCorrect" $
+      do SW n <- genWidth
+         C.toArithCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "fromArithCorrect" $
+      do SW n <- genWidth
+         C.fromArithCorrect n <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)
+  , genTest "roundtripArith" $
+      do SW n <- genWidth
+         C.roundtripArith n <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)
+  , genTest "toBitwiseCorrect" $
+      do SW n <- genWidth
+         C.toBitwiseCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "fromBitwiseCorrect" $
+      do SW n <- genWidth
+         C.fromBitwiseCorrect n <$> B.genDomain n <*> chooseInteger (0, maxUnsigned n)
   ]

@@ -182,7 +182,8 @@ haskellOnly = Set.fromList
   -- unbounded list, which Cryptol's fixed-size sequences can't represent
   -- directly. The 'memberBottom' Cryptol property already pins down 'member'
   -- on the bottom case, so the toList round-trips are Haskell-only.
-  , "toListMember", "memberToList"
+  , "toListMember", "memberToList", "toListNoDuplicates"
+  , "isMultiWrapViaToList"
   ]
 
 cryptolCorrespondenceTests :: TT.TestTree

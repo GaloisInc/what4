@@ -1,6 +1,11 @@
 // A spec for "What4.Domains.BV.CLP".
 module clp where
 
+import arithdomain as Arith
+import arithdomain (Dom, (=@=))
+import bitsdomain as Bits
+import bvdomain as BV
+
 type Property = Bit
 
 type Clp n
@@ -37,6 +42,27 @@ valueIndex c v = divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g
 
 circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
 circLeq x a b = a - x <= b - x
+
+isMultiWrap : {n} (fin n, n >= 2) => Clp n -> Bit
+isMultiWrap c = zext`{2*n} (valueIndex c c.end) * zext`{2*n} c.stride >= 2^^`n
+
+// ------------------------------------------------------------------
+// * Conversion
+
+toArith : {n} (fin n, n >= 2) => Clp n -> Dom n
+toArith c =
+  if isMultiWrap c then Arith::interval (c.start % g) (- g)
+                   else Arith::range c.start c.end
+  where g = strideGcd c
+
+fromArith : {n} (fin n, n >= 1) => Dom n -> Clp n
+fromArith a = { start = a.lo, end = a.lo + a.sz, stride = 1 }
+
+toBitwise : {n} (fin n, n >= 2) => Clp n -> Bits::Dom n
+toBitwise c = BV::arithToBitDom (toArith c)
+
+fromBitwise : {n} (fin n, n >= 2) => Bits::Dom n -> Clp n
+fromBitwise b = fromArith (BV::bitToArithDom b)
 
 // ------------------------------------------------------------------
 // * Queries
@@ -108,3 +134,27 @@ endMember c = proper c ==> member c c.end
 
 property p_startMember = startMember`{8}
 property p_endMember = endMember`{8}
+
+// ------------------------------------------------------------------
+// ** Conversion
+
+toArithCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+toArithCorrect c v = proper c ==> member c v ==> Arith::mem (toArith c) v
+
+fromArithCorrect : {n} (fin n, n >= 2) => Dom n -> [n] -> Property
+fromArithCorrect a v = Arith::mem a v ==> member (fromArith a) v
+
+roundtripArith : {n} (fin n, n >= 2) => Dom n -> Property
+roundtripArith a = ~ a.isBot ==> toArith (fromArith a) =@= a
+
+toBitwiseCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+toBitwiseCorrect c v = proper c ==> member c v ==> Bits::mem (toBitwise c) v
+
+fromBitwiseCorrect : {n} (fin n, n >= 2) => Bits::Dom n -> [n] -> Property
+fromBitwiseCorrect b v = Bits::mem b v ==> member (fromBitwise b) v
+
+property p_toArithCorrect = toArithCorrect`{8}
+property p_fromArithCorrect = fromArithCorrect`{8}
+property p_roundtripArith = roundtripArith`{8}
+property p_toBitwiseCorrect = toBitwiseCorrect`{8}
+property p_fromBitwiseCorrect = fromBitwiseCorrect`{8}

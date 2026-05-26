@@ -1,6 +1,9 @@
 // A spec for "What4.Domains.BV.StridedInterval".
 module strideddomain where
 
+import arithdomain as Arith
+import arithdomain (Dom, (=@=))
+import bitsdomain as Bits
 import clp as Clp
 import clp (Clp)
 
@@ -9,6 +12,30 @@ type Property = Bit
 enum Domain n
   = BVDBot
   | BVDClp (Clp n)
+
+proper : {n} (fin n, n >= 1) => Domain n -> Bit
+proper d = case d of
+  BVDBot -> True
+  BVDClp c -> Clp::proper c
+
+// ------------------------------------------------------------------
+// * Conversion
+
+toArith : {n} (fin n, n >= 2) => Domain n -> Dom n
+toArith d = case d of
+  BVDBot -> Arith::bottom
+  BVDClp c -> Clp::toArith c
+
+fromArith : {n} (fin n, n >= 1) => Dom n -> Domain n
+fromArith a = if a.isBot then BVDBot else BVDClp (Clp::fromArith a)
+
+toBitwise : {n} (fin n, n >= 2) => Domain n -> Bits::Dom n
+toBitwise d = case d of
+  BVDBot -> Bits::bottom
+  BVDClp c -> Clp::toBitwise c
+
+fromBitwise : {n} (fin n, n >= 2) => Bits::Dom n -> Domain n
+fromBitwise b = if Bits::nonempty b then BVDClp (Clp::fromBitwise b) else BVDBot
 
 // ------------------------------------------------------------------
 // * Queries
@@ -28,3 +55,27 @@ memberBottom : {n} (fin n, n >= 2) => [n] -> Property
 memberBottom x = ~ (member`{n} BVDBot x)
 
 property p_memberBottom = memberBottom`{8}
+
+// ------------------------------------------------------------------
+// ** Conversion
+
+toArithCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+toArithCorrect d v = proper d ==> member d v ==> Arith::mem (toArith d) v
+
+fromArithCorrect : {n} (fin n, n >= 2) => Dom n -> [n] -> Property
+fromArithCorrect a v = Arith::mem a v ==> member (fromArith a) v
+
+roundtripArith : {n} (fin n, n >= 2) => Dom n -> Property
+roundtripArith a = toArith (fromArith a) =@= a
+
+toBitwiseCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+toBitwiseCorrect d v = proper d ==> member d v ==> Bits::mem (toBitwise d) v
+
+fromBitwiseCorrect : {n} (fin n, n >= 2) => Bits::Dom n -> [n] -> Property
+fromBitwiseCorrect b v = Bits::mem b v ==> member (fromBitwise b) v
+
+property p_toArithCorrect = toArithCorrect`{8}
+property p_fromArithCorrect = fromArithCorrect`{8}
+property p_roundtripArith = roundtripArith`{8}
+property p_toBitwiseCorrect = toBitwiseCorrect`{8}
+property p_fromBitwiseCorrect = fromBitwiseCorrect`{8}

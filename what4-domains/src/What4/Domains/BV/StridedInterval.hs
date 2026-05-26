@@ -26,6 +26,7 @@ TODO: precision tests via enumeration
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeOperators #-}
 
 module What4.Domains.BV.StridedInterval
   ( Domain
@@ -35,10 +36,10 @@ module What4.Domains.BV.StridedInterval
   -- , fromRange
   -- , fromFoldable
   -- * Conversion
-  -- , toArith
-  -- , fromArith
-  -- , toBitwise
-  -- , fromBitwise
+  , toArith
+  , fromArith
+  , toBitwise
+  , fromBitwise
   -- * Queries
   , isBottom
   , member
@@ -96,11 +97,11 @@ module What4.Domains.BV.StridedInterval
   -- ** Construction
   -- , correct_singleton
   -- ** Conversion
-  -- , correct_toArith
-  -- , correct_fromArith
-  -- , roundtripArith
-  -- , correct_toBitwise
-  -- , correct_fromBitwise
+  , toArithCorrect
+  , fromArithCorrect
+  , roundtripArith
+  , toBitwiseCorrect
+  , fromBitwiseCorrect
   -- ** Queries
   -- , correct_asSingleton
   , memberBottom
@@ -170,13 +171,16 @@ module What4.Domains.BV.StridedInterval
   ) where
 
 import           Control.Exception (assert)
-import           GHC.TypeNats (Nat)
+import           Data.Bits ((.&.))
+import           GHC.TypeNats (Nat, type (<=))
 import           Numeric.Natural (Natural)
 
 import           Data.Parameterized.NatRepr (NatRepr, maxUnsigned)
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
 import qualified What4.Domains.BV.CLP as CLP
 import           What4.Domains.BV.CLP (Clp)
-import           What4.Domains.Verification (Property, property, Gen, chooseBool)
+import           What4.Domains.Verification (Property, property, (==>), Gen, chooseBool)
 
 -- | A value of type @'Domain' w@ represents a set of bitvectors of width @w@.
 -- The set is either empty ('BVDBot'), or a circular linear progression ('Clp').
@@ -205,6 +209,41 @@ bottom w = BVDBot (fromInteger (maxUnsigned w))
 mk :: Clp w -> Domain w
 mk c = assert (CLP.proper c) (BVDClp c)
 {-# INLINE mk #-}
+
+-- ------------------------------------------------------------------
+-- * Conversion
+
+-- | /O(1)/. Convert a strided interval domain to an arithmetic domain.
+--
+-- The conversion is sound: every element in the strided interval is also in the
+-- result. For stride-1 CLPs, the result is exact; otherwise, it
+-- over-approximates.
+toArith :: (1 <= w) => NatRepr w -> Domain w -> A.Domain w
+toArith w = \case
+  BVDBot _mask -> A.bottom w
+  BVDClp c -> CLP.toArith c
+
+-- | /O(1)/. Convert an arithmetic domain to a strided interval domain.
+--
+-- The conversion is exact for non-bottom intervals, producing a stride-1 CLP.
+-- 'A.BVDAny' and bottom are converted to 'BVDBot' since CLPs cannot represent
+-- full or empty sets in the lattice structure.
+fromArith :: (1 <= w) => NatRepr w -> A.Domain w -> Domain w
+fromArith w a = case CLP.fromArith w a of
+  Nothing -> bottom w
+  Just c  -> mk c
+
+-- | /O(w log w)/. Convert a strided interval domain to a bitwise domain.
+toBitwise :: (1 <= w) => NatRepr w -> Domain w -> B.Domain w
+toBitwise w = \case
+  BVDBot _ -> B.bottom w
+  BVDClp c -> CLP.toBitwise c
+
+-- | /O(1)/. Convert a bitwise domain to a strided interval domain.
+fromBitwise :: (1 <= w) => NatRepr w -> B.Domain w -> Domain w
+fromBitwise w b = case CLP.fromBitwise w b of
+  Nothing -> bottom w
+  Just c  -> mk c
 
 -- ------------------------------------------------------------------
 -- * Queries
@@ -274,3 +313,36 @@ memberToList :: Domain w -> Natural -> Property
 memberToList d x = case d of
   BVDBot _ -> property True
   BVDClp c -> CLP.memberToList c x
+
+-- ------------------------------------------------------------------
+-- ** Conversion
+
+-- | Every element in a strided interval is also in its 'toArith' conversion.
+toArithCorrect :: (1 <= w) => NatRepr w -> Domain w -> Natural -> Property
+toArithCorrect w d x =
+  member d x ==> property (A.member (toArith w d) (toInteger x))
+
+-- | Every element in an arithmetic domain is also in its 'fromArith' conversion.
+fromArithCorrect :: (1 <= w) => NatRepr w -> A.Domain w -> Integer -> Property
+fromArithCorrect w a x =
+  A.proper w a ==> A.member a x ==>
+    property (member (fromArith w a) (fromIntegral (x .&. maxUnsigned w)))
+
+-- | Converting from Arith to strided interval and back is exact: the
+-- round-tripped domain contains exactly the same elements as the original.
+roundtripArith :: (1 <= w) => NatRepr w -> A.Domain w -> Integer -> Property
+roundtripArith w a x =
+  A.proper w a ==>
+    property (A.member a x == A.member (toArith w (fromArith w a)) x)
+
+-- | Every element in a strided interval is also in its 'toBitwise' conversion.
+toBitwiseCorrect :: (1 <= w) => NatRepr w -> Domain w -> Natural -> Property
+toBitwiseCorrect w d x =
+  member d x ==> property (B.member (toBitwise w d) (toInteger x))
+
+-- | Every element in a bitwise domain is also in its 'fromBitwise' conversion.
+fromBitwiseCorrect :: (1 <= w) => NatRepr w -> B.Domain w -> Integer -> Property
+fromBitwiseCorrect w b x =
+  B.proper w b ==> B.member b x ==>
+    property (member (fromBitwise w b) (fromIntegral (x .&. maxUnsigned w)))
+

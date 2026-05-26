@@ -57,7 +57,9 @@ specification.
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeOperators #-}
 
 module What4.Domains.BV.CLP
   ( Clp
@@ -72,10 +74,10 @@ module What4.Domains.BV.CLP
   -- , fromRange
   -- , fromFoldable
   -- * Conversion
-  -- , toArith
-  -- , fromArith
-  -- , toBitwise
-  -- , fromBitwise
+  , toArith
+  , fromArith
+  , toBitwise
+  , fromBitwise
   -- * Queries
   , member
   , toList
@@ -132,11 +134,11 @@ module What4.Domains.BV.CLP
   -- ** Construction
   -- , correct_singleton
   -- ** Conversion
-  -- , correct_toArith
-  -- , correct_fromArith
-  -- , roundtripArith
-  -- , correct_toBitwise
-  -- , correct_fromBitwise
+  , toArithCorrect
+  , fromArithCorrect
+  , roundtripArith
+  , toBitwiseCorrect
+  , fromBitwiseCorrect
   -- ** Internal helpers
   , modNegCorrect
   , wrapOffsetCorrect
@@ -148,12 +150,14 @@ module What4.Domains.BV.CLP
   , circLeqAtZero
   , circLeqAnchorMin
   , circLeqAnchorMax
+  , isMultiWrapViaToList
   -- ** Queries
   -- , correct_asSingleton
   , startMember
   , endMember
   , toListMember
   , memberToList
+  , toListNoDuplicates
   -- , correct_eq
   -- , correct_ubounds
   -- , correct_sbounds
@@ -195,11 +199,16 @@ module What4.Domains.BV.CLP
 
 import           Control.Exception (assert)
 import           Data.Bits ((.&.), popCount, shiftL, shiftR)
-import           GHC.TypeNats (Nat)
+import           GHC.TypeNats (Nat, type (<=))
 import           Numeric.Natural (Natural)
+
+import qualified Data.Bits as Bits
+import qualified Data.Set as Set
 
 import           Data.Parameterized.NatRepr (NatRepr, maxUnsigned)
 import           What4.Domains.Arithmetic (countTrailingZerosOr0, isPow2Natural)
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
 import           What4.Domains.Verification (Property, property, (==>), Gen, chooseInteger)
 
 -- | A 'Clp' represents the set
@@ -306,6 +315,18 @@ circLeq :: Natural -> Natural -> Natural -> Natural -> Bool
 circLeq m x a b = (a + nx) .&. m <= (b + nx) .&. m
   where nx = modNeg m x
 
+-- | /O(w log w)/. Is this CLP multi-wrap? A CLP is multi-wrap if the
+-- cumulative distance traversed by its orbit (@n * stride@, where @n@ is the
+-- number of steps from @start@ to @end@) exceeds @2^w@. Geometrically: walking
+-- around the number circle from @start@, the orbit passes its starting point
+-- two or more times — i.e., the winding number is at least 2.
+--
+-- Note that all CLP values are distinct by construction (any orbit of length
+-- @≤ 2^w \/ gcd(stride, 2^w)@), so multi-wrap does /not/ mean residue classes
+-- repeat. It only describes how far the orbit traveled.
+isMultiWrap :: Clp w -> Bool
+isMultiWrap c@Clp{stride, mask} = valueIndex c (end c) * stride > mask
+
 -- ------------------------------------------------------------------
 -- * Construction
 
@@ -330,6 +351,79 @@ mk w s e st =
     m = integerToNatural (maxUnsigned w)
     c = Clp { start = s, end = e, stride = st, mask = m }
 {-# INLINE mk #-}
+
+-- ------------------------------------------------------------------
+-- * Conversion
+
+-- | /O(w log w)/. Convert a CLP to an arithmetic domain (wrapped interval).
+toArith :: Clp w -> A.Domain w
+toArith c@Clp{start, end, mask} =
+  -- For non-multi-wrap CLPs, the result is the interval @[start, end]@ (over-
+  -- approximating by collapsing to stride = 1). For multi-wrap CLPs, the orbit
+  -- visits exactly the values congruent to @start@ modulo @g = gcd(stride,
+  -- 2^w)@, so we use the tightest such interval: @[start \`mod\` g, mask + 1 -
+  -- g + (start \`mod\` g)]@.
+  --
+  -- TODO: both branches are sound but not always tightest. The smallest sound
+  -- interval containing the orbit @{ start + i*stride mod 2^w : 0 <= i <= k }@
+  -- is the complement of the largest cyclic gap in that orbit. Even outside
+  -- the multi-wrap case, walking @[start, end]@ in stride-direction can wrap
+  -- past a smaller-cardinality gap than the one between @end@ and @start@. By
+  -- the three-distance (Sós\/Steinhaus) theorem the candidate gap sizes are
+  -- determined by the continued-fraction convergents of @stride\/g@ modulo
+  -- @2^w\/g@, computable in @O(w)@ steps via Euclidean recursion. See Slater
+  -- (1967), "Gaps and steps for the sequence n*theta mod 1".
+  if isMultiWrap c
+    then A.interval imask r (imask + 1 - toInteger g)
+    else A.interval imask istart sz
+  where
+    imask = toInteger mask
+    istart = toInteger start
+    iend = toInteger end
+    sz = (iend + imask + 1 - istart) .&. imask
+    g = strideGcd c
+    r = toInteger (start `mod` g)
+
+-- | /O(w)/. Convert an arithmetic domain (wrapped interval) to a CLP.
+fromArith :: NatRepr w -> A.Domain w -> Maybe (Clp w)
+fromArith w = \case
+  A.BVDAny _mask -> Just (mk w 0 (integerToNatural imask) 1)
+    where imask = maxUnsigned w
+  d | A.isBottom d -> Nothing
+    | otherwise -> case A.arithDomainData d of
+        Nothing -> Nothing
+        Just (lo, sz) -> Just (mk w (integerToNatural lo) (integerToNatural ((lo + sz) .&. imask)) 1)
+          where imask = maxUnsigned w
+
+-- TODO: The arith<->bitwise helpers below duplicate
+-- 'arithToBitwiseDomain'/'bitwiseToArithDomain' in "What4.Domains.BV". Once
+-- those are moved into a common module that 'CLP' can import (e.g. by adding a
+-- dep from 'BV.Bitwise' to 'BV.Arith'), inline-call them instead.
+
+-- TODO? Can we do better than just arith-to-bitwise by considering stride?
+
+-- | /O(w log w)/. Convert a CLP to a bitwise domain.
+toBitwise :: Clp w -> B.Domain w
+toBitwise c = arithToBitwise (toArith c)
+  where
+    arithToBitwise a =
+      let imask = A.bvdMask a in
+      case A.arithDomainData a of
+        Nothing -> B.interval imask 0 imask
+        Just (alo, _) -> B.interval imask lo hi
+          where
+            u = A.unknowns a
+            hi = alo Bits..|. u
+            lo = hi `Bits.xor` u
+
+-- | /O(1)/. Convert a bitwise domain to a CLP.
+fromBitwise :: NatRepr w -> B.Domain w -> Maybe (Clp w)
+fromBitwise w b = fromArith w (bitwiseToArith b)
+  where
+    bitwiseToArith d =
+      let imask = B.bvdMask d
+          (lo, hi) = B.bitbounds d
+      in A.interval imask lo ((hi - lo) Bits..&. imask)
 
 -- ------------------------------------------------------------------
 -- * Queries
@@ -479,6 +573,16 @@ circLeqAnchorMax x v k =
     m  = (1 `shiftL` k) - 1
     x' = x .&. m
 
+-- | 'isMultiWrap' agrees with the orbit length: a CLP is multi-wrap iff
+-- stepping through every element of 'toList' travels strictly more than @2^w@
+-- in total. Concretely, @isMultiWrap c@ iff @(length (toList c) - 1) * stride
+-- > 2^w - 1@.
+isMultiWrapViaToList :: Clp w -> Property
+isMultiWrapViaToList c@Clp{stride, mask} =
+  proper c ==> property (isMultiWrap c == (k * stride > mask))
+  where
+    k = fromIntegral (length (toList c) - 1) :: Natural
+
 -- ------------------------------------------------------------------
 -- ** Queries
 
@@ -501,4 +605,56 @@ memberToList :: Clp w -> Natural -> Property
 memberToList c x =
   proper c ==> (member c x' ==> property (x' `elem` toList c))
   where x' = modMask c x
+
+-- | 'toList' produces no duplicate elements.
+toListNoDuplicates :: Clp w -> Property
+toListNoDuplicates c = proper c ==> property (noDuplicates (toList c))
+  where
+    noDuplicates xs = length xs == Set.size (Set.fromList xs)
+
+-- ------------------------------------------------------------------
+-- ** Conversion
+
+-- | Every element in a CLP is also in its 'toArith' conversion.
+toArithCorrect :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
+toArithCorrect _w c x =
+  proper c ==> member c x' ==>
+    property (A.member (toArith c) (toInteger x'))
+  where
+    x' = modMask c x
+
+-- | Every element in an arithmetic domain is also in its 'fromArith' conversion
+-- (when that conversion produces a CLP).
+fromArithCorrect :: (1 <= w) => NatRepr w -> A.Domain w -> Integer -> Property
+fromArithCorrect w a x =
+  A.proper w a ==> A.member a x ==>
+    case fromArith w a of
+      Nothing -> property True
+      Just c -> property (member c (integerToNatural (x .&. maxUnsigned w)))
+
+-- | Converting from Arith to CLP and back is exact: the round-tripped domain
+-- contains exactly the same elements as the original.
+roundtripArith :: (1 <= w) => NatRepr w -> A.Domain w -> Integer -> Property
+roundtripArith w a x =
+  A.proper w a ==>
+    case fromArith w a of
+      Nothing -> property True
+      Just c -> property (A.member a x == A.member (toArith c) x)
+
+-- | Every element in a CLP is also in its 'toBitwise' conversion.
+toBitwiseCorrect :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
+toBitwiseCorrect _w c x =
+  proper c ==> member c x' ==>
+    property (B.member (toBitwise c) (toInteger x'))
+  where
+    x' = modMask c x
+
+-- | Every element in a bitwise domain is also in its 'fromBitwise' conversion
+-- (when that conversion produces a CLP).
+fromBitwiseCorrect :: (1 <= w) => NatRepr w -> B.Domain w -> Integer -> Property
+fromBitwiseCorrect w b x =
+  B.proper w b ==> B.member b x ==>
+    case fromBitwise w b of
+      Nothing -> property True
+      Just c -> property (member c (integerToNatural (x .&. maxUnsigned w)))
 

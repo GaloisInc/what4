@@ -11,6 +11,8 @@ import           Data.Parameterized.Some (Some(..))
 import           GHC.TypeNats (type (<=))
 import           Numeric.Natural (Natural)
 
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
 import qualified What4.Domains.BV.StridedInterval as S
 import           What4.Domains.Verification (Gen, chooseInt, chooseInteger, getSize)
 import           VerifyBindings (genTest)
@@ -51,4 +53,19 @@ tests = TT.testGroup "Strided interval domain"
   , genTest "memberToList" $
       do SW n <- genWidthSmall
          S.memberToList <$> S.genDomain n <*> genNatBV n
+  , genTest "toArithCorrect" $
+      do SW n <- genWidth
+         (\d x -> S.toArithCorrect n d x) <$> S.genDomain n <*> genNatBV n
+  , genTest "fromArithCorrect" $
+      do SW n <- genWidth
+         S.fromArithCorrect n <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)
+  , genTest "roundtripArith" $
+      do SW n <- genWidth
+         (\a x -> S.roundtripArith n a x) <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)
+  , genTest "toBitwiseCorrect" $
+      do SW n <- genWidth
+         S.toBitwiseCorrect n <$> S.genDomain n <*> genNatBV n
+  , genTest "fromBitwiseCorrect" $
+      do SW n <- genWidth
+         S.fromBitwiseCorrect n <$> B.genDomain n <*> chooseInteger (0, maxUnsigned n)
   ]

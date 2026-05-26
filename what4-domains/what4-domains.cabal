@@ -153,6 +153,7 @@ library
   import: bldflags
   build-depends:
     base >= 4.10 && < 5,
+    containers,
     parameterized-utils >= 2.3 && < 2.4,
     mtl >= 2.2.1,
     transformers >= 0.4,
