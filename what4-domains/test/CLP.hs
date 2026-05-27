@@ -74,6 +74,9 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "strideGcdIsPow2" $
       do SW n <- genWidth
          C.strideGcdIsPow2 <$> C.genClp n
+  , genTest "orbitLenViaToList" $
+      do SW n <- genWidthSmall
+         C.orbitLenViaToList <$> C.genClp n
   , genTest "divByPow2Correct" $
       C.divByPow2Correct <$> genNat <*> genWidthExp
   , genTest "invModPow2Correct" $
@@ -81,6 +84,9 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "valueIndexCorrect" $
       do SW n <- genWidth
          C.valueIndexCorrect <$> C.genClp n <*> genNatBV n
+  , genTest "valueAtCorrect" $
+      do SW n <- genWidth
+         C.valueAtCorrect <$> C.genClp n <*> genNatBV n
   , genTest "circLeqAtZero" $
       C.circLeqAtZero <$> genNat <*> genNat <*> genWidthExp
   , genTest "circLeqAnchorMin" $
@@ -108,6 +114,27 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "toArithCorrect" $
       do SW n <- genWidth
          C.toArithCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "startEndArcCorrect" $
+      do SW n <- genWidth
+         C.startEndArcCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "cosetArcCorrect" $
+      do SW n <- genWidth
+         C.cosetArcCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "tightOrbitArcCorrect" $
+      do SW n <- genWidth
+         C.tightOrbitArcCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "tightOrbitArcMinimal" $
+      do SW n <- genWidthSmall
+         C.tightOrbitArcMinimal <$> C.genClp n
+  , genTest "largestGapViaToList" $
+      do SW n <- genWidthSmall
+         C.largestGapViaToList <$> C.genClp n
+  , genTest "toArithPreciseCorrect" $
+      do SW n <- genWidth
+         C.toArithPreciseCorrect n <$> C.genClp n <*> genNatBV n
+  , genTest "toArithPreciseSubsetToArith" $
+      do SW n <- genWidth
+         C.toArithPreciseSubsetToArith n <$> C.genClp n <*> genNatBV n
   , genTest "fromArithCorrect" $
       do SW n <- genWidth
          C.fromArithCorrect n <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)
