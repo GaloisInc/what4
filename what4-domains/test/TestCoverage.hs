@@ -192,7 +192,7 @@ haskellOnly = Set.fromList
   -- directly. The 'memberBottom' Cryptol property already pins down 'member'
   -- on the bottom case, so the toList round-trips are Haskell-only.
   , "toListMember", "memberToList", "toListNoDuplicates"
-  , "isMultiWrapViaToList"
+  , "isSelfWrappingViaToList"
   ]
 
 cryptolCorrespondenceTests :: TT.TestTree

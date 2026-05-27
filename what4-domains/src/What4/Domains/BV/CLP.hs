@@ -147,7 +147,7 @@ module What4.Domains.BV.CLP
   , circLeqAtZero
   , circLeqAnchorMin
   , circLeqAnchorMax
-  , isMultiWrapViaToList
+  , isSelfWrappingViaToList
   -- ** Queries
   -- , correct_asSingleton
   , startMember
@@ -211,6 +211,40 @@ import           What4.Domains.Arithmetic (countTrailingZerosOr0, isPow2Natural)
 import qualified What4.Domains.BV.Arith as A
 import qualified What4.Domains.BV.Bitwise as B
 import           What4.Domains.Verification (Property, property, (==>), Gen, chooseInteger)
+
+-- Note [Product abstraction]: A 'Clp' simultaneously over-approximates the
+-- represented set in two complementary ways:
+--
+--   * /Coset/: \"the value lies in @start + g·Z@ mod @2^w@\", where
+--     @g = gcd(stride, 2^w)@ is the lowest set bit of @stride@. Composes
+--     analytically under the linear ops: closed-form result cosets are
+--     available for negation, addition, scaling by a constant, multiplication,
+--     and shifts by a constant.
+--
+--   * /Convex arc/: \"the value lies on the arc walking forward from
+--     @start@ to @end@\", i.e. the same convex/wrapped-interval view that
+--     "What4.Domains.BV.Arith" tracks. Composes via 'toArith', the
+--     corresponding @A@ operation, and 'fromArith'.
+--
+-- A CLP is /self-wrapping/ when its conceptual arc revolves past its own
+-- @start@ before reaching @end@: the cumulative distance walked
+-- @n · stride@ exceeds @2^w@, where @n@ is the step count from @start@ to
+-- @end@. Self-wrapping is strictly stronger than \"crosses the @0/2^w-1@
+-- boundary\" — a CLP can wrap around the number circle once without
+-- self-wrapping (e.g. @{14, 0, 2}@ at width 4). See 'isSelfWrapping'.
+--
+-- For non-self-wrapping CLPs the triple @(start, end, stride)@ encodes both
+-- views at once: the arc walking @start → end@ by @stride@ visits exactly the
+-- coset elements in their natural cyclic order. The two views are coupled
+-- and mutually refining at no extra cost.
+--
+-- When the conceptual orbit self-wraps, the two views /decouple/: the orbit
+-- visits a partial subset of a full coset, but @(s, e, t)@ cannot
+-- disambiguate \"arc length @L@\" from \"arc length @L + 2^w/g · stride@\".
+-- We must commit to a representable shape. The best we can do is intersect:
+-- take Arith's near-full convex arc and trim it to the result coset (see
+-- 'selfWrappingResult'). This is strictly tighter than going through Arith
+-- alone, which collapses stride to 1 and discards the coset.
 
 -- | A 'Clp' represents the set
 --
@@ -326,17 +360,17 @@ isFull Clp{start, end, stride, mask} =
   start /= end && (end + stride) .&. mask == start
 {-# INLINE isFull #-}
 
--- | /O(w log w)/. Is this CLP multi-wrap? A CLP is multi-wrap if the
+-- | /O(w log w)/. Does this CLP self-wrap? A CLP is self-wrapping if the
 -- cumulative distance traversed by its orbit (@n * stride@, where @n@ is the
 -- number of steps from @start@ to @end@) exceeds @2^w@. Geometrically: walking
 -- around the number circle from @start@, the orbit passes its starting point
--- two or more times — i.e., the winding number is at least 2.
+-- at least once before reaching @end@.
 --
 -- Note that all CLP values are distinct by construction (any orbit of length
--- @≤ 2^w \/ gcd(stride, 2^w)@), so multi-wrap does /not/ mean residue classes
--- repeat. It only describes how far the orbit traveled.
-isMultiWrap :: Clp w -> Bool
-isMultiWrap c@Clp{stride, mask} = valueIndex c (end c) * stride > mask
+-- @≤ 2^w \/ gcd(stride, 2^w)@), so self-wrapping does /not/ mean residue
+-- classes repeat. It only describes how far the orbit traveled.
+isSelfWrapping :: Clp w -> Bool
+isSelfWrapping c@Clp{stride, mask} = valueIndex c (end c) * stride > mask
 
 -- ------------------------------------------------------------------
 -- * Construction
@@ -378,22 +412,23 @@ mk w s e st =
 -- | /O(w log w)/. Convert a CLP to an arithmetic domain (wrapped interval).
 toArith :: Clp w -> A.Domain w
 toArith c@Clp{start, end, mask} =
-  -- For non-multi-wrap CLPs, the result is the interval @[start, end]@ (over-
-  -- approximating by collapsing to stride = 1). For multi-wrap CLPs, the orbit
-  -- visits exactly the values congruent to @start@ modulo @g = gcd(stride,
-  -- 2^w)@, so we use the tightest such interval: @[start \`mod\` g, mask + 1 -
-  -- g + (start \`mod\` g)]@.
+  -- For non-self-wrapping CLPs, the result is the interval @[start, end]@
+  -- (over-approximating by collapsing to stride = 1). For self-wrapping CLPs,
+  -- the orbit visits exactly the values congruent to @start@ modulo
+  -- @g = gcd(stride, 2^w)@, so we use the tightest such interval:
+  -- @[start \`mod\` g, mask + 1 - g + (start \`mod\` g)]@.
   --
   -- TODO: both branches are sound but not always tightest. The smallest sound
   -- interval containing the orbit @{ start + i*stride mod 2^w : 0 <= i <= k }@
   -- is the complement of the largest cyclic gap in that orbit. Even outside
-  -- the multi-wrap case, walking @[start, end]@ in stride-direction can wrap
-  -- past a smaller-cardinality gap than the one between @end@ and @start@. By
+  -- the self-wrapping case, walking @[start, end]@ in stride-direction can
+  -- wrap past a smaller-cardinality gap than the one between @end@ and
+  -- @start@. By
   -- the three-distance (Sós\/Steinhaus) theorem the candidate gap sizes are
   -- determined by the continued-fraction convergents of @stride\/g@ modulo
   -- @2^w\/g@, computable in @O(w)@ steps via Euclidean recursion. See Slater
   -- (1967), "Gaps and steps for the sequence n*theta mod 1".
-  if isMultiWrap c
+  if isSelfWrapping c
     then A.interval imask r (imask + 1 - toInteger g)
     else A.interval imask istart sz
   where
@@ -456,9 +491,10 @@ fromBitwise w b = fromArith w (bitwiseToArith b)
 --
 -- SASI\'s @member@ function is actually broken. Their concretization function
 -- matches our 'toList', which means that their intervals can semantically
--- support wrapping around multiple times, but their membership function
--- only supports single-wrap. This is likely due to its heritage from Wrapped
--- Intervals, where multi-wrap of stride-1 intervals would result in saturation.
+-- support wrapping around multiple times, but their membership function only
+-- supports non-self-wrapping intervals. This is likely due to its heritage
+-- from Wrapped Intervals, where self-wrapping stride-1 intervals would result
+-- in saturation.
 member :: Clp w -> Natural -> Bool
 member c v = assert (proper c) $
   wrapOffset c v `mod` strideGcd c == 0
@@ -548,7 +584,7 @@ add w a b =
   assert (proper a) $
   assert (proper b) $
   if spanAB >= mask a + 1
-    then multiWrapResult w a d (A.add (toArith a) (toArith b)) start'
+    then selfWrappingResult w a d (A.add (toArith a) (toArith b)) start'
     else mk w start' (modMask a (start' + spanAB)) d
   where
     ka     = valueIndex a (end a)
@@ -566,7 +602,7 @@ sub w a b =
   assert (proper a) $
   assert (proper b) $
   if spanAB >= mask a + 1
-    then multiWrapResult w a d
+    then selfWrappingResult w a d
            (A.add (toArith a) (A.negate (toArith b))) start'
     else mk w start' (modMask a (start' + spanAB)) d
   where
@@ -580,16 +616,16 @@ sub w a b =
     spanAB = ka * stride a + kb * stride b
     start' = modMask a (start a + modNeg (mask a) (end b))
 
--- | @add@\/@sub@ result when the conceptual arc multi-wraps (won't fit in a
--- single revolution). @d@ is the result stride (@gcd@ of the operand strides,
+-- | @add@\/@sub@ result when the conceptual arc self-wraps (revolves past
+-- its own start). @d@ is the result stride (@gcd@ of the operand strides,
 -- with singleton operands skipped); @g = d \`gcd\` 2^w@ is the lowest set bit
 -- of @d@. Intersect Arith's near-full arc with the @g@-coset of @start'@:
 -- strictly tighter than @liftArith2 A.add@ when @g > 1@, since stride stays
--- @g@ rather than collapsing to 1.
-multiWrapResult ::
+-- @g@ rather than collapsing to 1. See Note [Product abstraction].
+selfWrappingResult ::
   (1 <= w) =>
   NatRepr w -> Clp w -> Natural -> A.Domain w -> Natural -> Clp w
-multiWrapResult w a d arith start' =
+selfWrappingResult w a d arith start' =
   case A.arithDomainData arith of
     Nothing -> mk w r (modMask a (mask a + 1 - g + r)) g
     Just (lo, sz) ->
@@ -824,13 +860,13 @@ circLeqAnchorMax x v k =
     m  = (1 `shiftL` k) - 1
     x' = x .&. m
 
--- | 'isMultiWrap' agrees with the orbit length: a CLP is multi-wrap iff
+-- | 'isSelfWrapping' agrees with the orbit length: a CLP is self-wrapping iff
 -- stepping through every element of 'toList' travels strictly more than @2^w@
--- in total. Concretely, @isMultiWrap c@ iff @(length (toList c) - 1) * stride
--- > 2^w - 1@.
-isMultiWrapViaToList :: Clp w -> Property
-isMultiWrapViaToList c@Clp{stride, mask} =
-  proper c ==> property (isMultiWrap c == (k * stride > mask))
+-- in total. Concretely, @isSelfWrapping c@ iff
+-- @(length (toList c) - 1) * stride > 2^w - 1@.
+isSelfWrappingViaToList :: Clp w -> Property
+isSelfWrappingViaToList c@Clp{stride, mask} =
+  proper c ==> property (isSelfWrapping c == (k * stride > mask))
   where
     k = fromIntegral (length (toList c) - 1) :: Natural
 

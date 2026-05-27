@@ -57,8 +57,8 @@ valueIndex c v = (divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride 
 circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
 circLeq x a b = a - x <= b - x
 
-isMultiWrap : {n} (fin n, n >= 2) => Clp n -> Bit
-isMultiWrap c = zext`{2*n} (valueIndex c c.end) * zext`{2*n} c.stride >= 2^^`n
+isSelfWrapping : {n} (fin n, n >= 2) => Clp n -> Bit
+isSelfWrapping c = zext`{2*n} (valueIndex c c.end) * zext`{2*n} c.stride >= 2^^`n
 
 liftArith1 : {n} (fin n, n >= 2) => (Dom n -> Dom n) -> Clp n -> Clp n
 liftArith1 f c = fromArith (f (toArith c))
@@ -77,7 +77,7 @@ liftBitwise2 f a b = fromBitwise (f (toBitwise a) (toBitwise b))
 
 toArith : {n} (fin n, n >= 2) => Clp n -> Dom n
 toArith c =
-  if isMultiWrap c then Arith::interval (c.start % g) (- g)
+  if isSelfWrapping c then Arith::interval (c.start % g) (- g)
                    else Arith::range c.start c.end
   where g = strideGcd c
 

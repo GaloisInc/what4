@@ -87,9 +87,9 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
       C.circLeqAnchorMin <$> genNat <*> genNat <*> genWidthExp
   , genTest "circLeqAnchorMax" $
       C.circLeqAnchorMax <$> genNat <*> genNat <*> genWidthExp
-  , genTest "isMultiWrapViaToList" $
+  , genTest "isSelfWrappingViaToList" $
       do SW n <- genWidthSmall
-         C.isMultiWrapViaToList <$> C.genClp n
+         C.isSelfWrappingViaToList <$> C.genClp n
   , genTest "startMember" $
       do SW n <- genWidth
          C.startMember <$> C.genClp n
