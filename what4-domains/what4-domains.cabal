@@ -221,3 +221,14 @@ test-suite bvdomain_coverage
                , tasty-hunit >= 0.9
                , text
 
+
+test-suite clp_precision_regression
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: CLPPrecisionRegression.hs
+  build-depends: base >= 4.10 && < 5
+               , containers
+               , parameterized-utils
+               , what4-domains
+
