@@ -192,6 +192,7 @@ test-suite bvdomain_tests
 
   other-modules:
     CLP
+    CLP.Precision
     StridedInterval
     VerifyBindings
 
@@ -204,6 +205,7 @@ test-suite bvdomain_tests_hh
 
   other-modules:
     CLP
+    CLP.Precision
     StridedInterval
     VerifyBindings
 

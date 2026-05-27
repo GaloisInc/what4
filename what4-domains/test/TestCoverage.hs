@@ -62,6 +62,15 @@ allHsModules :: [HsModule]
 allHsModules =
   [arithMod, bitwiseMod, xorMod, overallMod, clpMod, stridedMod]
 
+-- | Additional source files that define Haskell @Property@ predicates but
+-- aren't themselves checked for invocation. Currently used to satisfy the
+-- Cryptol\<-\>Haskell correspondence check for properties (like @precise_*@)
+-- that live in the test suite rather than under @src/@.
+additionalHsPropertyFiles :: [FilePath]
+additionalHsPropertyFiles =
+  [ "test/CLP/Precision.hs"
+  ]
+
 cryptolFiles :: [FilePath]
 cryptolFiles =
   [ "doc/arithdomain.cry"
@@ -198,9 +207,9 @@ checkCryptolFile :: FilePath -> Assertion
 checkCryptolFile f = do
   cryptolSrc <- TIO.readFile f
   hsNames <-
-    fmap Set.unions $ 
-      forM allHsModules $ \path -> do
-        content <- TIO.readFile (hsModFile path)
+    fmap Set.unions $
+      forM (map hsModFile allHsModules ++ additionalHsPropertyFiles) $ \path -> do
+        content <- TIO.readFile path
         pure (Set.fromList (extractHsPredicates content))
   let cryptolNames = extractCryPredicates cryptolSrc
   assertNonEmpty f "Property" cryptolNames

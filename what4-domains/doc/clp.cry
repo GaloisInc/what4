@@ -363,3 +363,100 @@ property p_correct_lshr = correct_lshr`{4}
 property p_correct_ashr = correct_ashr`{4}
 property p_correct_rol  = correct_rol`{4}
 property p_correct_ror  = correct_ror`{4}
+
+// ------------------------------------------------------------------
+// * Precision (CLP at least as precise as Arith)
+//
+// For each op @f@ that lifts through @Arith@, every concrete value the
+// CLP result claims as a member is also a member of the Arith result on
+// the projections, so the CLP result is contained in the Arith result.
+
+// ------------------------------------------------------------------
+// ** Arithmetic
+
+precise_negate : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+precise_negate a x =
+  proper a ==> member (neg a) x ==>
+    Arith::mem (Arith::neg (toArith a)) x
+
+precise_add : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_add a b x =
+  proper a ==> proper b ==> member (add a b) x ==>
+    Arith::mem (Arith::add (toArith a) (toArith b)) x
+
+precise_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_mul a b x =
+  proper a ==> proper b ==> member (mul a b) x ==>
+    Arith::mem (Arith::mul (toArith a) (toArith b)) x
+
+precise_udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_udiv a b x =
+  proper a ==> proper b ==> member (udiv a b) x ==>
+    Arith::mem (Arith::udiv (toArith a) (toArith b)) x
+
+precise_urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_urem a b x =
+  proper a ==> proper b ==> member (urem a b) x ==>
+    Arith::mem (Arith::urem (toArith a) (toArith b)) x
+
+precise_sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_sdiv a b x =
+  proper a ==> proper b ==> member (sdiv a b) x ==>
+    Arith::mem (Arith::sdiv (toArith a) (toArith b)) x
+
+precise_srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_srem a b x =
+  proper a ==> proper b ==> member (srem a b) x ==>
+    Arith::mem (Arith::srem (toArith a) (toArith b)) x
+
+property p_precise_negate = precise_negate`{4}
+property p_precise_add    = precise_add`{4}
+property p_precise_mul    = precise_mul`{4}
+property p_precise_udiv   = precise_udiv`{4}
+property p_precise_urem   = precise_urem`{4}
+property p_precise_sdiv   = precise_sdiv`{4}
+property p_precise_srem   = precise_srem`{4}
+
+// ------------------------------------------------------------------
+// ** Concatenation, extension, selection, and truncation
+
+precise_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [m] -> Property
+precise_zext a x =
+  proper a ==> member (zero_ext`{m} a) x ==>
+    Arith::mem (Arith::zero_ext`{m} (toArith a)) x
+
+precise_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [m] -> Property
+precise_sext a x =
+  proper a ==> member (sign_ext`{m} a) x ==>
+    Arith::mem (Arith::sign_ext`{m} (toArith a)) x
+
+precise_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> [m + n] -> Property
+precise_concat a b x =
+  proper a ==> proper b ==> member (concat a b) x ==>
+    Arith::mem (Arith::concat (toArith a) (toArith b)) x
+
+property p_precise_zext   = precise_zext`{6, 4}
+property p_precise_sext   = precise_sext`{6, 4}
+property p_precise_concat = precise_concat`{2, 2}
+
+// ------------------------------------------------------------------
+// ** Shifts and rotations
+
+precise_shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_shl a b x =
+  proper a ==> proper b ==> member (shl a b) x ==>
+    Arith::mem (Arith::shl (toArith a) (toArith b)) x
+
+precise_lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_lshr a b x =
+  proper a ==> proper b ==> member (lshr a b) x ==>
+    Arith::mem (Arith::lshr (toArith a) (toArith b)) x
+
+precise_ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_ashr a b x =
+  proper a ==> proper b ==> member (ashr a b) x ==>
+    Arith::mem (Arith::ashr (toArith a) (toArith b)) x
+
+property p_precise_shl  = precise_shl`{4}
+property p_precise_lshr = precise_lshr`{4}
+property p_precise_ashr = precise_ashr`{4}

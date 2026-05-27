@@ -18,6 +18,8 @@ import qualified What4.Domains.BV.CLP as C
 import           What4.Domains.Verification (Gen, chooseInt, chooseInteger, getSize)
 import           VerifyBindings (genTest)
 
+import qualified CLP.Precision as Precision
+
 data SomeWidth where
   SW :: (1 <= w) => NatRepr w -> SomeWidth
 
@@ -228,4 +230,5 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "correct_ror" $
       do SW n <- genWidth
          C.correct_ror n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , Precision.tests
   ]
