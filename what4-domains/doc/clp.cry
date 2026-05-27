@@ -15,7 +15,14 @@ type Clp n
     }
 
 proper : {n} (fin n, n >= 1) => Clp n -> Bool
-proper c = c.stride > 0 /\ (c.end - c.start) % strideGcd c == 0
+proper c =
+  c.stride > 0 /\
+  (c.end - c.start) % strideGcd c == 0 /\
+  (c.start != c.end \/ c.stride == 1) /\
+  (~ isFull c \/ (c.start < strideGcd c /\ c.stride == strideGcd c))
+
+isFull : {n} (fin n, n >= 1) => Clp n -> Bit
+isFull c = c.start != c.end /\ c.end + c.stride == c.start
 
 // ------------------------------------------------------------------
 // * Internal helpers
@@ -36,8 +43,15 @@ invModPow2 : {n} (fin n, n >= 2) => [n] -> [n]
 invModPow2 a = (iterate step 1) @ `n
   where step x = x * (2 - a * x)
 
+// @2^n / g - 1@. The orbit length minus one, expressed as a bitmask: any
+// value index lies in @[0, orbitMask]@, and modular reduction by the orbit
+// length is a bitwise @&&@ with this mask.
+orbitMask : {n} (fin n, n >= 2) => Clp n -> [n]
+orbitMask c = (- g) / g
+  where g = strideGcd c
+
 valueIndex : {n} (fin n, n >= 2) => Clp n -> [n] -> [n]
-valueIndex c v = divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g)
+valueIndex c v = (divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g)) && orbitMask c
   where g = strideGcd c
 
 circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit

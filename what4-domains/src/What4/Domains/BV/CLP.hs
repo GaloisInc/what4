@@ -238,6 +238,10 @@ proper c@Clp {start, end, stride, mask} =
   , stride > 0
   -- @end@ is reachable from @start@ by repeatedly adding @stride@ mod @2^w@.
   , ((end + (mask + 1 - start)) .&. mask) `mod` strideGcd c == 0
+  -- Singletons are canonicalized to stride 1.
+  , start /= end || stride == 1
+  -- Full cosets: smallest start in coset, stride equals @g@.
+  , Prelude.not (isFull c) || (start < strideGcd c && stride == strideGcd c)
   ]
 
 -- ------------------------------------------------------------------
@@ -316,6 +320,12 @@ circLeq :: Natural -> Natural -> Natural -> Natural -> Bool
 circLeq m x a b = (a + nx) .&. m <= (b + nx) .&. m
   where nx = modNeg m x
 
+-- | /O(1)/. Does stepping once past @end@ wrap back to @start@?
+isFull :: Clp w -> Bool
+isFull Clp{start, end, stride, mask} =
+  start /= end && (end + stride) .&. mask == start
+{-# INLINE isFull #-}
+
 -- | /O(w log w)/. Is this CLP multi-wrap? A CLP is multi-wrap if the
 -- cumulative distance traversed by its orbit (@n * stride@, where @n@ is the
 -- number of steps from @start@ to @end@) exceeds @2^w@. Geometrically: walking
@@ -350,7 +360,16 @@ mk w s e st =
   assert (proper c) c
   where
     m = integerToNatural (maxUnsigned w)
-    c = Clp { start = s, end = e, stride = st, mask = m }
+    -- Singleton: stride is irrelevant; pin to 1.
+    st1 = if s == e then 1 else st
+    -- Full coset: any element of @start mod g + g·Z@ is a valid start.
+    -- Pick @start = start mod g@, @stride = g@.
+    full = s /= e && (e + st1) .&. m == s
+    g = 1 `shiftL` countTrailingZerosOr0 (toInteger st1)
+    (s2, e2, st2)
+      | full      = let r = s `mod` g in (r, (r + m + 1 - g) .&. m, g)
+      | otherwise = (s, e, st1)
+    c = Clp { start = s2, end = e2, stride = st2, mask = m }
 {-# INLINE mk #-}
 
 -- ------------------------------------------------------------------
