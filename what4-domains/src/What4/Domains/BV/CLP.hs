@@ -95,7 +95,7 @@ module What4.Domains.BV.CLP
   -- * Arithmetic
   , negate
   , add
-  -- , sub
+  , sub
   , scale
   , mul
   , udiv
@@ -164,7 +164,7 @@ module What4.Domains.BV.CLP
   -- ** Arithmetic
   , correct_neg
   , correct_add
-  -- , correct_sub
+  , correct_sub
   , correct_scale
   , correct_mul
   , correct_udiv
@@ -535,11 +535,75 @@ liftBitwise2 w f a b =
 -- ------------------------------------------------------------------
 -- * Arithmetic
 
+-- | /O(w)/. Negation: stride is preserved; the orbit reverses, so @start@ and
+-- @end@ swap (under modular negation).
 negate :: (1 <= w) => NatRepr w -> Clp w -> Clp w
-negate w = liftArith1 w A.negate
+negate w c@Clp{start, end, stride, mask} =
+  assert (proper c) $
+  mk w (modNeg mask end) (modNeg mask start) stride
 
+-- | /O(w log w)/. Addition.
 add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
-add w = liftArith2 w A.add
+add w a b =
+  assert (proper a) $
+  assert (proper b) $
+  if spanAB >= mask a + 1
+    then multiWrapResult w a d (A.add (toArith a) (toArith b)) start'
+    else mk w start' (modMask a (start' + spanAB)) d
+  where
+    ka     = valueIndex a (end a)
+    kb     = valueIndex b (end b)
+    d      = case (ka, kb) of
+               (0, 0) -> 1
+               (0, _) -> stride b
+               (_, 0) -> stride a
+               _      -> Prelude.gcd (stride a) (stride b)
+    spanAB = ka * stride a + kb * stride b
+    start' = modMask a (start a + start b)
+
+sub :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+sub w a b =
+  assert (proper a) $
+  assert (proper b) $
+  if spanAB >= mask a + 1
+    then multiWrapResult w a d
+           (A.add (toArith a) (A.negate (toArith b))) start'
+    else mk w start' (modMask a (start' + spanAB)) d
+  where
+    ka     = valueIndex a (end a)
+    kb     = valueIndex b (end b)
+    d      = case (ka, kb) of
+               (0, 0) -> 1
+               (0, _) -> stride b
+               (_, 0) -> stride a
+               _      -> Prelude.gcd (stride a) (stride b)
+    spanAB = ka * stride a + kb * stride b
+    start' = modMask a (start a + modNeg (mask a) (end b))
+
+-- | @add@\/@sub@ result when the conceptual arc multi-wraps (won't fit in a
+-- single revolution). @d@ is the result stride (@gcd@ of the operand strides,
+-- with singleton operands skipped); @g = d \`gcd\` 2^w@ is the lowest set bit
+-- of @d@. Intersect Arith's near-full arc with the @g@-coset of @start'@:
+-- strictly tighter than @liftArith2 A.add@ when @g > 1@, since stride stays
+-- @g@ rather than collapsing to 1.
+multiWrapResult ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> A.Domain w -> Natural -> Clp w
+multiWrapResult w a d arith start' =
+  case A.arithDomainData arith of
+    Nothing -> mk w r (modMask a (mask a + 1 - g + r)) g
+    Just (lo, sz) ->
+      let lo'    = fromInteger lo
+          sz'    = fromInteger sz
+          off    = (start' + mask a + 1 - lo') .&. gMask
+          clpLo  = modMask a (lo' + off)
+          nSteps = divByPow2 (sz' - off) g
+          clpHi  = modMask a (clpLo + nSteps * g)
+      in mk w clpLo clpHi g
+  where
+    g     = 1 `shiftL` countTrailingZerosOr0 (toInteger d)
+    gMask = g - 1
+    r     = start' .&. gMask
 
 scale :: (1 <= w) => NatRepr w -> Integer -> Clp w -> Clp w
 scale w k = liftArith1 w (A.scale k)
@@ -859,6 +923,13 @@ correct_add ::
 correct_add w a x b y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     property (member (add w a b) (asN w (toInteger x + toInteger y)))
+
+correct_sub ::
+  (1 <= w) =>
+  NatRepr w -> Clp w -> Natural -> Clp w -> Natural -> Property
+correct_sub w a x b y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    property (member (sub w a b) (asN w (toInteger x - toInteger y)))
 
 correct_scale ::
   (1 <= w) =>

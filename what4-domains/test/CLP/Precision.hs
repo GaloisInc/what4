@@ -59,6 +59,13 @@ precise_add w a b x =
   C.proper a ==> C.proper b ==> C.member (C.add w a b) x ==>
     property (A.member (A.add (C.toArith a) (C.toArith b)) (toInteger x))
 
+precise_sub ::
+  (1 <= w) =>
+  NatRepr w -> C.Clp w -> C.Clp w -> Natural -> Property
+precise_sub w a b x =
+  C.proper a ==> C.proper b ==> C.member (C.sub w a b) x ==>
+    property (A.member (A.add (C.toArith a) (A.negate (C.toArith b))) (toInteger x))
+
 precise_scale ::
   (1 <= w) =>
   NatRepr w -> Integer -> C.Clp w -> Natural -> Property
@@ -198,6 +205,9 @@ tests = TT.testGroup "Precision (CLP at least as precise as Arith)"
   , genTest "precise_add" $
       do SW n <- genWidth
          precise_add n <$> C.genClp n <*> C.genClp n <*> genNatBV n
+  , genTest "precise_sub" $
+      do SW n <- genWidth
+         precise_sub n <$> C.genClp n <*> C.genClp n <*> genNatBV n
   , genTest "precise_scale" $
       do SW n <- genWidth
          precise_scale n <$> chooseInteger (0, maxUnsigned n)

@@ -128,6 +128,9 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "correct_add" $
       do SW n <- genWidth
          C.correct_add n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
+  , genTest "correct_sub" $
+      do SW n <- genWidth
+         C.correct_sub n <$> C.genClp n <*> genNatBV n <*> C.genClp n <*> genNatBV n
   , genTest "correct_scale" $
       do SW n <- genWidth
          C.correct_scale n <$> chooseInteger (0, maxUnsigned n)

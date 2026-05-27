@@ -101,10 +101,66 @@ member c v = wrapOffset c v % strideGcd c == 0
 // * Arithmetic
 
 neg : {n} (fin n, n >= 2) => Clp n -> Clp n
-neg = liftArith1 Arith::neg
+neg c = { start = - c.end, end = - c.start, stride = c.stride }
 
+// Result stride is gcd(a.stride, b.stride). When the orbit would saturate
+// (@spanAB + g > 2^n@), defer to the Arith lifting since a partial arc may
+// still be strictly tighter than a full coset.
 add : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
-add = liftArith2 Arith::add
+add a b =
+  if spanAB >= 2^^`n
+    then { start = clpStart, end = clpEnd, stride = g }
+    else { start = start', end = start' + drop`{n+1} spanAB, stride = d }
+  where
+    d : [n]
+    d = if ka == 0 /\ kb == 0 then 1
+        else if ka == 0 then b.stride
+        else if kb == 0 then a.stride
+        else gcd a.stride b.stride
+    g : [n]
+    g = d && (- d)
+    ka = valueIndex a a.end
+    kb = valueIndex b b.end
+    spanAB : [2 * n + 1]
+    spanAB = zext ka * zext a.stride + zext kb * zext b.stride
+    start' = a.start + b.start
+    arith = Arith::add (toArith a) (toArith b)
+    offset = (start' - arith.lo) % g
+    clpStart = arith.lo + offset
+    nSteps = (arith.sz - offset) / g
+    clpEnd = clpStart + nSteps * g
+
+sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+sub a b =
+  if spanAB >= 2^^`n
+    then { start = clpStart, end = clpEnd, stride = g }
+    else { start = start', end = start' + drop`{n+1} spanAB, stride = d }
+  where
+    d : [n]
+    d = if ka == 0 /\ kb == 0 then 1
+        else if ka == 0 then b.stride
+        else if kb == 0 then a.stride
+        else gcd a.stride b.stride
+    g : [n]
+    g = d && (- d)
+    ka = valueIndex a a.end
+    kb = valueIndex b b.end
+    spanAB : [2 * n + 1]
+    spanAB = zext ka * zext a.stride + zext kb * zext b.stride
+    start' = a.start - b.end
+    arith = Arith::add (toArith a) (Arith::neg (toArith b))
+    offset = (start' - arith.lo) % g
+    clpStart = arith.lo + offset
+    nSteps = (arith.sz - offset) / g
+    clpEnd = clpStart + nSteps * g
+
+// gcd of two bitvectors via Euclid. After ~5n iterations the second component
+// is 0 (Lamé's theorem bounds it by ~log_phi of the input, < 2n is plenty).
+gcd : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+gcd x y = result.0
+  where
+    result = (iterate step (x, y)) @ (`(8 * n) : [width (8 * n)])
+    step ab = if ab.1 == 0 then ab else (ab.1, ab.0 % ab.1)
 
 mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 mul = liftArith2 Arith::mul
@@ -265,6 +321,11 @@ correct_add a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (add a b) (x + y)
 
+correct_sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_sub a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (sub a b) (x - y)
+
 correct_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
 correct_mul a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
@@ -292,6 +353,7 @@ correct_srem a b x y =
 
 property p_correct_neg = correct_neg`{4}
 property p_correct_add = correct_add`{4}
+property p_correct_sub = correct_sub`{4}
 property p_correct_mul = correct_mul`{4}
 property p_correct_udiv = correct_udiv`{4}
 property p_correct_urem = correct_urem`{4}
@@ -398,6 +460,11 @@ precise_add a b x =
   proper a ==> proper b ==> member (add a b) x ==>
     Arith::mem (Arith::add (toArith a) (toArith b)) x
 
+precise_sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_sub a b x =
+  proper a ==> proper b ==> member (sub a b) x ==>
+    Arith::mem (Arith::add (toArith a) (Arith::neg (toArith b))) x
+
 precise_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
 precise_mul a b x =
   proper a ==> proper b ==> member (mul a b) x ==>
@@ -425,6 +492,7 @@ precise_srem a b x =
 
 property p_precise_negate = precise_negate`{4}
 property p_precise_add    = precise_add`{4}
+property p_precise_sub    = precise_sub`{4}
 property p_precise_mul    = precise_mul`{4}
 property p_precise_udiv   = precise_udiv`{4}
 property p_precise_urem   = precise_urem`{4}

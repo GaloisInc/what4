@@ -124,8 +124,9 @@ binaryResult name absOp concOp =
 cMask :: Natural -> Natural
 cMask x = x .&. mask4
 
-cAdd, cMul, cAnd, cOr, cXor :: Natural -> Natural -> Natural
+cAdd, cSub, cMul, cAnd, cOr, cXor :: Natural -> Natural -> Natural
 cAdd x y = cMask (x + y)
+cSub x y = cMask (x + (mask4 + 1 - y))
 cMul x y = cMask (x * y)
 cAnd x y = x .&. y
 cOr  x y = x Bits..|. y
@@ -196,6 +197,7 @@ allResults :: [Result]
 allResults =
   [ unaryResult "negate" (C.negate w4) cNegate
   , binaryResult "add" (C.add w4) cAdd
+  , binaryResult "sub" (C.sub w4) cSub
   , Result "scale" sAbs sConc
   , binaryResult "mul" (C.mul w4) cMul
   , binaryResultFiltered "udiv" (C.udiv w4) cUdivPartial
