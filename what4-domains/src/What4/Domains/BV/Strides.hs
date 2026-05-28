@@ -243,6 +243,9 @@ module What4.Domains.BV.Strides
   , fromBitwise
   -- * Queries
   , member
+  , leq
+  , leqPrecise
+  , leqExact
   , toList
   -- , asSingleton
   -- , size
@@ -308,7 +311,9 @@ module What4.Domains.BV.Strides
   , orbitLenViaToList
   , divByPow2Correct
   , invModPow2Correct
+  , floorSumCorrect
   , valueIndexCorrect
+  , valueIndexMaybeCorrect
   , valueAtCorrect
   , circLeqAtZero
   , circLeqAnchorMin
@@ -321,6 +326,17 @@ module What4.Domains.BV.Strides
   , toListMember
   , memberToList
   , toListNoDuplicates
+  , leqCorrect
+  , leqReflexive
+  , leqTransitive
+  , leqRefinesLeqExact
+  , leqPreciseCorrect
+  , leqPreciseReflexive
+  , leqPreciseRefinesLeqExact
+  , leqExactCorrect
+  , leqExactComplete
+  , leqExactReflexive
+  , leqExactTransitive
   -- , correct_eq
   -- , correct_ubounds
   -- , correct_sbounds
@@ -579,6 +595,25 @@ invModPow2 a m = assert (a .&. 1 == 1) $ go 1
         then x
         else go ((x * (2 + m - ax)) .&. mMinus1)
 
+-- | /O(w^2)/. Euclidean-like floor sum,
+-- @floorSum n m a b = sum_{i=0}^{n-1} ((a*i + b) \`Prelude.div\` m)@.
+-- Requires @m > 0@; all values are non-negative.
+floorSum :: Natural -> Natural -> Natural -> Natural -> Natural
+floorSum n0 m0 a0 b0 = go 0 n0 m0 a0 b0
+  where
+    go !ans !n !m !a !b
+      | n == 0 || m == 0 = ans
+      | a >= m =
+          go (ans + (n * (n - 1) `Prelude.div` 2) * (a `Prelude.div` m))
+             n m (a `mod` m) b
+      | b >= m =
+          go (ans + n * (b `Prelude.div` m)) n m a (b `mod` m)
+      | otherwise =
+          let yMax = a * n + b
+          in if yMax < m
+               then ans
+               else go ans (yMax `Prelude.div` m) a m (yMax `mod` m)
+
 -- | /O(w log w)/. The progression index of @v@: the unique @i@ in @[0, 2^w \/
 -- g)@ such that @start + i*stride ≡ v (mod 2^w)@, where @g = gcd(stride, 2^w)@.
 -- Requires @g@ to divide @(v - start) mod 2^w@.
@@ -597,6 +632,14 @@ valueIndex c@Domain{stride, mask} v =
     g    = strideGcd c
     m'   = (mask + 1) `divByPow2` g
     sInv = invModPow2 (stride `divByPow2` g) m'
+
+-- | /O(w log w)/. Like 'valueIndex', but returns 'Nothing' when @v@ is not on
+-- the coset of @c@ (so 'valueIndex'\'s precondition would be violated).
+valueIndexMaybe :: Domain w -> Natural -> Maybe Natural
+valueIndexMaybe c v
+  | wrapOffset c v `mod` strideGcd c == 0 = Just (valueIndex c v)
+  | otherwise                             = Nothing
+{-# INLINE valueIndexMaybe #-}
 
 -- | /O(w)/. The value at progression index @i@: @(start + i * stride) mod 2^w@.
 -- Left inverse of 'valueIndex' on indices in @[0, 2^w \/ g)@.
@@ -767,8 +810,118 @@ member :: Domain w -> Natural -> Bool
 -- from Wrapped Intervals, where self-wrapping stride-1 intervals would result
 -- in saturation.
 member c v = assert (proper c) $
-  wrapOffset c v `mod` strideGcd c == 0
-  && valueIndex c v <= n c
+  case valueIndexMaybe c v of
+    Just i  -> i <= n c
+    Nothing -> False
+
+-- | /O(w)/. Sound, reflexive, and transitive (and so cheap to compose) but
+-- coarse approximation of 'leqExact'. Use 'leqPrecise' for a finer (but
+-- non-transitive) check, or 'leqExact' for an exact (but quadratic) one.
+leq :: Domain w -> Domain w -> Bool
+-- Writing @stride = 2^v · m@ for odd @m@, the subgroup @⟨stride⟩@ in
+-- @Z\/2^w@ is @⟨2^v⟩@. We accept @a ⊆ b@ if /any/ of:
+--
+--   (1) /Equal/: @a == b@. Transitive on the nose.
+--   (2) /Singleton/: @a@ is a single element and lies in @b@. Composes
+--       with the others by membership transitivity.
+--   (3) /Full b/, in three parts:
+--         (3a) @b@ spans its full orbit (@n b + 1 == orbitLen b@);
+--         (3b) /Coset/: @start a − start b ∈ ⟨stride b⟩@; and
+--         (3c) /Subgroup/: @⟨stride a⟩ ⊆ ⟨stride b⟩@, i.e. @strideGcd b@
+--              divides @stride a@.
+--       If both @b@ and @c@ are full, the coset and subgroup containments
+--       chain: @⟨stride a⟩ ⊆ ⟨stride b⟩ ⊆ ⟨stride c⟩@, etc.
+leq a b = assert (proper a) $ assert (proper b) $
+  equal               -- (1)
+  || singletonInB     -- (2)
+  || (bIsFull         -- (3a)
+        && cosetMatches      -- (3b)
+        && subgroupContained -- (3c)
+     )
+  where
+    equal             = a == b
+    singletonInB      = n a == 0 && member b (start a)
+    bIsFull           = n b + 1 == orbitLen b
+    cosetMatches      = wrapOffset b (start a) `mod` strideGcd b == 0
+    subgroupContained = stride a `mod` strideGcd b == 0
+
+-- | /O(w log w)/. Sound and finer approximation of 'leqExact' than 'leq'.
+-- Reflexive but, as a syntactic approximation, not transitive in general.
+leqPrecise :: Domain w -> Domain w -> Bool
+-- The check embeds @a@\'s orbit into @b@\'s index space:
+--
+--   (1) /On orbit/: @start a@ lies on @b@\'s orbit (at some @b@-index
+--       @iAStart@), and @iAStart <= n b@.
+--   (2) /Singleton/: if @a@ is a singleton, (1) is enough.
+--   (3) Otherwise:
+--         (3a) /Stride aligned/: @stride b@ divides @stride a@; that
+--              multiple @aStepInB@ is how far each step of @a@ advances
+--              in @b@-index space; and
+--         (3b) /Fits in b/: after @n a@ such steps, the @b@-index reached
+--              still does not exceed @n b@.
+leqPrecise a b = assert (proper a) $ assert (proper b) $
+  case valueIndexMaybe b (start a) of
+    Nothing      -> False  -- (1) start a not on b's orbit
+    Just iAStart ->
+      onOrbit iAStart                       -- (1)
+      && (aIsSingleton                      -- (2)
+          || (strideAligned                 -- (3a)
+              && aFitsInsideB iAStart       -- (3b)
+             ))
+  where
+    aIsSingleton  = n a == 0
+    onOrbit i     = i <= n b
+    strideAligned = stride a `mod` stride b == 0
+    aStepInB      = stride a `Prelude.div` stride b
+    aFitsInsideB i = i + n a * aStepInB <= n b
+
+-- | /O(w^2)/. Partial order on progressions: @leqExact a b@ iff every element
+-- of @a@ is in @b@.
+leqExact :: Domain w -> Domain w -> Bool
+-- Writing @stride = 2^v · m@ for odd @m@, the subgroup of @Z\/2^w@ generated
+-- by @stride@ is @⟨2^v⟩@ — the odd factor @m@ is invertible mod @2^w\/2^v@
+-- and so doesn\'t change which subgroup is generated. The check is then:
+--
+--   (1) /Coset/: @start a@ lies on @b@\'s coset, i.e. @start a − start b ∈
+--       ⟨2^{v_b}⟩@. Read off as @b@-index @iAStart@.
+--   (2) /Subgroup/: @⟨stride a⟩ ⊆ ⟨stride b⟩@, i.e. @v_a ≥ v_b@. Equivalent
+--       to @2^{v_b} = strideGcd b@ dividing @stride a@.
+--   (3) /Window/: the indices @{ iAStart + i · aStep mod orbitLen b
+--       | 0 ≤ i ≤ n a }@ all lie in @[0, n b]@, where
+--       @aStep = stride a · stride b^{-1} mod orbitLen b@ in @b@\'s index space.
+--
+-- The window count uses 'floorSum' to compute, in @O(w log w)@, how many of
+-- the @n a + 1@ visited indices fall in @[0, n b]@.
+leqExact a b = assert (proper a) $ assert (proper b) $
+  case valueIndexMaybe b (start a) of
+    Nothing -> False                             -- (1) fails: start a off coset
+    Just iAStart
+      | aIsSingleton          -> iAStart <= n b  -- (1) ok; (2)/(3) vacuous
+      | Prelude.not subgroupContained -> False   -- (2) fails
+      | bIsFull               -> True            -- (3) vacuous: full orbit
+      | otherwise             -> windowFits iAStart  -- (3)
+  where
+    gB :: Natural
+    gB = strideGcd b
+    mB :: Natural
+    mB = orbitLen b
+    aIsSingleton, subgroupContained, bIsFull :: Bool
+    aIsSingleton      = n a == 0
+    subgroupContained = stride a `mod` gB == 0   -- (2)
+    bIsFull           = n b + 1 == mB
+    -- @a@'s stride translated to @b@-index space, modulo b's orbit length.
+    invSB, aStep :: Natural
+    invSB = invModPow2 (stride b `divByPow2` gB) mB
+    aStep = ((stride a `divByPow2` gB) * invSB) .&. (mB - 1)
+    -- (3): of the @n a + 1@ visited @b@-indices, count how many fall in
+    -- @[0, n b]@; the AP fits iff that count is @n a + 1@.
+    windowFits :: Natural -> Bool
+    windowFits iAStart =
+      let nA1     = n a + 1
+          wWidth  = n b + 1
+          hits    = nA1 + floorSum nA1 mB aStep iAStart
+                        - floorSum nA1 mB aStep (iAStart + mB - wWidth)
+      in hits == nA1
 
 -- | /O(2^w \/ g)/, where @g = gcd(stride, 2^w)@. Enumerate the (distinct)
 -- elements of a progression, in the order they are produced by the progression:
@@ -1209,6 +1362,21 @@ invModPow2Correct a k =
     property ((a * invModPow2 a m) `mod` m == 1)
   where m = 1 `shiftL` k
 
+-- | 'floorSum' agrees with the naive sum:
+-- @floorSum n m a b == sum_{i=0}^{n-1} ((a*i + b) \`Prelude.div\` m)@.
+-- @n@, @a@, @b@ are clamped to small ranges to keep the naive sum cheap.
+floorSumCorrect :: Natural -> Natural -> Natural -> Natural -> Property
+floorSumCorrect n m a b =
+  m' > 0 ==>
+    property (floorSum n' m' a' b' == naive)
+  where
+    n' = n `mod` 64
+    m' = (m `mod` 32) + 1
+    a' = a `mod` 64
+    b' = b `mod` 64
+    naive = sum [ (a' * i + b') `Prelude.div` m'
+                | n' > 0, i <- [0 .. n' - 1] ]
+
 -- | @valueAt c (valueIndex c v) ≡ v (mod 2^w)@ whenever @v@ is on the
 -- progression (i.e. @strideGcd c@ divides @wrapOffset c v@).
 valueIndexCorrect :: Domain w -> Natural -> Property
@@ -1216,6 +1384,17 @@ valueIndexCorrect c v =
   proper c ==> wrapOffset c v' `mod` strideGcd c == 0 ==>
     property (valueAt c (valueIndex c v') == v')
   where v' = modMask c v
+
+-- | 'valueIndexMaybe' returns 'Just' iff @v@ is on @c@\'s coset, and the
+-- payload agrees with 'valueIndex'.
+valueIndexMaybeCorrect :: Domain w -> Natural -> Property
+valueIndexMaybeCorrect c v =
+  proper c ==>
+    let v' = modMask c v
+        onCoset = wrapOffset c v' `mod` strideGcd c == 0
+    in property $ case valueIndexMaybe c v' of
+         Just i  -> onCoset && i == valueIndex c v'
+         Nothing -> Prelude.not onCoset
 
 -- | @valueIndex c (valueAt c i) == i@ for any @i@ in @[0, orbitLen c)@.
 valueAtCorrect :: Domain w -> Natural -> Property
@@ -1286,6 +1465,78 @@ toListNoDuplicates :: Domain w -> Property
 toListNoDuplicates c = proper c ==> property (noDuplicates (toList c))
   where
     noDuplicates xs = length xs == Set.size (Set.fromList xs)
+
+-- | Soundness of 'leq': if @a \`leq\` b@ then every element of @a@ is in @b@.
+leqCorrect :: Domain w -> Domain w -> Property
+leqCorrect a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    leq a b ==> property (Prelude.all (member b) (toList a))
+
+-- | 'leq' is reflexive.
+leqReflexive :: Domain w -> Property
+leqReflexive a = proper a ==> property (leq a a)
+
+-- | 'leq' is transitive: if @a \`leq\` b@ and @b \`leq\` c@ then
+-- @a \`leq\` c@. (Both 'leqPrecise' and 'leqExact' are reflexive but not
+-- guaranteed transitive at the syntactic level; only 'leq' is.)
+leqTransitive :: Domain w -> Domain w -> Domain w -> Property
+leqTransitive a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      leq a b ==> leq b c ==> property (leq a c)
+
+-- | 'leq' refines 'leqExact': @leq a b ==> leqExact a b@. ('leq' and
+-- 'leqPrecise' are not comparable in general — neither refines the other.)
+leqRefinesLeqExact :: Domain w -> Domain w -> Property
+leqRefinesLeqExact a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    leq a b ==> property (leqExact a b)
+
+-- | Soundness of 'leqPrecise': if @a \`leqPrecise\` b@ then every element
+-- of @a@ is in @b@.
+leqPreciseCorrect :: Domain w -> Domain w -> Property
+leqPreciseCorrect a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    leqPrecise a b ==> property (Prelude.all (member b) (toList a))
+
+-- | 'leqPrecise' is reflexive.
+leqPreciseReflexive :: Domain w -> Property
+leqPreciseReflexive a = proper a ==> property (leqPrecise a a)
+
+-- | 'leqPrecise' refines 'leqExact': @leqPrecise a b ==> leqExact a b@.
+-- Equivalently, 'leqPrecise' is a sound approximation of the semantic
+-- containment that 'leqExact' decides.
+leqPreciseRefinesLeqExact :: Domain w -> Domain w -> Property
+leqPreciseRefinesLeqExact a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    leqPrecise a b ==> property (leqExact a b)
+
+-- | Soundness of 'leqExact': @leqExact a b@ implies every element of @a@ is
+-- in @b@.
+leqExactCorrect :: Domain w -> Domain w -> Property
+leqExactCorrect a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    leqExact a b ==> property (Prelude.all (member b) (toList a))
+
+-- | Completeness of 'leqExact': if every element of @a@ is in @b@, then
+-- @leqExact a b@. Together with 'leqExactCorrect' this says @leqExact@
+-- decides semantic containment exactly.
+leqExactComplete :: Domain w -> Domain w -> Property
+leqExactComplete a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    Prelude.all (member b) (toList a) ==> property (leqExact a b)
+
+-- | 'leqExact' is reflexive.
+leqExactReflexive :: Domain w -> Property
+leqExactReflexive a = proper a ==> property (leqExact a a)
+
+-- | 'leqExact' is transitive: if @a \`leqExact\` b@ and @b \`leqExact\` c@
+-- then @a \`leqExact\` c@.
+leqExactTransitive :: Domain w -> Domain w -> Domain w -> Property
+leqExactTransitive a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      leqExact a b ==> leqExact b c ==> property (leqExact a c)
 
 -- ------------------------------------------------------------------
 -- ** Conversion

@@ -31,6 +31,7 @@ module PrecisionRegression.Common
   , binaryResultFiltered
   , scaleResult
   , latticeResult
+  , leqResult
     -- * Concrete operations
   , cAdd, cSub, cMul, cAnd, cOr, cXor
   , cNegate, cNot, cScale
@@ -154,6 +155,24 @@ scaleResult de absOp = Result "scale" absTot concTot
     concTot = sum [ fromIntegral (Set.size (Set.fromList
                       [ cScale k x | x <- toL a ]))
                   | k <- [0 .. mask4], a <- reps ]
+
+-- | Aggregator for a sound (one-way) partial order @leq a b ==> toList a ⊆
+-- toList b@. @abs@ counts pairs satisfying semantic containment (the ideal
+-- ceiling); @conc@ counts pairs the syntactic check actually returns 'True'
+-- for. The ratio is the check's recall.
+leqResult :: DomainEnum a -> String -> (a -> a -> Bool) -> Result
+leqResult de name absOp = Result name absTot concTot
+  where
+    reps = deReps de
+    toL  = deToList de
+    pairs = [ (a, b) | a <- reps, b <- reps ]
+    absTot = sum
+      [ 1
+      | (a, b) <- pairs
+      , let bSet = Set.fromList (toL b)
+      , all (`Set.member` bSet) (toL a)
+      ]
+    concTot = sum [ 1 | (a, b) <- pairs, absOp a b ]
 
 -- | Aggregator for lattice operations whose oracle is a set operation on
 -- the underlying value-sets, rather than a pointwise function.

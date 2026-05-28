@@ -85,9 +85,14 @@ tests = TT.testGroup "Strides"
       S.divByPow2Correct <$> genNat <*> genWidthExp
   , genTest "invModPow2Correct" $
       S.invModPow2Correct <$> genOddNat <*> genWidthExp
+  , genTest "floorSumCorrect" $
+      S.floorSumCorrect <$> genNat <*> genNat <*> genNat <*> genNat
   , genTest "valueIndexCorrect" $
       do SW n <- genWidth
          S.valueIndexCorrect <$> S.genDomain n <*> genNatBV n
+  , genTest "valueIndexMaybeCorrect" $
+      do SW n <- genWidth
+         S.valueIndexMaybeCorrect <$> S.genDomain n <*> genNatBV n
   , genTest "valueAtCorrect" $
       do SW n <- genWidth
          S.valueAtCorrect <$> S.genDomain n <*> genNatBV n
@@ -115,6 +120,39 @@ tests = TT.testGroup "Strides"
   , genTest "toListNoDuplicates" $
       do SW n <- genWidthSmall
          S.toListNoDuplicates <$> S.genDomain n
+  , genTest "leqCorrect" $
+      do SW n <- genWidthSmall
+         S.leqCorrect <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqReflexive" $
+      do SW n <- genWidth
+         S.leqReflexive <$> S.genDomain n
+  , genTest "leqTransitive" $
+      do SW n <- genWidth
+         S.leqTransitive <$> S.genDomain n <*> S.genDomain n <*> S.genDomain n
+  , genTest "leqRefinesLeqExact" $
+      do SW n <- genWidthSmall
+         S.leqRefinesLeqExact <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqPreciseCorrect" $
+      do SW n <- genWidthSmall
+         S.leqPreciseCorrect <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqPreciseReflexive" $
+      do SW n <- genWidth
+         S.leqPreciseReflexive <$> S.genDomain n
+  , genTest "leqPreciseRefinesLeqExact" $
+      do SW n <- genWidthSmall
+         S.leqPreciseRefinesLeqExact <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqExactCorrect" $
+      do SW n <- genWidthSmall
+         S.leqExactCorrect <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqExactComplete" $
+      do SW n <- genWidthSmall
+         S.leqExactComplete <$> S.genDomain n <*> S.genDomain n
+  , genTest "leqExactReflexive" $
+      do SW n <- genWidth
+         S.leqExactReflexive <$> S.genDomain n
+  , genTest "leqExactTransitive" $
+      do SW n <- genWidth
+         S.leqExactTransitive <$> S.genDomain n <*> S.genDomain n <*> S.genDomain n
   , genTest "toArithCorrect" $
       do SW n <- genWidth
          S.toArithCorrect n <$> S.genDomain n <*> genNatBV n

@@ -24,7 +24,10 @@ stridesEnum = DomainEnum (dedup S.toList enumStrides4) S.toList
 
 results :: [Result]
 results =
-  [ unaryResult stridesEnum "negate" (S.negate w4) cNegate
+  [ leqResult stridesEnum "leq" S.leq
+  , leqResult stridesEnum "leqPrecise" S.leqPrecise
+  , leqResult stridesEnum "leqExact" S.leqExact
+  , unaryResult stridesEnum "negate" (S.negate w4) cNegate
   , binaryResult stridesEnum "add" (S.add w4) cAdd
   , binaryResult stridesEnum "sub" (S.sub w4) cSub
   , scaleResult stridesEnum (\k -> S.scale w4 k)

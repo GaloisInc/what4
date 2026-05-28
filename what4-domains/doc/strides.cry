@@ -63,6 +63,10 @@ valueIndex : {n} (fin n, n >= 2) => Domain n -> [n] -> [n]
 valueIndex c v = (divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g)) && orbitMask c
   where g = strideGcd c
 
+valueIndexMaybe : {n} (fin n, n >= 2) => Domain n -> [n] -> (Bit, [n])
+valueIndexMaybe c v =
+  (wrapOffset c v % strideGcd c == 0, valueIndex c v)
+
 valueAt : {n} (fin n, n >= 2) => Domain n -> [n] -> [n]
 valueAt c i = c.start + i * c.stride
 
@@ -127,8 +131,39 @@ fromBitwise b = fromArith (BV::bitToArithDom b)
 // * Queries
 
 member : {n} (fin n, n >= 2) => Domain n -> [n] -> Bit
-member c v = wrapOffset c v % strideGcd c == 0
-          /\ zext (valueIndex c v) <= c.n
+member c v = onCoset /\ zext i <= c.n
+  where (onCoset, i) = valueIndexMaybe c v
+
+leq : {n} (fin n, n >= 2) => Domain n -> Domain n -> Bit
+leq a b =
+  equal \/ singletonInB \/ (bIsFull /\ cosetMatches /\ subgroupContained)
+  where
+    equal             = a == b
+    singletonInB      = a.n == 0 /\ member b a.start
+    bIsFull           = b.n + 1 == orbitLen b
+    cosetMatches      = wrapOffset b a.start % strideGcd b == 0
+    subgroupContained = a.stride % strideGcd b == 0
+
+leqPrecise : {n} (fin n, n >= 2) => Domain n -> Domain n -> Bit
+leqPrecise a b =
+  onOrbit /\ (aIsSingleton \/ (strideAligned /\ aFitsInsideB))
+  where
+    (onCoset, iA) = valueIndexMaybe b a.start
+    aIsSingleton  = a.n == 0
+    strideAligned = a.stride % b.stride == 0
+    aStepInB, iAStart, iAEnd, an, bn : [2 * n + 2]
+    aStepInB     = zext (a.stride / b.stride)
+    iAStart      = zext iA
+    an           = zext a.n
+    bn           = zext b.n
+    iAEnd        = iAStart + an * aStepInB
+    onOrbit      = onCoset /\ iAStart <= bn
+    aFitsInsideB = iAEnd <= bn
+
+leqExact : {n} (fin n, n >= 2) => Domain n -> Domain n -> Bit
+leqExact a b =
+  and [ ~ (i <= a.n) \/ member b (a.start + drop`{1} i * a.stride)
+      | i <- [0 .. 2^^(n + 1) - 1] : [_][n + 1] ]
 
 // ------------------------------------------------------------------
 // * Arithmetic
@@ -312,6 +347,13 @@ valueIndexCorrect c v =
   proper c ==> wrapOffset c v % strideGcd c == 0 ==>
     c.start + valueIndex c v * c.stride == v
 
+valueIndexMaybeCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+valueIndexMaybeCorrect c v =
+  proper c ==>
+    if onCoset then i == valueIndex c v
+               else wrapOffset c v % strideGcd c != 0
+  where (onCoset, i) = valueIndexMaybe c v
+
 valueAtCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 valueAtCorrect c i =
   proper c ==> i' <= orbitMask c ==>
@@ -335,6 +377,7 @@ property p_strideGcdIsPow2          = strideGcdIsPow2`{8}
 property p_divByPow2Correct         = divByPow2Correct`{8}
 property p_invModPow2Correct        = invModPow2Correct`{8}
 property p_valueIndexCorrect        = valueIndexCorrect`{8}
+property p_valueIndexMaybeCorrect   = valueIndexMaybeCorrect`{8}
 property p_valueAtCorrect           = valueAtCorrect`{8}
 property p_circLeqAtZero            = circLeqAtZero`{8}
 property p_circLeqAnchorMin         = circLeqAnchorMin`{8}
@@ -349,8 +392,64 @@ startMember c = proper c ==> member c c.start
 endMember : {n} (fin n, n >= 2) => Domain n -> Property
 endMember c = proper c ==> member c (end c)
 
-property p_startMember = startMember`{8}
-property p_endMember = endMember`{8}
+leqCorrect : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+leqCorrect a b x =
+  proper a ==> proper b ==> leq a b ==> member a x ==> member b x
+
+leqReflexive : {n} (fin n, n >= 2) => Domain n -> Property
+leqReflexive a = proper a ==> leq a a
+
+leqTransitive : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+leqTransitive a b c =
+  proper a ==> proper b ==> proper c ==>
+    leq a b ==> leq b c ==> leq a c
+
+leqRefinesLeqExact : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+leqRefinesLeqExact a b =
+  proper a ==> proper b ==> leq a b ==> leqExact a b
+
+leqPreciseCorrect : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+leqPreciseCorrect a b x =
+  proper a ==> proper b ==> leqPrecise a b ==> member a x ==> member b x
+
+leqPreciseReflexive : {n} (fin n, n >= 2) => Domain n -> Property
+leqPreciseReflexive a = proper a ==> leqPrecise a a
+
+leqPreciseRefinesLeqExact : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+leqPreciseRefinesLeqExact a b =
+  proper a ==> proper b ==> leqPrecise a b ==> leqExact a b
+
+leqExactCorrect : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+leqExactCorrect a b x =
+  proper a ==> proper b ==> leqExact a b ==> member a x ==> member b x
+
+leqExactComplete : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+leqExactComplete a b =
+  proper a ==> proper b ==>
+    (all (\x -> ~ member a x \/ member b x) ([0 .. 2^^n - 1] : [_][n]))
+      ==> leqExact a b
+
+leqExactReflexive : {n} (fin n, n >= 2) => Domain n -> Property
+leqExactReflexive a = proper a ==> leqExact a a
+
+leqExactTransitive : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+leqExactTransitive a b c =
+  proper a ==> proper b ==> proper c ==>
+    leqExact a b ==> leqExact b c ==> leqExact a c
+
+property p_startMember               = startMember`{8}
+property p_endMember                 = endMember`{8}
+property p_leqCorrect                = leqCorrect`{4}
+property p_leqReflexive              = leqReflexive`{4}
+property p_leqTransitive             = leqTransitive`{4}
+property p_leqRefinesLeqExact        = leqRefinesLeqExact`{4}
+property p_leqPreciseCorrect         = leqPreciseCorrect`{4}
+property p_leqPreciseReflexive       = leqPreciseReflexive`{4}
+property p_leqPreciseRefinesLeqExact = leqPreciseRefinesLeqExact`{4}
+property p_leqExactCorrect           = leqExactCorrect`{4}
+property p_leqExactComplete          = leqExactComplete`{4}
+property p_leqExactReflexive         = leqExactReflexive`{4}
+property p_leqExactTransitive        = leqExactTransitive`{4}
 
 // ------------------------------------------------------------------
 // ** Conversion
