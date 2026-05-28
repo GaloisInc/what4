@@ -182,9 +182,7 @@ gcd x y = result.0
 effLoStride : {n} (fin n, n >= 2) => Clp n -> ([n], [n])
 effLoStride c =
   if c.n == 0 then (c.start, 0)
-  else if isSelfWrapping c then (c.start % g, g)
   else (c.start, c.stride)
-  where g = strideGcd c
 
 mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 mul a b =

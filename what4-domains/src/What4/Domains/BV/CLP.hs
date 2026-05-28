@@ -764,15 +764,11 @@ scale w k = liftArith1 w (A.scale k)
 
 -- | The effective @(lo, stride)@ pair used by 'mul' for the result-stride
 -- formula. Singletons contribute stride 0 (their orbit has no nontrivial
--- differences). For self-wrapping operands, the orbit is a /subset/ of
--- the @g@-coset of @start \`mod\` g@ (where @g = strideGcd@); we
--- over-approximate by the full coset, since the @(start, stride)@ triple
--- alone cannot pinpoint where in the coset the orbit actually lies.
+-- differences).
 effLoStride :: Clp w -> (Natural, Natural)
 effLoStride c
-  | n c == 0         = (start c, 0)
-  | isSelfWrapping c = let g = strideGcd c in (start c .&. (g - 1), g)
-  | otherwise        = (start c, stride c)
+  | n c == 0  = (start c, 0)
+  | otherwise = (start c, stride c)
 
 -- | /O(w)/. Multiplication.
 mul :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
