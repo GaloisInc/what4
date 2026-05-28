@@ -13,7 +13,7 @@ enum Domain n
   = BVDBot
   | BVDClp (Clp n)
 
-proper : {n} (fin n, n >= 1) => Domain n -> Bit
+proper : {n} (fin n, n >= 2) => Domain n -> Bit
 proper d = case d of
   BVDBot -> True
   BVDClp c -> Clp::proper c

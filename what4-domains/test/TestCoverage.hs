@@ -193,6 +193,11 @@ haskellOnly = Set.fromList
   -- on the bottom case, so the toList round-trips are Haskell-only.
   , "toListMember", "memberToList", "toListNoDuplicates"
   , "isSelfWrappingViaToList"
+  -- 'firstCosetMemberCorrect' uses parametric width and shift amounts that
+  -- are difficult to express in Cryptol's type system.
+  , "firstCosetMemberCorrect"
+  -- 'orbitLenViaToList' relies on 'toList' which has no direct Cryptol spec.
+  , "orbitLenViaToList"
   ]
 
 cryptolCorrespondenceTests :: TT.TestTree

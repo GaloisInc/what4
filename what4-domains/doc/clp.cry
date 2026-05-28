@@ -52,6 +52,9 @@ orbitMask c = (- g) / g
 divByPow2 : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
 divByPow2 x p = x / p
 
+firstCosetMember : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> [n] -> [n]
+firstCosetMember mask lo g x = (lo + (modSub x lo && (g - 1))) && mask
+
 invModPow2 : {n} (fin n, n >= 2) => [n] -> [n]
 invModPow2 a = (iterate step 1) @ `n
   where step x = x * (2 - a * x)
@@ -301,18 +304,18 @@ circLeqAnchorMin x v = circLeq x x v
 circLeqAnchorMax : {n} (fin n, n >= 1) => [n] -> [n] -> Property
 circLeqAnchorMax x v = circLeq x v (x - 1)
 
-property p_modNegCorrect           = modNegCorrect`{8}
-property p_modSubCorrect           = modSubCorrect`{8}
-property p_wrapOffsetCorrect       = wrapOffsetCorrect`{8}
-property p_strideGcdDividesStride  = strideGcdDividesStride`{8}
-property p_strideGcdIsPow2         = strideGcdIsPow2`{8}
-property p_divByPow2Correct        = divByPow2Correct`{8}
-property p_invModPow2Correct       = invModPow2Correct`{8}
-property p_valueIndexCorrect       = valueIndexCorrect`{8}
-property p_valueAtCorrect          = valueAtCorrect`{8}
-property p_circLeqAtZero           = circLeqAtZero`{8}
-property p_circLeqAnchorMin        = circLeqAnchorMin`{8}
-property p_circLeqAnchorMax        = circLeqAnchorMax`{8}
+property p_modNegCorrect            = modNegCorrect`{8}
+property p_modSubCorrect            = modSubCorrect`{8}
+property p_wrapOffsetCorrect        = wrapOffsetCorrect`{8}
+property p_strideGcdDividesStride   = strideGcdDividesStride`{8}
+property p_strideGcdIsPow2          = strideGcdIsPow2`{8}
+property p_divByPow2Correct         = divByPow2Correct`{8}
+property p_invModPow2Correct        = invModPow2Correct`{8}
+property p_valueIndexCorrect        = valueIndexCorrect`{8}
+property p_valueAtCorrect           = valueAtCorrect`{8}
+property p_circLeqAtZero            = circLeqAtZero`{8}
+property p_circLeqAnchorMin         = circLeqAnchorMin`{8}
+property p_circLeqAnchorMax         = circLeqAnchorMax`{8}
 
 // ------------------------------------------------------------------
 // ** Queries
