@@ -140,6 +140,25 @@ ror : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 ror = liftClp2 Clp::ror
 
 // ------------------------------------------------------------------
+// * Lattice operations
+
+bottom : {n} (fin n, n >= 2) => Domain n
+bottom = BVDBot
+
+top : {n} (fin n, n >= 2) => Domain n
+top = fromArith Arith::top
+
+join : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
+join a b = case a of
+  BVDBot -> b
+  BVDClp ca -> case b of
+    BVDBot -> a
+    BVDClp cb -> fromArith (Arith::join (Clp::toArith ca) (Clp::toArith cb))
+
+meet : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
+meet a b = fromArith (Arith::meet (toArith a) (toArith b))
+
+// ------------------------------------------------------------------
 // * Correctness properties
 
 // ------------------------------------------------------------------
@@ -297,3 +316,57 @@ property p_correct_lshr = correct_lshr`{4}
 property p_correct_ashr = correct_ashr`{4}
 property p_correct_rol  = correct_rol`{4}
 property p_correct_ror  = correct_ror`{4}
+
+// ------------------------------------------------------------------
+// ** Lattice operations
+
+correct_join : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+correct_join a b x =
+  (member a x \/ member b x) ==> member (join a b) x
+
+correct_meet : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+correct_meet a b x =
+  (member a x /\ member b x) ==> member (meet a b) x
+
+joinCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+joinCommutative a b x =
+  member (join a b) x == member (join b a) x
+
+joinIdempotent : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+joinIdempotent a x =
+  member a x ==> member (join a a) x
+
+joinTop : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+joinTop a x =
+  member a x ==> member (join a top) x
+
+joinBottom : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+joinBottom a x =
+  member (join a bottom) x == member a x
+
+meetCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+meetCommutative a b x =
+  member (meet a b) x == member (meet b a) x
+
+meetIdempotent : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+meetIdempotent a x =
+  member a x ==> member (meet a a) x
+
+meetTop : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+meetTop a x =
+  member a x ==> member (meet a top) x
+
+meetBottom : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+meetBottom a x =
+  ~ (member (meet a bottom) x)
+
+property p_correct_join     = correct_join`{4}
+property p_correct_meet     = correct_meet`{4}
+property p_joinCommutative  = joinCommutative`{4}
+property p_joinIdempotent   = joinIdempotent`{4}
+property p_joinTop          = joinTop`{4}
+property p_joinBottom       = joinBottom`{4}
+property p_meetCommutative  = meetCommutative`{4}
+property p_meetIdempotent   = meetIdempotent`{4}
+property p_meetTop          = meetTop`{4}
+property p_meetBottom       = meetBottom`{4}
