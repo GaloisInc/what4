@@ -111,76 +111,6 @@ cosetArc : {n} (fin n, n >= 2) => Clp n -> Dom n
 cosetArc c = Arith::interval (c.start % g) (- g)
   where g = strideGcd c
 
-toArithPrecise : {n} (fin n, n >= 2) => Clp n -> Dom n
-toArithPrecise c =
-  if ~ isSelfWrapping c then startEndArc c
-  else if full          then cosetArc c
-  else                       Arith::meet (tightOrbitArc c) (cosetArc c)
-  where
-    full = c.n + 1 == orbitLen c
-
-tightOrbitArc : {n} (fin n, n >= 2) => Clp n -> Dom n
-tightOrbitArc c = Arith::interval (valueAt c rIdx) (- gap)
-  where
-    (gap, rIdx) = largestGap c (drop`{1} c.n)
-
-type Phase n
-  = { kEven : Bit
-    , qPrev : [n]
-    , qCur  : [n]
-    , etaPrev : [n]
-    , etaCur  : [n]
-    , done : Bit
-    , gap : [n]
-    , rIdx : [n]
-    }
-
-// Computed in @[n+1]@ to accommodate the orbit length @2^n / g@ at @g = 1@
-// (which would otherwise wrap to @0@ in @[n]@).
-largestGap : {n} (fin n, n >= 2) => Clp n -> [n] -> ([n], [n])
-largestGap c nv = (drop`{1} (final.gap * zext g), drop`{1} final.rIdx)
-  where
-    g : [n]
-    g = strideGcd c
-    nIdx : [n + 1]
-    nIdx = zext nv
-    bigM : [n + 1]
-    bigM = zext (orbitMask c) + 1
-    alpha : [n + 1]
-    alpha = zext (c.stride / g)
-    seed : Phase (n + 1)
-    seed = { kEven = True, qPrev = 0, qCur = 1
-           , etaPrev = bigM, etaCur = alpha
-           , done = False, gap = 0, rIdx = 0 }
-    final = (iterate step seed) @ (`(8 * (n + 1)) : [width (8 * (n + 1))])
-    step s =
-      if s.done then s
-      else if s.qCur + qNext > nIdx then phase s cNext
-      else { kEven = ~ s.kEven, qPrev = s.qCur, qCur = qNext
-           , etaPrev = s.etaCur, etaCur = s.etaPrev - cNext * s.etaCur
-           , done = False, gap = 0, rIdx = 0 }
-      where
-        safeEtaCur = if s.etaCur == 0 then 1 else s.etaCur
-        cNext = s.etaPrev / safeEtaCur
-        qNext = cNext * s.qCur + s.qPrev
-    phase s cKp1 = { kEven = s.kEven, qPrev = s.qPrev, qCur = s.qCur
-                   , etaPrev = s.etaPrev, etaCur = s.etaCur
-                   , done = True, gap = gp, rIdx = ri }
-      where
-        m = (nIdx - s.qPrev) / s.qCur
-        r = (nIdx - s.qPrev) - m * s.qCur
-        large = r + 1 < s.qCur
-        medium = ~ large /\ m < cKp1
-        gp = if large       then s.etaPrev - (m - 1) * s.etaCur
-             else if medium then s.etaPrev - m * s.etaCur
-             else                s.etaCur
-        ri = if      large /\ s.kEven       then r + 1
-             else if large                  then nIdx + 1 - s.qCur
-             else if medium /\ s.kEven      then 0
-             else if medium                 then nIdx - r
-             else if s.kEven                then s.qCur
-             else                                0
-
 fromArith : {n} (fin n, n >= 1) => Dom n -> Clp n
 fromArith a = { start = a.lo, stride = 1, n = zext a.sz }
 
@@ -400,48 +330,6 @@ cosetArcCorrect c v =
   proper c ==> isSelfWrapping c ==> member c v ==>
     Arith::mem (cosetArc c) v
 
-tightOrbitArcCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
-tightOrbitArcCorrect c v =
-  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==> member c v ==>
-    Arith::mem (tightOrbitArc c) v
-
-largestGapViaToList : {n} (fin n, n >= 2) => Clp n -> Property
-largestGapViaToList c =
-  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==>
-    largestGap c (drop`{1} c.n) == oracleLargestGap c
-
-tightOrbitArcMinimal : {n} (fin n, n >= 2) => Clp n -> Property
-tightOrbitArcMinimal c =
-  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==>
-    (tightOrbitArc c).sz == - gap
-  where
-    (gap, _) = oracleLargestGap c
-
-oracleLargestGap : {n} (fin n, n >= 2) => Clp n -> ([n], [n])
-oracleLargestGap c = (maxGap, rIdx)
-  where
-    isMember v = member c v
-    nextDist v =
-      foldl min (~ 0 : [n])
-        [ if v == w \/ ~ isMember w then ~ 0 else w - v
-        | w <- take`{2^^n} [0 ...] ]
-    gapAfter v = if isMember v then nextDist v else 0
-    maxGap = foldl max (0 : [n])
-               [ gapAfter v | v <- take`{2^^n} [0 ...] ]
-    rIdx = foldl min (~ 0 : [n])
-             [ if isMember v /\ gapAfter v == maxGap
-                 then valueIndex c (v + maxGap)
-                 else ~ 0
-             | v <- take`{2^^n} [0 ...] ]
-
-toArithPreciseCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
-toArithPreciseCorrect c v =
-  proper c ==> member c v ==> Arith::mem (toArithPrecise c) v
-
-toArithPreciseSubsetToArith : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
-toArithPreciseSubsetToArith c v =
-  proper c ==> Arith::mem (toArithPrecise c) v ==> Arith::mem (toArith c) v
-
 fromArithCorrect : {n} (fin n, n >= 2) => Dom n -> [n] -> Property
 fromArithCorrect a v = Arith::mem a v ==> member (fromArith a) v
 
@@ -457,11 +345,6 @@ fromBitwiseCorrect b v = Bits::mem b v ==> member (fromBitwise b) v
 property p_toArithCorrect = toArithCorrect`{8}
 property p_startEndArcCorrect = startEndArcCorrect`{8}
 property p_cosetArcCorrect = cosetArcCorrect`{8}
-property p_tightOrbitArcCorrect = tightOrbitArcCorrect`{4}
-property p_largestGapViaToList = largestGapViaToList`{4}
-property p_tightOrbitArcMinimal = tightOrbitArcMinimal`{4}
-property p_toArithPreciseCorrect = toArithPreciseCorrect`{4}
-property p_toArithPreciseSubsetToArith = toArithPreciseSubsetToArith`{4}
 property p_fromArithCorrect = fromArithCorrect`{8}
 property p_roundtripArith = roundtripArith`{8}
 property p_toBitwiseCorrect = toBitwiseCorrect`{8}

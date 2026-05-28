@@ -124,21 +124,6 @@ tests = TT.testGroup "Circular linear progressions (CLPs)"
   , genTest "cosetArcCorrect" $
       do SW n <- genWidth
          C.cosetArcCorrect n <$> C.genClp n <*> genNatBV n
-  , genTest "tightOrbitArcCorrect" $
-      do SW n <- genWidth
-         C.tightOrbitArcCorrect n <$> C.genClp n <*> genNatBV n
-  , genTest "tightOrbitArcMinimal" $
-      do SW n <- genWidthSmall
-         C.tightOrbitArcMinimal <$> C.genClp n
-  , genTest "largestGapViaToList" $
-      do SW n <- genWidthSmall
-         C.largestGapViaToList <$> C.genClp n
-  , genTest "toArithPreciseCorrect" $
-      do SW n <- genWidth
-         C.toArithPreciseCorrect n <$> C.genClp n <*> genNatBV n
-  , genTest "toArithPreciseSubsetToArith" $
-      do SW n <- genWidth
-         C.toArithPreciseSubsetToArith n <$> C.genClp n <*> genNatBV n
   , genTest "fromArithCorrect" $
       do SW n <- genWidth
          C.fromArithCorrect n <$> A.genDomain n <*> chooseInteger (0, maxUnsigned n)

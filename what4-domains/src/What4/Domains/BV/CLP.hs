@@ -9,13 +9,13 @@ of @n + 1@ distinct bitvectors visited by walking @n@ steps of size @stride@
 from @start@ (mod @2^w@):
 
 @
-{ start, (start + stride) mod 2^w, (start + 2*stride) mod 2^w, ..., (start + n*stride) mod 2^w }
+{ start + i * stride mod 2^w | 0 <= i <= n }
 @
 
-Notably, this representation allows for intervals that wrap around, and
-even for intervals that wrap around multiple times (while still visiting
-only distinct bitvectors). The interval domain in "What4.Domains.BV.Arith"
-can be thought of as a CLP with @stride = 1@.
+Notably, this representation allows for intervals that wrap around 0, and
+even for intervals that wrap around their starting points, even multiple
+times (while still visiting only distinct bitvectors). The interval domain in
+"What4.Domains.BV.Arith" can be thought of as a CLP with @stride = 1@.
 
 It is common to conceptualize these progressions as intervals that proceed
 clockwise around a \"number circle\", starting at 0 at the south pole,
@@ -80,7 +80,6 @@ module What4.Domains.BV.CLP
   -- , fromFoldable
   -- * Conversion
   , toArith
-  , toArithPrecise
   , fromArith
   , toBitwise
   , fromBitwise
@@ -137,11 +136,6 @@ module What4.Domains.BV.CLP
   , toArithCorrect
   , startEndArcCorrect
   , cosetArcCorrect
-  , tightOrbitArcCorrect
-  , tightOrbitArcMinimal
-  , largestGapViaToList
-  , toArithPreciseCorrect
-  , toArithPreciseSubsetToArith
   , fromArithCorrect
   , roundtripArith
   , toBitwiseCorrect
@@ -216,7 +210,6 @@ import           Prelude hiding (negate, not, and, or, concat)
 import qualified Prelude
 
 import qualified Data.Bits as Bits
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as Set
 
 import           Data.Parameterized.NatRepr (NatRepr, LeqProof(..), maxUnsigned)
@@ -520,10 +513,13 @@ mk w s st nn =
 -- the orbit visits exactly the values congruent to @start@ modulo
 -- @g = gcd(stride, 2^w)@, so we use the tightest such interval:
 -- @[start \`mod\` g, mask + 1 - g + (start \`mod\` g)]@.
---
--- This is sound but not always tightest; for a tighter (and slightly more
--- expensive) projection see 'toArithPrecise'.
 toArith :: Clp w -> A.Domain w
+-- For self-wrapping CLPs, this does not yield the tightest interval
+-- that contains all of their points. By the three-gap theorem (Sós 1957,
+-- Świerczkowski 1958, Van Ravenstein 1988), that interval would be the
+-- complement of the largest gap between elements. This is computable via
+-- Ostrowski-decomposition and was implemented previously, but removed as it was
+-- very complex. You can find it in the git history if you need it.
 toArith c = if isSelfWrapping c then cosetArc c else startEndArc c
 
 -- | /O(w)/. The arc @[start, ..., end]@ on the number circle, ignoring stride.
@@ -549,154 +545,6 @@ cosetArc c@Clp{start = s, mask = m} =
       imask = toInteger m
       lo = toInteger (s .&. (g - 1))
   in A.interval imask lo (imask + 1 - toInteger g)
-
--- | /O(w²)/. A tighter projection of a CLP into 'A.Domain' than 'toArith'.
---
--- For non-self-wrapping CLPs the result agrees with 'toArith': the interval
--- @[start, end]@ is already the smallest arc containing the orbit. For
--- self-wrapping CLPs the result is the intersection of two arcs:
---
--- * the smallest convex arc containing the orbit, which is exactly the
---   complement of the largest gap between elements
--- * the @g@-coset arc (see 'toArith') where @g = gcd(stride, 2^w)@
---
--- The result is always at least as precise as 'toArith' (see
--- 'toArithPreciseSubsetToArith').
-toArithPrecise :: (1 <= w) => Clp w -> A.Domain w
-toArithPrecise c@Clp{n = nn}
-  | Prelude.not (isSelfWrapping c) = startEndArc c
-  -- Orbit fills the @g@-coset of @start@; the coset arc is already tight.
-  | nn + 1 == orbitLen c = cosetArc c
-  -- 'tightOrbitArc' covers the orbit but may include non-coset values;
-  -- intersecting with the @g@-coset arc drops those.
-  | otherwise = A.meet (tightOrbitArc c) (cosetArc c)
-
--- | /O(w²)/. The smallest convex arc on the number circle containing
--- the orbit. Caller must ensure the orbit is self-wrapping but does not fill
--- its coset (i.e., @n + 1 < orbitLen@).
-tightOrbitArc :: Clp w -> A.Domain w
-tightOrbitArc c@Clp{n = nn, mask} =
-  let (maxGap, rIdx) = largestGap c nn
-      start = toInteger (valueAt c rIdx)
-      arcSize = toInteger mask + 1 - toInteger maxGap
-  in assert (isSelfWrapping c && nn + 1 < orbitLen c) $
-     A.interval (toInteger mask) start arcSize
-
--- | The three gap-classes of the three-distance theorem in
--- Ostrowski-decomposition form (small\/medium\/large; see 'toArithPrecise').
-data GapClass = GapSmall | GapMedium | GapLarge
-
--- | /O(w²)/. For the prefix orbit @{ start + i·stride mod 2^w : 0 ≤ i ≤ n }@,
--- returns @(maxGap, rIdx)@ where:
---
--- * @maxGap@ is the largest cyclic distance between consecutive orbit
---   elements (taken as a sorted set in @[0, 2^w)@, with wraparound);
--- * @rIdx@ is the progression index @i ∈ [0, n]@ of the orbit element whose
---   counter-clockwise predecessor on the number circle is exactly that
---   distance away; among ties, the smallest such index.
---
--- Caller must ensure @n ≥ 1@ and @n + 1 < orbitLen c@ (the orbit must self-wrap
--- but not fill its coset; otherwise the three-distance theorem does not
--- apply).
-
--- Implementation. The algorithm is an instance of the /three-distance theorem/
--- (Sós 1957, Świerczkowski 1958, Steinhaus): for irrational @α@ and any @n
--- ≥ 1@, the orbit @{0, α, 2α, ..., nα} mod 1@ (mod 1 = the fractional parts)
--- partitions the unit circle into arcs of at most three distinct lengths,
--- determined by the continued-fraction expansion of @α@. Van Ravenstein
--- (1988, p.361) notes that the same results hold for rational @α = p \/ q@
--- in lowest terms, provided @n < q@ — which is exactly our setting after the
--- coprime-reduction below.
---
--- Setup. Let @g = gcd(stride, 2^w)@ — always a power of two, since
--- @2^w@ is, and computed as the lowest set bit of @stride@. The orbit
--- only touches values congruent to @start@ modulo @g@, so we factor that
--- out: write @α = stride \/ g@ and @M = 2^w \/ g@. Then @α@ and @M@ are
--- coprime (any common divisor would also divide @gcd(stride, 2^w) = g@,
--- which we just divided out), and the orbit's progression indices
--- @i ↦ start + i·stride@ correspond bijectively to points @i·α mod M@ on
--- the cycle @ℤ \/ Mℤ@. A gap of distance @d@ on that cycle is a
--- BV-distance of @d·g@, so we compute the largest gap on the @M@-cycle
--- and multiply by @g@ at the end.
---
--- Three-distance machinery. The continued-fraction expansion of @α \/ M@
--- has /coefficients/ @c_1, c_2, ...@ and /convergent denominators/
--- @q_0 = 1, q_1 = c_1, q_k = c_k·q_{k-1} + q_{k-2}@. Auxiliary values
--- @η_k@ give the cycle-distance between the orbit point @q_k·α mod M@
--- and @0@ (alternating sides), satisfying
--- @η_{-1} = M, η_0 = α, η_{k+1} = η_{k-1} - c_{k+1}·η_k@.
---
--- Every @n ≥ 1@ has a unique /Ostrowski decomposition/
--- @n = m·q_k + q_{k-1} + r@ with @1 ≤ m ≤ c_{k+1}@ and @0 ≤ r < q_k@,
--- where the /phase index/ @k@ is determined by
--- @q_{k-1} + q_k ≤ n ≤ q_{k+1} + q_k - 1@. The three-distance theorem
--- says the largest gap among the orbit @{0, α, ..., n·α} mod M@ has one
--- of three sizes:
---
--- * /small/ @= η_k@ (when the orbit is densest)
--- * /medium/ @= η_{k-1} - m·η_k@ (intermediate density)
--- * /large/ @= η_{k-1} - (m-1)·η_k@ (sparsest)
---
--- and which one is largest depends on @r@ and @m@. Van Ravenstein's Theorem
--- 2.2 (1988) <https://doi.org/10.1017%2FS1446788700031062> gives a closed-form
--- formula for the right-endpoint index in each case, depending also on the
--- parity of @k@.
---
--- Algorithm. We walk the recurrences for @(q, η)@ phase by phase, keeping
--- only the four-value window @(q_{k-1}, q_k, η_{k-1}, η_k)@, until we
--- find the phase @k@ satisfying @q_k + q_{k+1} > n@. Then we compute
--- @m@ and @r@, classify the gap (small/medium/large), and apply the
--- right-endpoint formula. Finally we multiply the gap by @g@ to recover
--- the BV-distance.
---
--- Cost. By Lamé's theorem the continued-fraction length is bounded by
--- @log_φ M ≤ 1.44·w + 1 = O(w)@, so the loop runs in /O(w)/ iterations,
--- each doing /O(w)/-bit arithmetic on @w@-bit naturals — /O(w²)/ overall.
-largestGap :: Clp w -> Natural -> (Natural, Natural)
-largestGap c@Clp{stride} nn =
-  assert (proper c) $
-  assert (nn >= 1 && nn + 1 < bigM) $
-  go True 0 1 bigM alpha
-  where
-    g     = strideGcd c
-    alpha = stride `divByPow2` g
-    bigM  = orbitLen c
-    -- Loop invariants:
-    --   kEven   = parity of the current index @k@.
-    --   qPrev   = q_{k-1},  qCur   = q_k.
-    --   etaPrev = η_{k-1}, etaCur = η_k.
-    -- Algebraic invariant: @qPrev * etaCur + qCur * etaPrev == M@ (holds
-    -- initially as @0·α + 1·M = M@; preserved by the recurrences).
-    -- We compute c_{k+1} and q_{k+1} and either return or step to phase @k+1@.
-    -- Phase @k@ owns @q_{k-1} + q_k ≤ n ≤ q_{k+1} + q_k − 1@; we terminate as
-    -- soon as @q_k + q_{k+1} > n@.
-    go kEven qPrev qCur etaPrev etaCur =
-      assert (qCur > 0 && etaCur > 0) $
-      assert (qPrev * etaCur + qCur * etaPrev == bigM) $
-      let cNext = etaPrev `div` etaCur
-          qNext = cNext * qCur + qPrev
-      in if qCur + qNext > nn
-           then phaseResult kEven qPrev qCur etaPrev etaCur cNext
-           else go (Prelude.not kEven) qCur qNext etaCur (etaPrev - cNext * etaCur)
-
-    phaseResult kEven qPrev qCur etaPrev etaCur cKp1 = (len * g, rIdx)
-      where
-        m = (nn - qPrev) `div` qCur
-        r = (nn - qPrev) - m * qCur
-        -- Three-distance theorem: at most three distinct gap sizes (small,
-        -- medium, large), each expressible as an η-combination. Multiplying
-        -- by @g@ converts from the @α \/ M@ circle to BV-distance.
-        (cls, len)
-          | r + 1 < qCur = (GapLarge,  etaPrev - (m - 1) * etaCur)
-          | m < cKp1     = (GapMedium, etaPrev - m * etaCur)
-          | otherwise    = (GapSmall,  etaCur)
-        rIdx = case (cls, kEven) of
-          (GapSmall,  True)  -> qCur
-          (GapSmall,  False) -> 0
-          (GapMedium, True)  -> 0
-          (GapMedium, False) -> nn - r
-          (GapLarge,  True)  -> r + 1
-          (GapLarge,  False) -> nn + 1 - qCur
 
 -- | /O(w)/. Convert an arithmetic domain (wrapped interval) to a CLP.
 fromArith :: NatRepr w -> A.Domain w -> Maybe (Clp w)
@@ -836,6 +684,11 @@ negate w c@Clp{stride, n = nn, mask} =
   mk w (modNeg mask (end c)) stride nn
 
 -- | /O(w)/. Addition.
+--
+-- References:
+--
+-- * CLP 4.2 Arithmetic Operations
+-- * WI 3.2 Analysing expressions
 add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 -- Shift each orbit by the other's @start@, then walk
 -- @n a · stride a + n b · stride b@ steps from @start a + start b@ in stride
@@ -1226,77 +1079,6 @@ cosetArcCorrect :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
 cosetArcCorrect _w c x =
   proper c ==> isSelfWrapping c ==> member c x' ==>
     property (A.member (cosetArc c) (toInteger x'))
-  where
-    x' = modMask c x
-
--- | On partial self-wrapping CLPs (orbit does not fill its coset), every
--- orbit member lies in 'tightOrbitArc'.
-tightOrbitArcCorrect ::
-  (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
-tightOrbitArcCorrect _w c x =
-  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
-    member c x' ==>
-      property (A.member (tightOrbitArc c) (toInteger x'))
-  where
-    x' = modMask c x
-
--- | 'largestGap' agrees with an oracle derived from 'toList': both the
--- returned cyclic distance and the returned right-endpoint progression index
--- match the brute-force computation.
-largestGapViaToList :: Clp w -> Property
-largestGapViaToList c =
-  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
-    property (largestGap c (n c) == oracleLargestGap c)
-
--- | 'tightOrbitArc' is the smallest convex arc containing the orbit:
--- @size (tightOrbitArc c) == 2^w − (G − 1)@, where @G@ is the largest cyclic
--- /distance/ (next − prev) between consecutive orbit elements (taking the
--- orbit as a sorted set in @[0, 2^w)@); equivalently, the arc excludes the
--- @G − 1@ integers strictly between the chosen pair. Tested by computing
--- @G@ directly from 'toList', so caps at small widths.
-tightOrbitArcMinimal :: Clp w -> Property
-tightOrbitArcMinimal c@Clp{mask} =
-  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
-    property (A.size (tightOrbitArc c) == toInteger mask + 2 - toInteger gap)
-  where
-    (gap, _) = oracleLargestGap c
-
--- | Brute-force counterpart to 'largestGap': returns the largest cyclic gap
--- between consecutive orbit elements (sorted in @[0, 2^w)@, with wraparound)
--- and the smallest progression index whose orbit value is the right endpoint
--- of such a gap. /O(2^w)/.
-oracleLargestGap :: Clp w -> (Natural, Natural)
-oracleLargestGap c@Clp{mask} = (maxGap, rIdx)
-  where
-    sorted = NE.fromList (Set.toAscList (Set.fromList (toList c)))
-    consecutive = zipWith (-) (NE.tail sorted) (NE.toList sorted)
-    wrapGap = mask + 1 - NE.last sorted + NE.head sorted
-    maxGap = Prelude.foldr Prelude.max wrapGap consecutive
-    -- Right-endpoint values of every max-size gap. The wraparound gap's
-    -- right endpoint is the smallest orbit element.
-    rightEnds =
-      [ NE.head sorted | wrapGap == maxGap ] ++
-      [ y | (y, gp) <- zip (NE.tail sorted) consecutive, gp == maxGap ]
-    -- Index of each right-endpoint value, then take the smallest.
-    rIdx = minimum [ valueIndex c v | v <- rightEnds ]
-
--- | Every element in a CLP is also in its 'toArithPrecise' conversion
--- (soundness).
-toArithPreciseCorrect :: (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
-toArithPreciseCorrect _w c x =
-  proper c ==> member c x' ==>
-    property (A.member (toArithPrecise c) (toInteger x'))
-  where
-    x' = modMask c x
-
--- | 'toArithPrecise' is at least as precise as 'toArith' in the
--- membership-induced order: every member of the precise image is also a
--- member of the loose image.
-toArithPreciseSubsetToArith ::
-  (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
-toArithPreciseSubsetToArith _w c x =
-  proper c ==> A.member (toArithPrecise c) (toInteger x') ==>
-    property (A.member (toArith c) (toInteger x'))
   where
     x' = modMask c x
 
