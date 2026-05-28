@@ -4,36 +4,35 @@ module strideddomain where
 import arithdomain as Arith
 import arithdomain (Dom, (=@=))
 import bitsdomain as Bits
-import clp as Clp
-import clp (Clp)
+import strides as S
 
 type Property = Bit
 
 enum Domain n
   = BVDBot
-  | BVDClp (Clp n)
+  | BVDStrides (S::Domain n)
 
 proper : {n} (fin n, n >= 2) => Domain n -> Bit
 proper d = case d of
   BVDBot -> True
-  BVDClp c -> Clp::proper c
+  BVDStrides c -> S::proper c
 
 // ------------------------------------------------------------------
 // * Internal helpers
 //
-// SI ops dispatch to CLP ops on the BVDClp case and return BVDBot otherwise.
+// SI ops dispatch to Strides ops on the BVDStrides case and return BVDBot otherwise.
 
-liftClp1 : {n} (fin n, n >= 2) => (Clp n -> Clp n) -> Domain n -> Domain n
-liftClp1 f d = case d of
+liftStrides1 : {n} (fin n, n >= 2) => (S::Domain n -> S::Domain n) -> Domain n -> Domain n
+liftStrides1 f d = case d of
   BVDBot -> BVDBot
-  BVDClp c -> BVDClp (f c)
+  BVDStrides c -> BVDStrides (f c)
 
-liftClp2 : {n} (fin n, n >= 2) => (Clp n -> Clp n -> Clp n) -> Domain n -> Domain n -> Domain n
-liftClp2 f a b = case a of
+liftStrides2 : {n} (fin n, n >= 2) => (S::Domain n -> S::Domain n -> S::Domain n) -> Domain n -> Domain n -> Domain n
+liftStrides2 f a b = case a of
   BVDBot -> BVDBot
-  BVDClp ca -> case b of
+  BVDStrides ca -> case b of
     BVDBot -> BVDBot
-    BVDClp cb -> BVDClp (f ca cb)
+    BVDStrides cb -> BVDStrides (f ca cb)
 
 // ------------------------------------------------------------------
 // * Conversion
@@ -41,18 +40,18 @@ liftClp2 f a b = case a of
 toArith : {n} (fin n, n >= 2) => Domain n -> Dom n
 toArith d = case d of
   BVDBot -> Arith::bottom
-  BVDClp c -> Clp::toArith c
+  BVDStrides c -> S::toArith c
 
 fromArith : {n} (fin n, n >= 1) => Dom n -> Domain n
-fromArith a = if a.isBot then BVDBot else BVDClp (Clp::fromArith a)
+fromArith a = if a.isBot then BVDBot else BVDStrides (S::fromArith a)
 
 toBitwise : {n} (fin n, n >= 2) => Domain n -> Bits::Dom n
 toBitwise d = case d of
   BVDBot -> Bits::bottom
-  BVDClp c -> Clp::toBitwise c
+  BVDStrides c -> S::toBitwise c
 
 fromBitwise : {n} (fin n, n >= 2) => Bits::Dom n -> Domain n
-fromBitwise b = if Bits::nonempty b then BVDClp (Clp::fromBitwise b) else BVDBot
+fromBitwise b = if Bits::nonempty b then BVDStrides (S::fromBitwise b) else BVDBot
 
 // ------------------------------------------------------------------
 // * Queries
@@ -60,46 +59,49 @@ fromBitwise b = if Bits::nonempty b then BVDClp (Clp::fromBitwise b) else BVDBot
 member : {n} (fin n, n >= 2) => Domain n -> [n] -> Bit
 member d x = case d of
   BVDBot -> False
-  BVDClp c -> Clp::member c x
+  BVDStrides c -> S::member c x
 
 // ------------------------------------------------------------------
 // * Arithmetic
 
 neg : {n} (fin n, n >= 2) => Domain n -> Domain n
-neg = liftClp1 Clp::neg
+neg = liftStrides1 S::neg
 
 add : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-add = liftClp2 Clp::add
+add = liftStrides2 S::add
+
+sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
+sub = liftStrides2 S::sub
 
 mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-mul = liftClp2 Clp::mul
+mul = liftStrides2 S::mul
 
 udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-udiv = liftClp2 Clp::udiv
+udiv = liftStrides2 S::udiv
 
 urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-urem = liftClp2 Clp::urem
+urem = liftStrides2 S::urem
 
 sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-sdiv = liftClp2 Clp::sdiv
+sdiv = liftStrides2 S::sdiv
 
 srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-srem = liftClp2 Clp::srem
+srem = liftStrides2 S::srem
 
 // ------------------------------------------------------------------
 // * Bitwise
 
 bnot : {n} (fin n, n >= 2) => Domain n -> Domain n
-bnot = liftClp1 Clp::bnot
+bnot = liftStrides1 S::bnot
 
 band : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-band = liftClp2 Clp::band
+band = liftStrides2 S::band
 
 bor : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-bor = liftClp2 Clp::bor
+bor = liftStrides2 S::bor
 
 bxor : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-bxor = liftClp2 Clp::bxor
+bxor = liftStrides2 S::bxor
 
 // ------------------------------------------------------------------
 // * Concatenation, extension, selection, and truncation
@@ -107,37 +109,37 @@ bxor = liftClp2 Clp::bxor
 zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Domain m
 zero_ext d = case d of
   BVDBot -> BVDBot
-  BVDClp c -> BVDClp (Clp::zero_ext`{m} c)
+  BVDStrides c -> BVDStrides (S::zero_ext`{m} c)
 
 sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Domain m
 sign_ext d = case d of
   BVDBot -> BVDBot
-  BVDClp c -> BVDClp (Clp::sign_ext`{m} c)
+  BVDStrides c -> BVDStrides (S::sign_ext`{m} c)
 
 concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> Domain (m + n)
 concat a b = case a of
   BVDBot -> BVDBot
-  BVDClp ca -> case b of
+  BVDStrides ca -> case b of
     BVDBot -> BVDBot
-    BVDClp cb -> BVDClp (Clp::concat ca cb)
+    BVDStrides cb -> BVDStrides (S::concat ca cb)
 
 // ------------------------------------------------------------------
 // * Shifts and rotations
 
 shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-shl = liftClp2 Clp::shl
+shl = liftStrides2 S::shl
 
 lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-lshr = liftClp2 Clp::lshr
+lshr = liftStrides2 S::lshr
 
 ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-ashr = liftClp2 Clp::ashr
+ashr = liftStrides2 S::ashr
 
 rol : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-rol = liftClp2 Clp::rol
+rol = liftStrides2 S::rol
 
 ror : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
-ror = liftClp2 Clp::ror
+ror = liftStrides2 S::ror
 
 // ------------------------------------------------------------------
 // * Lattice operations
@@ -151,9 +153,9 @@ top = fromArith Arith::top
 join : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 join a b = case a of
   BVDBot -> b
-  BVDClp ca -> case b of
+  BVDStrides ca -> case b of
     BVDBot -> a
-    BVDClp cb -> fromArith (Arith::join (Clp::toArith ca) (Clp::toArith cb))
+    BVDStrides cb -> fromArith (Arith::join (S::toArith ca) (S::toArith cb))
 
 meet : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 meet a b = fromArith (Arith::meet (toArith a) (toArith b))
@@ -204,6 +206,11 @@ correct_add a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (add a b) (x + y)
 
+correct_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
+correct_sub a b x y =
+  proper a ==> proper b ==> member a x ==> member b y ==>
+    member (sub a b) (x - y)
+
 correct_mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_mul a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
@@ -231,6 +238,7 @@ correct_srem a b x y =
 
 property p_correct_neg = correct_neg`{4}
 property p_correct_add = correct_add`{4}
+property p_correct_sub = correct_sub`{4}
 property p_correct_mul = correct_mul`{4}
 property p_correct_udiv = correct_udiv`{4}
 property p_correct_urem = correct_urem`{4}

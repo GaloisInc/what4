@@ -5,7 +5,7 @@ License     : BSD3
 
 Shared infrastructure for the precision regression test:
 
-  * Width-4 enumeration scaffolding ('DomainEnum', 'dedup', 'enumClps4').
+  * Width-4 enumeration scaffolding ('DomainEnum', 'dedup', 'enumStrides4').
   * Concrete-value-set operations on @Natural@ at width 4 (the oracle that
     each abstract op is compared against).
   * Aggregator helpers ('unaryResult', 'binaryResult',
@@ -23,7 +23,7 @@ module PrecisionRegression.Common
   , mask4
   , DomainEnum(..)
   , dedup
-  , enumClps4
+  , enumStrides4
     -- * Aggregator
   , Result(..)
   , unaryResult
@@ -51,7 +51,7 @@ import           System.IO (hPutStrLn, stderr)
 
 import           Data.Parameterized.NatRepr (NatRepr, knownNat, maxUnsigned)
 
-import qualified What4.Domains.BV.CLP as C
+import qualified What4.Domains.BV.Strides as S
 
 ------------------------------------------------------------------------
 -- Width 4
@@ -81,11 +81,11 @@ dedup toL = go Set.empty
       | otherwise         = x : go (Set.insert k seen) xs
       where k = sort (toL x)
 
--- | Enumerate every proper 'C.Clp' at width 4. Reused as the building block
--- for both the CLP and StridedInterval enumerations.
-enumClps4 :: [C.Clp 4]
-enumClps4 =
-  [ C.mk w4 start stride i
+-- | Enumerate every proper 'S.Domain' at width 4. Reused as the building
+-- block for both the Strides and StridedInterval enumerations.
+enumStrides4 :: [S.Domain 4]
+enumStrides4 =
+  [ S.mk w4 start stride i
   | stride <- [1 .. mask4]
   , let g = stride .&. ((mask4 + 1) - stride)
   , let orbit = (mask4 + 1) `div` g

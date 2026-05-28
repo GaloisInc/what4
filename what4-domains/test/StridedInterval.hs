@@ -79,6 +79,9 @@ tests = TT.testGroup "Strided interval domain"
   , genTest "correct_add" $
       do SW n <- genWidth
          S.correct_add n <$> S.genDomain n <*> genNatBV n <*> S.genDomain n <*> genNatBV n
+  , genTest "correct_sub" $
+      do SW n <- genWidth
+         S.correct_sub n <$> S.genDomain n <*> genNatBV n <*> S.genDomain n <*> genNatBV n
   , genTest "correct_scale" $
       do SW n <- genWidth
          S.correct_scale n <$> chooseInteger (0, maxUnsigned n)

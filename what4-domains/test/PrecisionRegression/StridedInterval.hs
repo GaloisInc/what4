@@ -19,9 +19,10 @@ import qualified What4.Domains.BV.StridedInterval as S
 
 import           PrecisionRegression.Common
 
--- | Every proper 'S.Domain' at width 4: 'S.bottom' plus each enumerated CLP.
+-- | Every proper 'S.Domain' at width 4: 'S.bottom' plus each enumerated
+-- progression.
 enumSi4 :: [S.Domain 4]
-enumSi4 = S.bottom w4 : map S.mk enumClps4
+enumSi4 = S.bottom w4 : map S.mk enumStrides4
 
 siEnum :: DomainEnum (S.Domain 4)
 siEnum = DomainEnum (dedup S.toList enumSi4) S.toList
@@ -30,6 +31,7 @@ results :: [Result]
 results =
   [ unaryResult siEnum "negate" (S.negate w4) cNegate
   , binaryResult siEnum "add" (S.add w4) cAdd
+  , binaryResult siEnum "sub" (S.sub w4) cSub
   , scaleResult siEnum (\k -> S.scale w4 k)
   , binaryResult siEnum "mul" (S.mul w4) cMul
   , binaryResultFiltered siEnum "udiv" (S.udiv w4) cUdivPartial

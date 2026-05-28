@@ -17,7 +17,7 @@ Extra-doc-files:
   doc/bvdomain.cry
   doc/arithdomain.cry
   doc/bitsdomain.cry
-  doc/clp.cry
+  doc/strides.cry
   doc/strideddomain.cry
   doc/xordomain.cry
   doc/README.md
@@ -169,7 +169,7 @@ library
     What4.Domains.BV
     What4.Domains.BV.Arith
     What4.Domains.BV.Bitwise
-    What4.Domains.BV.CLP
+    What4.Domains.BV.Strides
     What4.Domains.BV.StridedInterval
     What4.Domains.BV.XOR
     What4.Domains.Internal
@@ -191,8 +191,8 @@ test-suite bvdomain_tests
   main-is: BVDomTests.hs
 
   other-modules:
-    CLP
-    CLP.Precision
+    Strides
+    Strides.Precision
     StridedInterval
     StridedInterval.Precision
     VerifyBindings
@@ -205,8 +205,8 @@ test-suite bvdomain_tests_hh
   main-is: BVDomTests.hs
 
   other-modules:
-    CLP
-    CLP.Precision
+    Strides
+    Strides.Precision
     StridedInterval
     StridedInterval.Precision
     VerifyBindings
@@ -231,7 +231,7 @@ test-suite precision_regression
   main-is: PrecisionRegression.hs
   other-modules:
     PrecisionRegression.Common
-    PrecisionRegression.CLP
+    PrecisionRegression.Strides
     PrecisionRegression.StridedInterval
   build-depends: base >= 4.10 && < 5
                , containers

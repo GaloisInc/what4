@@ -4,16 +4,16 @@ Copyright   : (c) Galois Inc, 2026
 License     : BSD3
 
 An interval-like abstract domain for bitvectors based on circular linear
-progressions ("What4.Domains.BV.CLP").
+progressions ("What4.Domains.BV.Strides").
 
 Note that this domain does not form a true lattice as it has no associative join
 operation (see /Signedness-Agnostic Program Analysis: Precise Integer Bounds
 for Low-Level Code/). In fact, *no* domain based on wrapping intervals can
 support a true associative join. This could be fixed with a restriction that the
-range of values traversed by the CLP doesn't exceed 2^w (it doesn't wrap around
+range of values traversed by the progression doesn't exceed 2^w (it doesn't wrap around
 multiple times), but this would lose precision. As associativity of join is not
 a soundness property, we choose to keep the precision (matching prior work like
-/WI/ and /SASI/, see "What4.Domains.BV.CLP").
+/WI/ and /SASI/, see "What4.Domains.BV.Strides").
 
 A correctness specification of every operation is given in Cryptol in
 @doc\/strideddomain.cry@; the Haskell @correct_*@ predicates here mirror that
@@ -60,11 +60,12 @@ module What4.Domains.BV.StridedInterval
   -- * Arithmetic
   , negate
   , add
+  , sub
   , scale
   , mul
   , udiv
-  , sdiv
   , urem
+  , sdiv
   , srem
   -- ** Arithmetic (SMT-LIB div-by-zero semantics)
   , udivSmtlib
@@ -120,11 +121,12 @@ module What4.Domains.BV.StridedInterval
   -- ** Arithmetic
   , correct_neg
   , correct_add
+  , correct_sub
   , correct_scale
   , correct_mul
   , correct_udiv
-  , correct_sdiv
   , correct_urem
+  , correct_sdiv
   , correct_srem
   -- *** Arithmetic (SMT-LIB div-by-zero semantics)
   , correct_udivSmtlib
@@ -175,21 +177,20 @@ import qualified Data.Parameterized.NatRepr as NR
 import qualified What4.Domains.Arithmetic as Arith
 import qualified What4.Domains.BV.Arith as A
 import qualified What4.Domains.BV.Bitwise as B
-import qualified What4.Domains.BV.CLP as CLP
-import           What4.Domains.BV.CLP (Clp)
+import qualified What4.Domains.BV.Strides as S
 import           What4.Domains.Verification (Property, property, (==>), Gen, chooseBool)
 
 -- | A value of type @'Domain' w@ represents a set of bitvectors of width @w@.
--- The set is either empty ('BVDBot'), or a circular linear progression ('Clp').
+-- The set is either empty ('BVDBot'), or a circular linear progression-style
 data Domain (w :: Nat)
   = BVDBot !Natural
     -- ^ The empty set. The argument caches @2^w-1@.
-  | BVDClp {-# UNPACK #-} !(Clp w)
+  | BVDStrides {-# UNPACK #-} !(S.Domain w)
   deriving (Eq, Ord, Show)
 -- A note on the representation: Instead of representing bottom with improper
--- CLPs (e.g., with stride = 0), we add an explicit 'BVDBot' constructor.
+-- progressions (e.g., with stride = 0), we add an explicit 'BVDBot' constructor.
 -- This (a) makes it easier to enforce the invariant that operations in the
--- CLP module always return proper CLPs, and (b) speeds up operations in
+-- Strides module always return proper progressions, and (b) speeds up operations in
 -- this module. This is because GHC will use pointer tagging in the layout of
 -- 'Domain': pointers to 'BVDBot' will have a specific value in the low bits,
 -- allowing for pattern matching without loads.
@@ -197,32 +198,32 @@ data Domain (w :: Nat)
 -- ------------------------------------------------------------------
 -- * Internal helpers
 
--- | Dispatch a unary 'Clp' operation through 'Domain': pass 'BVDBot' through
+-- | Dispatch a unary 'S.Domain' operation through 'Domain': pass 'BVDBot' through
 -- unchanged (preserving its cached mask), otherwise apply @f@ on the underlying
--- 'Clp'.
-liftClp1 ::
-  (Clp w -> Clp w) ->
+-- progression.
+liftStrides1 ::
+  (S.Domain w -> S.Domain w) ->
   Domain w -> Domain w
-liftClp1 _ d@(BVDBot _) = d
-liftClp1 f (BVDClp c)   = mk (f c)
-{-# INLINE liftClp1 #-}
+liftStrides1 _ d@(BVDBot _) = d
+liftStrides1 f (BVDStrides c)   = mk (f c)
+{-# INLINE liftStrides1 #-}
 
--- | Dispatch a binary 'Clp' operation through 'Domain'. As with 'liftClp1',
+-- | Dispatch a binary 'S.Domain' operation through 'Domain'. As with 'liftStrides1',
 -- 'BVDBot' is propagated unchanged when either argument is bottom.
-liftClp2 ::
-  (Clp w -> Clp w -> Clp w) ->
+liftStrides2 ::
+  (S.Domain w -> S.Domain w -> S.Domain w) ->
   Domain w -> Domain w -> Domain w
-liftClp2 _ d@(BVDBot _) _ = d
-liftClp2 _ _ d@(BVDBot _) = d
-liftClp2 f (BVDClp a) (BVDClp b) = mk (f a b)
-{-# INLINE liftClp2 #-}
+liftStrides2 _ d@(BVDBot _) _ = d
+liftStrides2 _ _ d@(BVDBot _) = d
+liftStrides2 f (BVDStrides a) (BVDStrides b) = mk (f a b)
+{-# INLINE liftStrides2 #-}
 
 -- ------------------------------------------------------------------
 -- * Construction
 
--- | /O(1)/. Wrap a 'Clp' as a 'Domain'. Asserts that the CLP is 'CLP.proper'.
-mk :: Clp w -> Domain w
-mk c = assert (CLP.proper c) (BVDClp c)
+-- | /O(1)/. Wrap a 'S.Domain' as a 'Domain'. Asserts that the input is 'S.proper'.
+mk :: S.Domain w -> Domain w
+mk c = assert (S.proper c) (BVDStrides c)
 {-# INLINE mk #-}
 
 -- ------------------------------------------------------------------
@@ -231,20 +232,21 @@ mk c = assert (CLP.proper c) (BVDClp c)
 -- | /O(1)/. Convert a strided interval domain to an arithmetic domain.
 --
 -- The conversion is sound: every element in the strided interval is also in the
--- result. For stride-1 CLPs, the result is exact; otherwise, it
+-- result. For stride-1 progressions, the result is exact; otherwise, it
 -- over-approximates.
 toArith :: (1 <= w) => NatRepr w -> Domain w -> A.Domain w
 toArith w = \case
   BVDBot _mask -> A.bottom w
-  BVDClp c -> CLP.toArith c
+  BVDStrides c -> S.toArith c
 
 -- | /O(1)/. Convert an arithmetic domain to a strided interval domain.
 --
--- The conversion is exact for non-bottom intervals, producing a stride-1 CLP.
--- 'A.BVDAny' and bottom are converted to 'BVDBot' since CLPs cannot represent
--- full or empty sets in the lattice structure.
+-- The conversion is exact for non-bottom intervals, producing a stride-1
+-- progression. 'A.BVDAny' and bottom are converted to 'BVDBot' since proper
+-- progressions cannot represent full or empty sets in the lattice
+-- structure.
 fromArith :: (1 <= w) => NatRepr w -> A.Domain w -> Domain w
-fromArith w a = case CLP.fromArith w a of
+fromArith w a = case S.fromArith w a of
   Nothing -> bottom w
   Just c  -> mk c
 
@@ -252,11 +254,11 @@ fromArith w a = case CLP.fromArith w a of
 toBitwise :: (1 <= w) => NatRepr w -> Domain w -> B.Domain w
 toBitwise w = \case
   BVDBot _ -> B.bottom w
-  BVDClp c -> CLP.toBitwise c
+  BVDStrides c -> S.toBitwise c
 
 -- | /O(1)/. Convert a bitwise domain to a strided interval domain.
 fromBitwise :: (1 <= w) => NatRepr w -> B.Domain w -> Domain w
-fromBitwise w b = case CLP.fromBitwise w b of
+fromBitwise w b = case S.fromBitwise w b of
   Nothing -> bottom w
   Just c  -> mk c
 
@@ -267,79 +269,82 @@ fromBitwise w b = case CLP.fromBitwise w b of
 isBottom :: Domain w -> Bool
 isBottom = \case
   BVDBot _ -> True
-  BVDClp _ -> False
+  BVDStrides _ -> False
 {-# INLINE isBottom #-}
 
 -- | /O(w)/. Test if the given value is a member of the domain.
 member :: Domain w -> Natural -> Bool
 member d x = case d of
   BVDBot _ -> False
-  BVDClp c -> CLP.member c x
+  BVDStrides c -> S.member c x
 {-# INLINE member #-}
 
 -- | /O(2^w)/. Enumerate the members of the domain.
 toList :: Domain w -> [Natural]
 toList = \case
   BVDBot _ -> []
-  BVDClp c -> CLP.toList c
+  BVDStrides c -> S.toList c
 {-# INLINE toList #-}
 
 -- ------------------------------------------------------------------
 -- * Arithmetic
 
 negate :: (1 <= w) => NatRepr w -> Domain w -> Domain w
-negate w = liftClp1 (CLP.negate w)
+negate w = liftStrides1 (S.negate w)
 
 add :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-add w = liftClp2 (CLP.add w)
+add w = liftStrides2 (S.add w)
+
+sub :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+sub w = liftStrides2 (S.sub w)
 
 scale :: (1 <= w) => NatRepr w -> Integer -> Domain w -> Domain w
-scale w k = liftClp1 (CLP.scale w k)
+scale w k = liftStrides1 (S.scale w k)
 
 mul :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-mul w = liftClp2 (CLP.mul w)
+mul w = liftStrides2 (S.mul w)
 
 udiv :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-udiv w = liftClp2 (CLP.udiv w)
+udiv w = liftStrides2 (S.udiv w)
 
 urem :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-urem w = liftClp2 (CLP.urem w)
+urem w = liftStrides2 (S.urem w)
 
 sdiv :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-sdiv w = liftClp2 (CLP.sdiv w)
+sdiv w = liftStrides2 (S.sdiv w)
 
 srem :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-srem w = liftClp2 (CLP.srem w)
+srem w = liftStrides2 (S.srem w)
 
 -- ------------------------------------------------------------------
 -- ** Arithmetic (SMT-LIB div-by-zero semantics)
 
 udivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-udivSmtlib w = liftClp2 (CLP.udivSmtlib w)
+udivSmtlib w = liftStrides2 (S.udivSmtlib w)
 
 uremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-uremSmtlib w = liftClp2 (CLP.uremSmtlib w)
+uremSmtlib w = liftStrides2 (S.uremSmtlib w)
 
 sdivSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-sdivSmtlib w = liftClp2 (CLP.sdivSmtlib w)
+sdivSmtlib w = liftStrides2 (S.sdivSmtlib w)
 
 sremSmtlib :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-sremSmtlib w = liftClp2 (CLP.sremSmtlib w)
+sremSmtlib w = liftStrides2 (S.sremSmtlib w)
 
 -- ------------------------------------------------------------------
 -- * Bitwise operations
 
 not :: (1 <= w) => NatRepr w -> Domain w -> Domain w
-not w = liftClp1 (CLP.not w)
+not w = liftStrides1 (S.not w)
 
 and :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-and w = liftClp2 (CLP.and w)
+and w = liftStrides2 (S.and w)
 
 or :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-or w = liftClp2 (CLP.or w)
+or w = liftStrides2 (S.or w)
 
 xor :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-xor w = liftClp2 (CLP.xor w)
+xor w = liftStrides2 (S.xor w)
 
 -- ------------------------------------------------------------------
 -- * Concatenation, extension, selection, and truncation
@@ -349,14 +354,14 @@ zext ::
   NatRepr w -> Domain w -> NatRepr u -> Domain u
 zext w d u = case d of
   BVDBot _ -> bottom u
-  BVDClp c -> mk (CLP.zext w c u)
+  BVDStrides c -> mk (S.zext w c u)
 
 sext ::
   (1 <= w, w + 1 <= u) =>
   NatRepr w -> Domain w -> NatRepr u -> Domain u
 sext w d u = case d of
   BVDBot _ -> bottom u
-  BVDClp c -> mk (CLP.sext w c u)
+  BVDStrides c -> mk (S.sext w c u)
 
 concat ::
   (1 <= u, 1 <= v) =>
@@ -367,32 +372,32 @@ concat u a v b =
       case (a, b) of
         (BVDBot _, _) -> bottom (NR.addNat u v)
         (_, BVDBot _) -> bottom (NR.addNat u v)
-        (BVDClp ca, BVDClp cb) -> mk (CLP.concat u ca v cb)
+        (BVDStrides ca, BVDStrides cb) -> mk (S.concat u ca v cb)
 
 select ::
   (1 <= n, 1 <= w, i + n <= w) =>
   NatRepr i -> NatRepr n -> NatRepr w -> Domain w -> Domain n
 select i n w d = case d of
   BVDBot _ -> bottom n
-  BVDClp c -> mk (CLP.select i n w c)
+  BVDStrides c -> mk (S.select i n w c)
 
 -- ------------------------------------------------------------------
 -- * Shifts and rotations
 
 shl :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-shl w = liftClp2 (CLP.shl w)
+shl w = liftStrides2 (S.shl w)
 
 lshr :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-lshr w = liftClp2 (CLP.lshr w)
+lshr w = liftStrides2 (S.lshr w)
 
 ashr :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-ashr w = liftClp2 (CLP.ashr w)
+ashr w = liftStrides2 (S.ashr w)
 
 rol :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-rol w = liftClp2 (CLP.rol w)
+rol w = liftStrides2 (S.rol w)
 
 ror :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-ror w = liftClp2 (CLP.ror w)
+ror w = liftStrides2 (S.ror w)
 
 -- ------------------------------------------------------------------
 -- * Lattice operations
@@ -411,8 +416,8 @@ top w = fromArith w (A.top w)
 join :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 join _ (BVDBot _) e = e
 join _ d (BVDBot _) = d
-join w (BVDClp a) (BVDClp b) =
-  fromArith w (A.join (CLP.toArith a) (CLP.toArith b))
+join w (BVDStrides a) (BVDStrides b) =
+  fromArith w (A.join (S.toArith a) (S.toArith b))
 
 -- | /O(w)/. Lattice meet: a sound /over/-approximation of the
 -- intersection of two domains. For any concrete value @x@, if @x@ is
@@ -429,20 +434,20 @@ genDomain w = do
   isBot <- chooseBool
   if isBot
     then pure (bottom w)
-    else mk <$> CLP.genClp w
+    else mk <$> S.genDomain w
 
 -- | Generate a member of a non-bottom domain. Calling this on 'BVDBot' is a
 -- programmer error since bottom has no elements.
 genElement :: Domain w -> Gen Natural
 genElement = \case
   BVDBot _ -> error "What4.Domains.BV.StridedInterval.genElement: BVDBot"
-  BVDClp c -> CLP.genElement c
+  BVDStrides c -> S.genElement c
 
 -- | Generate a domain together with a member of that domain. To allow
 -- generating an element, this never produces 'BVDBot'.
 genPair :: NatRepr w -> Gen (Domain w, Natural)
 genPair w = do
-  (c, x) <- CLP.genPair w
+  (c, x) <- S.genPair w
   pure (mk c, x)
 
 -- ------------------------------------------------------------------
@@ -463,7 +468,7 @@ toListMember d = property (Prelude.all (member d) (toList d))
 memberToList :: Domain w -> Natural -> Property
 memberToList d x = case d of
   BVDBot _ -> property True
-  BVDClp c -> CLP.memberToList c x
+  BVDStrides c -> S.memberToList c x
 
 -- ------------------------------------------------------------------
 -- ** Conversion
@@ -510,6 +515,13 @@ correct_add ::
 correct_add w a x b y =
   member a x ==> member b y ==>
     property (member (add w a b) (asN w (toInteger x + toInteger y)))
+
+correct_sub ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Domain w -> Natural -> Property
+correct_sub w a x b y =
+  member a x ==> member b y ==>
+    property (member (sub w a b) (asN w (toInteger x - toInteger y)))
 
 correct_scale ::
   (1 <= w) =>

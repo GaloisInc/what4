@@ -1,5 +1,5 @@
-// A spec for "What4.Domains.BV.CLP".
-module clp where
+// A spec for "What4.Domains.BV.Strides".
+module strides where
 
 import arithdomain as Arith
 import arithdomain (Dom, (=@=))
@@ -10,16 +10,16 @@ type Property = Bit
 
 // We use an @[n+1]@-bit step count internally so that the orbit length
 // @2^w / gcd(stride, 2^w)@, which can be @2^w@, is representable.
-type Clp n
+type Domain n
   = { start : [n]
     , stride : [n]
     , n : [n + 1]
     }
 
-end : {n} (fin n, n >= 1) => Clp n -> [n]
+end : {n} (fin n, n >= 1) => Domain n -> [n]
 end c = c.start + drop`{1} c.n * c.stride
 
-proper : {n} (fin n, n >= 2) => Clp n -> Bool
+proper : {n} (fin n, n >= 2) => Domain n -> Bool
 proper c =
   c.stride > 0 /\
   c.n < orbitLen c /\
@@ -27,7 +27,7 @@ proper c =
   (c.n + 1 != orbitLen c \/
      (c.start < strideGcd c /\ c.stride == strideGcd c))
 
-orbitLen : {n} (fin n, n >= 2) => Clp n -> [n + 1]
+orbitLen : {n} (fin n, n >= 2) => Domain n -> [n + 1]
 orbitLen c = zext (orbitMask c) + 1
 
 // ------------------------------------------------------------------
@@ -39,13 +39,13 @@ modNeg x = - x
 modSub : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
 modSub x y = x - y
 
-wrapOffset : {n} (fin n, n >= 1) => Clp n -> [n] -> [n]
+wrapOffset : {n} (fin n, n >= 1) => Domain n -> [n] -> [n]
 wrapOffset c v = modSub v c.start
 
-strideGcd : {n} (fin n, n >= 1) => Clp n -> [n]
+strideGcd : {n} (fin n, n >= 1) => Domain n -> [n]
 strideGcd c = c.stride && modNeg c.stride
 
-orbitMask : {n} (fin n, n >= 2) => Clp n -> [n]
+orbitMask : {n} (fin n, n >= 2) => Domain n -> [n]
 orbitMask c = (- g) / g
   where g = strideGcd c
 
@@ -59,33 +59,33 @@ invModPow2 : {n} (fin n, n >= 2) => [n] -> [n]
 invModPow2 a = (iterate step 1) @ `n
   where step x = x * (2 - a * x)
 
-valueIndex : {n} (fin n, n >= 2) => Clp n -> [n] -> [n]
+valueIndex : {n} (fin n, n >= 2) => Domain n -> [n] -> [n]
 valueIndex c v = (divByPow2 (wrapOffset c v) g * invModPow2 (divByPow2 c.stride g)) && orbitMask c
   where g = strideGcd c
 
-valueAt : {n} (fin n, n >= 2) => Clp n -> [n] -> [n]
+valueAt : {n} (fin n, n >= 2) => Domain n -> [n] -> [n]
 valueAt c i = c.start + i * c.stride
 
 circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
 circLeq x a b = a - x <= b - x
 
 // Computed in @[2n + 1]@ bits to avoid overflow.
-isSelfWrapping : {n} (fin n, n >= 2) => Clp n -> Bit
+isSelfWrapping : {n} (fin n, n >= 2) => Domain n -> Bit
 isSelfWrapping c = (zext c.n : [2 * n + 1]) * zext c.stride > zext (~ 0 : [n])
 
-liftArith1 : {n} (fin n, n >= 2) => (Dom n -> Dom n) -> Clp n -> Clp n
+liftArith1 : {n} (fin n, n >= 2) => (Dom n -> Dom n) -> Domain n -> Domain n
 liftArith1 f c = fromArith (f (toArith c))
 
-liftArith2 : {n} (fin n, n >= 2) => (Dom n -> Dom n -> Dom n) -> Clp n -> Clp n -> Clp n
+liftArith2 : {n} (fin n, n >= 2) => (Dom n -> Dom n -> Dom n) -> Domain n -> Domain n -> Domain n
 liftArith2 f a b = fromArith (f (toArith a) (toArith b))
 
-liftBitwise1 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n) -> Clp n -> Clp n
+liftBitwise1 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n) -> Domain n -> Domain n
 liftBitwise1 f c = fromBitwise (f (toBitwise c))
 
-liftBitwise2 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n -> Bits::Dom n) -> Clp n -> Clp n -> Clp n
+liftBitwise2 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n -> Bits::Dom n) -> Domain n -> Domain n -> Domain n
 liftBitwise2 f a b = fromBitwise (f (toBitwise a) (toBitwise b))
 
-mk : {n} (fin n, n >= 2) => [n] -> [n] -> [n + 1] -> Clp n
+mk : {n} (fin n, n >= 2) => [n] -> [n] -> [n + 1] -> Domain n
 mk s st nv =
   if nv == 0 then
     { start = s, stride = 1, n = 0 }
@@ -102,41 +102,41 @@ mk s st nv =
 // ------------------------------------------------------------------
 // * Conversion
 
-toArith : {n} (fin n, n >= 2) => Clp n -> Dom n
+toArith : {n} (fin n, n >= 2) => Domain n -> Dom n
 toArith c =
   if isSelfWrapping c then cosetArc c
                       else startEndArc c
 
-startEndArc : {n} (fin n, n >= 2) => Clp n -> Dom n
+startEndArc : {n} (fin n, n >= 2) => Domain n -> Dom n
 startEndArc c = Arith::range c.start (end c)
 
-cosetArc : {n} (fin n, n >= 2) => Clp n -> Dom n
+cosetArc : {n} (fin n, n >= 2) => Domain n -> Dom n
 cosetArc c = Arith::interval (c.start % g) (- g)
   where g = strideGcd c
 
-fromArith : {n} (fin n, n >= 1) => Dom n -> Clp n
+fromArith : {n} (fin n, n >= 1) => Dom n -> Domain n
 fromArith a = { start = a.lo, stride = 1, n = zext a.sz }
 
-toBitwise : {n} (fin n, n >= 2) => Clp n -> Bits::Dom n
+toBitwise : {n} (fin n, n >= 2) => Domain n -> Bits::Dom n
 toBitwise c = BV::arithToBitDom (toArith c)
 
-fromBitwise : {n} (fin n, n >= 2) => Bits::Dom n -> Clp n
+fromBitwise : {n} (fin n, n >= 2) => Bits::Dom n -> Domain n
 fromBitwise b = fromArith (BV::bitToArithDom b)
 
 // ------------------------------------------------------------------
 // * Queries
 
-member : {n} (fin n, n >= 2) => Clp n -> [n] -> Bit
+member : {n} (fin n, n >= 2) => Domain n -> [n] -> Bit
 member c v = wrapOffset c v % strideGcd c == 0
           /\ zext (valueIndex c v) <= c.n
 
 // ------------------------------------------------------------------
 // * Arithmetic
 
-neg : {n} (fin n, n >= 2) => Clp n -> Clp n
+neg : {n} (fin n, n >= 2) => Domain n -> Domain n
 neg c = mk (- end c) c.stride c.n
 
-combineSpans : {n} (fin n, n >= 2) => Clp n -> Clp n -> ([n], [2 * n + 1])
+combineSpans : {n} (fin n, n >= 2) => Domain n -> Domain n -> ([n], [2 * n + 1])
 combineSpans a b = (d, spanAB)
   where
     d : [n]
@@ -155,13 +155,13 @@ clampToOrbit stride i = if i >= zext orbitM1 then orbitM1 else drop`{n} i
     orbitM1 : [n + 1]
     orbitM1 = zext ((- g) / g)
 
-add : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+add : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 add a b = mk start' d (clampToOrbit d spanAB)
   where
     (d, spanAB) = combineSpans a b
     start' = a.start + b.start
 
-sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 sub a b = mk start' d (clampToOrbit d spanAB)
   where
     (d, spanAB) = combineSpans a b
@@ -173,12 +173,12 @@ gcd x y = result.0
     result = (iterate step (x, y)) @ (`(8 * n) : [width (8 * n)])
     step ab = if ab.1 == 0 then ab else (ab.1, ab.0 % ab.1)
 
-effLoStride : {n} (fin n, n >= 2) => Clp n -> ([n], [n])
+effLoStride : {n} (fin n, n >= 2) => Domain n -> ([n], [n])
 effLoStride c =
   if c.n == 0 then (c.start, 0)
   else (c.start, c.stride)
 
-mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 mul a b =
   if d == 0 then mk start' 1 0
   else if closedForm.n <= viaArith.n then closedForm else viaArith
@@ -207,9 +207,9 @@ clampToOrbit3 stride i = if i >= zext orbitM1 then orbitM1 else drop`{2 * n + 1}
     orbitM1 : [n + 1]
     orbitM1 = zext ((- g) / g)
 
-// The CLP whose elements are exactly those of @arith@ that lie in the
-// @g@-coset of @start'@, where @g = lowestSetBit d@.
-arithMeetCoset : {n} (fin n, n >= 2) => [n] -> Dom n -> [n] -> Clp n
+// The progression whose members are exactly those of @arith@ that lie in
+// the @g@-coset of @start'@, where @g = lowestSetBit d@.
+arithMeetCoset : {n} (fin n, n >= 2) => [n] -> Dom n -> [n] -> Domain n
 arithMeetCoset d arith start' = mk clpLo g nSteps
   where
     g : [n]
@@ -220,61 +220,61 @@ arithMeetCoset d arith start' = mk clpLo g nSteps
     nSteps : [n + 1]
     nSteps = zext ((arith.sz - off) / g)
 
-udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 udiv = liftArith2 Arith::udiv
 
-urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 urem = liftArith2 Arith::urem
 
-sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 sdiv = liftArith2 Arith::sdiv
 
-srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 srem = liftArith2 Arith::srem
 
 // ------------------------------------------------------------------
 // * Bitwise
 
-bnot : {n} (fin n, n >= 2) => Clp n -> Clp n
+bnot : {n} (fin n, n >= 2) => Domain n -> Domain n
 bnot = liftBitwise1 Bits::bnot
 
-band : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+band : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 band = liftBitwise2 Bits::band
 
-bor : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+bor : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 bor = liftBitwise2 Bits::bor
 
-bxor : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+bxor : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 bxor = liftBitwise2 Bits::bxor
 
 // ------------------------------------------------------------------
 // * Concatenation, extension, selection, and truncation
 
-zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> Clp m
+zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Domain m
 zero_ext c = fromArith (Arith::zero_ext`{m} (toArith c))
 
-sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> Clp m
+sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Domain m
 sign_ext c = fromArith (Arith::sign_ext`{m} (toArith c))
 
-concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> Clp (m + n)
+concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> Domain (m + n)
 concat a b = fromArith (Arith::concat (toArith a) (toArith b))
 
 // ------------------------------------------------------------------
 // * Shifts and rotations
 
-shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 shl = liftArith2 Arith::shl
 
-lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 lshr = liftArith2 Arith::lshr
 
-ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 ashr = liftArith2 Arith::ashr
 
-rol : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+rol : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 rol = liftBitwise2 Bits::rolAbstract
 
-ror : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
+ror : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 ror = liftBitwise2 Bits::rorAbstract
 
 // ------------------------------------------------------------------
@@ -289,13 +289,13 @@ modNegCorrect x = x + modNeg x == 0
 modSubCorrect : {n} (fin n, n >= 1) => [n] -> [n] -> Property
 modSubCorrect x y = modSub x y + y == x
 
-wrapOffsetCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+wrapOffsetCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 wrapOffsetCorrect c v = proper c ==> c.start + wrapOffset c v == v
 
-strideGcdDividesStride : {n} (fin n, n >= 2) => Clp n -> Property
+strideGcdDividesStride : {n} (fin n, n >= 2) => Domain n -> Property
 strideGcdDividesStride c = proper c ==> c.stride % strideGcd c == 0
 
-strideGcdIsPow2 : {n} (fin n, n >= 2) => Clp n -> Property
+strideGcdIsPow2 : {n} (fin n, n >= 2) => Domain n -> Property
 strideGcdIsPow2 c = proper c ==> g != 0 /\ g && (g - 1) == 0
   where g = strideGcd c
 
@@ -307,12 +307,12 @@ invModPow2Correct : {n} (fin n, n >= 2) => [n] -> Property
 invModPow2Correct a = isOdd ==> a * invModPow2 a == 1
   where isOdd = a ! 0
 
-valueIndexCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+valueIndexCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 valueIndexCorrect c v =
   proper c ==> wrapOffset c v % strideGcd c == 0 ==>
     c.start + valueIndex c v * c.stride == v
 
-valueAtCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+valueAtCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 valueAtCorrect c i =
   proper c ==> i' <= orbitMask c ==>
     valueIndex c (valueAt c i') == i'
@@ -343,10 +343,10 @@ property p_circLeqAnchorMax         = circLeqAnchorMax`{8}
 // ------------------------------------------------------------------
 // ** Queries
 
-startMember : {n} (fin n, n >= 2) => Clp n -> Property
+startMember : {n} (fin n, n >= 2) => Domain n -> Property
 startMember c = proper c ==> member c c.start
 
-endMember : {n} (fin n, n >= 2) => Clp n -> Property
+endMember : {n} (fin n, n >= 2) => Domain n -> Property
 endMember c = proper c ==> member c (end c)
 
 property p_startMember = startMember`{8}
@@ -355,15 +355,15 @@ property p_endMember = endMember`{8}
 // ------------------------------------------------------------------
 // ** Conversion
 
-toArithCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+toArithCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 toArithCorrect c v = proper c ==> member c v ==> Arith::mem (toArith c) v
 
-startEndArcCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+startEndArcCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 startEndArcCorrect c v =
   proper c ==> ~ isSelfWrapping c ==> member c v ==>
     Arith::mem (startEndArc c) v
 
-cosetArcCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+cosetArcCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 cosetArcCorrect c v =
   proper c ==> isSelfWrapping c ==> member c v ==>
     Arith::mem (cosetArc c) v
@@ -374,7 +374,7 @@ fromArithCorrect a v = Arith::mem a v ==> member (fromArith a) v
 roundtripArith : {n} (fin n, n >= 2) => Dom n -> Property
 roundtripArith a = ~ a.isBot ==> toArith (fromArith a) =@= a
 
-toBitwiseCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+toBitwiseCorrect : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 toBitwiseCorrect c v = proper c ==> member c v ==> Bits::mem (toBitwise c) v
 
 fromBitwiseCorrect : {n} (fin n, n >= 2) => Bits::Dom n -> [n] -> Property
@@ -391,40 +391,40 @@ property p_fromBitwiseCorrect = fromBitwiseCorrect`{8}
 // ------------------------------------------------------------------
 // ** Arithmetic
 
-correct_neg : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+correct_neg : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 correct_neg a x = proper a ==> member a x ==> member (neg a) (- x)
 
-correct_add : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_add : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_add a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (add a b) (x + y)
 
-correct_sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_sub a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (sub a b) (x - y)
 
-correct_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_mul a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (mul a b) (x * y)
 
-correct_udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_udiv a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
     member (udiv a b) (x / y)
 
-correct_urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_urem a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
     member (urem a b) (x % y)
 
-correct_sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_sdiv a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
     member (sdiv a b) (x /$ y)
 
-correct_srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_srem a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==> y != 0 ==>
     member (srem a b) (x %$ y)
@@ -441,20 +441,20 @@ property p_correct_srem = correct_srem`{4}
 // ------------------------------------------------------------------
 // ** Bitwise
 
-correct_not : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+correct_not : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 correct_not a x = proper a ==> member a x ==> member (bnot a) (~ x)
 
-correct_and : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_and : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_and a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (band a b) (x && y)
 
-correct_or : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_or : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_or a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (bor a b) (x || y)
 
-correct_xor : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_xor : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_xor a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (bxor a b) (x ^ y)
@@ -467,15 +467,15 @@ property p_correct_xor = correct_xor`{4}
 // ------------------------------------------------------------------
 // ** Concatenation, extension, selection, and truncation
 
-correct_zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [n] -> Property
+correct_zero_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [n] -> Property
 correct_zero_ext a x =
   proper a ==> member a x ==> member (zero_ext`{m} a) (zext x)
 
-correct_sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [n] -> Property
+correct_sign_ext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [n] -> Property
 correct_sign_ext a x =
   proper a ==> member a x ==> member (sign_ext`{m} a) (sext x)
 
-correct_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> [m] -> [n] -> Property
+correct_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> [m] -> [n] -> Property
 correct_concat a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (concat a b) (x # y)
@@ -487,27 +487,27 @@ property p_correct_concat   = correct_concat`{2, 2}
 // ------------------------------------------------------------------
 // ** Shifts and rotations
 
-correct_shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_shl a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (shl a b) (x << y)
 
-correct_lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_lshr a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (lshr a b) (x >> y)
 
-correct_ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_ashr a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (ashr a b) (x >>$ y)
 
-correct_rol : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_rol : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_rol a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (rol a b) (x <<< y)
 
-correct_ror : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> [n] -> Property
+correct_ror : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> [n] -> Property
 correct_ror a b x y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     member (ror a b) (x >>> y)
@@ -519,47 +519,47 @@ property p_correct_rol  = correct_rol`{4}
 property p_correct_ror  = correct_ror`{4}
 
 // ------------------------------------------------------------------
-// * Precision (CLP at least as precise as Arith)
+// * Precision (Domain at least as precise as Arith)
 
 // ------------------------------------------------------------------
 // ** Arithmetic
 
-precise_negate : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
+precise_negate : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 precise_negate a x =
   proper a ==> member (neg a) x ==>
     Arith::mem (Arith::neg (toArith a)) x
 
-precise_add : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_add : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_add a b x =
   proper a ==> proper b ==> member (add a b) x ==>
     Arith::mem (Arith::add (toArith a) (toArith b)) x
 
-precise_sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_sub a b x =
   proper a ==> proper b ==> member (sub a b) x ==>
     Arith::mem (Arith::add (toArith a) (Arith::neg (toArith b))) x
 
-precise_mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_mul a b x =
   proper a ==> proper b ==> member (mul a b) x ==>
     Arith::mem (Arith::mul (toArith a) (toArith b)) x
 
-precise_udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_udiv a b x =
   proper a ==> proper b ==> member (udiv a b) x ==>
     Arith::mem (Arith::udiv (toArith a) (toArith b)) x
 
-precise_urem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_urem a b x =
   proper a ==> proper b ==> member (urem a b) x ==>
     Arith::mem (Arith::urem (toArith a) (toArith b)) x
 
-precise_sdiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_sdiv a b x =
   proper a ==> proper b ==> member (sdiv a b) x ==>
     Arith::mem (Arith::sdiv (toArith a) (toArith b)) x
 
-precise_srem : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_srem a b x =
   proper a ==> proper b ==> member (srem a b) x ==>
     Arith::mem (Arith::srem (toArith a) (toArith b)) x
@@ -576,17 +576,17 @@ property p_precise_srem   = precise_srem`{4}
 // ------------------------------------------------------------------
 // ** Concatenation, extension, selection, and truncation
 
-precise_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [m] -> Property
+precise_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
 precise_zext a x =
   proper a ==> member (zero_ext`{m} a) x ==>
     Arith::mem (Arith::zero_ext`{m} (toArith a)) x
 
-precise_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Clp n -> [m] -> Property
+precise_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
 precise_sext a x =
   proper a ==> member (sign_ext`{m} a) x ==>
     Arith::mem (Arith::sign_ext`{m} (toArith a)) x
 
-precise_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Clp m -> Clp n -> [m + n] -> Property
+precise_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> [m + n] -> Property
 precise_concat a b x =
   proper a ==> proper b ==> member (concat a b) x ==>
     Arith::mem (Arith::concat (toArith a) (toArith b)) x
@@ -598,17 +598,17 @@ property p_precise_concat = precise_concat`{2, 2}
 // ------------------------------------------------------------------
 // ** Shifts and rotations
 
-precise_shl : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_shl a b x =
   proper a ==> proper b ==> member (shl a b) x ==>
     Arith::mem (Arith::shl (toArith a) (toArith b)) x
 
-precise_lshr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_lshr a b x =
   proper a ==> proper b ==> member (lshr a b) x ==>
     Arith::mem (Arith::lshr (toArith a) (toArith b)) x
 
-precise_ashr : {n} (fin n, n >= 2) => Clp n -> Clp n -> [n] -> Property
+precise_ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 precise_ashr a b x =
   proper a ==> proper b ==> member (ashr a b) x ==>
     Arith::mem (Arith::ashr (toArith a) (toArith b)) x

@@ -50,17 +50,17 @@ data HsModule = HsModule
   , hsModTestFile :: FilePath
   }
 
-arithMod, bitwiseMod, xorMod, overallMod, clpMod, stridedMod :: HsModule
+arithMod, bitwiseMod, xorMod, overallMod, stridesMod, stridedMod :: HsModule
 arithMod   = HsModule "src/What4/Domains/BV/Arith.hs"           "A" "test/BVDomTests.hs"
 bitwiseMod = HsModule "src/What4/Domains/BV/Bitwise.hs"         "B" "test/BVDomTests.hs"
 xorMod     = HsModule "src/What4/Domains/BV/XOR.hs"             "X" "test/BVDomTests.hs"
 overallMod = HsModule "src/What4/Domains/BV.hs"                 "O" "test/BVDomTests.hs"
-clpMod     = HsModule "src/What4/Domains/BV/CLP.hs"             "C" "test/CLP.hs"
+stridesMod = HsModule "src/What4/Domains/BV/Strides.hs"         "S" "test/Strides.hs"
 stridedMod = HsModule "src/What4/Domains/BV/StridedInterval.hs" "S" "test/StridedInterval.hs"
 
 allHsModules :: [HsModule]
 allHsModules =
-  [arithMod, bitwiseMod, xorMod, overallMod, clpMod, stridedMod]
+  [arithMod, bitwiseMod, xorMod, overallMod, stridesMod, stridedMod]
 
 -- | Additional source files that define Haskell @Property@ predicates but
 -- aren't themselves checked for invocation. Currently used to satisfy the
@@ -68,7 +68,7 @@ allHsModules =
 -- that live in the test suite rather than under @src/@.
 additionalHsPropertyFiles :: [FilePath]
 additionalHsPropertyFiles =
-  [ "test/CLP/Precision.hs"
+  [ "test/Strides/Precision.hs"
   ]
 
 cryptolFiles :: [FilePath]
@@ -77,7 +77,7 @@ cryptolFiles =
   , "doc/bitsdomain.cry"
   , "doc/xordomain.cry"
   , "doc/bvdomain.cry"
-  , "doc/clp.cry"
+  , "doc/strides.cry"
   , "doc/strideddomain.cry"
   ]
 
@@ -187,7 +187,7 @@ haskellOnly = Set.fromList
   , "correct_equiv_shlAbstract", "correct_equiv_lshrAbstract"
   , "correct_equiv_ashrAbstract"
   , "correct_equiv_rolAbstract", "correct_equiv_rorAbstract"
-  -- 'toList' enumerates a CLP's elements; the natural specification is an
+  -- 'toList' enumerates a progression's contents; the natural specification is an
   -- unbounded list, which Cryptol's fixed-size sequences can't represent
   -- directly. The 'memberBottom' Cryptol property already pins down 'member'
   -- on the bottom case, so the toList round-trips are Haskell-only.
