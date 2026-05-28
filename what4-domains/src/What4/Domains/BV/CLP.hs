@@ -682,12 +682,16 @@ negate w c@Clp{stride, n = nn, mask} =
   mk w (modNeg mask (end c)) stride nn
 
 -- | /O(w)/. Addition.
---
+add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 -- References:
 --
 -- * CLP 4.2 Arithmetic Operations
 -- * WI 3.2 Analysing expressions
-add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+--
+-- In the CLP (start, end, stride) formulation, they give:
+--
+--   (l1, u1, δ1) + (l2, u2, δ2) := (l1 + l2, u1 + u2, gcd(δ1, δ2))
+--
 -- Shift each orbit by the other's @start@, then walk
 -- @n a · stride a + n b · stride b@ steps from @start a + start b@ in stride
 -- @d = gcd(stride a, stride b)@ (with singleton operands skipped). When the
@@ -775,6 +779,14 @@ mul :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 -- References:
 --
 -- * CLP 4.2 Arithmetic Operations
+--
+-- In the CLP (start, end, stride) formulation, they give:
+-- 
+--   (l1, u1, δ1) ∗ (l2, u2, δ2) :=
+--     ( min(l1 ∗ l2, u1 ∗ u2, l1 ∗ u2, u1 ∗ l2)
+--     , max(l1 ∗ l2, u1 ∗ u2, l1 ∗ u2, u1 ∗ l2)
+--     , gcd(|l1 ∗ δ2|, |l2 ∗ δ1|, δ1 ∗ δ2)
+--     )
 --
 -- Note that WI 3.2 Analysing expressions has a significantly more complex
 -- definition of multiplication that splits the intervals at the poles, does
