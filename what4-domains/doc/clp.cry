@@ -179,8 +179,22 @@ gcd x y = result.0
     result = (iterate step (x, y)) @ (`(8 * n) : [width (8 * n)])
     step ab = if ab.1 == 0 then ab else (ab.1, ab.0 % ab.1)
 
+effLoStride : {n} (fin n, n >= 2) => Clp n -> ([n], [n])
+effLoStride c =
+  if c.n == 0 then (c.start, 0)
+  else if isSelfWrapping c then (c.start % g, g)
+  else (c.start, c.stride)
+  where g = strideGcd c
+
 mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
-mul = liftArith2 Arith::mul
+mul a b =
+  if d == 0 then mk start' 1 0
+  else selfWrappingResult a d (Arith::mul (toArith a) (toArith b)) start'
+  where
+    (l1, t1) = effLoStride a
+    (l2, t2) = effLoStride b
+    d = gcd (l1 * t2) (gcd (l2 * t1) (t1 * t2))
+    start' = a.start * b.start
 
 udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 udiv = liftArith2 Arith::udiv
