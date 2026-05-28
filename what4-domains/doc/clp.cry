@@ -167,17 +167,6 @@ sub a b = mk start' d (clampToOrbit d spanAB)
     (d, spanAB) = combineSpans a b
     start' = a.start - end b
 
-selfWrappingResult : {n} (fin n, n >= 2) => Clp n -> [n] -> Dom n -> [n] -> Clp n
-selfWrappingResult a d arith start' = mk clpLo g nSteps
-  where
-    g : [n]
-    g = d && (- d)
-    gMask = g - 1
-    off = (start' - arith.lo) && gMask
-    clpLo = arith.lo + off
-    nSteps : [n + 1]
-    nSteps = zext ((arith.sz - off) / g)
-
 gcd : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
 gcd x y = result.0
   where
@@ -192,12 +181,44 @@ effLoStride c =
 mul : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 mul a b =
   if d == 0 then mk start' 1 0
-  else selfWrappingResult a d (Arith::mul (toArith a) (toArith b)) start'
+  else if closedForm.n <= viaArith.n then closedForm else viaArith
   where
     (l1, t1) = effLoStride a
     (l2, t2) = effLoStride b
-    d = gcd (l1 * t2) (gcd (l2 * t1) (t1 * t2))
+    d12 = t1 * l2
+    d21 = t2 * l1
+    d22 = t1 * t2
+    d = gcd d12 (gcd d21 d22)
     start' = a.start * b.start
+    span_ : [3 * n + 2]
+    span_ = zext a.n * zext (d12 / d)
+          + zext b.n * zext (d21 / d)
+          + zext a.n * zext b.n * zext (d22 / d)
+    closedForm = mk start' d (clampToOrbit3 d span_)
+    viaArith = arithMeetCoset d (Arith::mul (toArith a) (toArith b)) start'
+
+// Like 'clampToOrbit', but takes a wider input span: the closed-form @mul@
+// step count has a quadratic cross-term and so is up to @3n + 2@ bits.
+clampToOrbit3 : {n} (fin n, n >= 2) => [n] -> [3 * n + 2] -> [n + 1]
+clampToOrbit3 stride i = if i >= zext orbitM1 then orbitM1 else drop`{2 * n + 1} i
+  where
+    g : [n]
+    g = stride && (- stride)
+    orbitM1 : [n + 1]
+    orbitM1 = zext ((- g) / g)
+
+// The CLP whose elements are exactly those of @arith@ that lie in the
+// @g@-coset of @start'@, where @g = lowestSetBit d@.
+arithMeetCoset : {n} (fin n, n >= 2) => [n] -> Dom n -> [n] -> Clp n
+arithMeetCoset d arith start' = mk clpLo g nSteps
+  where
+    g : [n]
+    g = d && (- d)
+    gMask = g - 1
+    off = (start' - arith.lo) && gMask
+    clpLo = arith.lo + off
+    nSteps : [n + 1]
+    nSteps = zext ((arith.sz - off) / g)
 
 udiv : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 udiv = liftArith2 Arith::udiv
