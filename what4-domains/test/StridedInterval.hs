@@ -18,6 +18,8 @@ import qualified What4.Domains.BV.StridedInterval as S
 import           What4.Domains.Verification (Gen, chooseInt, chooseInteger, getSize)
 import           VerifyBindings (genTest)
 
+import qualified StridedInterval.Precision as Precision
+
 data SomeWidth where
   SW :: (1 <= w) => NatRepr w -> SomeWidth
 
@@ -179,4 +181,37 @@ tests = TT.testGroup "Strided interval domain"
   , genTest "correct_ror" $
       do SW n <- genWidth
          S.correct_ror n <$> S.genDomain n <*> genNatBV n <*> S.genDomain n <*> genNatBV n
+
+  -- Lattice operations
+  , genTest "correct_join" $
+      do SW n <- genWidth
+         S.correct_join n <$> S.genDomain n <*> S.genDomain n <*> genNatBV n
+  , genTest "correct_meet" $
+      do SW n <- genWidth
+         S.correct_meet n <$> S.genDomain n <*> S.genDomain n <*> genNatBV n
+  , genTest "joinCommutative" $
+      do SW n <- genWidth
+         S.joinCommutative n <$> S.genDomain n <*> S.genDomain n <*> genNatBV n
+  , genTest "joinIdempotent" $
+      do SW n <- genWidth
+         S.joinIdempotent n <$> S.genDomain n <*> genNatBV n
+  , genTest "joinTop" $
+      do SW n <- genWidth
+         S.joinTop n <$> S.genDomain n <*> genNatBV n
+  , genTest "joinBottom" $
+      do SW n <- genWidth
+         S.joinBottom n <$> S.genDomain n <*> genNatBV n
+  , genTest "meetCommutative" $
+      do SW n <- genWidth
+         S.meetCommutative n <$> S.genDomain n <*> S.genDomain n <*> genNatBV n
+  , genTest "meetIdempotent" $
+      do SW n <- genWidth
+         S.meetIdempotent n <$> S.genDomain n <*> genNatBV n
+  , genTest "meetTop" $
+      do SW n <- genWidth
+         S.meetTop n <$> S.genDomain n <*> genNatBV n
+  , genTest "meetBottom" $
+      do SW n <- genWidth
+         S.meetBottom n <$> S.genDomain n <*> genNatBV n
+  , Precision.tests
   ]

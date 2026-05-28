@@ -194,6 +194,7 @@ test-suite bvdomain_tests
     CLP
     CLP.Precision
     StridedInterval
+    StridedInterval.Precision
     VerifyBindings
 
 
@@ -207,6 +208,7 @@ test-suite bvdomain_tests_hh
     CLP
     CLP.Precision
     StridedInterval
+    StridedInterval.Precision
     VerifyBindings
 
 
@@ -222,11 +224,15 @@ test-suite bvdomain_coverage
                , text
 
 
-test-suite clp_precision_regression
+test-suite precision_regression
   import: bldflags
   type: exitcode-stdio-1.0
   hs-source-dirs: test
-  main-is: CLPPrecisionRegression.hs
+  main-is: PrecisionRegression.hs
+  other-modules:
+    PrecisionRegression.Common
+    PrecisionRegression.CLP
+    PrecisionRegression.StridedInterval
   build-depends: base >= 4.10 && < 5
                , containers
                , parameterized-utils

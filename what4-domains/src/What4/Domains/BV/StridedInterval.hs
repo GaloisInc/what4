@@ -23,8 +23,6 @@ Most operations are implemented by converting to either the arithmetic or
 bitwise domain, applying the corresponding operation there, and converting
 back. This loses precision (the round-trip collapses any non-trivial stride),
 but is sound.
-
-TODO: precision tests via enumeration
 -}
 
 {-# LANGUAGE DataKinds #-}
@@ -90,10 +88,10 @@ module What4.Domains.BV.StridedInterval
   , rol
   , ror
   -- * Lattice operations
-  -- , top
+  , top
   , bottom
-  -- , join
-  -- , meet
+  , join
+  , meet
   -- , leq
   -- * Properties
   -- ** Generators
@@ -150,29 +148,18 @@ module What4.Domains.BV.StridedInterval
   , correct_rol
   , correct_ror
   -- ** Lattice operations
-  -- , correct_top
-  -- , correct_bottom
-  -- , correct_leq
-  -- -- *** Ordering
-  -- , leqReflexive
-  -- , leqTransitive
-  -- , leqIrreflexive
-  -- -- *** Join
-  -- , correct_join
-  -- , joinCommutative
-  -- , joinIdempotent
-  -- , joinTop
-  -- , joinBottom
-  -- , joinMonotonic
-  -- , joinLeq
-  -- -- *** Meet
-  -- , correct_meet
-  -- , meetCommutative
-  -- , meetIdempotent
-  -- , meetTop
-  -- , meetBottom
-  -- , meetMonotonic
-  -- , meetLeq
+  -- *** Join
+  , correct_join
+  , joinCommutative
+  , joinIdempotent
+  , joinTop
+  , joinBottom
+  -- *** Meet
+  , correct_meet
+  , meetCommutative
+  , meetIdempotent
+  , meetTop
+  , meetBottom
   ) where
 
 import           Control.Exception (assert)
@@ -232,11 +219,6 @@ liftClp2 f (BVDClp a) (BVDClp b) = mk (f a b)
 
 -- ------------------------------------------------------------------
 -- * Construction
-
--- | /O(1)/. The empty set at width @w@.
-bottom :: NatRepr w -> Domain w
-bottom w = BVDBot (fromInteger (NR.maxUnsigned w))
-{-# INLINE bottom #-}
 
 -- | /O(1)/. Wrap a 'Clp' as a 'Domain'. Asserts that the CLP is 'CLP.proper'.
 mk :: Clp w -> Domain w
@@ -411,6 +393,32 @@ rol w = liftClp2 (CLP.rol w)
 
 ror :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 ror w = liftClp2 (CLP.ror w)
+
+-- ------------------------------------------------------------------
+-- * Lattice operations
+
+-- | /O(1)/. The empty set at width @w@.
+bottom :: NatRepr w -> Domain w
+bottom w = BVDBot (fromInteger (NR.maxUnsigned w))
+{-# INLINE bottom #-}
+
+-- | /O(w)/. The full set at width @w@.
+top :: (1 <= w) => NatRepr w -> Domain w
+top w = fromArith w (A.top w)
+{-# INLINE top #-}
+
+-- | /O(w)/. Lattice join (least upper bound).
+join :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+join _ (BVDBot _) e = e
+join _ d (BVDBot _) = d
+join w (BVDClp a) (BVDClp b) =
+  fromArith w (A.join (CLP.toArith a) (CLP.toArith b))
+
+-- | /O(w)/. Lattice meet: a sound /over/-approximation of the
+-- intersection of two domains. For any concrete value @x@, if @x@ is
+-- a member of both @a@ and @b@, then @x@ is a member of @meet a b@.
+meet :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+meet w a b = fromArith w (A.meet (toArith w a) (toArith w b))
 
 -- ------------------------------------------------------------------
 -- * Generators
@@ -710,6 +718,72 @@ correct_ror ::
 correct_ror w a x b y =
   member a x ==> member b y ==>
     property (member (ror w a b) (fromInteger (Arith.rotateRight w (toInteger x) (toInteger y))))
+
+-- ------------------------------------------------------------------
+-- ** Lattice operations
+
+-- | 'join' is sound: every element of @a@ or @b@ is also in @join a b@.
+correct_join ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Natural -> Property
+correct_join w a b x =
+  (member a x || member b x) ==> property (member (join w a b) x)
+
+-- | 'meet' is a sound /over/-approximation of intersection: if @x@ is in
+-- both @a@ and @b@, then @x@ is in @meet a b@.
+correct_meet ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Natural -> Property
+correct_meet w a b x =
+  (member a x && member b x) ==> property (member (meet w a b) x)
+
+joinCommutative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Natural -> Property
+joinCommutative w a b x =
+  property (member (join w a b) x == member (join w b a) x)
+
+joinIdempotent ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+joinIdempotent w a x =
+  member a x ==> property (member (join w a a) x)
+
+joinTop ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+joinTop w a x =
+  member a x ==> property (member (join w a (top w)) x)
+
+joinBottom ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+joinBottom w a x =
+  property (member (join w a (bottom w)) x == member a x)
+
+meetCommutative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Natural -> Property
+meetCommutative w a b x =
+  property (member (meet w a b) x == member (meet w b a) x)
+
+meetIdempotent ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+meetIdempotent w a x =
+  member a x ==> property (member (meet w a a) x)
+
+meetTop ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+meetTop w a x =
+  member a x ==> property (member (meet w a (top w)) x)
+
+meetBottom ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Property
+meetBottom w a x =
+  property (Prelude.not (member (meet w a (bottom w)) x))
 
 -- ------------------------------------------------------------------
 -- ** Helpers

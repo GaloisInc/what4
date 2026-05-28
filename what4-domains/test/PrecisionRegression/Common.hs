@@ -1,41 +1,52 @@
 {-
-Module      : CLPPrecisionRegression
+Module      : PrecisionRegression.Common
 Copyright   : (c) Galois Inc, 2026
 License     : BSD3
 
-Exhaustive precision regression for CLP operations at width 4.
+Shared infrastructure for the precision regression test:
 
-For each operation @f@ on 'Clp':
-
-  * Enumerate all proper CLPs at width 4 and deduplicate by underlying
-    value-set. Call the result @reps@.
-
-  * For unary ops, for each @a in reps@: let @|abs|  = |toList (f a)|@ and
-    @|conc| = |{ f x | x in toList a }|@.
-
-  * For binary ops, do the analogous cross-product over @reps^2@. For ops
-    that are partial on a divisor of zero (udiv, urem, sdiv, srem) pairs
-    with @y = 0@ are skipped on the concrete side.
-
-The aggregate (op, |abs|, |conc|, %) is written to
-@test\/CLP\/precision.csv@. By default the test asserts the actual numbers
-match the recorded ones; setting @WHAT4_UPDATE_TEST_EXPECTATIONS=1@ writes
-a new CSV instead. The percentage column is @|conc| \/ |abs|@ to one
-decimal place; higher is more precise.
+  * Width-4 enumeration scaffolding ('DomainEnum', 'dedup', 'enumClps4').
+  * Concrete-value-set operations on @Natural@ at width 4 (the oracle that
+    each abstract op is compared against).
+  * Aggregator helpers ('unaryResult', 'binaryResult',
+    'binaryResultFiltered', 'scaleResult', 'latticeResult') that turn an
+    abstract op + a concrete op into a precision 'Result'.
+  * CSV rendering and the per-domain compare/update driver ('runDomain').
 -}
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Main (main) where
+module PrecisionRegression.Common
+  ( -- * Width-4 enumeration
+    w4
+  , mask4
+  , DomainEnum(..)
+  , dedup
+  , enumClps4
+    -- * Aggregator
+  , Result(..)
+  , unaryResult
+  , binaryResult
+  , binaryResultFiltered
+  , scaleResult
+  , latticeResult
+    -- * Concrete operations
+  , cAdd, cSub, cMul, cAnd, cOr, cXor
+  , cNegate, cNot, cScale
+  , cUdivPartial, cUremPartial, cSdivPartial, cSremPartial
+  , cUdivSmtlib, cUremSmtlib, cSdivSmtlib, cSremSmtlib
+  , cShl, cLshr, cAshr, cRol, cRor
+  , cJoin, cMeet
+    -- * Driver
+  , runDomain
+  ) where
 
 import           Data.Bits ((.&.), shiftL, shiftR)
 import qualified Data.Bits as Bits
 import           Data.List (sort)
 import qualified Data.Set as Set
 import           Numeric.Natural (Natural)
-import           System.Environment (lookupEnv)
-import           System.Exit (exitFailure, exitSuccess)
 import           System.IO (hPutStrLn, stderr)
 
 import           Data.Parameterized.NatRepr (NatRepr, knownNat, maxUnsigned)
@@ -51,7 +62,27 @@ w4 = knownNat @4
 mask4 :: Natural
 mask4 = fromInteger (maxUnsigned w4)
 
--- | Enumerate every proper 'C.Clp' at width 4.
+------------------------------------------------------------------------
+-- Enumerating representatives of a domain at width 4
+
+-- | All distinguishable abstract elements of a domain at width 4, plus the
+-- 'toList' projection used to compare value-sets.
+data DomainEnum a = DomainEnum
+  { deReps   :: ![a]
+  , deToList :: !(a -> [Natural])
+  }
+
+dedup :: (a -> [Natural]) -> [a] -> [a]
+dedup toL = go Set.empty
+  where
+    go _ [] = []
+    go seen (x : xs)
+      | Set.member k seen = go seen xs
+      | otherwise         = x : go (Set.insert k seen) xs
+      where k = sort (toL x)
+
+-- | Enumerate every proper 'C.Clp' at width 4. Reused as the building block
+-- for both the CLP and StridedInterval enumerations.
 enumClps4 :: [C.Clp 4]
 enumClps4 =
   [ C.mk w4 start stride i
@@ -62,15 +93,6 @@ enumClps4 =
   , i <- [0 .. orbit - 1]
   ]
 
--- | One representative per distinct value-set.
-reps4 :: [C.Clp 4]
-reps4 = uniq Set.empty (map (\c -> (sort (C.toList c), c)) enumClps4)
-  where
-    uniq _ [] = []
-    uniq seen ((k, c) : rest)
-      | Set.member k seen = uniq seen rest
-      | otherwise         = c : uniq (Set.insert k seen) rest
-
 ------------------------------------------------------------------------
 -- Aggregation
 
@@ -80,42 +102,75 @@ data Result = Result
   , resConc :: !Integer
   }
 
-absSetSize :: C.Clp w -> Integer
-absSetSize c = fromIntegral (length (C.toList c))
-
 unaryResult ::
-  String -> (C.Clp 4 -> C.Clp 4) -> (Natural -> Natural) -> Result
-unaryResult name absOp concOp = Result name absTot concTot
+  DomainEnum a ->
+  String -> (a -> a) -> (Natural -> Natural) -> Result
+unaryResult de name absOp concOp = Result name absTot concTot
   where
-    absTot  = sum [ absSetSize (absOp a) | a <- reps4 ]
+    reps = deReps de
+    toL  = deToList de
+    absTot  = sum [ fromIntegral (length (toL (absOp a))) | a <- reps ]
     concTot =
-      sum [ fromIntegral (Set.size (Set.fromList (map concOp (C.toList a))))
-          | a <- reps4
+      sum [ fromIntegral (Set.size (Set.fromList (map concOp (toL a))))
+          | a <- reps
           ]
 
 binaryResultFiltered ::
+  DomainEnum a ->
   String ->
-  (C.Clp 4 -> C.Clp 4 -> C.Clp 4) ->
+  (a -> a -> a) ->
   (Natural -> Natural -> Maybe Natural) ->
   Result
-binaryResultFiltered name absOp concOp = Result name absTot concTot
+binaryResultFiltered de name absOp concOp = Result name absTot concTot
   where
+    reps = deReps de
+    toL  = deToList de
     absTot =
-      sum [ absSetSize (absOp a b) | a <- reps4, b <- reps4 ]
+      sum [ fromIntegral (length (toL (absOp a b))) | a <- reps, b <- reps ]
     concTot =
       sum [ fromIntegral (Set.size (Set.fromList
-              [ z | x <- C.toList a, y <- C.toList b
+              [ z | x <- toL a, y <- toL b
                   , Just z <- [concOp x y] ]))
-          | a <- reps4, b <- reps4
+          | a <- reps, b <- reps
           ]
 
 binaryResult ::
+  DomainEnum a ->
   String ->
-  (C.Clp 4 -> C.Clp 4 -> C.Clp 4) ->
+  (a -> a -> a) ->
   (Natural -> Natural -> Natural) ->
   Result
-binaryResult name absOp concOp =
-  binaryResultFiltered name absOp (\x y -> Just (concOp x y))
+binaryResult de name absOp concOp =
+  binaryResultFiltered de name absOp (\x y -> Just (concOp x y))
+
+-- | 'scale' takes an Integer constant; aggregate over @k in [0, mask4]@.
+scaleResult :: DomainEnum a -> (Integer -> a -> a) -> Result
+scaleResult de absOp = Result "scale" absTot concTot
+  where
+    reps = deReps de
+    toL  = deToList de
+    absTot  = sum [ fromIntegral (length (toL (absOp (toInteger k) a)))
+                  | k <- [0 .. mask4], a <- reps ]
+    concTot = sum [ fromIntegral (Set.size (Set.fromList
+                      [ cScale k x | x <- toL a ]))
+                  | k <- [0 .. mask4], a <- reps ]
+
+-- | Aggregator for lattice operations whose oracle is a set operation on
+-- the underlying value-sets, rather than a pointwise function.
+latticeResult ::
+  DomainEnum a ->
+  String ->
+  (a -> a -> a) ->
+  ([Natural] -> [Natural] -> Set.Set Natural) ->
+  Result
+latticeResult de name absOp concOp = Result name absTot concTot
+  where
+    reps = deReps de
+    toL  = deToList de
+    absTot  = sum [ fromIntegral (length (toL (absOp a b)))
+                  | a <- reps, b <- reps ]
+    concTot = sum [ fromIntegral (Set.size (concOp (toL a) (toL b)))
+                  | a <- reps, b <- reps ]
 
 ------------------------------------------------------------------------
 -- Concrete operations
@@ -189,41 +244,16 @@ cRor x y =
   let s = fromIntegral (y `mod` 4) :: Int
   in cMask ((x `shiftR` s) Bits..|. (x `shiftL` (4 - s)))
 
-------------------------------------------------------------------------
--- Per-op results
+-- | Oracle for lattice 'join': set union of value-sets.
+cJoin :: [Natural] -> [Natural] -> Set.Set Natural
+cJoin xs ys = Set.fromList xs `Set.union` Set.fromList ys
 
-allResults :: [Result]
-allResults =
-  [ unaryResult "negate" (C.negate w4) cNegate
-  , binaryResult "add" (C.add w4) cAdd
-  , binaryResult "sub" (C.sub w4) cSub
-  , Result "scale" sAbs sConc
-  , binaryResult "mul" (C.mul w4) cMul
-  , binaryResultFiltered "udiv" (C.udiv w4) cUdivPartial
-  , binaryResultFiltered "urem" (C.urem w4) cUremPartial
-  , binaryResultFiltered "sdiv" (C.sdiv w4) cSdivPartial
-  , binaryResultFiltered "srem" (C.srem w4) cSremPartial
-  , binaryResult "udivSmtlib" (C.udivSmtlib w4) cUdivSmtlib
-  , binaryResult "uremSmtlib" (C.uremSmtlib w4) cUremSmtlib
-  , binaryResult "sdivSmtlib" (C.sdivSmtlib w4) cSdivSmtlib
-  , binaryResult "sremSmtlib" (C.sremSmtlib w4) cSremSmtlib
-  , unaryResult "not" (C.not w4) cNot
-  , binaryResult "and" (C.and w4) cAnd
-  , binaryResult "or"  (C.or  w4) cOr
-  , binaryResult "xor" (C.xor w4) cXor
-  , binaryResult "shl"  (C.shl  w4) cShl
-  , binaryResult "lshr" (C.lshr w4) cLshr
-  , binaryResult "ashr" (C.ashr w4) cAshr
-  , binaryResult "rol"  (C.rol  w4) cRol
-  , binaryResult "ror"  (C.ror  w4) cRor
-  ]
-  where
-    -- 'scale' takes an Integer constant; aggregate over k in [0, 15].
-    sAbs  = sum [ absSetSize (C.scale w4 (toInteger k) a)
-                | k <- [0 .. mask4], a <- reps4 ]
-    sConc = sum [ fromIntegral (Set.size (Set.fromList
-                    [ cScale k x | x <- C.toList a ]))
-                | k <- [0 .. mask4], a <- reps4 ]
+-- | Oracle for lattice 'meet': set intersection of value-sets.
+cMeet :: [Natural] -> [Natural] -> Set.Set Natural
+cMeet xs ys = Set.fromList xs `Set.intersection` Set.fromList ys
+
+------------------------------------------------------------------------
+-- CSV rendering
 
 renderCsv :: [Result] -> String
 renderCsv rs = unlines ("op,abs,conc,precision" : map formatRow rs)
@@ -245,27 +275,24 @@ formatPercent num denom
 ------------------------------------------------------------------------
 -- Driver
 
-csvPath :: FilePath
-csvPath = "test/CLP/precision.csv"
-
-main :: IO ()
-main = do
-  let actual = renderCsv allResults
-  update <- (== Just "1") <$> lookupEnv "WHAT4_UPDATE_TEST_EXPECTATIONS"
+-- | Compare or refresh one per-domain CSV. Returns 'True' on success.
+runDomain :: Bool -> FilePath -> [Result] -> IO Bool
+runDomain update path results =
+  let actual = renderCsv results in
   if update
     then do
-      writeFile csvPath actual
-      putStrLn ("Wrote " ++ csvPath)
-      exitSuccess
+      writeFile path actual
+      putStrLn ("Wrote " ++ path)
+      pure True
     else do
-      expected <- readFile csvPath
+      expected <- readFile path
       if expected == actual
         then do
-          putStrLn ("OK: " ++ csvPath ++ " is up to date")
-          exitSuccess
+          putStrLn ("OK: " ++ path ++ " is up to date")
+          pure True
         else do
           hPutStrLn stderr $
-            csvPath ++ " is out of date. Expected:\n"
+            path ++ " is out of date. Expected:\n"
             ++ expected ++ "\nActual:\n" ++ actual
             ++ "\nRun with WHAT4_UPDATE_TEST_EXPECTATIONS=1 to refresh."
-          exitFailure
+          pure False
