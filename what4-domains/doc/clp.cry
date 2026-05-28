@@ -145,22 +145,24 @@ combineSpans a b = (d, spanAB)
         else if b.n == 0 then a.stride
         else gcd a.stride b.stride
     spanAB : [2 * n + 1]
-    spanAB = zext a.n * zext a.stride + zext b.n * zext b.stride
+    spanAB = zext a.n * zext (a.stride / d) + zext b.n * zext (b.stride / d)
+
+clampToOrbit : {n} (fin n, n >= 2) => [n] -> [2 * n + 1] -> [n + 1]
+clampToOrbit stride i = if i >= zext orbitM1 then orbitM1 else drop`{n} i
+  where
+    g : [n]
+    g = stride && (- stride)
+    orbitM1 : [n + 1]
+    orbitM1 = zext ((- g) / g)
 
 add : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
-add a b =
-  if spanAB >= 2^^`n
-    then selfWrappingResult a d (Arith::add (toArith a) (toArith b)) start'
-    else mk start' d (drop`{n} (spanAB / zext d))
+add a b = mk start' d (clampToOrbit d spanAB)
   where
     (d, spanAB) = combineSpans a b
     start' = a.start + b.start
 
 sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
-sub a b =
-  if spanAB >= 2^^`n
-    then selfWrappingResult a d (Arith::add (toArith a) (Arith::neg (toArith b))) start'
-    else mk start' d (drop`{n} (spanAB / zext d))
+sub a b = mk start' d (clampToOrbit d spanAB)
   where
     (d, spanAB) = combineSpans a b
     start' = a.start - end b

@@ -249,9 +249,10 @@ import           What4.Domains.Verification (Property, property, (==>), Gen, cho
 -- When the conceptual orbit self-wraps, the two views /decouple/: the orbit
 -- visits a partial subset of a full coset, but @(s, e, t)@ cannot
 -- disambiguate \"arc length @L@\" from \"arc length @L + 2^w/g · stride@\".
--- We must commit to a representable shape. The best we can do is intersect:
--- take Arith's near-full convex arc and trim it to the result coset (see
--- 'selfWrappingResult'). This is strictly tighter than going through Arith
+-- We must commit to a representable shape. For ops without a closed-form
+-- step count (e.g. 'mul'), the best we can do is intersect: take Arith's
+-- near-full convex arc and trim it to the result coset (see
+-- 'arithMeetCoset'). This is strictly tighter than going through Arith
 -- alone, which collapses stride to 1 and discards the coset.
 
 -- | A 'Clp' represents the set
@@ -374,6 +375,13 @@ orbitLenOf mask g =
 orbitLen :: Clp w -> Natural
 orbitLen c@Clp{mask} = orbitLenOf mask (strideGcd c)
 {-# INLINE orbitLen #-}
+
+-- | /O(1)/. Cap @n@ at the orbit length minus 1: the maximum step count
+-- representable for stride @stride@ at width @log2 (mask + 1)@.
+clampToOrbit :: Natural -> Natural -> Natural -> Natural
+clampToOrbit mask stride i =
+  min i (orbitLenOf mask (lowestSetBit stride) - 1)
+{-# INLINE clampToOrbit #-}
 
 -- | /O(w)/. The smallest value @v@ in the wrapped arc starting at @lo@
 -- (i.e. @v = (lo + off) mod 2^w@ for some @off ≥ 0@) with @v ≡ x (mod g)@,
@@ -692,20 +700,20 @@ add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 --
 --   (l1, u1, δ1) + (l2, u2, δ2) := (l1 + l2, u1 + u2, gcd(δ1, δ2))
 --
--- Shift each orbit by the other's @start@, then walk
--- @n a · stride a + n b · stride b@ steps from @start a + start b@ in stride
--- @d = gcd(stride a, stride b)@ (with singleton operands skipped). When the
--- conceptual arc self-wraps, fall back to intersecting Arith's near-full arc
--- with the @g@-coset (see 'arithMeetCoset').
+-- Shift each orbit by the other's @start@, then walk @span\'@ steps from
+-- @start a + start b@ in stride @d = gcd(stride a, stride b)@ (with singleton
+-- operands skipped), where @span' = n a · (stride a / d) + n b · (stride b / d)@
+-- — both ratios are exact since @d@ divides both strides. The conceptual
+-- orbit may overshoot the available step count (e.g. when summing two full
+-- cosets @span'@ doubles); 'clampToOrbit' caps it, and 'mk' canonicalizes
+-- the saturated case to the full coset of @start'@.
 add w a b =
   assert (proper a) $
   assert (proper b) $
-  if span_ >= mask a + 1
-    then arithMeetCoset w (A.add (toArith a) (toArith b)) d start'
-    else mk w start' d (span_ `div` d)
+  mk w start' d (clampToOrbit (mask a) d n')
   where
-    d      = strideGcd2 a b
-    span_  = n a * stride a + n b * stride b
+    d = strideGcd2 a b
+    n' = n a * (stride a `div` d) + n b * (stride b `div` d)
     start' = modMask a (start a + start b)
 
 -- | /O(w)/. Subtraction.
@@ -713,12 +721,10 @@ sub :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 sub w a b =
   assert (proper a) $
   assert (proper b) $
-  if span_ >= mask a + 1
-    then arithMeetCoset w (A.add (toArith a) (A.negate (toArith b))) d start'
-    else mk w start' d (span_ `div` d)
+  mk w start' d (clampToOrbit (mask a) d n')
   where
-    d      = strideGcd2 a b
-    span_  = n a * stride a + n b * stride b
+    d = strideGcd2 a b
+    n' = n a * (stride a `div` d) + n b * (stride b `div` d)
     start' = modSub (mask a) (start a) (end b)
 
 -- | Result stride for 'add'\/'sub': @gcd(stride a, stride b)@, with singleton
