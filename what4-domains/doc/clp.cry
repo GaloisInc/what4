@@ -8,21 +8,27 @@ import bvdomain as BV
 
 type Property = Bit
 
+// We use an @[n+1]@-bit step count internally so that the orbit length
+// @2^w / gcd(stride, 2^w)@, which can be @2^w@, is representable.
 type Clp n
   = { start : [n]
-    , end : [n]
     , stride : [n]
+    , n : [n + 1]
     }
 
-proper : {n} (fin n, n >= 1) => Clp n -> Bool
+end : {n} (fin n, n >= 1) => Clp n -> [n]
+end c = c.start + drop`{1} c.n * c.stride
+
+proper : {n} (fin n, n >= 2) => Clp n -> Bool
 proper c =
   c.stride > 0 /\
-  (c.end - c.start) % strideGcd c == 0 /\
-  (c.start != c.end \/ c.stride == 1) /\
-  (~ isFull c \/ (c.start < strideGcd c /\ c.stride == strideGcd c))
+  c.n < orbitLen c /\
+  (c.n != 0 \/ c.stride == 1) /\
+  (c.n + 1 != orbitLen c \/
+     (c.start < strideGcd c /\ c.stride == strideGcd c))
 
-isFull : {n} (fin n, n >= 1) => Clp n -> Bit
-isFull c = c.start != c.end /\ c.end + c.stride == c.start
+orbitLen : {n} (fin n, n >= 2) => Clp n -> [n + 1]
+orbitLen c = zext (orbitMask c) + 1
 
 // ------------------------------------------------------------------
 // * Internal helpers
@@ -30,8 +36,11 @@ isFull c = c.start != c.end /\ c.end + c.stride == c.start
 modNeg : {n} (fin n, n >= 1) => [n] -> [n]
 modNeg x = - x
 
+modSub : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
+modSub x y = x - y
+
 wrapOffset : {n} (fin n, n >= 1) => Clp n -> [n] -> [n]
-wrapOffset c v = v + modNeg c.start
+wrapOffset c v = modSub v c.start
 
 strideGcd : {n} (fin n, n >= 1) => Clp n -> [n]
 strideGcd c = c.stride && modNeg c.stride
@@ -57,8 +66,9 @@ valueAt c i = c.start + i * c.stride
 circLeq : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
 circLeq x a b = a - x <= b - x
 
+// Computed in @[2n + 1]@ bits to avoid overflow.
 isSelfWrapping : {n} (fin n, n >= 2) => Clp n -> Bit
-isSelfWrapping c = wrapOffset c c.end % c.stride != 0
+isSelfWrapping c = (zext c.n : [2 * n + 1]) * zext c.stride > zext (~ 0 : [n])
 
 liftArith1 : {n} (fin n, n >= 2) => (Dom n -> Dom n) -> Clp n -> Clp n
 liftArith1 f c = fromArith (f (toArith c))
@@ -72,6 +82,20 @@ liftBitwise1 f c = fromBitwise (f (toBitwise c))
 liftBitwise2 : {n} (fin n, n >= 2) => (Bits::Dom n -> Bits::Dom n -> Bits::Dom n) -> Clp n -> Clp n -> Clp n
 liftBitwise2 f a b = fromBitwise (f (toBitwise a) (toBitwise b))
 
+mk : {n} (fin n, n >= 2) => [n] -> [n] -> [n + 1] -> Clp n
+mk s st nv =
+  if nv == 0 then
+    { start = s, stride = 1, n = 0 }
+  else if nv >= orbitM1 then
+    { start = s % g, stride = g, n = orbitM1 }
+  else
+    { start = s, stride = st, n = nv }
+  where
+    g : [n]
+    g = st && (- st)
+    orbitM1 : [n + 1]
+    orbitM1 = zext ((- g) / g)
+
 // ------------------------------------------------------------------
 // * Conversion
 
@@ -81,7 +105,7 @@ toArith c =
                       else startEndArc c
 
 startEndArc : {n} (fin n, n >= 2) => Clp n -> Dom n
-startEndArc c = Arith::range c.start c.end
+startEndArc c = Arith::range c.start (end c)
 
 cosetArc : {n} (fin n, n >= 2) => Clp n -> Dom n
 cosetArc c = Arith::interval (c.start % g) (- g)
@@ -93,17 +117,12 @@ toArithPrecise c =
   else if full          then cosetArc c
   else                       Arith::meet (tightOrbitArc c) (cosetArc c)
   where
-    nIdxN1 : [n + 1]
-    nIdxN1 = zext (valueIndex c c.end)
-    orbitLen : [n + 1]
-    orbitLen = zext (orbitMask c) + 1
-    full = nIdxN1 + 1 == orbitLen
+    full = c.n + 1 == orbitLen c
 
 tightOrbitArc : {n} (fin n, n >= 2) => Clp n -> Dom n
 tightOrbitArc c = Arith::interval (valueAt c rIdx) (- gap)
   where
-    nIdx = valueIndex c c.end
-    (gap, rIdx) = largestGap c nIdx
+    (gap, rIdx) = largestGap c (drop`{1} c.n)
 
 type Phase n
   = { kEven : Bit
@@ -116,8 +135,8 @@ type Phase n
     , rIdx : [n]
     }
 
-// Internally we work in @[n+1]@ to accommodate the orbit length @2^n / g@
-// at @g = 1@ (which would otherwise wrap to @0@ in @[n]@).
+// Computed in @[n+1]@ to accommodate the orbit length @2^n / g@ at @g = 1@
+// (which would otherwise wrap to @0@ in @[n]@).
 largestGap : {n} (fin n, n >= 2) => Clp n -> [n] -> ([n], [n])
 largestGap c nv = (drop`{1} (final.gap * zext g), drop`{1} final.rIdx)
   where
@@ -163,7 +182,7 @@ largestGap c nv = (drop`{1} (final.gap * zext g), drop`{1} final.rIdx)
              else                                0
 
 fromArith : {n} (fin n, n >= 1) => Dom n -> Clp n
-fromArith a = { start = a.lo, end = a.lo + a.sz, stride = 1 }
+fromArith a = { start = a.lo, stride = 1, n = zext a.sz }
 
 toBitwise : {n} (fin n, n >= 2) => Clp n -> Bits::Dom n
 toBitwise c = BV::arithToBitDom (toArith c)
@@ -176,64 +195,54 @@ fromBitwise b = fromArith (BV::bitToArithDom b)
 
 member : {n} (fin n, n >= 2) => Clp n -> [n] -> Bit
 member c v = wrapOffset c v % strideGcd c == 0
-          /\ valueIndex c v <= valueIndex c c.end
+          /\ zext (valueIndex c v) <= c.n
 
 // ------------------------------------------------------------------
 // * Arithmetic
 
 neg : {n} (fin n, n >= 2) => Clp n -> Clp n
-neg c = { start = - c.end, end = - c.start, stride = c.stride }
+neg c = mk (- end c) c.stride c.n
+
+combineSpans : {n} (fin n, n >= 2) => Clp n -> Clp n -> ([n], [2 * n + 1])
+combineSpans a b = (d, spanAB)
+  where
+    d : [n]
+    d = if a.n == 0 /\ b.n == 0 then 1
+        else if a.n == 0 then b.stride
+        else if b.n == 0 then a.stride
+        else gcd a.stride b.stride
+    spanAB : [2 * n + 1]
+    spanAB = zext a.n * zext a.stride + zext b.n * zext b.stride
 
 add : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 add a b =
   if spanAB >= 2^^`n
-    then { start = clpStart, end = clpEnd, stride = g }
-    else { start = start', end = start' + drop`{n+1} spanAB, stride = d }
+    then selfWrappingResult a d (Arith::add (toArith a) (toArith b)) start'
+    else mk start' d (drop`{n} (spanAB / zext d))
   where
-    d : [n]
-    d = if ka == 0 /\ kb == 0 then 1
-        else if ka == 0 then b.stride
-        else if kb == 0 then a.stride
-        else gcd a.stride b.stride
-    g : [n]
-    g = d && (- d)
-    ka = valueIndex a a.end
-    kb = valueIndex b b.end
-    spanAB : [2 * n + 1]
-    spanAB = zext ka * zext a.stride + zext kb * zext b.stride
+    (d, spanAB) = combineSpans a b
     start' = a.start + b.start
-    arith = Arith::add (toArith a) (toArith b)
-    offset = (start' - arith.lo) % g
-    clpStart = arith.lo + offset
-    nSteps = (arith.sz - offset) / g
-    clpEnd = clpStart + nSteps * g
 
 sub : {n} (fin n, n >= 2) => Clp n -> Clp n -> Clp n
 sub a b =
   if spanAB >= 2^^`n
-    then { start = clpStart, end = clpEnd, stride = g }
-    else { start = start', end = start' + drop`{n+1} spanAB, stride = d }
+    then selfWrappingResult a d (Arith::add (toArith a) (Arith::neg (toArith b))) start'
+    else mk start' d (drop`{n} (spanAB / zext d))
   where
-    d : [n]
-    d = if ka == 0 /\ kb == 0 then 1
-        else if ka == 0 then b.stride
-        else if kb == 0 then a.stride
-        else gcd a.stride b.stride
+    (d, spanAB) = combineSpans a b
+    start' = a.start - end b
+
+selfWrappingResult : {n} (fin n, n >= 2) => Clp n -> [n] -> Dom n -> [n] -> Clp n
+selfWrappingResult a d arith start' = mk clpLo g nSteps
+  where
     g : [n]
     g = d && (- d)
-    ka = valueIndex a a.end
-    kb = valueIndex b b.end
-    spanAB : [2 * n + 1]
-    spanAB = zext ka * zext a.stride + zext kb * zext b.stride
-    start' = a.start - b.end
-    arith = Arith::add (toArith a) (Arith::neg (toArith b))
-    offset = (start' - arith.lo) % g
-    clpStart = arith.lo + offset
-    nSteps = (arith.sz - offset) / g
-    clpEnd = clpStart + nSteps * g
+    gMask = g - 1
+    off = (start' - arith.lo) && gMask
+    clpLo = arith.lo + off
+    nSteps : [n + 1]
+    nSteps = zext ((arith.sz - off) / g)
 
-// gcd of two bitvectors via Euclid. After ~5n iterations the second component
-// is 0 (Lamé's theorem bounds it by ~log_phi of the input, < 2n is plenty).
 gcd : {n} (fin n, n >= 1) => [n] -> [n] -> [n]
 gcd x y = result.0
   where
@@ -309,13 +318,16 @@ ror = liftBitwise2 Bits::rorAbstract
 modNegCorrect : {n} (fin n, n >= 1) => [n] -> Property
 modNegCorrect x = x + modNeg x == 0
 
-wrapOffsetCorrect : {n} (fin n, n >= 1) => Clp n -> [n] -> Property
+modSubCorrect : {n} (fin n, n >= 1) => [n] -> [n] -> Property
+modSubCorrect x y = modSub x y + y == x
+
+wrapOffsetCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
 wrapOffsetCorrect c v = proper c ==> c.start + wrapOffset c v == v
 
-strideGcdDividesStride : {n} (fin n, n >= 1) => Clp n -> Property
+strideGcdDividesStride : {n} (fin n, n >= 2) => Clp n -> Property
 strideGcdDividesStride c = proper c ==> c.stride % strideGcd c == 0
 
-strideGcdIsPow2 : {n} (fin n, n >= 1) => Clp n -> Property
+strideGcdIsPow2 : {n} (fin n, n >= 2) => Clp n -> Property
 strideGcdIsPow2 c = proper c ==> g != 0 /\ g && (g - 1) == 0
   where g = strideGcd c
 
@@ -348,6 +360,7 @@ circLeqAnchorMax : {n} (fin n, n >= 1) => [n] -> [n] -> Property
 circLeqAnchorMax x v = circLeq x v (x - 1)
 
 property p_modNegCorrect           = modNegCorrect`{8}
+property p_modSubCorrect           = modSubCorrect`{8}
 property p_wrapOffsetCorrect       = wrapOffsetCorrect`{8}
 property p_strideGcdDividesStride  = strideGcdDividesStride`{8}
 property p_strideGcdIsPow2         = strideGcdIsPow2`{8}
@@ -366,7 +379,7 @@ startMember : {n} (fin n, n >= 2) => Clp n -> Property
 startMember c = proper c ==> member c c.start
 
 endMember : {n} (fin n, n >= 2) => Clp n -> Property
-endMember c = proper c ==> member c c.end
+endMember c = proper c ==> member c (end c)
 
 property p_startMember = startMember`{8}
 property p_endMember = endMember`{8}
@@ -389,34 +402,20 @@ cosetArcCorrect c v =
 
 tightOrbitArcCorrect : {n} (fin n, n >= 2) => Clp n -> [n] -> Property
 tightOrbitArcCorrect c v =
-  proper c ==> isSelfWrapping c ==> nIdxN1 + 1 < orbitLen ==> member c v ==>
+  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==> member c v ==>
     Arith::mem (tightOrbitArc c) v
-  where
-    nIdxN1 : [n + 1]
-    nIdxN1 = zext (valueIndex c c.end)
-    orbitLen : [n + 1]
-    orbitLen = zext (orbitMask c) + 1
 
 largestGapViaToList : {n} (fin n, n >= 2) => Clp n -> Property
 largestGapViaToList c =
-  proper c ==> isSelfWrapping c ==> nIdxN1 + 1 < orbitLen ==>
-    largestGap c (valueIndex c c.end) == oracleLargestGap c
-  where
-    nIdxN1 : [n + 1]
-    nIdxN1 = zext (valueIndex c c.end)
-    orbitLen : [n + 1]
-    orbitLen = zext (orbitMask c) + 1
+  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==>
+    largestGap c (drop`{1} c.n) == oracleLargestGap c
 
 tightOrbitArcMinimal : {n} (fin n, n >= 2) => Clp n -> Property
 tightOrbitArcMinimal c =
-  proper c ==> isSelfWrapping c ==> nIdxN1 + 1 < orbitLen ==>
+  proper c ==> isSelfWrapping c ==> c.n + 1 < orbitLen c ==>
     (tightOrbitArc c).sz == - gap
   where
     (gap, _) = oracleLargestGap c
-    nIdxN1 : [n + 1]
-    nIdxN1 = zext (valueIndex c c.end)
-    orbitLen : [n + 1]
-    orbitLen = zext (orbitMask c) + 1
 
 oracleLargestGap : {n} (fin n, n >= 2) => Clp n -> ([n], [n])
 oracleLargestGap c = (maxGap, rIdx)
@@ -600,10 +599,6 @@ property p_correct_ror  = correct_ror`{4}
 
 // ------------------------------------------------------------------
 // * Precision (CLP at least as precise as Arith)
-//
-// For each op @f@ that lifts through @Arith@, every concrete value the
-// CLP result claims as a member is also a member of the Arith result on
-// the projections, so the CLP result is contained in the Arith result.
 
 // ------------------------------------------------------------------
 // ** Arithmetic

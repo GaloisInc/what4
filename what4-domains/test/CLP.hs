@@ -65,6 +65,10 @@ tests :: TT.TestTree
 tests = TT.testGroup "Circular linear progressions (CLPs)"
   [ genTest "modNegCorrect" $
       C.modNegCorrect <$> genNat <*> genWidthExp
+  , genTest "modSubCorrect" $
+      C.modSubCorrect <$> genNat <*> genNat <*> genWidthExp
+  , genTest "firstCosetMemberCorrect" $
+      C.firstCosetMemberCorrect <$> genNat <*> genNat <*> genWidthExp <*> genWidthExp
   , genTest "wrapOffsetCorrect" $
       do SW n <- genWidth
          C.wrapOffsetCorrect <$> C.genClp n <*> genNatBV n

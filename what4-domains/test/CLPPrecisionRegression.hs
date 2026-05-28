@@ -54,13 +54,12 @@ mask4 = fromInteger (maxUnsigned w4)
 -- | Enumerate every proper 'C.Clp' at width 4.
 enumClps4 :: [C.Clp 4]
 enumClps4 =
-  [ C.mk w4 start end stride
+  [ C.mk w4 start stride i
   | stride <- [1 .. mask4]
   , let g = stride .&. ((mask4 + 1) - stride)
   , let orbit = (mask4 + 1) `div` g
   , start <- [0 .. mask4]
   , i <- [0 .. orbit - 1]
-  , let end = (start + i * stride) .&. mask4
   ]
 
 -- | One representative per distinct value-set.

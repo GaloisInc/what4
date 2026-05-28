@@ -4,18 +4,18 @@ Copyright   : (c) Galois Inc, 2026
 License     : BSD3
 
 Circular linear progressions (CLPs) are an interval-like abstract domain for
-bitvectors. A CLP is a tuple @(start, end, stride)@ representing the sequence
-of distinct bitvectors visited by walking from @start@ by @stride@ (mod @2^w@)
-until reaching @end@:
+bitvectors. A CLP is a tuple @(start, stride, n)@ representing the sequence
+of @n + 1@ distinct bitvectors visited by walking @n@ steps of size @stride@
+from @start@ (mod @2^w@):
 
 @
-{ start, (start + stride) mod 2^w, (start + 2*stride) mod 2^w, ..., end }
+{ start, (start + stride) mod 2^w, (start + 2*stride) mod 2^w, ..., (start + n*stride) mod 2^w }
 @
 
 Notably, this representation allows for intervals that wrap around, and
-even for intervals that wrap around multiple times before reaching @end@
-(while still visiting only distinct bitvectors). The interval domain in
-"What4.Domains.BV.Arith" can be thought of as a CLP with @stride = 1@.
+even for intervals that wrap around multiple times (while still visiting
+only distinct bitvectors). The interval domain in "What4.Domains.BV.Arith"
+can be thought of as a CLP with @stride = 1@.
 
 It is common to conceptualize these progressions as intervals that proceed
 clockwise around a \"number circle\", starting at 0 at the south pole,
@@ -55,6 +55,7 @@ A correctness specification of every operation is given in Cryptol in
 specification.
 -}
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -67,9 +68,10 @@ specification.
 module What4.Domains.BV.CLP
   ( Clp
   , start
-  , end
   , stride
+  , n
   , mask
+  , end
   , proper
   -- * Construction
   , mk
@@ -146,6 +148,8 @@ module What4.Domains.BV.CLP
   , fromBitwiseCorrect
   -- ** Internal helpers
   , modNegCorrect
+  , modSubCorrect
+  , firstCosetMemberCorrect
   , wrapOffsetCorrect
   , strideGcdDividesStride
   , strideGcdIsPow2
@@ -226,13 +230,13 @@ import           What4.Domains.Verification (Property, property, (==>), Gen, cho
 -- Note [Product abstraction]: A 'Clp' simultaneously over-approximates the
 -- represented set in two complementary ways:
 --
---   * /Coset/: \"the value lies in @start + g·Z@ mod @2^w@\", where
+--   * /Algebraic/: \"the value lies in @start + g·Z@ mod @2^w@\", where
 --     @g = gcd(stride, 2^w)@ is the lowest set bit of @stride@. Composes
 --     analytically under the linear ops: closed-form result cosets are
 --     available for negation, addition, scaling by a constant, multiplication,
 --     and shifts by a constant.
 --
---   * /Convex arc/: \"the value lies on the arc walking forward from
+--   * /Geometric/: \"the value lies on the arc walking forward from
 --     @start@ to @end@\", i.e. the same convex/wrapped-interval view that
 --     "What4.Domains.BV.Arith" tracks. Composes via 'toArith', the
 --     corresponding @A@ operation, and 'fromArith'.
@@ -260,34 +264,60 @@ import           What4.Domains.Verification (Property, property, (==>), Gen, cho
 -- | A 'Clp' represents the set
 --
 -- @
--- { (start + stride * i) mod mask | i >= 0 s.t. (start + stride * i) <= end }
+-- { (start + stride * i) mod (mask + 1) | 0 <= i <= n }
 -- @
 --
--- where @mask = 2^w@ for some @w@.
+-- where @mask = 2^w - 1@ for some @w@. The orbit thus has @n + 1@ elements.
+--
+-- The conceptual /end/ of the orbit, @(start + n * stride) mod 2^w@, is
+-- exposed via the 'end' accessor; see Note [Step-count representation] for
+-- why @n@ is the primary field rather than @end@.
 data Clp (w :: Nat)
   = Clp
     { start :: !Natural
-    , end :: !Natural
     , stride :: !Natural
+    , n :: !Natural
     , mask :: !Natural
     }
   deriving (Eq, Ord, Show)
+-- Note [Step-count representation]: The CLP literature presents the domain as
+-- a triple @(start, end, stride)@ where @end@ is a /value/ on the orbit. We
+-- instead store the /step count/ @n@ — the index of the last orbit element,
+-- with @end = (start + n·stride) mod 2^w@ derived on demand. The step count
+-- is the more fundamental quantity for two reasons:
+--
+--   * /Self-wrapping is free/. A CLP self-wraps when @n·stride ≥ 2^w@,
+--     which is an O(1) test in this representation. With @end@ as a value,
+--     recovering @n@ requires modular inversion via 'invModPow2', i.e.
+--     O(w log w).
+--
+--   * /Arithmetic stays branchless/. Sums and differences of orbits compose
+--     additively in step counts: @n' = (n_a·t_a + n_b·t_b) / d@. With
+--     @end@ as a value, distinguishing "arc length L" from "L + (2^w/g)·t",
+--     once the conceptual orbit overruns its coset, requires committing to
+--     a representable shape — see Note [Product abstraction].
+
+-- | /O(w)/. The conceptual @end@ of the orbit: @(start + n * stride) mod 2^w@.
+end :: Clp w -> Natural
+end c@Clp{start, stride, n, mask} =
+  assert (proper c) $ (start + n * stride) .&. mask
+{-# INLINE end #-}
 
 -- | The data-structure invariants of 'Clp'.
 proper :: Clp w -> Bool
-proper c@Clp {start, end, stride, mask} =
-  Prelude.and
-  [ start .&. mask == start
-  , end .&. mask == end
-  , stride .&. mask == stride
-  , stride > 0
-  -- @end@ is reachable from @start@ by repeatedly adding @stride@ mod @2^w@.
-  , ((end + (mask + 1 - start)) .&. mask) `mod` strideGcd c == 0
-  -- Singletons are canonicalized to stride 1.
-  , start /= end || stride == 1
-  -- Full cosets: smallest start in coset, stride equals @g@.
-  , Prelude.not (isFull c) || (start < strideGcd c && stride == strideGcd c)
-  ]
+proper Clp {start, stride, n, mask} =
+  let g = lowestSetBit stride
+      orbit = orbitLenOf mask g
+  in Prelude.and
+     [ start .&. mask == start
+     , stride .&. mask == stride
+     , stride > 0
+     , n < orbit
+     -- Singletons (@n = 0@) are canonicalized to stride 1.
+     , n /= 0 || stride == 1
+     -- Full cosets (@n + 1 = orbit@): smallest start in coset, stride = @g@.
+     , n + 1 < orbit || (start < g && stride == g)
+     ]
 
 -- ------------------------------------------------------------------
 -- * Internal helpers
@@ -309,24 +339,65 @@ modNeg mask x =
   (mask + 1 - x) .&. mask
 {-# INLINE modNeg #-}
 
+-- | /O(w)/. Modular subtraction @x - y@ mod @mask + 1@.
+modSub :: Natural -> Natural -> Natural -> Natural
+modSub mask x y =
+  assert ((mask + 1) .&. mask == 0) $
+  assert (x .&. mask == x) $
+  assert (y .&. mask == y) $
+  (x + modNeg mask y) .&. mask
+{-# INLINE modSub #-}
+
 -- | /O(w)/. The wrap-around offset of @v@ from @start@: @(v - start) mod 2^w@.
 wrapOffset :: Clp w -> Natural -> Natural
 wrapOffset c@Clp{start, mask} v =
-  assert (proper c) $ modMask c (v + modNeg mask start)
+  assert (proper c) $ modSub mask v start
 {-# INLINE wrapOffset #-}
+
+-- | /O(1)/. The lowest set bit of @x@; equivalently @gcd(x, 2^w)@ for any
+-- @w@ at least the bit-length of @x@.
+lowestSetBit :: Natural -> Natural
+lowestSetBit x = 1 `shiftL` countTrailingZerosOr0 (toInteger x)
+{-# INLINE lowestSetBit #-}
 
 -- | /O(1)/. @gcd(stride, 2^w)@. Since @2^w@ is a power of two, this equals the
 -- lowest set bit of @stride@.
 strideGcd :: Clp w -> Natural
-strideGcd Clp{stride} = 1 `shiftL` countTrailingZerosOr0 (toInteger stride)
+strideGcd Clp{stride} = lowestSetBit stride
 {-# INLINE strideGcd #-}
+
+-- | /O(w)/. @2^w \/ g@, where @mask = 2^w - 1@ and @g@ is a power-of-two
+-- divisor of @2^w@ (e.g. @gcd(stride, 2^w)@). Used to compute the orbit
+-- length of a CLP from raw @mask@ and @g@ before a 'Clp' value exists.
+orbitLenOf :: Natural -> Natural -> Natural
+orbitLenOf mask g =
+  assert (isPow2Natural (mask + 1)) $
+  (mask + 1) `divByPow2` g
+{-# INLINE orbitLenOf #-}
 
 -- | /O(w)/. The orbit length: the number of distinct bitvectors visited by
 -- the progression, which is @2^w \/ gcd(stride, 2^w)@. See
 -- 'orbitLenViaToList'.
 orbitLen :: Clp w -> Natural
-orbitLen c@Clp{mask} = (mask + 1) `divByPow2` strideGcd c
+orbitLen c@Clp{mask} = orbitLenOf mask (strideGcd c)
 {-# INLINE orbitLen #-}
+
+-- | /O(w)/. The smallest value @v@ in the wrapped arc starting at @lo@
+-- (i.e. @v = (lo + off) mod 2^w@ for some @off ≥ 0@) with @v ≡ x (mod g)@,
+-- where @g@ is a power-of-two divisor of @2^w = mask + 1@.
+firstCosetMember ::
+  Natural {- ^ @mask = 2^w - 1@ -} ->
+  Natural {- ^ @lo@ -} ->
+  Natural {- ^ @g@ -} ->
+  Natural {- ^ @x@ -} ->
+  Natural
+-- The offset @off@ is @(x - lo) mod g@, taken on the @g@-cycle: since @g@
+-- divides @2^w@, masking by @g - 1@ after a mod-@2^w@ subtraction yields
+-- the mod-@g@ residue.
+firstCosetMember mask lo g x =
+  assert (isPow2Natural g && (mask + 1) `mod` g == 0) $
+  (lo + (modSub mask x lo .&. (g - 1))) .&. mask
+{-# INLINE firstCosetMember #-}
 
 -- | /O(w)/. @x \/ p@ where @p@ is a power of two, computed as a right shift.
 -- Asserts that @p@ is a (nonzero) power of two.
@@ -336,11 +407,12 @@ divByPow2 x p =
 {-# INLINE divByPow2 #-}
 
 -- | /O(w log w)/. Modular inverse of @a@ modulo @m@ where @m@ is a power of two
--- and @a@ is odd. Computed via Hensel lifting (Newton iteration): @x' = x * (2
--- - a*x) mod m@. Each step doubles the number of correct low bits, so the loop
--- runs in @O(log w)@ iterations of @O(w)@ work.
+-- and @a@ is odd.
 invModPow2 :: Natural -> Natural -> Natural
-invModPow2 a m = assert (a `mod` 2 == 1) $ go 1
+-- Computed via Hensel lifting (Newton iteration): @x' = x * (2 - a*x) mod m@.
+-- Each step doubles the number of correct low bits, so the loop runs in @O(log
+-- w)@ iterations of @O(w)@ work.
+invModPow2 a m = assert (a .&. 1 == 1) $ go 1
   where
     mMinus1 = m - 1
     go x =
@@ -352,6 +424,9 @@ invModPow2 a m = assert (a `mod` 2 == 1) $ go 1
 -- | /O(w log w)/. The progression index of @v@: the unique @i@ in @[0, 2^w \/
 -- g)@ such that @start + i*stride ≡ v (mod 2^w)@, where @g = gcd(stride, 2^w)@.
 -- Requires @g@ to divide @(v - start) mod 2^w@.
+--
+-- This costs O(w log w) for the modular inverse via 'invModPow2'; the step
+-- count of the CLP itself, @n c@, is available directly.
 valueIndex :: Clp w -> Natural -> Natural
 valueIndex c@Clp{stride, mask} v =
   assert (proper c) $
@@ -379,13 +454,7 @@ circLeq :: Natural -> Natural -> Natural -> Natural -> Bool
 circLeq m x a b = (a + nx) .&. m <= (b + nx) .&. m
   where nx = modNeg m x
 
--- | /O(1)/. Does stepping once past @end@ wrap back to @start@?
-isFull :: Clp w -> Bool
-isFull Clp{start, end, stride, mask} =
-  start /= end && (end + stride) .&. mask == start
-{-# INLINE isFull #-}
-
--- | /O(w)/. Does this CLP self-wrap? A CLP is self-wrapping if the
+-- | /O(1)/. Does this CLP self-wrap? A CLP is self-wrapping if the
 -- cumulative distance traversed by its orbit (@n * stride@, where @n@ is the
 -- number of steps from @start@ to @end@) exceeds @2^w@. Geometrically: walking
 -- around the number circle from @start@, the orbit passes its starting point
@@ -394,48 +463,51 @@ isFull Clp{start, end, stride, mask} =
 -- Note that all CLP values are distinct by construction (any orbit of length
 -- @≤ 2^w \/ gcd(stride, 2^w)@), so self-wrapping does /not/ mean residue
 -- classes repeat. It only describes how far the orbit traveled.
---
--- Implementation: the orbit is non-self-wrapping iff @n*stride < 2^w@, in
--- which case @n*stride = wrapOffset@ exactly, so @stride@ divides
--- @wrapOffset@. Conversely if the orbit self-wraps, @n*stride = wrapOffset
--- + k*2^w@ with @1 ≤ k < stride/g@; for @stride@ to divide that, @stride/g@
--- would have to divide @k@, but @k < stride/g@. So @stride ∤ wrapOffset@
--- exactly characterizes self-wrapping.
 isSelfWrapping :: Clp w -> Bool
-isSelfWrapping c@Clp{stride} = wrapOffset c (end c) `mod` stride /= 0
+isSelfWrapping Clp{stride, n, mask} = n * stride > mask
+{-# INLINE isSelfWrapping #-}
 
 -- ------------------------------------------------------------------
 -- * Construction
 
--- | Construct a CLP. Asserts that the arguments fit in @w@ bits, that
--- @stride > 0@, and that the resulting CLP is 'proper'.
+-- | Construct a CLP from @(start, stride, n)@: the orbit
+-- @{ start, start + stride, ..., start + n·stride }@ (all mod @2^w@).
+-- Asserts that @start@ and @stride@ fit in @w@ bits, that @stride > 0@, that
+-- @n@ is within the orbit length @2^w \/ gcd(stride, 2^w)@, and that the
+-- resulting CLP is 'proper'.
+--
+-- Saturates and canonicalizes:
+--
+--   * @n = 0@ (singleton): stride is forced to 1.
+--   * @n + 1 = 2^w \/ g@ (full coset): @start@ is reduced to its residue
+--     modulo @g@, stride is reduced to @g@.
 mk ::
   NatRepr w ->
   -- | @start@
   Natural ->
-  -- | @end@
-  Natural ->
   -- | @stride@
   Natural ->
+  -- | @n@: step count, @0 ≤ n < 2^w \/ gcd(stride, 2^w)@
+  Natural ->
   Clp w
-mk w s e st =
+mk w s st nn =
   assert (s .&. m == s) $
-  assert (e .&. m == e) $
   assert (st .&. m == st) $
   assert (st > 0) $
+  assert (nn < orbit) $
   assert (proper c) c
   where
     m = integerToNatural (maxUnsigned w)
-    -- Singleton: stride is irrelevant; pin to 1.
-    st1 = if s == e then 1 else st
-    -- Full coset: any element of @start mod g + g·Z@ is a valid start.
-    -- Pick @start = start mod g@, @stride = g@.
-    full = s /= e && (e + st1) .&. m == s
-    g = 1 `shiftL` countTrailingZerosOr0 (toInteger st1)
-    (s2, e2, st2)
-      | full      = let r = s `mod` g in (r, (r + m + 1 - g) .&. m, g)
-      | otherwise = (s, e, st1)
-    c = Clp { start = s2, end = e2, stride = st2, mask = m }
+    g = lowestSetBit st
+    orbit = orbitLenOf m g
+    (s', st', n')
+      -- Singleton: stride is irrelevant; pin to 1.
+      | nn == 0          = (s, 1, 0)
+      -- Full coset: any element of @start mod g + g·Z@ is a valid start.
+      -- Pick @start = start mod g@, @stride = g@.
+      | nn + 1 == orbit  = (s .&. (g - 1), g, orbit - 1)
+      | otherwise        = (s, st, nn)
+    c = Clp { start = s', stride = st', n = n', mask = m }
 {-# INLINE mk #-}
 
 -- ------------------------------------------------------------------
@@ -459,14 +531,11 @@ toArith c = if isSelfWrapping c then cosetArc c else startEndArc c
 -- under-approximates a self-wrapping orbit, so caller must ensure the input
 -- is not self-wrapping.
 startEndArc :: Clp w -> A.Domain w
-startEndArc c@Clp{start = s, end = e, mask = m} =
+startEndArc c@Clp{start = s, stride = t, n = nn, mask = m} =
   assert (proper c) $
   assert (Prelude.not (isSelfWrapping c)) $
-  let start = toInteger s
-      end = toInteger e
-      mask = toInteger m
-      sz = (end + mask + 1 - start) .&. mask
-  in A.interval mask start sz
+  -- Non-self-wrapping: @n·stride < 2^w@, so the arc length is exactly @n·t@.
+  A.interval (toInteger m) (toInteger s) (toInteger (nn * t))
 
 -- | /O(w)/. The arc @[start \`mod\` g, ..., start \`mod\` g + (2^w - g)]@,
 -- where @g = gcd(stride, 2^w)@. The union of all bitvectors congruent to
@@ -476,40 +545,41 @@ cosetArc :: Clp w -> A.Domain w
 cosetArc c@Clp{start = s, mask = m} =
   assert (proper c) $
   assert (isSelfWrapping c) $
-  let g = toInteger (strideGcd c)
-      mask = toInteger m
-      start = toInteger s `mod` g
-      end = start + mask + 1 - g
-  in A.interval mask start (end - start)
+  let g = strideGcd c
+      imask = toInteger m
+      lo = toInteger (s .&. (g - 1))
+  in A.interval imask lo (imask + 1 - toInteger g)
 
 -- | /O(w²)/. A tighter projection of a CLP into 'A.Domain' than 'toArith'.
 --
 -- For non-self-wrapping CLPs the result agrees with 'toArith': the interval
 -- @[start, end]@ is already the smallest arc containing the orbit. For
--- self-wrapping CLPs the result is the intersection of the smallest convex
--- arc containing the orbit with the @g@-coset arc that 'toArith' returns,
--- where @g = gcd(stride, 2^w)@. The result is always at least as precise as
--- 'toArith' (see 'toArithPreciseSubsetToArith').
+-- self-wrapping CLPs the result is the intersection of two arcs:
+--
+-- * the smallest convex arc containing the orbit, which is exactly the
+--   complement of the largest gap between elements
+-- * the @g@-coset arc (see 'toArith') where @g = gcd(stride, 2^w)@
+--
+-- The result is always at least as precise as 'toArith' (see
+-- 'toArithPreciseSubsetToArith').
 toArithPrecise :: (1 <= w) => Clp w -> A.Domain w
-toArithPrecise c@Clp{end}
+toArithPrecise c@Clp{n = nn}
   | Prelude.not (isSelfWrapping c) = startEndArc c
   -- Orbit fills the @g@-coset of @start@; the coset arc is already tight.
-  | valueIndex c end + 1 == orbitLen c = cosetArc c
+  | nn + 1 == orbitLen c = cosetArc c
   -- 'tightOrbitArc' covers the orbit but may include non-coset values;
   -- intersecting with the @g@-coset arc drops those.
   | otherwise = A.meet (tightOrbitArc c) (cosetArc c)
 
 -- | /O(w²)/. The smallest convex arc on the number circle containing
 -- the orbit. Caller must ensure the orbit is self-wrapping but does not fill
--- its coset (i.e., @n + 1 < orbitLen@ where @n@ is the index of @end@ and
--- @orbitLen = 2^w \/ g@).
+-- its coset (i.e., @n + 1 < orbitLen@).
 tightOrbitArc :: Clp w -> A.Domain w
-tightOrbitArc c@Clp{end, mask} =
-  let n = valueIndex c end
-      (maxGap, rIdx) = largestGap c n
+tightOrbitArc c@Clp{n = nn, mask} =
+  let (maxGap, rIdx) = largestGap c nn
       start = toInteger (valueAt c rIdx)
       arcSize = toInteger mask + 1 - toInteger maxGap
-  in assert (isSelfWrapping c && n + 1 < orbitLen c) $
+  in assert (isSelfWrapping c && nn + 1 < orbitLen c) $
      A.interval (toInteger mask) start arcSize
 
 -- | The three gap-classes of the three-distance theorem in
@@ -583,9 +653,9 @@ data GapClass = GapSmall | GapMedium | GapLarge
 -- @log_φ M ≤ 1.44·w + 1 = O(w)@, so the loop runs in /O(w)/ iterations,
 -- each doing /O(w)/-bit arithmetic on @w@-bit naturals — /O(w²)/ overall.
 largestGap :: Clp w -> Natural -> (Natural, Natural)
-largestGap c@Clp{stride} n =
+largestGap c@Clp{stride} nn =
   assert (proper c) $
-  assert (n >= 1 && n + 1 < bigM) $
+  assert (nn >= 1 && nn + 1 < bigM) $
   go True 0 1 bigM alpha
   where
     g     = strideGcd c
@@ -605,14 +675,14 @@ largestGap c@Clp{stride} n =
       assert (qPrev * etaCur + qCur * etaPrev == bigM) $
       let cNext = etaPrev `div` etaCur
           qNext = cNext * qCur + qPrev
-      in if qCur + qNext > n
+      in if qCur + qNext > nn
            then phaseResult kEven qPrev qCur etaPrev etaCur cNext
            else go (Prelude.not kEven) qCur qNext etaCur (etaPrev - cNext * etaCur)
 
     phaseResult kEven qPrev qCur etaPrev etaCur cKp1 = (len * g, rIdx)
       where
-        m = (n - qPrev) `div` qCur
-        r = (n - qPrev) - m * qCur
+        m = (nn - qPrev) `div` qCur
+        r = (nn - qPrev) - m * qCur
         -- Three-distance theorem: at most three distinct gap sizes (small,
         -- medium, large), each expressible as an η-combination. Multiplying
         -- by @g@ converts from the @α \/ M@ circle to BV-distance.
@@ -624,20 +694,19 @@ largestGap c@Clp{stride} n =
           (GapSmall,  True)  -> qCur
           (GapSmall,  False) -> 0
           (GapMedium, True)  -> 0
-          (GapMedium, False) -> n - r
+          (GapMedium, False) -> nn - r
           (GapLarge,  True)  -> r + 1
-          (GapLarge,  False) -> n + 1 - qCur
+          (GapLarge,  False) -> nn + 1 - qCur
 
 -- | /O(w)/. Convert an arithmetic domain (wrapped interval) to a CLP.
 fromArith :: NatRepr w -> A.Domain w -> Maybe (Clp w)
 fromArith w = \case
-  A.BVDAny _mask -> Just (mk w 0 (integerToNatural imask) 1)
+  A.BVDAny _mask -> Just (mk w 0 1 (integerToNatural imask))
     where imask = maxUnsigned w
   d | A.isBottom d -> Nothing
     | otherwise -> case A.arithDomainData d of
         Nothing -> Nothing
-        Just (lo, sz) -> Just (mk w (integerToNatural lo) (integerToNatural ((lo + sz) .&. imask)) 1)
-          where imask = maxUnsigned w
+        Just (lo, sz) -> Just (mk w (integerToNatural lo) 1 (integerToNatural sz))
 
 -- TODO: The arith<->bitwise helpers below duplicate
 -- 'arithToBitwiseDomain'/'bitwiseToArithDomain' in "What4.Domains.BV". Once
@@ -687,7 +756,7 @@ fromBitwise w b = fromArith w (bitwiseToArith b)
 member :: Clp w -> Natural -> Bool
 member c v = assert (proper c) $
   wrapOffset c v `mod` strideGcd c == 0
-  && valueIndex c v <= valueIndex c (end c)
+  && valueIndex c v <= n c
 
 -- | /O(2^w \/ g)/, where @g = gcd(stride, 2^w)@. Enumerate the (distinct)
 -- elements of a CLP, in the order they are produced by the progression:
@@ -698,12 +767,11 @@ member c v = assert (proper c) $
 -- * CLP Section 3, @conc@
 -- * SASI Definition 1, Concretization function
 toList :: Clp w -> [Natural]
-toList c@Clp{start, end, stride} = assert (proper c) $ go start
+toList c@Clp{start, stride, n} = assert (proper c) $ go 0 start
   where
-    -- Walk by stride mod 2^w, emitting each value, stopping after @end@.
-    go v
-      | v == end  = [v]
-      | otherwise = v : go (modMask c (v + stride))
+    go !i !v
+      | i == n    = [v]
+      | otherwise = v : go (i + 1) (modMask c (v + stride))
 
 -- ------------------------------------------------------------------
 -- * Lifted operations
@@ -760,75 +828,85 @@ liftBitwise2 w f a b =
 -- ------------------------------------------------------------------
 -- * Arithmetic
 
--- | /O(w)/. Negation: stride is preserved; the orbit reverses, so @start@ and
--- @end@ swap (under modular negation).
+-- | /O(w)/. Negation: stride is preserved; the orbit reverses, so the new
+-- @start@ is the old @end@ negated. The step count @n@ is unchanged.
 negate :: (1 <= w) => NatRepr w -> Clp w -> Clp w
-negate w c@Clp{start, end, stride, mask} =
+negate w c@Clp{stride, n = nn, mask} =
   assert (proper c) $
-  mk w (modNeg mask end) (modNeg mask start) stride
+  mk w (modNeg mask (end c)) stride nn
 
--- | /O(w log w)/. Addition.
+-- | /O(w)/. Addition.
 add :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
+-- Shift each orbit by the other's @start@, then walk
+-- @n a · stride a + n b · stride b@ steps from @start a + start b@ in stride
+-- @d = gcd(stride a, stride b)@ (with singleton operands skipped). When the
+-- conceptual arc self-wraps, fall back to intersecting Arith's near-full arc
+-- with the @g@-coset (see 'arithMeetCoset').
 add w a b =
   assert (proper a) $
   assert (proper b) $
-  if spanAB >= mask a + 1
-    then selfWrappingResult w a d (A.add (toArith a) (toArith b)) start'
-    else mk w start' (modMask a (start' + spanAB)) d
+  if span_ >= mask a + 1
+    then arithMeetCoset w (A.add (toArith a) (toArith b)) d start'
+    else mk w start' d (span_ `div` d)
   where
-    ka     = valueIndex a (end a)
-    kb     = valueIndex b (end b)
-    d      = case (ka, kb) of
-               (0, 0) -> 1
-               (0, _) -> stride b
-               (_, 0) -> stride a
-               _      -> Prelude.gcd (stride a) (stride b)
-    spanAB = ka * stride a + kb * stride b
+    d      = strideGcd2 a b
+    span_  = n a * stride a + n b * stride b
     start' = modMask a (start a + start b)
 
+-- | /O(w)/. Subtraction.
 sub :: (1 <= w) => NatRepr w -> Clp w -> Clp w -> Clp w
 sub w a b =
   assert (proper a) $
   assert (proper b) $
-  if spanAB >= mask a + 1
-    then selfWrappingResult w a d
-           (A.add (toArith a) (A.negate (toArith b))) start'
-    else mk w start' (modMask a (start' + spanAB)) d
+  if span_ >= mask a + 1
+    then arithMeetCoset w (A.add (toArith a) (A.negate (toArith b))) d start'
+    else mk w start' d (span_ `div` d)
   where
-    ka     = valueIndex a (end a)
-    kb     = valueIndex b (end b)
-    d      = case (ka, kb) of
-               (0, 0) -> 1
-               (0, _) -> stride b
-               (_, 0) -> stride a
-               _      -> Prelude.gcd (stride a) (stride b)
-    spanAB = ka * stride a + kb * stride b
-    start' = modMask a (start a + modNeg (mask a) (end b))
+    d      = strideGcd2 a b
+    span_  = n a * stride a + n b * stride b
+    start' = modSub (mask a) (start a) (end b)
 
--- | @add@\/@sub@ result when the conceptual arc self-wraps (revolves past
--- its own start). @d@ is the result stride (@gcd@ of the operand strides,
--- with singleton operands skipped); @g = d \`gcd\` 2^w@ is the lowest set bit
--- of @d@. Intersect Arith's near-full arc with the @g@-coset of @start'@:
--- strictly tighter than @liftArith2 A.add@ when @g > 1@, since stride stays
--- @g@ rather than collapsing to 1. See Note [Product abstraction].
-selfWrappingResult ::
+-- | Result stride for 'add'\/'sub': @gcd(stride a, stride b)@, with singleton
+-- operands skipped (their stride is the dummy value @1@, which would otherwise
+-- collapse the result stride).
+strideGcd2 :: Clp w -> Clp w -> Natural
+strideGcd2 a b = case (n a, n b) of
+  (0, 0) -> 1
+  (0, _) -> stride b
+  (_, 0) -> stride a
+  _      -> Prelude.gcd (stride a) (stride b)
+
+-- | The CLP whose elements are exactly those of @arith@ that lie in the
+-- @g@-coset of @start'@, where @g = lowestSetBit d@. Used by 'add'\/'sub'
+-- when the conceptual arc self-wraps: strictly tighter than @liftArith2 A.add@
+-- when @g > 1@, since stride stays @g@ rather than collapsing to 1. See
+-- Note [Product abstraction].
+arithMeetCoset ::
   (1 <= w) =>
-  NatRepr w -> Clp w -> Natural -> A.Domain w -> Natural -> Clp w
-selfWrappingResult w a d arith start' =
+  NatRepr w ->
+  -- | The Arith arc to restrict.
+  A.Domain w ->
+  -- | Result stride @d@: must be positive and at most @2^w - 1@.
+  Natural ->
+  -- | @start'@: any representative of the target coset.
+  Natural ->
+  Clp w
+arithMeetCoset w arith d start' =
+  assert (d > 0 && d <= m) $
   case A.arithDomainData arith of
-    Nothing -> mk w r (modMask a (mask a + 1 - g + r)) g
+    -- Arith is full: result is the full @g@-coset of @start'@. Let 'mk'
+    -- canonicalize (it reduces @start@ to its residue mod @g@).
+    Nothing -> mk w start' d (orbitLenOf m g - 1)
     Just (lo, sz) ->
       let lo'    = fromInteger lo
           sz'    = fromInteger sz
-          off    = (start' + mask a + 1 - lo') .&. gMask
-          clpLo  = modMask a (lo' + off)
+          clpLo  = firstCosetMember m lo' g start'
+          off    = modSub m clpLo lo'
           nSteps = divByPow2 (sz' - off) g
-          clpHi  = modMask a (clpLo + nSteps * g)
-      in mk w clpLo clpHi g
+      in mk w clpLo g nSteps
   where
-    g     = 1 `shiftL` countTrailingZerosOr0 (toInteger d)
-    gMask = g - 1
-    r     = start' .&. gMask
+    m = integerToNatural (maxUnsigned w)
+    g = lowestSetBit d
 
 scale :: (1 <= w) => NatRepr w -> Integer -> Clp w -> Clp w
 scale w k = liftArith1 w (A.scale k)
@@ -948,20 +1026,17 @@ genClp w = do
   -- so that stride is uniformly distributed over [1, 2^w-1] (a stride of 2^w
   -- mod mask = 0 would be improper).
   st <- integerToNatural <$> chooseInteger (1, toInteger m)
-  -- Pick the progression index @i@ of @end@, so that
-  -- @end = (start + i*stride) mod 2^w@. The orbit length is @2^w \/ g@ where
+  -- Pick a step count @i@ in @[0, orbit)@, where @orbit = 2^w \/ g@ and
   -- @g = gcd(stride, 2^w)@.
   let g = st .&. ((m + 1) - st)
-  let orbit = (m + 1) `div` g
+  let orbit = (m + 1) `divByPow2` g
   i <- integerToNatural <$> chooseInteger (0, toInteger orbit - 1)
-  pure (mk w s ((s + i * st) .&. m) st)
+  pure (mk w s st i)
 
 -- | Generate a random element of the given (proper) CLP.
 genElement :: Clp w -> Gen Natural
 genElement c = do
-  -- Pick a progression index in @[0, k]@ where @k@ is the index of @end@.
-  let k = valueIndex c (end c)
-  i <- integerToNatural <$> chooseInteger (0, toInteger k)
+  i <- integerToNatural <$> chooseInteger (0, toInteger (n c))
   pure (valueAt c i)
 
 -- | Generate a random CLP and an element contained in it.
@@ -984,6 +1059,31 @@ modNegCorrect x k =
   where
     m  = (1 `shiftL` k) - 1
     x' = x .&. m
+
+-- | @modSub (2^k - 1) x y + y ≡ x (mod 2^k)@.
+modSubCorrect :: Natural -> Natural -> Int -> Property
+modSubCorrect x y k =
+  k >= 1 ==> property ((modSub m x' y' + y') .&. m == x')
+  where
+    m  = (1 `shiftL` k) - 1
+    x' = x .&. m
+    y' = y .&. m
+
+-- | At width @k@ with @g = 2^j@ (@j ≤ k@): the result @v = firstCosetMember
+-- (2^k - 1) lo g x@ is in the @g@-coset of @x@ (i.e. @(v - x) mod g == 0@),
+-- and the wrap-around offset @(v - lo) mod 2^k@ is less than @g@ (so @v@ is
+-- the /first/ such value at or after @lo@ on the wrapped arc).
+firstCosetMemberCorrect :: Natural -> Natural -> Int -> Int -> Property
+firstCosetMemberCorrect lo x k j =
+  k >= 1 ==> j >= 0 ==> j <= k ==>
+    property ((modSub m v x' .&. (g - 1) == 0)
+           && (modSub m v lo' < g))
+  where
+    m   = (1 `shiftL` k) - 1
+    g   = 1 `shiftL` j
+    lo' = lo .&. m
+    x'  = x .&. m
+    v   = firstCosetMember m lo' g x'
 
 -- | @start + wrapOffset c v ≡ v (mod 2^w)@.
 wrapOffsetCorrect :: Clp w -> Natural -> Property
@@ -1133,8 +1233,8 @@ cosetArcCorrect _w c x =
 -- orbit member lies in 'tightOrbitArc'.
 tightOrbitArcCorrect ::
   (1 <= w) => NatRepr w -> Clp w -> Natural -> Property
-tightOrbitArcCorrect _w c@Clp{end} x =
-  proper c ==> isSelfWrapping c ==> valueIndex c end + 1 < orbitLen c ==>
+tightOrbitArcCorrect _w c x =
+  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
     member c x' ==>
       property (A.member (tightOrbitArc c) (toInteger x'))
   where
@@ -1144,19 +1244,20 @@ tightOrbitArcCorrect _w c@Clp{end} x =
 -- returned cyclic distance and the returned right-endpoint progression index
 -- match the brute-force computation.
 largestGapViaToList :: Clp w -> Property
-largestGapViaToList c@Clp{end} =
-  proper c ==> isSelfWrapping c ==> valueIndex c end + 1 < orbitLen c ==>
-    property (largestGap c (valueIndex c end) == oracleLargestGap c)
+largestGapViaToList c =
+  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
+    property (largestGap c (n c) == oracleLargestGap c)
 
 -- | 'tightOrbitArc' is the smallest convex arc containing the orbit:
--- @size (tightOrbitArc c) == 2^w − G@, where @G@ is the largest cyclic gap
--- between consecutive orbit elements (taking the orbit as a sorted set in
--- @[0, 2^w)@). Tested by computing @G@ directly from 'toList', so caps at
--- small widths.
+-- @size (tightOrbitArc c) == 2^w − (G − 1)@, where @G@ is the largest cyclic
+-- /distance/ (next − prev) between consecutive orbit elements (taking the
+-- orbit as a sorted set in @[0, 2^w)@); equivalently, the arc excludes the
+-- @G − 1@ integers strictly between the chosen pair. Tested by computing
+-- @G@ directly from 'toList', so caps at small widths.
 tightOrbitArcMinimal :: Clp w -> Property
-tightOrbitArcMinimal c@Clp{mask, end} =
-  proper c ==> isSelfWrapping c ==> valueIndex c end + 1 < orbitLen c ==>
-    property (A.size (tightOrbitArc c) == toInteger mask + 1 - toInteger gap)
+tightOrbitArcMinimal c@Clp{mask} =
+  proper c ==> isSelfWrapping c ==> n c + 1 < orbitLen c ==>
+    property (A.size (tightOrbitArc c) == toInteger mask + 2 - toInteger gap)
   where
     (gap, _) = oracleLargestGap c
 
