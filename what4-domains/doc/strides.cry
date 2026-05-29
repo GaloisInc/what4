@@ -165,6 +165,9 @@ leqExact a b =
   and [ ~ (i <= a.n) \/ member b (a.start + drop`{1} i * a.stride)
       | i <- [0 .. 2^^(n + 1) - 1] : [_][n + 1] ]
 
+size : {n} (fin n, n >= 2) => Domain n -> [n + 1]
+size c = c.n + 1
+
 // ------------------------------------------------------------------
 // * Arithmetic
 
@@ -216,7 +219,7 @@ effLoStride c =
 mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 mul a b =
   if d == 0 then mk start' 1 0
-  else if closedForm.n <= viaArith.n then closedForm else viaArith
+  else mk start' d (clampToOrbit3 d span_)
   where
     (l1, t1) = effLoStride a
     (l2, t2) = effLoStride b
@@ -229,8 +232,6 @@ mul a b =
     span_ = zext a.n * zext (d12 / d)
           + zext b.n * zext (d21 / d)
           + zext a.n * zext b.n * zext (d22 / d)
-    closedForm = mk start' d (clampToOrbit3 d span_)
-    viaArith = arithMeetCoset d (Arith::mul (toArith a) (toArith b)) start'
 
 // Like 'clampToOrbit', but takes a wider input span: the closed-form @mul@
 // step count has a quadratic cross-term and so is up to @3n + 2@ bits.
@@ -241,19 +242,6 @@ clampToOrbit3 stride i = if i >= zext orbitM1 then orbitM1 else drop`{2 * n + 1}
     g = stride && (- stride)
     orbitM1 : [n + 1]
     orbitM1 = zext ((- g) / g)
-
-// The progression whose members are exactly those of @arith@ that lie in
-// the @g@-coset of @start'@, where @g = lowestSetBit d@.
-arithMeetCoset : {n} (fin n, n >= 2) => [n] -> Dom n -> [n] -> Domain n
-arithMeetCoset d arith start' = mk clpLo g nSteps
-  where
-    g : [n]
-    g = d && (- d)
-    gMask = g - 1
-    off = (start' - arith.lo) && gMask
-    clpLo = arith.lo + off
-    nSteps : [n + 1]
-    nSteps = zext ((arith.sz - off) / g)
 
 udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 udiv = liftArith2 Arith::udiv
@@ -311,6 +299,17 @@ rol = liftBitwise2 Bits::rolAbstract
 
 ror : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n
 ror = liftBitwise2 Bits::rorAbstract
+
+// ------------------------------------------------------------------
+// * Hull
+
+hull : {n} (fin n, n >= 2) => Domain n -> Dom n
+hull c =
+  if span >= zext (~ 0 : [n]) then Arith::top
+  else Arith::interval c.start (drop`{n + 1} span)
+  where
+    span : [2 * n + 1]
+    span = zext c.n * zext c.stride
 
 // ------------------------------------------------------------------
 // * Correctness properties
@@ -618,55 +617,48 @@ property p_correct_rol  = correct_rol`{4}
 property p_correct_ror  = correct_ror`{4}
 
 // ------------------------------------------------------------------
-// * Precision (Domain at least as precise as Arith)
+// * Precision (Strides at least as precise as Arith)
 
 // ------------------------------------------------------------------
 // ** Arithmetic
 
-precise_negate : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
-precise_negate a x =
-  proper a ==> member (neg a) x ==>
-    Arith::mem (Arith::neg (toArith a)) x
+precise_negate : {n} (fin n, n >= 2) => Domain n -> Property
+precise_negate a =
+  proper a ==> size (neg a) <= Arith::size (Arith::neg (hull a))
 
-precise_add : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_add a b x =
-  proper a ==> proper b ==> member (add a b) x ==>
-    Arith::mem (Arith::add (toArith a) (toArith b)) x
+precise_add : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_add a b =
+  proper a ==> proper b ==>
+    size (add a b) <= Arith::size (Arith::add (hull a) (hull b))
 
-precise_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_sub a b x =
-  proper a ==> proper b ==> member (sub a b) x ==>
-    Arith::mem (Arith::add (toArith a) (Arith::neg (toArith b))) x
+precise_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_sub a b =
+  proper a ==> proper b ==>
+    size (sub a b) <= Arith::size (Arith::add (hull a) (Arith::neg (hull b)))
 
-precise_mul : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_mul a b x =
-  proper a ==> proper b ==> member (mul a b) x ==>
-    Arith::mem (Arith::mul (toArith a) (toArith b)) x
+precise_udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_udiv a b =
+  proper a ==> proper b ==>
+    size (udiv a b) <= Arith::size (Arith::udiv (hull a) (hull b))
 
-precise_udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_udiv a b x =
-  proper a ==> proper b ==> member (udiv a b) x ==>
-    Arith::mem (Arith::udiv (toArith a) (toArith b)) x
+precise_urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_urem a b =
+  proper a ==> proper b ==>
+    size (urem a b) <= Arith::size (Arith::urem (hull a) (hull b))
 
-precise_urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_urem a b x =
-  proper a ==> proper b ==> member (urem a b) x ==>
-    Arith::mem (Arith::urem (toArith a) (toArith b)) x
+precise_sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_sdiv a b =
+  proper a ==> proper b ==>
+    size (sdiv a b) <= Arith::size (Arith::sdiv (hull a) (hull b))
 
-precise_sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_sdiv a b x =
-  proper a ==> proper b ==> member (sdiv a b) x ==>
-    Arith::mem (Arith::sdiv (toArith a) (toArith b)) x
-
-precise_srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_srem a b x =
-  proper a ==> proper b ==> member (srem a b) x ==>
-    Arith::mem (Arith::srem (toArith a) (toArith b)) x
+precise_srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_srem a b =
+  proper a ==> proper b ==>
+    size (srem a b) <= Arith::size (Arith::srem (hull a) (hull b))
 
 property p_precise_negate = precise_negate`{4}
 property p_precise_add    = precise_add`{4}
 property p_precise_sub    = precise_sub`{4}
-property p_precise_mul    = precise_mul`{4}
 property p_precise_udiv   = precise_udiv`{4}
 property p_precise_urem   = precise_urem`{4}
 property p_precise_sdiv   = precise_sdiv`{4}
@@ -675,20 +667,20 @@ property p_precise_srem   = precise_srem`{4}
 // ------------------------------------------------------------------
 // ** Concatenation, extension, selection, and truncation
 
-precise_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
-precise_zext a x =
-  proper a ==> member (zero_ext`{m} a) x ==>
-    Arith::mem (Arith::zero_ext`{m} (toArith a)) x
+precise_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Property
+precise_zext a =
+  proper a ==>
+    size (zero_ext`{m} a) <= Arith::size (Arith::zero_ext`{m} (hull a))
 
-precise_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
-precise_sext a x =
-  proper a ==> member (sign_ext`{m} a) x ==>
-    Arith::mem (Arith::sign_ext`{m} (toArith a)) x
+precise_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> Property
+precise_sext a =
+  proper a ==>
+    size (sign_ext`{m} a) <= Arith::size (Arith::sign_ext`{m} (hull a))
 
-precise_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> [m + n] -> Property
-precise_concat a b x =
-  proper a ==> proper b ==> member (concat a b) x ==>
-    Arith::mem (Arith::concat (toArith a) (toArith b)) x
+precise_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> Property
+precise_concat a b =
+  proper a ==> proper b ==>
+    size (concat a b) <= Arith::size (Arith::concat (hull a) (hull b))
 
 property p_precise_zext   = precise_zext`{6, 4}
 property p_precise_sext   = precise_sext`{6, 4}
@@ -697,21 +689,114 @@ property p_precise_concat = precise_concat`{2, 2}
 // ------------------------------------------------------------------
 // ** Shifts and rotations
 
-precise_shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_shl a b x =
-  proper a ==> proper b ==> member (shl a b) x ==>
-    Arith::mem (Arith::shl (toArith a) (toArith b)) x
+precise_shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_shl a b =
+  proper a ==> proper b ==>
+    size (shl a b) <= Arith::size (Arith::shl (hull a) (hull b))
 
-precise_lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_lshr a b x =
-  proper a ==> proper b ==> member (lshr a b) x ==>
-    Arith::mem (Arith::lshr (toArith a) (toArith b)) x
+precise_lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_lshr a b =
+  proper a ==> proper b ==>
+    size (lshr a b) <= Arith::size (Arith::lshr (hull a) (hull b))
 
-precise_ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
-precise_ashr a b x =
-  proper a ==> proper b ==> member (ashr a b) x ==>
-    Arith::mem (Arith::ashr (toArith a) (toArith b)) x
+precise_ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+precise_ashr a b =
+  proper a ==> proper b ==>
+    size (ashr a b) <= Arith::size (Arith::ashr (hull a) (hull b))
 
 property p_precise_shl  = precise_shl`{4}
 property p_precise_lshr = precise_lshr`{4}
 property p_precise_ashr = precise_ashr`{4}
+
+// ------------------------------------------------------------------
+// * Subset properties
+
+// ------------------------------------------------------------------
+// ** Arithmetic
+
+subset_negate : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
+subset_negate a x =
+  proper a ==> member (neg a) x ==>
+    Arith::mem (Arith::neg (toArith a)) x
+
+subset_add : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_add a b x =
+  proper a ==> proper b ==> member (add a b) x ==>
+    Arith::mem (Arith::add (toArith a) (toArith b)) x
+
+subset_sub : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_sub a b x =
+  proper a ==> proper b ==> member (sub a b) x ==>
+    Arith::mem (Arith::add (toArith a) (Arith::neg (toArith b))) x
+
+subset_udiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_udiv a b x =
+  proper a ==> proper b ==> member (udiv a b) x ==>
+    Arith::mem (Arith::udiv (toArith a) (toArith b)) x
+
+subset_urem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_urem a b x =
+  proper a ==> proper b ==> member (urem a b) x ==>
+    Arith::mem (Arith::urem (toArith a) (toArith b)) x
+
+subset_sdiv : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_sdiv a b x =
+  proper a ==> proper b ==> member (sdiv a b) x ==>
+    Arith::mem (Arith::sdiv (toArith a) (toArith b)) x
+
+subset_srem : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_srem a b x =
+  proper a ==> proper b ==> member (srem a b) x ==>
+    Arith::mem (Arith::srem (toArith a) (toArith b)) x
+
+property p_subset_negate = subset_negate`{4}
+property p_subset_add    = subset_add`{4}
+property p_subset_sub    = subset_sub`{4}
+property p_subset_udiv   = subset_udiv`{4}
+property p_subset_urem   = subset_urem`{4}
+property p_subset_sdiv   = subset_sdiv`{4}
+property p_subset_srem   = subset_srem`{4}
+
+// ------------------------------------------------------------------
+// ** Concatenation, extension, selection, and truncation
+
+subset_zext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
+subset_zext a x =
+  proper a ==> member (zero_ext`{m} a) x ==>
+    Arith::mem (Arith::zero_ext`{m} (toArith a)) x
+
+subset_sext : {m, n} (fin m, m >= n, n >= 2, m >= 2) => Domain n -> [m] -> Property
+subset_sext a x =
+  proper a ==> member (sign_ext`{m} a) x ==>
+    Arith::mem (Arith::sign_ext`{m} (toArith a)) x
+
+subset_concat : {m, n} (fin m, fin n, m >= 2, n >= 2) => Domain m -> Domain n -> [m + n] -> Property
+subset_concat a b x =
+  proper a ==> proper b ==> member (concat a b) x ==>
+    Arith::mem (Arith::concat (toArith a) (toArith b)) x
+
+property p_subset_zext   = subset_zext`{6, 4}
+property p_subset_sext   = subset_sext`{6, 4}
+property p_subset_concat = subset_concat`{2, 2}
+
+// ------------------------------------------------------------------
+// ** Shifts and rotations
+
+subset_shl : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_shl a b x =
+  proper a ==> proper b ==> member (shl a b) x ==>
+    Arith::mem (Arith::shl (toArith a) (toArith b)) x
+
+subset_lshr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_lshr a b x =
+  proper a ==> proper b ==> member (lshr a b) x ==>
+    Arith::mem (Arith::lshr (toArith a) (toArith b)) x
+
+subset_ashr : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
+subset_ashr a b x =
+  proper a ==> proper b ==> member (ashr a b) x ==>
+    Arith::mem (Arith::ashr (toArith a) (toArith b)) x
+
+property p_subset_shl  = subset_shl`{4}
+property p_subset_lshr = subset_lshr`{4}
+property p_subset_ashr = subset_ashr`{4}

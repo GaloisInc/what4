@@ -247,8 +247,8 @@ module What4.Domains.BV.Strides
   , leqPrecise
   , leqExact
   , toList
+  , size
   -- , asSingleton
-  -- , size
   -- , eq
   -- , ubounds
   -- , sbounds
@@ -337,6 +337,7 @@ module What4.Domains.BV.Strides
   , leqExactComplete
   , leqExactReflexive
   , leqExactTransitive
+  , sizeViaToList
   -- , correct_eq
   -- , correct_ubounds
   -- , correct_sbounds
@@ -937,6 +938,11 @@ toList c@Domain{start, stride, n} = assert (proper c) $ go 0 start
       | i == n    = [v]
       | otherwise = v : go (i + 1) (modMask c (v + stride))
 
+-- | /O(1)/. The number of distinct values in the progression: @n + 1@.
+size :: Domain w -> Natural
+size c@Domain{n} = assert (proper c) $ n + 1
+{-# INLINE size #-}
+
 -- ------------------------------------------------------------------
 -- * Lifted operations
 
@@ -1053,7 +1059,10 @@ strideGcd2 a b = case (n a, n b) of
 -- @g@-coset of @start'@, where @g = lowestSetBit d@. Strictly tighter than
 -- the corresponding @liftArith*@ call when @g > 1@, since the stride stays
 -- @g@ rather than collapsing to 1. See Note [Product abstraction].
-arithMeetCoset ::
+--
+-- Currently unused; retained as a building block for an Arith-Strides reduced
+-- product.
+_arithMeetCoset ::
   (1 <= w) =>
   NatRepr w ->
   -- | The Arith arc to restrict.
@@ -1063,7 +1072,7 @@ arithMeetCoset ::
   -- | @start'@: any representative of the target coset.
   Natural ->
   Domain w
-arithMeetCoset w arith d start' =
+_arithMeetCoset w arith d start' =
   assert (d > 0 && d <= m) $
   case A.arithDomainData arith of
     -- Arith is full: result is the full @g@-coset of @start'@. Let 'mk'
@@ -1125,18 +1134,12 @@ mul :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 -- @n a·(t1·l2) + n b·(t2·l1) + n a·n b·(t1·t2)@; dividing by @d@ gives a
 -- step-count bound, which 'clampToOrbit' caps at the orbit length when the
 -- conceptual progression overruns its full coset.
---
--- The closed-form arc and 'A.mul'\'s convex bound (which uses signed-corner
--- 'A.zbounds') are incomparable in general — 'A.mul' tightly bounds the
--- convex hull while the closed-form tightly bounds the coset walk. Both are
--- sound. We compute both candidate progressions (closed-form, and 'arithMeetCoset'
--- on 'A.mul') and return the one with fewer elements.
 mul w a b =
   assert (proper a) $
   assert (proper b) $
   if dMod == 0
     then mk w start' 1 0
-    else if n closedForm <= n viaArith then closedForm else viaArith
+    else mk w start' dMod (clampToOrbit (mask a) dMod n')
   where
     (l1, t1) = effLoStride a
     (l2, t2) = effLoStride b
@@ -1149,8 +1152,6 @@ mul w a b =
            + n b * (d21 `div` dInt)
            + n a * n b * (d22 `div` dInt)
     start' = modMask a (start a * start b)
-    closedForm = mk w start' dMod (clampToOrbit (mask a) dMod n')
-    viaArith   = arithMeetCoset w (A.mul (toArith a) (toArith b)) dMod start'
 
 udiv :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 udiv w = liftArith2 w A.udiv
@@ -1537,6 +1538,11 @@ leqExactTransitive a b c =
   proper a ==> proper b ==> proper c ==>
     mask a == mask b ==> mask b == mask c ==>
       leqExact a b ==> leqExact b c ==> property (leqExact a c)
+
+-- | 'size' agrees with the length of 'toList'.
+sizeViaToList :: Domain w -> Property
+sizeViaToList c =
+  proper c ==> property (size c == fromIntegral (length (toList c)))
 
 -- ------------------------------------------------------------------
 -- ** Conversion

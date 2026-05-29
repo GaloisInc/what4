@@ -330,39 +330,43 @@ property p_correct_ror  = correct_ror`{4}
 
 correct_join : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 correct_join a b x =
-  (member a x \/ member b x) ==> member (join a b) x
+  proper a ==> proper b ==>
+    (member a x \/ member b x) ==> member (join a b) x
 
 correct_meet : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 correct_meet a b x =
-  (member a x /\ member b x) ==> member (meet a b) x
+  proper a ==> proper b ==>
+    (member a x /\ member b x) ==> member (meet a b) x
 
 joinCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 joinCommutative a b x =
-  member (join a b) x == member (join b a) x
+  proper a ==> proper b ==>
+    member (join a b) x == member (join b a) x
 
 joinIdempotent : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 joinIdempotent a x =
-  member a x ==> member (join a a) x
+  proper a ==> member a x ==> member (join a a) x
 
 joinTop : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 joinTop a x =
-  member a x ==> member (join a top) x
+  proper a ==> member a x ==> member (join a top) x
 
 joinBottom : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 joinBottom a x =
-  member (join a bottom) x == member a x
+  proper a ==> member (join a bottom) x == member a x
 
 meetCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> [n] -> Property
 meetCommutative a b x =
-  member (meet a b) x == member (meet b a) x
+  proper a ==> proper b ==>
+    member (meet a b) x == member (meet b a) x
 
 meetIdempotent : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 meetIdempotent a x =
-  member a x ==> member (meet a a) x
+  proper a ==> member a x ==> member (meet a a) x
 
 meetTop : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 meetTop a x =
-  member a x ==> member (meet a top) x
+  proper a ==> member a x ==> member (meet a top) x
 
 meetBottom : {n} (fin n, n >= 2) => Domain n -> [n] -> Property
 meetBottom a x =

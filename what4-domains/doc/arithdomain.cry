@@ -78,6 +78,11 @@ smem (lo, hi) x = lo <=$ x /\ x <=$ hi
 top : {n} (fin n) => Dom n
 top = interval 0 (~ 0)
 
+/** Cardinality of the represented set. Returns 0 on bottom and 2^n on top.
+The result is `[n+1]` bits to fit 2^n. */
+size : {n} (fin n) => Dom n -> [n + 1]
+size a = if a.isBot then 0 else zext a.sz + 1
+
 singleton : {n} (fin n) => [n] -> Dom n
 singleton x = interval x 0
 

@@ -153,6 +153,9 @@ tests = TT.testGroup "Strides"
   , genTest "leqExactTransitive" $
       do SW n <- genWidth
          S.leqExactTransitive <$> S.genDomain n <*> S.genDomain n <*> S.genDomain n
+  , genTest "sizeViaToList" $
+      do SW n <- genWidthSmall
+         S.sizeViaToList <$> S.genDomain n
   , genTest "toArithCorrect" $
       do SW n <- genWidth
          S.toArithCorrect n <$> S.genDomain n <*> genNatBV n
