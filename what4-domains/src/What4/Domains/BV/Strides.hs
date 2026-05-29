@@ -206,11 +206,87 @@ variables of any bit-width @w@. Every exported operation is documented with its
 complexity in big-O notation in terms of @w@. In particular, this means that
 operations like bitwise-and on 'Natural' are considered @O(w)@.
 
-== /Soundness/
+== /Testing strategy/
 
-A correctness (soundness) specification of every operation is given in
-Cryptol in @doc\/clp.cry@; the Haskell @correct_*@ predicates here mirror that
-specification.
+=== /Soundness/
+
+To be correct (i.e., sound), our abstract operations (e.g., 'add')  must
+over-approximate the corresponding concrete operations (addition mod @2^w@).
+The specific claim is the following: Given two bitvectors @x@ and @y@ that
+are members of progressions @a@ and @b@ respectively, then for each concrete
+operation @op@ (e.g., addition mod @2^w@) and the corresponding abstract
+operation @absOp@, @x `op` y@ is a 'member' of @a `absOp` b.
+By the correctness specification of 'member', this is equivalent to the statement
+(equivalently, @x
+`op` y@ is literally a member of the concretization @gamma(a `absOp` b)@ where
+@gamma = 'toList'@).
+
+The Cryptol specification at @doc\/strides.cry@ contains @correct_*@ predicates
+for each operation; the Haskell @correct_*@ predicates here mirror that
+specification. CI runs property-based tests for the Haskell predicates and
+proves the Cryptol predicates at particular bit-widths.
+
+=== /Precision/
+
+==== /Precision via comparison to wrapped intervals/
+
+As described above, wrapped intervals are like stride-1 progressions. We would
+hope that adding the stride only improves the precision of our operations. In
+particular, we might hope that the following shape of property holds:
+
+@
+member (a `op` b) x ==> A.member (toArith a `A.op` toArith b) x
+@
+
+This does not hold generally, and for an interesting reason: 'toArith' is too
+precise. Naively, we might expect 'toArith' to yield top for any self-wrapping
+progression. In actuality,  it yields the somewhat tighter interval @[start
+% g, ..., start % g + (2^w - g)]@. Operations on this interval can result in
+non-supersets of the corresponding operation on progressions.
+
+We might instead hope that 
+
+@
+member (a `op` b) x ==> A.member (hull a `A.op` hull b) x
+@
+
+where @hull@ is just the interval @[start a, start a + 1, ..., end a]@, which
+collapses to top for self-wrapping intervals. This /also/ does not hold in
+general, because TODO.
+
+At this point, we might be a bit disappointed and simply settle for
+
+@
+size (a `op` b) x <= A.size (hull a `A.op` hull b)
+@
+
+Unforuntately, even this will not hold for 'mul'. The formula for 'mul' can
+double-count elements of its coset, in a way that is quite difficult to avoid
+in the general case. We may be able to improve the situation by implementing
+something like the 'mul' described in the wrapped intervals paper.
+
+We test the strongest of the above properties that apply to each operation.
+Currently, the principled approach to a precise domain would take a reduced
+product of the strides domain with the @Arith@ domain. This may be made
+superfluous by more precise implementations of the transfer functions in the
+future.
+
+==== /Precision via enumeration/
+
+Our "precision regression" tests work as follows. For each concrete operation
+@op@ and corresponding abstract operation @absOp@, enumerate all progressions
+at @w=4@. For each pair of progressions, compute the sum of the cardinalities of
+the sets resulting from pointwise application of @op@ to each of their members.
+Also compute the sum of cardinalities of the progressions resulting from
+@absOp@. The resulting percentage @100 * concSum / absSum@ is a measure of the
+precision of the abstract operation, with 100% meaning perfectly precise. This
+is expensive to compute, but tractable at @w=4@.
+
+This is an imperfect measure in that it is not necessarily possible for every
+operation to achieve a score of 100%. That would require also computing the
+progression that is the best possible approximation of the pointwise result. We
+may do this in the future.
+
 -}
 
 {-# LANGUAGE BangPatterns #-}
@@ -411,40 +487,6 @@ import qualified What4.Domains.BV.Arith as A
 import qualified What4.Domains.BV.Bitwise as B
 import           What4.Domains.Verification (Property, property, (==>), Gen, chooseInteger)
 
--- Note [Product abstraction]: A 'Domain' simultaneously over-approximates the
--- represented set in two complementary ways:
---
---   * /Algebraic/: \"the value lies in @start + g·Z@ mod @2^w@\", where
---     @g = gcd(stride, 2^w)@ is the lowest set bit of @stride@. Composes
---     analytically under the linear ops: closed-form result cosets are
---     available for negation, addition, scaling by a constant, multiplication,
---     and shifts by a constant.
---
---   * /Geometric/: \"the value lies on the arc walking forward from
---     @start@ to @end@\", i.e. the same convex/wrapped-interval view that
---     "What4.Domains.BV.Arith" tracks. Composes via 'toArith', the
---     corresponding @A@ operation, and 'fromArith'.
---
--- A progression is /self-wrapping/ when its conceptual arc revolves past its own
--- @start@ before reaching @end@: the cumulative distance walked
--- @n · stride@ exceeds @2^w@, where @n@ is the step count from @start@ to
--- @end@. Self-wrapping is strictly stronger than \"crosses the @0/2^w-1@
--- boundary\" — a progression can wrap around the number circle once without
--- self-wrapping (e.g. @{14, 0, 2}@ at width 4). See 'isSelfWrapping'.
---
--- For non-self-wrapping progressions the triple @(start, end, stride)@ encodes both
--- views at once: the arc walking @start → end@ by @stride@ visits exactly the
--- coset elements in their natural cyclic order. The two views are coupled
--- and mutually refining at no extra cost.
---
--- When the conceptual orbit self-wraps, the two views /decouple/: the orbit
--- visits a partial subset of a full coset, but @(s, e, t)@ cannot
--- disambiguate \"arc length @L@\" from \"arc length @L + 2^w/g · stride@\".
--- We must commit to a representable shape. The arithmetic ops have
--- closed-form step counts ('add', 'sub', 'mul'), saturating to the full
--- @g@-coset (via 'clampToOrbit') when the conceptual arc overruns its
--- representable length.
-
 -- | A 'Domain' represents the set
 --
 -- @
@@ -454,8 +496,7 @@ import           What4.Domains.Verification (Property, property, (==>), Gen, cho
 -- where @mask = 2^w - 1@ for some @w@. The orbit thus has @n + 1@ elements.
 --
 -- The conceptual /end/ of the orbit, @(start + n * stride) mod 2^w@, is
--- exposed via the 'end' accessor; see Note [Step-count representation] for
--- why @n@ is the primary field rather than @end@.
+-- exposed via the 'end' accessor.
 data Domain (w :: Nat)
   = Domain
     { start :: !Natural
@@ -464,22 +505,6 @@ data Domain (w :: Nat)
     , mask :: !Natural
     }
   deriving (Eq, Ord, Show)
--- Note [Step-count representation]: The CLP literature presents the domain as
--- a triple @(start, end, stride)@ where @end@ is a /value/ on the orbit. We
--- instead store the /step count/ @n@ — the index of the last orbit element,
--- with @end = (start + n·stride) mod 2^w@ derived on demand. The step count
--- is the more fundamental quantity for two reasons:
---
---   * /Self-wrapping is free/. A progression self-wraps when @n·stride ≥ 2^w@,
---     which is an O(1) test in this representation. With @end@ as a value,
---     recovering @n@ requires modular inversion via 'invModPow2', i.e.
---     O(w log w).
---
---   * /Arithmetic stays branchless/. Sums and differences of orbits compose
---     additively in step counts: @n' = (n_a·t_a + n_b·t_b) / d@. With
---     @end@ as a value, distinguishing "arc length L" from "L + (2^w/g)·t",
---     once the conceptual orbit overruns its coset, requires committing to
---     a representable shape — see Note [Product abstraction].
 
 -- | /O(w)/. The conceptual @end@ of the orbit: @(start + n * stride) mod 2^w@.
 end :: Domain w -> Natural
