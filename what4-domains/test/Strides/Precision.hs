@@ -55,18 +55,6 @@ genWidth =
 genNatBV :: NatRepr w -> Gen Natural
 genNatBV w = fromInteger <$> chooseInteger (0, maxUnsigned w)
 
--- | The arith hull of a strides progression: the arc
--- @[start, start + n·stride]@. Saturates to top when @n·stride >= 2^w@.
---
--- Differs from 'S.toArith', which falls back to 'cosetArc' on self-wrapping
--- orbits — that gives a tighter (but coset-shaped) hull that strides cannot
--- always refine.
-hull :: (1 <= w) => NatRepr w -> S.Domain w -> A.Domain w
-hull w c =
-  A.interval (maxUnsigned w)
-             (toInteger (S.start c))
-             (toInteger (S.n c * S.stride c))
-
 -- | The strides result has at most as many elements as the arith result.
 sizeLeq ::
   (1 <= w, 1 <= u) =>
@@ -83,27 +71,27 @@ subsetOf _w c arith x =
 
 precise_negate :: (1 <= w) => NatRepr w -> S.Domain w -> Property
 precise_negate w c =
-  S.proper c ==> sizeLeq w (S.negate w c) (A.negate (hull w c))
+  S.proper c ==> sizeLeq w (S.negate w c) (A.negate (S.hull c))
 
 precise_add ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_add w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.add w a b) (A.add (hull w a) (hull w b))
+    sizeLeq w (S.add w a b) (A.add (S.hull a) (S.hull b))
 
 precise_sub ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_sub w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.sub w a b) (A.add (hull w a) (A.negate (hull w b)))
+    sizeLeq w (S.sub w a b) (A.add (S.hull a) (A.negate (S.hull b)))
 
 precise_scale ::
   (1 <= w) =>
   NatRepr w -> Integer -> S.Domain w -> Property
 precise_scale w k c =
-  S.proper c ==> sizeLeq w (S.scale w k c) (A.scale k (hull w c))
+  S.proper c ==> sizeLeq w (S.scale w k c) (A.scale k (S.hull c))
 
 -- Note: there is no @precise_mul@ (or @subset_mul@). Closed-form @mul@'s
 -- cross-term @i·j·t1·t2@ walks the coset of @start'@ out of order, so
@@ -117,56 +105,56 @@ precise_udiv ::
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_udiv w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.udiv w a b) (A.udiv (hull w a) (hull w b))
+    sizeLeq w (S.udiv w a b) (A.udiv (S.hull a) (S.hull b))
 
 precise_urem ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_urem w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.urem w a b) (A.urem (hull w a) (hull w b))
+    sizeLeq w (S.urem w a b) (A.urem (S.hull a) (S.hull b))
 
 precise_sdiv ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_sdiv w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.sdiv w a b) (A.sdiv w (hull w a) (hull w b))
+    sizeLeq w (S.sdiv w a b) (A.sdiv w (S.hull a) (S.hull b))
 
 precise_srem ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_srem w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.srem w a b) (A.srem w (hull w a) (hull w b))
+    sizeLeq w (S.srem w a b) (A.srem w (S.hull a) (S.hull b))
 
 precise_udivSmtlib ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_udivSmtlib w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.udivSmtlib w a b) (A.udivSmtlib (hull w a) (hull w b))
+    sizeLeq w (S.udivSmtlib w a b) (A.udivSmtlib (S.hull a) (S.hull b))
 
 precise_uremSmtlib ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_uremSmtlib w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.uremSmtlib w a b) (A.uremSmtlib (hull w a) (hull w b))
+    sizeLeq w (S.uremSmtlib w a b) (A.uremSmtlib (S.hull a) (S.hull b))
 
 precise_sdivSmtlib ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_sdivSmtlib w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.sdivSmtlib w a b) (A.sdivSmtlib w (hull w a) (hull w b))
+    sizeLeq w (S.sdivSmtlib w a b) (A.sdivSmtlib w (S.hull a) (S.hull b))
 
 precise_sremSmtlib ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_sremSmtlib w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.sremSmtlib w a b) (A.sremSmtlib w (hull w a) (hull w b))
+    sizeLeq w (S.sremSmtlib w a b) (A.sremSmtlib w (S.hull a) (S.hull b))
 
 precise_zext ::
   forall w u.
@@ -176,7 +164,7 @@ precise_zext w c u =
   case NR.leqTrans (NR.leqAdd (LeqProof :: LeqProof 1 w) (knownNat @1))
                    (LeqProof :: LeqProof (w + 1) u) of
     LeqProof ->
-      S.proper c ==> sizeLeq u (S.zext w c u) (A.zext (hull w c) u)
+      S.proper c ==> sizeLeq u (S.zext w c u) (A.zext (S.hull c) u)
 
 precise_sext ::
   forall w u.
@@ -186,7 +174,7 @@ precise_sext w c u =
   case NR.leqTrans (NR.leqAdd (LeqProof :: LeqProof 1 w) (knownNat @1))
                    (LeqProof :: LeqProof (w + 1) u) of
     LeqProof ->
-      S.proper c ==> sizeLeq u (S.sext w c u) (A.sext w (hull w c) u)
+      S.proper c ==> sizeLeq u (S.sext w c u) (A.sext w (S.hull c) u)
 
 precise_concat ::
   forall u v.
@@ -197,7 +185,7 @@ precise_concat u a v b =
     LeqProof ->
       S.proper a ==> S.proper b ==>
         sizeLeq (NR.addNat u v) (S.concat u a v b)
-                (A.concat u (hull u a) v (hull v b))
+                (A.concat u (S.hull a) v (S.hull b))
 
 precise_select ::
   forall i n w.
@@ -208,28 +196,28 @@ precise_select i n w c =
                    (NR.leqTrans (NR.addPrefixIsLeq i n)
                                 (LeqProof :: LeqProof (i + n) w)) of
     LeqProof ->
-      S.proper c ==> sizeLeq n (S.select i n w c) (A.select i n (hull w c))
+      S.proper c ==> sizeLeq n (S.select i n w c) (A.select i n (S.hull c))
 
 precise_shl ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_shl w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.shl w a b) (A.shl w (hull w a) (hull w b))
+    sizeLeq w (S.shl w a b) (A.shl w (S.hull a) (S.hull b))
 
 precise_lshr ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_lshr w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.lshr w a b) (A.lshr w (hull w a) (hull w b))
+    sizeLeq w (S.lshr w a b) (A.lshr w (S.hull a) (S.hull b))
 
 precise_ashr ::
   (1 <= w) =>
   NatRepr w -> S.Domain w -> S.Domain w -> Property
 precise_ashr w a b =
   S.proper a ==> S.proper b ==>
-    sizeLeq w (S.ashr w a b) (A.ashr w (hull w a) (hull w b))
+    sizeLeq w (S.ashr w a b) (A.ashr w (S.hull a) (S.hull b))
 
 -- ------------------------------------------------------------------
 -- * Subset properties

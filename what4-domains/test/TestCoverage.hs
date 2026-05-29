@@ -155,6 +155,13 @@ cryptolOnly = Set.fromList
   [ "correct_ule"
   , "correct_sle"
   , "correct_shrinkRange"
+  -- Diophantine helpers in 'What4.Domains.BV.Strides.Internal' have direct
+  -- Haskell unit tests in @test/Strides/Internal.hs@, but those tests are
+  -- inlined inside 'genTest' calls rather than top-level @Property@-returning
+  -- predicates, so the extractor doesn't pick them up.
+  , "eGCD_bezout", "eGCD_nonNegative"
+  , "ceilDivPosCorrect", "floorDivPosCorrect"
+  , "solveLinearDiophantineSound"
   ]
 
 -- | Haskell predicates that intentionally have no Cryptol counterpart.

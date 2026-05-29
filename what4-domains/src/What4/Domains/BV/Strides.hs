@@ -238,6 +238,7 @@ module What4.Domains.BV.Strides
   -- , fromFoldable
   -- * Conversion
   , toArith
+  , hull
   , fromArith
   , toBitwise
   , fromBitwise
@@ -286,6 +287,9 @@ module What4.Domains.BV.Strides
   , ashr
   , rol
   , ror
+  -- * Lattice operations
+  , meet
+  , meetPrecise
   -- * Properties
   -- ** Generators
   , genDomain
@@ -375,6 +379,18 @@ module What4.Domains.BV.Strides
   , correct_ashr
   , correct_rol
   , correct_ror
+  -- ** Lattice operations
+  , correct_meet
+  , correct_meetPrecise
+  , meetCommutative
+  , meetPreciseCommutative
+  , meetIdempotent
+  , meetPreciseIdempotent
+  , meetAssociative
+  , meetPreciseAssociative
+  , meetPreciseRefinesMeet
+  , meetMonotone
+  , meetPreciseMonotone
   ) where
 
 import           Control.Exception (assert)
@@ -1254,6 +1270,79 @@ ror :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
 ror w = liftBitwise2 w (B.rorAbstract w)
 
 -- ------------------------------------------------------------------
+-- * Lattice operations
+
+-- | /O(w)/. Lattice meet: a sound /over/-approximation of the
+-- intersection of two progressions. For any concrete value @x@, if @x@
+-- is a member of both @a@ and @b@, then @x@ is a member of @meet a b@.
+-- Returns 'Nothing' when the result would be empty.
+--
+-- Uses 'leq' (the cheap reflexive+transitive variant) for the containment
+-- short-circuits. See 'meetPrecise' for the variant that uses 'leqExact'
+-- short-circuits.
+--
+-- Not currently a lower bound (TODO).
+meet ::
+  (1 <= w) =>
+  NatRepr w ->
+  Domain w -> Domain w -> Maybe (Domain w)
+meet w a b =
+  assert (proper a) $
+  assert (proper b) $
+  case () of
+    _ | leq a b -> Just a
+      | leq b a -> Just b
+      | otherwise -> meetStrides w a b
+
+-- | /O(w^2)/. Like 'meet', but uses 'leqExact' for the containment
+-- short-circuits — preserves the smaller operand exactly when one is
+-- contained in the other (whereas 'meet' may miss some containment
+-- cases that 'leq' is too coarse to detect, and fall through to
+-- 'meetStrides' which collapses to the gcd-of-cosets stride).
+meetPrecise ::
+  (1 <= w) =>
+  NatRepr w ->
+  Domain w -> Domain w -> Maybe (Domain w)
+meetPrecise w a b =
+  assert (proper a) $
+  assert (proper b) $
+  case () of
+    _ | leqExact a b -> Just a
+      | leqExact b a -> Just b
+      | otherwise -> meetStrides w a b
+
+-- | /O(w)/. Sound (over-approximating) intersection of two progressions, used
+-- as the general (non-short-circuit) path of 'meet' and 'meetPrecise'.
+--
+-- The arc constraint is handled by 'A.meet' on the 'hull's
+-- @[start, start + n·stride]@ of each operand (saturating to top on
+-- self-wrap); 'fromArith' then converts the resulting arc back to a
+-- stride-1 progression. Using 'hull' (rather than 'toArith', which
+-- falls back to 'cosetArc' on self-wrapping orbits) keeps the result
+-- a refinement of both inputs' arcs. The coset compatibility check
+-- guards against the case where the two operand cosets are disjoint
+-- (in which case the result is empty regardless of the arc overlap).
+meetStrides ::
+  (1 <= w) =>
+  NatRepr w ->
+  Domain w -> Domain w -> Maybe (Domain w)
+meetStrides w a b =
+  let g_a = strideGcd a
+      g_b = strideGcd b
+      delta = modSub (mask a) (start a) (start b)
+  in if delta .&. (min g_a g_b - 1) /= 0
+       then Nothing
+       else fromArith w (A.meet (hull a) (hull b))
+
+-- | The arith hull of a progression: the arc @[start, start + n·stride]@.
+-- Saturates to top when @n·stride >= 2^w@ (i.e., on self-wrapping orbits).
+-- Differs from 'toArith', which falls back to 'cosetArc' for self-wrap.
+hull :: Domain w -> A.Domain w
+hull c@Domain{start = s, stride = t, n = nn, mask = m} =
+  assert (proper c) $
+  A.interval (toInteger m) (toInteger s) (toInteger (nn * t))
+
+-- ------------------------------------------------------------------
 -- * Generators
 
 -- | Generator for a proper 'Domain' at width @w@.
@@ -1844,6 +1933,123 @@ correct_ror ::
 correct_ror w a x b y =
   proper a ==> proper b ==> member a x ==> member b y ==>
     property (member (ror w a b) (fromInteger (Arith.rotateRight w (toInteger x) (toInteger y))))
+
+-- ------------------------------------------------------------------
+-- ** Lattice operations
+
+-- | 'meet' is sound: every element of both operands is in the result.
+correct_meet ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Domain w -> Natural -> Property
+correct_meet w a x b _y =
+  proper a ==> proper b ==> mask a == mask b ==>
+    member a x ==> member b x ==>
+      case meet w a b of
+        Just c  -> property (member c x)
+        Nothing -> property False
+
+-- | 'meetPrecise' is sound: every element of both operands is in the result.
+correct_meetPrecise ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Natural -> Domain w -> Natural -> Property
+correct_meetPrecise w a x b _y =
+  proper a ==> proper b ==> mask a == mask b ==>
+    member a x ==> member b x ==>
+      case meetPrecise w a b of
+        Just c  -> property (member c x)
+        Nothing -> property False
+
+-- | 'meet' is commutative up to 'leqExact' equivalence.
+meetCommutative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Property
+meetCommutative w a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    property (eqMaybe (meet w a b) (meet w b a))
+
+-- | 'meetPrecise' is commutative up to 'leqExact' equivalence.
+meetPreciseCommutative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Property
+meetPreciseCommutative w a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    property (eqMaybe (meetPrecise w a b) (meetPrecise w b a))
+
+-- | 'meet' is idempotent: @meet a a == Just a@.
+meetIdempotent ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Property
+meetIdempotent w a =
+  proper a ==> property (meet w a a == Just a)
+
+-- | 'meetPrecise' is idempotent.
+meetPreciseIdempotent ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Property
+meetPreciseIdempotent w a =
+  proper a ==> property (meetPrecise w a a == Just a)
+
+-- | 'meet' is associative up to 'leqExact' equivalence.
+meetAssociative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Domain w -> Property
+meetAssociative w a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      property (eqMaybe (meet w a b >>= meet w c) (meet w b c >>= meet w a))
+
+-- | 'meetPrecise' is associative up to 'leqExact' equivalence.
+meetPreciseAssociative ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Domain w -> Property
+meetPreciseAssociative w a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      property (eqMaybe (meetPrecise w a b >>= meetPrecise w c)
+                        (meetPrecise w b c >>= meetPrecise w a))
+
+-- | 'meetPrecise' refines 'meet': anything 'meetPrecise' contains, 'meet'
+-- contains too (modulo emptiness).
+meetPreciseRefinesMeet ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Property
+meetPreciseRefinesMeet w a b =
+  proper a ==> proper b ==> mask a == mask b ==>
+    case (meet w a b, meetPrecise w a b) of
+      (Just cM, Just cP) -> property (leqExact cP cM)
+      (_, Nothing)       -> property True
+      (Nothing, Just _)  -> property False  -- meetPrecise tighter, so this shouldn't happen
+
+-- | 'meet' is monotone in its first argument: if @a `leqExact` b@, then
+-- @meet a c `leqMaybe` meet b c@.
+meetMonotone ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Domain w -> Property
+meetMonotone w a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      leqExact a b ==> property (leqMaybe (meet w a c) (meet w b c))
+
+-- | 'meetPrecise' is monotone in its first argument.
+meetPreciseMonotone ::
+  (1 <= w) =>
+  NatRepr w -> Domain w -> Domain w -> Domain w -> Property
+meetPreciseMonotone w a b c =
+  proper a ==> proper b ==> proper c ==>
+    mask a == mask b ==> mask b == mask c ==>
+      leqExact a b ==> property (leqMaybe (meetPrecise w a c) (meetPrecise w b c))
+
+-- | Equality of 'Maybe (Domain w)' under 'leqExact' (i.e., mutual containment).
+eqMaybe :: Maybe (Domain w) -> Maybe (Domain w) -> Bool
+eqMaybe Nothing Nothing = True
+eqMaybe (Just x) (Just y) = leqExact x y && leqExact y x
+eqMaybe _ _ = False
+
+-- | @leqMaybe ma mb@: 'Nothing' is bottom; on 'Just' values, 'leqExact'.
+leqMaybe :: Maybe (Domain w) -> Maybe (Domain w) -> Bool
+leqMaybe Nothing _ = True
+leqMaybe (Just _) Nothing = False
+leqMaybe (Just x) (Just y) = leqExact x y
 
 -- ------------------------------------------------------------------
 -- ** Helpers

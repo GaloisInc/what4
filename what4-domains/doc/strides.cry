@@ -8,6 +8,10 @@ import bvdomain as BV
 
 type Property = Bit
 
+enum Maybe a
+  = Nothing
+  | Just a
+
 // We use an @[n+1]@-bit step count internally so that the orbit length
 // @2^w / gcd(stride, 2^w)@, which can be @2^w@, is representable.
 type Domain n
@@ -102,6 +106,83 @@ mk s st nv =
     g = st && (- st)
     orbitM1 : [n + 1]
     orbitM1 = zext ((- g) / g)
+
+// ------------------------------------------------------------------
+// ** Diophantine helpers
+//
+// `meet` solves `a * x - b * y = c` for nonnegative bounded integers
+// x, y. We work in `Integer` so that intermediate Bezout coefficients
+// can grow without overflow, mirroring the Haskell implementation in
+// What4.Domains.BV.Strides.Internal, which uses unbounded `Integer`
+// arithmetic.
+
+eGCD :
+  {steps} (fin steps) =>
+  Integer -> Integer -> (Integer, Integer, Integer)
+eGCD a0 b0 = if final.0 < 0 then (- final.0, - final.1, - final.2) else final
+  where
+  step (a, b, x0, x1, y0, y1) =
+    if b == 0 then (a, 0, x0, x1, y0, y1)
+    else (b, sIntegerRem a b,
+          x1, x0 - sIntegerQuot a b * x1,
+          y1, y0 - sIntegerQuot a b * y1)
+  iters : [steps](Integer, Integer, Integer, Integer, Integer, Integer)
+  iters = take`{steps} (iterate step (a0, b0, 1, 0, 0, 1))
+  finalState  = iters ! 0
+  final = (finalState.0, finalState.2, finalState.4)
+
+sIntegerQuot : Integer -> Integer -> Integer
+sIntegerQuot x y =
+  if (x < 0) ^ (y < 0) then - (sIntegerAbs x / sIntegerAbs y)
+                       else sIntegerAbs x / sIntegerAbs y
+
+sIntegerAbs : Integer -> Integer
+sIntegerAbs v = if v < 0 then -v else v
+
+sIntegerRem : Integer -> Integer -> Integer
+sIntegerRem x y = x - sIntegerQuot x y * y
+
+ceilDivPos : Integer -> Integer -> Integer
+ceilDivPos x y = - integerFloorDiv (-x) y
+
+floorDivPos : Integer -> Integer -> Integer
+floorDivPos x y = integerFloorDiv x y
+
+integerFloorDiv : Integer -> Integer -> Integer
+integerFloorDiv u v =
+  if (u < 0) ^ (v < 0) /\ sIntegerRem u v != 0
+    then sIntegerQuot u v - 1
+    else sIntegerQuot u v
+
+solveLinearDiophantine :
+  {steps} (fin steps) =>
+  Integer -> Integer -> Integer -> Integer -> Integer ->
+  (Bit, Integer, Integer)
+solveLinearDiophantine a b c a_max b_max =
+  if cr != 0 then (False, 0, 0)
+  else if t <= t_upper then (True, n_co * cq + bq * t, m_co * cq + aq * t)
+  else (False, 0, 0)
+  where
+  egcd_res = eGCD`{steps} a (-b)
+  g    = egcd_res.0
+  n_co = egcd_res.1
+  m_co = egcd_res.2
+  cq   = sIntegerQuot c g
+  cr   = sIntegerRem c g
+  aq   = sIntegerQuot a g
+  bq   = sIntegerQuot b g
+  nc   = n_co * c
+  mc   = m_co * c
+  t       = maxI (ceilDivPos (-nc) b) (ceilDivPos (-mc) a)
+  t_upper = minI (floorDivPos (a_max * g - nc) b)
+                 (floorDivPos (b_max * g - mc) a)
+  maxI u v = if u < v then v else u
+  minI u v = if u < v then u else v
+
+toSignedInteger : {k} (fin k, k >= 1) => [k] -> Integer
+toSignedInteger v =
+  if v @ 0 then toInteger v - 2 ^^ (`k : Integer)
+           else toInteger v
 
 // ------------------------------------------------------------------
 // * Conversion
@@ -312,6 +393,33 @@ hull c =
     span = zext c.n * zext c.stride
 
 // ------------------------------------------------------------------
+// * Lattice operations
+
+meet : {n} (fin n, n >= 2) => Domain n -> Domain n -> Maybe (Domain n)
+meet a b =
+  if leq a b then Just a
+  else if leq b a then Just b
+  else meetStrides a b
+
+meetPrecise : {n} (fin n, n >= 2) => Domain n -> Domain n -> Maybe (Domain n)
+meetPrecise a b =
+  if leqExact a b then Just a
+  else if leqExact b a then Just b
+  else meetStrides a b
+
+meetStrides : {n} (fin n, n >= 2) => Domain n -> Domain n -> Maybe (Domain n)
+meetStrides a b =
+  if delta && (gMin - 1) != 0 then Nothing
+  else if arith.isBot then Nothing
+  else Just (fromArith arith)
+  where
+    gA = strideGcd a
+    gB = strideGcd b
+    gMin = if gA <= gB then gA else gB
+    delta = a.start - b.start
+    arith = Arith::meet (hull a) (hull b)
+
+// ------------------------------------------------------------------
 // * Correctness properties
 
 // ------------------------------------------------------------------
@@ -368,6 +476,58 @@ circLeqAnchorMin x v = circLeq x x v
 circLeqAnchorMax : {n} (fin n, n >= 1) => [n] -> [n] -> Property
 circLeqAnchorMax x v = circLeq x v (x - 1)
 
+eGCD_bezout : {k} (fin k, k >= 1) => [k] -> [k] -> Property
+eGCD_bezout aBits bBits =
+  egcd_res.1 * a + egcd_res.2 * b == egcd_res.0
+  where
+  a = toSignedInteger aBits
+  b = toSignedInteger bBits
+  egcd_res = eGCD`{4*k + 4} a b
+
+eGCD_nonNegative : {k} (fin k, k >= 1) => [k] -> [k] -> Property
+eGCD_nonNegative aBits bBits = ~ ((eGCD`{4*k + 4} a b).0 < 0)
+  where
+  a = toSignedInteger aBits
+  b = toSignedInteger bBits
+
+ceilDivPosCorrect : {k} (fin k, k >= 1) => [k] -> [k] -> Property
+ceilDivPosCorrect xBits yBits =
+  y > 0 ==> q * y >= x /\ (q - 1) * y < x
+  where
+  x = toSignedInteger xBits
+  y = toSignedInteger yBits
+  q = ceilDivPos x y
+
+floorDivPosCorrect : {k} (fin k, k >= 1) => [k] -> [k] -> Property
+floorDivPosCorrect xBits yBits =
+  y > 0 ==> q * y <= x /\ (q + 1) * y > x
+  where
+  x = toSignedInteger xBits
+  y = toSignedInteger yBits
+  q = floorDivPos x y
+
+solveLinearDiophantineSound :
+  {k} (fin k, k >= 1) =>
+  [k] -> [k] -> [k] -> [k] -> [k] -> [k] -> Property
+solveLinearDiophantineSound aBits bBits aMaxBits bMaxBits x0Bits y0Bits =
+  a > 0 ==> b > 0 ==> a_max >= 0 ==> b_max >= 0 ==>
+  0 <= x0 ==> x0 <= a_max ==>
+  0 <= y0 ==> y0 <= b_max ==>
+  c != 0 ==>
+  res.0 /\
+  (0 <= res.1 /\ res.1 <= a_max /\
+   0 <= res.2 /\ res.2 <= b_max /\
+   a * res.1 - b * res.2 == c)
+  where
+  a     = toSignedInteger aBits
+  b     = toSignedInteger bBits
+  a_max = toSignedInteger aMaxBits
+  b_max = toSignedInteger bMaxBits
+  x0    = toSignedInteger x0Bits
+  y0    = toSignedInteger y0Bits
+  c     = a * x0 - b * y0
+  res   = solveLinearDiophantine`{4*k + 4} a b c a_max b_max
+
 property p_modNegCorrect            = modNegCorrect`{8}
 property p_modSubCorrect            = modSubCorrect`{8}
 property p_wrapOffsetCorrect        = wrapOffsetCorrect`{8}
@@ -381,6 +541,11 @@ property p_valueAtCorrect           = valueAtCorrect`{8}
 property p_circLeqAtZero            = circLeqAtZero`{8}
 property p_circLeqAnchorMin         = circLeqAnchorMin`{8}
 property p_circLeqAnchorMax         = circLeqAnchorMax`{8}
+property p_eGCD_bezout              = eGCD_bezout`{4}
+property p_eGCD_nonNegative         = eGCD_nonNegative`{4}
+property p_ceilDivPosCorrect        = ceilDivPosCorrect`{4}
+property p_floorDivPosCorrect       = floorDivPosCorrect`{4}
+property p_solveLinearDiophantineSound = solveLinearDiophantineSound`{4}
 
 // ------------------------------------------------------------------
 // ** Queries
@@ -615,6 +780,117 @@ property p_correct_lshr = correct_lshr`{4}
 property p_correct_ashr = correct_ashr`{4}
 property p_correct_rol  = correct_rol`{4}
 property p_correct_ror  = correct_ror`{4}
+
+// ------------------------------------------------------------------
+// ** Lattice operations
+
+correct_meet : {n} (fin n, n >= 2) => Domain n -> [n] -> Domain n -> Property
+correct_meet a x b =
+  proper a ==> proper b ==> member a x ==> member b x ==>
+    case meet a b of
+      Just c -> member c x
+      Nothing -> False
+
+correct_meetPrecise : {n} (fin n, n >= 2) => Domain n -> [n] -> Domain n -> Property
+correct_meetPrecise a x b =
+  proper a ==> proper b ==> member a x ==> member b x ==>
+    case meetPrecise a b of
+      Just c -> member c x
+      Nothing -> False
+
+eqMaybe : {n} (fin n, n >= 2) => Maybe (Domain n) -> Maybe (Domain n) -> Bit
+eqMaybe ma mb = case ma of
+  Nothing -> case mb of
+    Nothing -> True
+    Just _ -> False
+  Just a -> case mb of
+    Nothing -> False
+    Just b -> leqExact a b /\ leqExact b a
+
+meetCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+meetCommutative a b =
+  proper a ==> proper b ==>
+    eqMaybe (meet a b) (meet b a)
+
+meetPreciseCommutative : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+meetPreciseCommutative a b =
+  proper a ==> proper b ==>
+    eqMaybe (meetPrecise a b) (meetPrecise b a)
+
+meetIdempotent : {n} (fin n, n >= 2) => Domain n -> Property
+meetIdempotent a =
+  proper a ==>
+    case meet a a of
+      Just c -> leqExact c a /\ leqExact a c
+      Nothing -> False
+
+meetPreciseIdempotent : {n} (fin n, n >= 2) => Domain n -> Property
+meetPreciseIdempotent a =
+  proper a ==>
+    case meetPrecise a a of
+      Just c -> leqExact c a /\ leqExact a c
+      Nothing -> False
+
+bindMeet : {n} (fin n, n >= 2) => Domain n -> Maybe (Domain n) -> Maybe (Domain n)
+bindMeet a m = case m of
+  Nothing -> Nothing
+  Just b -> meet a b
+
+bindMeetPrecise : {n} (fin n, n >= 2) => Domain n -> Maybe (Domain n) -> Maybe (Domain n)
+bindMeetPrecise a m = case m of
+  Nothing -> Nothing
+  Just b -> meetPrecise a b
+
+meetAssociative : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+meetAssociative a b c =
+  proper a ==> proper b ==> proper c ==>
+    eqMaybe (bindMeet c (meet a b)) (bindMeet a (meet b c))
+
+meetPreciseAssociative : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+meetPreciseAssociative a b c =
+  proper a ==> proper b ==> proper c ==>
+    eqMaybe (bindMeetPrecise c (meetPrecise a b))
+            (bindMeetPrecise a (meetPrecise b c))
+
+meetPreciseRefinesMeet : {n} (fin n, n >= 2) => Domain n -> Domain n -> Property
+meetPreciseRefinesMeet a b =
+  proper a ==> proper b ==>
+    case meet a b of
+      Nothing -> case meetPrecise a b of
+        Nothing -> True
+        Just _ -> False
+      Just cM -> case meetPrecise a b of
+        Nothing -> True
+        Just cP -> leqExact cP cM
+
+leqMaybe : {n} (fin n, n >= 2) => Maybe (Domain n) -> Maybe (Domain n) -> Bit
+leqMaybe ma mb = case ma of
+  Nothing -> True
+  Just a -> case mb of
+    Nothing -> False
+    Just b -> leqExact a b
+
+meetMonotone : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+meetMonotone a b c =
+  proper a ==> proper b ==> proper c ==> leqExact a b ==>
+    leqMaybe (meet a c) (meet b c)
+
+meetPreciseMonotone : {n} (fin n, n >= 2) => Domain n -> Domain n -> Domain n -> Property
+meetPreciseMonotone a b c =
+  proper a ==> proper b ==> proper c ==> leqExact a b ==>
+    leqMaybe (meetPrecise a c) (meetPrecise b c)
+
+property p_correct_meet              = correct_meet`{4}
+property p_correct_meetPrecise       = correct_meetPrecise`{4}
+property p_meetCommutative           = meetCommutative`{4}
+property p_meetPreciseCommutative    = meetPreciseCommutative`{4}
+property p_meetIdempotent            = meetIdempotent`{4}
+property p_meetPreciseIdempotent     = meetPreciseIdempotent`{4}
+property p_meetAssociative           = meetAssociative`{4}
+property p_meetPreciseAssociative    = meetPreciseAssociative`{4}
+property p_meetPreciseRefinesMeet    = meetPreciseRefinesMeet`{4}
+property p_meetMonotone              = meetMonotone`{4}
+property p_meetPreciseMonotone       = meetPreciseMonotone`{4}
 
 // ------------------------------------------------------------------
 // * Precision (Strides at least as precise as Arith)

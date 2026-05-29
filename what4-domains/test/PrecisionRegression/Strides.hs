@@ -49,6 +49,8 @@ results =
   , binaryResult stridesEnum "ashr" (S.ashr w4) cAshr
   , binaryResult stridesEnum "rol"  (S.rol  w4) cRol
   , binaryResult stridesEnum "ror"  (S.ror  w4) cRor
+  , latticeMaybeResult stridesEnum "meet" (S.meet w4) cMeet
+  , latticeMaybeResult stridesEnum "meetPrecise" (S.meetPrecise w4) cMeet
   ]
 
 csvPath :: FilePath

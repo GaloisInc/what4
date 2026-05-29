@@ -170,6 +170,7 @@ library
     What4.Domains.BV.Arith
     What4.Domains.BV.Bitwise
     What4.Domains.BV.Strides
+    What4.Domains.BV.Strides.Internal
     What4.Domains.BV.StridedInterval
     What4.Domains.BV.XOR
     What4.Domains.Internal
@@ -192,6 +193,7 @@ test-suite bvdomain_tests
 
   other-modules:
     Strides
+    Strides.Internal
     Strides.Precision
     StridedInterval
     StridedInterval.Precision
@@ -206,6 +208,7 @@ test-suite bvdomain_tests_hh
 
   other-modules:
     Strides
+    Strides.Internal
     Strides.Precision
     StridedInterval
     StridedInterval.Precision

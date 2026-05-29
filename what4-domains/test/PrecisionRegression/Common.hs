@@ -31,6 +31,7 @@ module PrecisionRegression.Common
   , binaryResultFiltered
   , scaleResult
   , latticeResult
+  , latticeMaybeResult
   , leqResult
     -- * Concrete operations
   , cAdd, cSub, cMul, cAnd, cOr, cXor
@@ -187,6 +188,25 @@ latticeResult de name absOp concOp = Result name absTot concTot
     reps = deReps de
     toL  = deToList de
     absTot  = sum [ fromIntegral (length (toL (absOp a b)))
+                  | a <- reps, b <- reps ]
+    concTot = sum [ fromIntegral (Set.size (concOp (toL a) (toL b)))
+                  | a <- reps, b <- reps ]
+
+-- | Like 'latticeResult', but for lattice operations that return @Maybe a@ —
+-- e.g., a 'meet' on a domain without a native bottom, where 'Nothing'
+-- represents the empty intersection. 'Nothing' contributes 0 to the
+-- abstract cardinality.
+latticeMaybeResult ::
+  DomainEnum a ->
+  String ->
+  (a -> a -> Maybe a) ->
+  ([Natural] -> [Natural] -> Set.Set Natural) ->
+  Result
+latticeMaybeResult de name absOp concOp = Result name absTot concTot
+  where
+    reps = deReps de
+    toL  = deToList de
+    absTot  = sum [ fromIntegral (maybe 0 (length . toL) (absOp a b))
                   | a <- reps, b <- reps ]
     concTot = sum [ fromIntegral (Set.size (concOp (toL a) (toL b)))
                   | a <- reps, b <- reps ]
