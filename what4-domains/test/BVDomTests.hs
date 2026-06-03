@@ -166,6 +166,9 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "leq_reflexive" $
       do SW n <- genWidth
          A.leq_reflexive <$> A.genDomain n
+  , genTest "leq_transitive" $
+      do SW n <- genWidth
+         A.leq_transitive <$> A.genDomain n <*> A.genDomain n <*> A.genDomain n
   , genTest "join_upper_bound" $
       do SW n <- genWidth
          A.join_upper_bound <$> A.genDomain n <*> A.genDomain n
@@ -388,9 +391,33 @@ bitwiseDomainTests =
   , genTest "leq_reflexive" $
       do SW n <- genWidth
          B.leq_reflexive <$> B.genDomain n
+  , genTest "leq_transitive" $
+      do SW n <- genWidth
+         B.leq_transitive <$> B.genDomain n <*> B.genDomain n <*> B.genDomain n
+  , genTest "meet_lower_bound" $
+      do SW n <- genWidth
+         B.meet_lower_bound <$> B.genDomain n <*> B.genDomain n
   , genTest "join_upper_bound" $
       do SW n <- genWidth
          B.join_upper_bound <$> B.genDomain n <*> B.genDomain n
+  , genTest "join_monotone" $
+      do SW n <- genWidth
+         B.join_monotone <$> B.genDomain n <*> B.genDomain n <*> B.genDomain n
+  , genTest "meet_monotone" $
+      do SW n <- genWidth
+         B.meet_monotone <$> B.genDomain n <*> B.genDomain n <*> B.genDomain n
+  , genTest "join_associative" $
+      do SW n <- genWidth
+         B.join_associative <$> B.genDomain n <*> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "meet_associative" $
+      do SW n <- genWidth
+         B.meet_associative <$> B.genDomain n <*> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "join_absorb" $
+      do SW n <- genWidth
+         B.join_absorb <$> B.genDomain n <*> B.genDomain n <*> genBV n
+  , genTest "meet_absorb" $
+      do SW n <- genWidth
+         B.meet_absorb <$> B.genDomain n <*> B.genDomain n <*> genBV n
   , genTest "join_proper" $
       do SW n <- genWidth
          B.join_proper n <$> B.genDomain n <*> B.genDomain n

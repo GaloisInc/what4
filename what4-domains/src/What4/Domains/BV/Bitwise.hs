@@ -115,7 +115,15 @@ module What4.Domains.BV.Bitwise
   , meet_top
   , meet_bottom
   , leq_reflexive
+  , leq_transitive
+  , meet_lower_bound
   , join_upper_bound
+  , join_monotone
+  , meet_monotone
+  , join_associative
+  , meet_associative
+  , join_absorb
+  , meet_absorb
   , join_proper
   , meet_proper
   , correct_zero_ext
@@ -1190,8 +1198,39 @@ meet_bottom n a x =
 leq_reflexive :: Domain n -> Property
 leq_reflexive a = property (leq a a)
 
+leq_transitive :: Domain n -> Domain n -> Domain n -> Property
+leq_transitive a b c =
+  (leq a b && leq b c) ==> leq a c
+
+meet_lower_bound :: Domain n -> Domain n -> Property
+meet_lower_bound a b = property (leq (meet a b) a)
+
 join_upper_bound :: Domain n -> Domain n -> Property
 join_upper_bound a b = property (leq a (join a b))
+
+join_monotone :: Domain n -> Domain n -> Domain n -> Property
+join_monotone a b c =
+  leq a b ==> leq (join a c) (join b c)
+
+meet_monotone :: Domain n -> Domain n -> Domain n -> Property
+meet_monotone a b c =
+  leq a b ==> leq (meet a c) (meet b c)
+
+join_associative :: Domain n -> Domain n -> Domain n -> Integer -> Property
+join_associative a b c x =
+  property (member (join (join a b) c) x == member (join a (join b c)) x)
+
+meet_associative :: Domain n -> Domain n -> Domain n -> Integer -> Property
+meet_associative a b c x =
+  property (member (meet (meet a b) c) x == member (meet a (meet b c)) x)
+
+join_absorb :: Domain n -> Domain n -> Integer -> Property
+join_absorb a b x =
+  property (member (join a (meet a b)) x == member a x)
+
+meet_absorb :: Domain n -> Domain n -> Integer -> Property
+meet_absorb a b x =
+  property (member (meet a (join a b)) x == member a x)
 
 join_proper :: (1 <= n) => NatRepr n -> Domain n -> Domain n -> Property
 join_proper n a b = property (proper n (join a b))
