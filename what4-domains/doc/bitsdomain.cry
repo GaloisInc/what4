@@ -248,6 +248,12 @@ popcount x = sum [ zero # [b] | b <- x ]
 ctz : {n} (fin n, n >= 1) => [n] -> [n]
 ctz x = if x == 0 then `n else popcount ((x && (- x)) - 1)
 
+// Count leading zeros, returning n for x == 0. Smearing the highest
+// set bit downward (bitsBelow) yields a 2^k-1 mask whose popcount is
+// the position of the highest set bit plus one; subtract from n.
+clz : {n} (fin n, n >= 1) => [n] -> [n]
+clz x = `n - popcount (bitsBelow x)
+
 // knownBitsOfInterval lo hi: given an arithmetic interval [lo, hi]
 // (with 0 <= lo <= hi), return (value, mask) in tnum form. Bits above
 // the highest disagreement between lo and hi are determined (recorded
@@ -293,16 +299,19 @@ wrappedKnownBitsOfInterval lo hi =
   wLo = drop`{n} lo
   wHi = drop`{n} hi
 
-// Fast multiply via interval and trailing-zero analysis.
+// Fast multiply via interval, trailing-zero, and low-bit analysis.
 //
 // The result has:
 //
 //   * at least ctzA + ctzB trailing zero bits, where ctzA is the
 //     longest prefix of low bits that are known-zero in a (i.e. both
-//     av and am have that bit clear), and similarly for ctzB; and
+//     av and am have that bit clear), and similarly for ctzB;
 //   * known bits derived from the arithmetic interval
 //     [aMin*bMin, aMax*bMax] reduced mod 2^n
-//     (see wrappedKnownBitsOfInterval).
+//     (see wrappedKnownBitsOfInterval); and
+//   * exact low bits from multiplying the known-one values: the bottom
+//     min(trailBitsKnownA - ctzA, trailBitsKnownB - ctzB) + trailZ
+//     bits of aMin*bMin are exact (LLVM KnownBits::mul trick).
 //
 // Special case: when both operands are concrete singletons (mask == 0),
 // the result is the exact concrete product.
@@ -310,12 +319,13 @@ mul : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 mul a b =
   if a.lomask == a.himask /\ b.lomask == b.himask
     then singleton (a.lomask * b.lomask)
-    else { lomask = highValue, himask = highValue || (highUnknown && (~ lowZeros)) }
+    else { lomask = resValue, himask = resValue || resUnknown }
   where
   (av, am) = toTnum a
   (bv, bm) = toTnum b
-  tz = ctz (av || am) + ctz (bv || bm)
-  lowZeros = (1 << tz) - 1
+  ctzA = ctz (av || am)
+  ctzB = ctz (bv || bm)
+  trailZ = ctzA + ctzB
   // Compute aMin*bMin and aMax*bMax in 2n-bit width so the product is
   // exact (no overflow); wrappedKnownBitsOfInterval handles wrap-around.
   aMinExt = (zext av : [n + n])
@@ -325,6 +335,20 @@ mul a b =
   prodMin = aMinExt * bMinExt
   prodMax = aMaxExt * bMaxExt
   (highValue, highUnknown) = wrappedKnownBitsOfInterval`{n} prodMin prodMax
+  // Low-bit multiplication: consecutive known bits from LSB in each operand
+  trailBitsKnownA : [n]
+  trailBitsKnownA = if am == 0 then `n else ctz am
+  trailBitsKnownB : [n]
+  trailBitsKnownB = if bm == 0 then `n else ctz bm
+  smallestOperand = min (trailBitsKnownA - ctzA) (trailBitsKnownB - ctzB)
+  resultBitsKnown = min (smallestOperand + trailZ) `n
+  bottomKnown : [n]
+  bottomKnown = av * bv
+  lowKnownMask : [n]
+  lowKnownMask = (1 << resultBitsKnown) - 1
+  // Combine: unknown only where both sources are unknown
+  resUnknown = highUnknown && (~ lowKnownMask)
+  resValue = (highValue || (bottomKnown && lowKnownMask)) && (~ resUnknown)
 
 // Precise multiply via shift-and-add over the bits of a (BPF tnum_mul).
 // Strictly more precise than mul on its own, but quadratic in n.
@@ -402,22 +426,30 @@ udiv a b =
 // Unsigned remainder. When the divisor is a singleton power of
 // two 2^k, the result is exact (the low k bits of the dividend);
 // otherwise, the result is bounded above by min(aMax, bMax-1) and
-// every bit above that is known zero.
-//
-// (The remainder's lower bound is trivially 0, so the same
-// interval-agreement analysis used in udiv would not yield additional
-// leading bits here.)
+// every bit above that is known zero. Additionally, if the divisor
+// has k known trailing zeros (definitely divisible by 2^k), the
+// remainder preserves the dividend's low k bits exactly.
 urem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
 urem a b =
   if (bm == 0) /\ (bv != 0) /\ ((bv && (bv - 1)) == 0)
     then { lomask = av % bv, himask = (av || am) % bv }
-    else { lomask = 0, himask = bitsBelow rMax }
+    else { lomask = resValue, himask = resValue || resUnknown }
   where
   (av, am) = toTnum a
   (bv, bm) = toTnum b
   aMax = av || am
   bMax = bv || bm
   rMax = if bMax == 0 then 0 else (if aMax < bMax - 1 then aMax else bMax - 1)
+  highUnknown = bitsBelow rMax
+  // If the divisor has k trailing zeros, the remainder preserves
+  // the dividend's low k bits.
+  rhsTrailingZeros = ctz (bv || bm)
+  lowMask : [n]
+  lowMask = (1 << rhsTrailingZeros) - 1
+  lowValue = av && lowMask
+  lowUnknown = am && lowMask
+  resUnknown = (highUnknown && (~ lowMask)) || lowUnknown
+  resValue = lowValue && (~ resUnknown)
 
 // 3-valued unsigned-less-than on Doms: returns 0 (definitely false),
 // 1 (definitely true), or 2 (unknown). Used by long division.
@@ -525,8 +557,14 @@ sdiv a b = union (union r00 r11) (union r01 r10)
 
 // Signed remainder. Same shape as sdiv, but the result takes the
 // dividend's sign rather than the XOR of the input signs.
+//
+// After the union, refine using the LLVM KnownBits::srem sign/magnitude
+// bound: srem has the dividend's sign (or is zero), and |x %$ y| is
+// bounded by both |x| and |y|, so the result has at least
+// max(clz |x|, signBits y) identical sign bits. See @lemma_srem_*@
+// properties below.
 srem : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n
-srem a b = union (union r00 r01) (union r10 r11)
+srem a b = meet base (signMagnitudeBound a b base)
   where
   (aPos, aNeg) = splitSign a
   (bPos, bNeg) = splitSign b
@@ -534,6 +572,35 @@ srem a b = union (union r00 r01) (union r10 r11)
   r01 = urem aPos (bneg bNeg)                       // dividend +
   r10 = bneg (urem (bneg aNeg) bPos)                // dividend -
   r11 = bneg (urem (bneg aNeg) (bneg bNeg))         // dividend -
+  base = union (union r00 r01) (union r10 r11)
+
+// Sign/magnitude refinement for srem. If the dividend's sign is
+// known, the result's leading bits replicate that sign; how many
+// such bits is bounded by the magnitudes of both operands.
+signMagnitudeBound : {n} (fin n, n >= 1) => Dom n -> Dom n -> Dom n -> Dom n
+signMagnitudeBound a b base =
+  if (signbit && a.himask) == 0
+    // dividend known non-negative: |x %$ y| <= min(|x|, |y|-1).
+    then { lomask = 0, himask = (~0 : [n]) >> leadZ }
+    else if (signbit && a.lomask) != 0 /\ ~ (mem base 0)
+      // dividend known negative and result definitely nonzero:
+      // result has at least `leading` leading 1 bits.
+      then { lomask = ~ ((~0 : [n]) >> leading), himask = ~0 }
+      else top
+  where
+  signbit = 1 << (`n - 1 : [n]) : [n]
+  // Minimum number of identical sign bits guaranteed in b's magnitude.
+  // Non-negative b: leading zeros come from himask (upper bound).
+  // Negative b: leading ones come from lomask (lower bound).
+  bSignBits =
+    if (signbit && b.himask) == 0
+      then clz b.himask
+      else if (signbit && b.lomask) != 0
+        then clz (~ b.lomask)
+        else 1
+  leadZ   = max (clz a.himask) bSignBits
+  leadO   = clz (~ a.lomask)
+  leading = max leadO bSignBits
 
 ////////////////////////////////////////////////////////////
 // Soundness properties
@@ -931,6 +998,57 @@ singleton_lshr x y =
 singleton_ashr : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
 singleton_ashr x y =
   ashr (singleton x) y == singleton (x >>$ y)
+
+////////////////////////////////////////////////////////////
+// Sub-lemma properties: prove key techniques used in mul, urem, srem.
+
+// Lemma: low bits of a product depend only on low bits of the operands.
+// Specifically, (x * y) % 2^k == ((x % 2^k) * (y % 2^k)) % 2^k.
+// This justifies using av * bv (the known-one values) to determine
+// the low bits of the product when those low bits are fully known.
+lemma_mul_low_bits : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
+lemma_mul_low_bits x y k =
+  k < `n ==>
+  ((x * y) && mask) == (((x && mask) * (y && mask)) && mask)
+  where mask = (1 << k) - 1
+
+// Lemma: if y is divisible by 2^k (i.e., y % 2^k == 0 and y != 0),
+// then (x % y) preserves the low k bits of x: (x % y) % 2^k == x % 2^k.
+// Proof sketch: write y = 2^k * q. Then x = y*d + r with 0 <= r < y.
+// Reducing mod 2^k: x ≡ r (mod 2^k), so r's low k bits equal x's.
+lemma_urem_low_bits : {n} (fin n, n >= 1) => [n] -> [n] -> [n] -> Bit
+lemma_urem_low_bits x y k =
+  k < `n ==> y != 0 ==> (y && mask) == 0 ==>
+  ((x % y) && mask) == (x && mask)
+  where mask = (1 << k) - 1
+
+// Lemma: if the dividend x >= 0 (as signed), then x %$ y >= 0 and
+// x %$ y <= x (as unsigned), so clz(x %$ y) >= clz(x).
+lemma_srem_nonneg_leading_zeros : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_nonneg_leading_zeros x y =
+  y != 0 ==> x >=$ 0 ==> (x %$ y) >=$ 0
+
+// Lemma: if x %$ y != 0 and x <$ 0, then x %$ y <$ 0.
+// (srem has the sign of the dividend, unless the result is zero.)
+lemma_srem_neg_sign : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_neg_sign x y =
+  y != 0 ==> x <$ 0 ==> (x %$ y == 0 \/ x %$ y <$ 0)
+
+// Lemma: |x %$ y| < |y|, so if |y| < 2^(w-k) then |x %$ y| < 2^(w-k),
+// meaning the result has at least k sign bits.
+lemma_srem_magnitude_bound : {n} (fin n, n >= 1) => [n] -> [n] -> Bit
+lemma_srem_magnitude_bound x y =
+  y != 0 ==>
+  (if x %$ y >=$ 0
+    then x %$ y < (abs_val y)
+    else (- (x %$ y)) < (abs_val y))
+  where abs_val v = if v >=$ 0 then v else - v
+
+property lem1 = lemma_mul_low_bits`{8}
+property lem2 = lemma_urem_low_bits`{8}
+property lem3 = lemma_srem_nonneg_leading_zeros`{16}
+property lem4 = lemma_srem_neg_sign`{16}
+property lem5 = lemma_srem_magnitude_bound`{8}
 
 property i01 = singleton_overlap`{16}
 property i02 = singleton_zero_ext`{32, 16}

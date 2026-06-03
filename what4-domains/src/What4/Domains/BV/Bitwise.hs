@@ -995,13 +995,48 @@ sdiv w = signedOp w udiv flipDiff
 -- nonzero.
 --
 -- Implemented like 'sdiv', except the result takes the sign of the dividend
--- rather than the XOR of the input signs.
+-- rather than the XOR of the input signs. Additionally, leading bits of the
+-- result are refined using magnitude bounds: if the dividend is non-negative,
+-- the result has leading zeros from both the dividend and divisor magnitude;
+-- if negative and nonzero, it has leading ones similarly.
 srem :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
-srem w = signedOp w urem flipByDividend
+srem w a b = meet base signMagnitudeBound
   where
-  -- For srem, the result has the sign of the dividend.
+  base = signedOp w urem flipByDividend a b
   flipByDividend SNeg _ d = negate d
   flipByDividend SNonneg _ d = d
+  -- Sign/magnitude refinement (LLVM KnownBits::srem approach):
+  -- (1) srem has the sign of the dividend (or is zero):
+  --     x >= 0  ==>  x %$ y >= 0           (lemma_srem_nonneg_leading_zeros)
+  --     x <  0  ==>  x %$ y <= 0           (lemma_srem_neg_sign)
+  -- (2) |x %$ y| < |y|, so if |y| < 2^(w-k) then the result has at least
+  --     k sign bits (lemma_srem_magnitude_bound). Similarly |x %$ y| <= |x|
+  --     bounds the result by the dividend's magnitude.
+  -- We take the max of both bounds to get the tightest leading-bit constraint.
+  -- See @lemma_srem_*@ properties in bitsdomain.cry.
+  mask = maxUnsigned w
+  (alo, ahi) = bitbounds a
+  (blo, bhi) = bitbounds b
+  clzOf x = fromInteger (Arith.clz w x)
+  -- countMinSignBits: minimum number of identical sign bits guaranteed in b.
+  -- Non-negative: leading zeros come from hi (upper bound on set bits).
+  -- Negative: leading ones come from lo (lower bound on set bits).
+  bSignBits = case signOf w b of
+    Just SNonneg -> clzOf bhi
+    Just SNeg    -> clzOf (mask `Bits.xor` blo)
+    Nothing      -> 1
+  signMagnitudeBound = case signOf w a of
+    Just SNonneg ->
+      let leadZ = max (clzOf ahi) bSignBits
+          hi' = mask `shiftR` leadZ
+      in BVBitInterval mask 0 hi'
+    Just SNeg
+      | Prelude.not (member base 0) ->
+          let leadO = clzOf (mask `Bits.xor` alo)
+              leading = max leadO bSignBits
+              lo' = complement (mask `shiftR` leading) .&. mask
+          in BVBitInterval mask lo' mask
+    _ -> BVBitInterval mask 0 mask
 
 -- | Helper for signed div/rem: split each operand on its sign bit,
 --   call the unsigned operation on the absolute values, fix up the
