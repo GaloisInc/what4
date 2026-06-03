@@ -491,6 +491,10 @@ meet_bottom a x =
 leq_reflexive : {n} (fin n) => Dom n -> Property
 leq_reflexive a = leq a a
 
+leq_transitive : {n} (fin n) => Dom n -> Dom n -> Dom n -> Property
+leq_transitive a b c =
+  (leq a b /\ leq b c) ==> leq a c
+
 join_upper_bound : {n} (fin n) => Dom n -> Dom n -> Property
 join_upper_bound a b = leq a (join a b)
 
@@ -659,6 +663,7 @@ property lat10 = meet_top`{8}
 property lat11 = meet_bottom`{8}
 property lat12 = leq_reflexive`{8}
 property lat13 = join_upper_bound`{8}
+property lat14 = leq_transitive`{8}
 
 ////////////////////////////////////////////////////////////
 // Operations preserve singletons

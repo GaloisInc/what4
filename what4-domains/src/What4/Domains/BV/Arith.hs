@@ -101,6 +101,7 @@ module What4.Domains.BV.Arith
   , meet_top
   , meet_bottom
   , leq_reflexive
+  , leq_transitive
   , join_upper_bound
   , join_proper
   , meet_proper
@@ -1011,6 +1012,10 @@ meet_bottom n a x =
 
 leq_reflexive :: Domain n -> Property
 leq_reflexive a = property (leq a a)
+
+leq_transitive :: Domain n -> Domain n -> Domain n -> Property
+leq_transitive a b c =
+  (leq a b && leq b c) ==> leq a c
 
 join_upper_bound :: (1 <= n) => Domain n -> Domain n -> Property
 join_upper_bound a b = property (leq a (join a b))
