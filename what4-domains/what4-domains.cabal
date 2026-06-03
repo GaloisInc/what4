@@ -182,6 +182,7 @@ library
 test-suite bvdomain_tests
   import: bldflags, testdefs-quickcheck
   type: exitcode-stdio-1.0
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
 
   main-is: BVDomTests.hs
 
@@ -191,6 +192,7 @@ test-suite bvdomain_tests
 test-suite bvdomain_tests_hh
   import: bldflags, testdefs-hedgehog
   type: exitcode-stdio-1.0
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
 
   main-is: BVDomTests.hs
 
@@ -200,6 +202,7 @@ test-suite bvdomain_tests_hh
 test-suite bvdomain_coverage
   import: bldflags
   type: exitcode-stdio-1.0
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
   hs-source-dirs: test
   main-is: TestCoverage.hs
   build-depends: base >= 4.10 && < 5
@@ -207,4 +210,23 @@ test-suite bvdomain_coverage
                , tasty >= 0.10
                , tasty-hunit >= 0.9
                , text
+
+
+test-suite precision_regression
+  import: bldflags
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: PrecisionRegression.hs
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
+  other-modules:
+    PrecisionRegression.Common
+    PrecisionRegression.Arith
+    PrecisionRegression.Bitwise
+  build-depends: base >= 4.10 && < 5
+               , containers
+               , parameterized-utils
+               , tasty >= 1.2
+               , tasty-hunit >= 0.9
+               , text
+               , what4-domains
 
