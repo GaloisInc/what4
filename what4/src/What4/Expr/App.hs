@@ -121,6 +121,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (finToNat, mkFin)
 import qualified Data.Parameterized.HashTable as PH
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Nonce
@@ -1268,6 +1269,7 @@ exprAbsValue (SemiRingLiteral sr x _) =
     SR.SemiRingIntegerRepr  -> singleRange x
     SR.SemiRingRealRepr -> ravSingle x
     SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
+    SR.SemiRingFFRepr{} -> () -- TODO
 
 exprAbsValue (StringExpr l _) = stringAbsSingle l
 exprAbsValue (FloatExpr _ _ _) = ()
@@ -1382,6 +1384,8 @@ instance Hashable (Expr t tp) where
       SR.SemiRingIntegerRepr -> hashWithSalt (hashWithSalt s (2::Int)) x
       SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
       SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
+      SR.SemiRingFFRepr{} -> error "TODO RGS: Add this Hashable instance to parameterized-utils, or just unwrap the Fin"
+      -- SR.SemiRingFFRepr p    -> hashWithSalt (hashWithSalt s (10::Int)) x -- TODO RGS: Eek, out of order!
 
   hashWithSalt s (FloatExpr fr x _) = hashWithSalt (hashWithSaltF (hashWithSalt s (5::Int)) fr) x
   hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (6::Int)) x
@@ -1714,6 +1718,8 @@ ppExpr' e0 o = do
                        | otherwise   = prettyApp "divReal"  [ showPrettyArg n, showPrettyArg d ]
           SR.SemiRingBVRepr _ w ->
             return $ stringPPExpr $ BV.ppHex w x
+          SR.SemiRingFFRepr p ->
+            return $ stringPPExpr $ show $ finToNat x
 
       getBindings (StringExpr x _) =
         return $ stringPPExpr $ (show x)
@@ -2189,6 +2195,8 @@ reduceApp sym unary a0 = do
           WSum.evalM (bvAdd sym) (\c x -> bvMul sym x =<< bvLit sym w c) (bvLit sym w) s
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           WSum.evalM (bvXorBits sym) (\c x -> bvAndBits sym x =<< bvLit sym w c) (bvLit sym w) s
+        SR.SemiRingFFRepr p ->
+          WSum.evalM (ffAdd sym) (\c x -> ffMul sym x =<< ffLit sym p c) (ffLit sym p) s
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -2200,6 +2208,8 @@ reduceApp sym unary a0 = do
           maybe (bvOne sym w) return =<< WSum.prodEvalM (bvMul sym) return pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           maybe (bvLit sym w (BV.maxUnsigned w)) return =<< WSum.prodEvalM (bvAndBits sym) return pd
+        SR.SemiRingFFRepr p ->
+          maybe (ffOne sym p) return =<< WSum.prodEvalM (ffMul sym) return pd
 
     SemiRingLe SR.OrderedSemiRingRealRepr x y -> realLe sym x y
     SemiRingLe SR.OrderedSemiRingIntegerRepr x y -> intLe sym x y
@@ -2353,6 +2363,7 @@ ppVarTypeCode tp =
     BaseComplexRepr -> "c"
     BaseArrayRepr _ _ -> "a"
     BaseStructRepr _ -> "struct"
+    BaseFFRepr{} -> "ff"
 
 -- | Either a argument or text or text
 data PrettyArg (e :: BaseType -> Type) where
@@ -2478,6 +2489,15 @@ ppApp' a0 = do
                   | otherwise = [ PrettyFunc "bvAnd" [ stringPrettyArg (ppBV sm), exprPrettyArg e ] ]
                 ppBV = BV.ppHex w
 
+        SR.SemiRingFFRepr _p -> prettyApp "ffSum" (WSum.eval (++) ppEntry ppConstant s)
+          where ppConstant c
+                  | finToNat c == 0 = []
+                  | otherwise = [ stringPrettyArg (ppFF c) ]
+                ppEntry sm e
+                  | sm == mkFin (knownNat @1) = [ exprPrettyArg e ]
+                  | otherwise = [ PrettyFunc "ffMul" [ stringPrettyArg (ppFF sm), exprPrettyArg e ] ]
+                ppFF = show . finToNat
+
     SemiRingProd pd ->
       case WSum.prodRepr pd of
         SR.SemiRingRealRepr ->
@@ -2488,6 +2508,8 @@ ppApp' a0 = do
           prettyApp "bvProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
         SR.SemiRingBVRepr SR.BVBitsRepr _w ->
           prettyApp "bvAnd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
+        SR.SemiRingFFRepr _p ->
+          prettyApp "ffProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
 
 
     RealDiv x y -> ppSExpr "divReal" [x, y]

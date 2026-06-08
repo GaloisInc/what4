@@ -66,6 +66,7 @@ module What4.Protocol.SMTLib2.Syntax
   , Sort(..)
   , boolSort
   , bvSort
+  , ffSort
   , intSort
   , realSort
   , varSort
@@ -148,10 +149,13 @@ module What4.Protocol.SMTLib2.Syntax
   , arrayConst
   , select
   , store
+    -- * Finite field theory
+  , ffConst
   ) where
 
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (intToDigit)
+import           Data.Parameterized.Fin (Fin, finToNat)
 import           Data.Parameterized.NatRepr
 import           Data.String
 import           Data.Text (Text, cons)
@@ -237,6 +241,12 @@ realSort = Sort "Real"
 -- | @arraySort a b@ denotes the set of functions from @a@ to be @b@.
 arraySort :: Sort -> Sort -> Sort
 arraySort (Sort i) (Sort v) = Sort $ "(Array " <> i <> " " <> v <> ")"
+
+-- | Finite fields with the given order.
+--
+-- Precondition: the order must be prime. (TODO RGS: Should we check for that here?)
+ffSort :: Natural -> Sort
+ffSort p = Sort $ "(_ FiniteField " <> fromString (show p) <> ")"
 
 ------------------------------------------------------------------------
 -- Term
@@ -513,6 +523,19 @@ select = bin_app "select"
 -- @select a j@ at every other index @j@.
 store :: Term -> Term -> Term -> Term
 store a i v = term_app "store" [a,i,v]
+
+------------------------------------------------------------------------
+-- Finite field theory
+
+-- | @ffConst p n@ generates a finite field element @n@ mod @p@, where @p@ must
+-- be prime.
+ffConst :: 2 <= p => NatRepr p -> Fin p -> Term
+ffConst p n = T $ mconcat [ "(as ff"
+                          , Builder.decimal (toInteger (finToNat n))
+                          , "(_ FiniteField "
+                          , Builder.decimal (intValue p)
+                          , "))"
+                          ]
 
 ------------------------------------------------------------------------
 -- Bitvector theory

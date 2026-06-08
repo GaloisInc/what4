@@ -44,6 +44,7 @@ import qualified Data.Set as Set
 import           Data.Map.Ordered (OMap)
 import qualified Data.Map.Ordered as OMap
 import qualified Data.BitVector.Sized as BV
+import           Data.Parameterized.Fin (finToNat)
 import           Data.Parameterized.Some
 import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Parameterized.NatRepr as NR
@@ -75,6 +76,7 @@ import qualified What4.Utils.StringLiteral as W4S
 import           What4.Serialize.SETokens ( Atom(..), printSExpr
                                           , ident, int, nat, string
                                           , bitvec, bool, real, float
+                                          , finitefield
                                           )
 
 type SExpr = S.WellFormedSExpr Atom
@@ -370,6 +372,7 @@ freshName tp = do
                  W4.BaseBVRepr{} -> "bv"
                  W4.BaseStructRepr{} -> "struct"
                  W4.BaseArrayRepr{} -> "arr"
+                 W4.BaseFFRepr{} -> "ff"
   return $ T.pack $ prefix++(show $ idCount)
 
 freshFnName :: W4.ExprSymFn t args ret -> Memo t Text
@@ -419,6 +422,7 @@ convertExpr initialExpr = do
         go (W4.SemiRingLiteral W4.SemiRingIntegerRepr val _) = return $ int val -- do we need/want these?
         go (W4.SemiRingLiteral W4.SemiRingRealRepr val _) = return $ real val
         go (W4.SemiRingLiteral (W4.SemiRingBVRepr _ sz) val _) = return $ bitvec (natValue sz) (BV.asUnsigned val)
+        go (W4.SemiRingLiteral (W4.SemiRingFFRepr p) val _) = return $ finitefield (natValue p) (toInteger (finToNat val))
         go (W4.StringExpr str _) =
           case (W4.stringLiteralInfo str) of
             W4.UnicodeRepr -> return $ string (Some W4.UnicodeRepr) (W4S.fromUnicodeLit str)
@@ -531,6 +535,13 @@ convertAppExpr' = go . W4.appExprApp
                   sval v = return $ int v
                   add x y = return $ S.L [ ident "intadd", x, y ]
               in WSum.evalM add smul sval sm
+            W4.SemiRingFFRepr p ->
+              let smul mul e = do
+                    s <- goE e
+                    return $ S.L [ ident "ffmul", finitefield (natValue p) (toInteger (finToNat mul)), s]
+                  sval v = return $ finitefield (natValue p) (toInteger (finToNat v))
+                  add x y = return $ S.L [ ident "ffadd", x, y ]
+              in WSum.evalM add smul sval sm
             W4.SemiRingRealRepr    -> error "SemiRingSum RealRepr not supported"
 
         go (W4.SemiRingProd pd) =
@@ -553,6 +564,12 @@ convertAppExpr' = go . W4.appExprApp
               case maybeS of
                 Just s -> return s
                 Nothing -> return $ int 1
+            W4.SemiRingFFRepr p -> do
+              let pmul x y = return $ S.L [ ident "ffmul", x, y ]
+              maybeS <- WSum.prodEvalM pmul goE pd
+              case maybeS of
+                Just s -> return s
+                Nothing -> return $ finitefield (natValue p) 1
             W4.SemiRingRealRepr    -> error "convertApp W4.SemiRingProd Real unsupported"
 
         go (W4.SemiRingLe sr e1 e2) = do
@@ -762,6 +779,7 @@ convertBaseType tp = case tp of
   W4.BaseArrayRepr ixs repr -> S.L [S.A (AId "Array"), S.L $ convertBaseTypes ixs , convertBaseType repr]
   W4.BaseFloatRepr (W4.FloatingPointPrecisionRepr eRepr sRepr) ->
     S.L [ S.A (AId "Float"), S.A (AInt (NR.intValue eRepr)), S.A (AInt (NR.intValue sRepr)) ]
+  W4.BaseFFRepr pRepr -> S.L [S.A (AId "FF"), S.A (AInt (NR.intValue pRepr)) ]
 
 
 

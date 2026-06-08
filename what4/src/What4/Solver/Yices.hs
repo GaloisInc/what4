@@ -83,6 +83,7 @@ import           Data.IORef
 import           Data.Foldable (toList)
 import           Data.Maybe
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin)
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Some
 import           Data.Parameterized.TraversableFC
@@ -329,6 +330,11 @@ instance SupportTermOps YicesTerm where
   floatToSBV      _ _ _ = floatFail
   floatToReal     _ = floatFail
 
+  ffTerm = error "TODO RGS"
+  ffAdd = error "TODO RGS"
+  ffMul = error "TODO RGS"
+  ffNeg = error "TODO RGS"
+
   fromText t = T (Builder.fromText t)
 
 unsupportedFeature :: String -> a
@@ -378,6 +384,7 @@ yicesType ComplexToArrayTypeMap  = fnType [boolType] realType
 yicesType (PrimArrayTypeMap i r) = fnType (toListFC yicesType i) (yicesType r)
 yicesType (FnArrayTypeMap i r)   = fnType (toListFC yicesType i) (yicesType r)
 yicesType (StructTypeMap f)      = tupleType (toListFC yicesType f)
+yicesType (FFTypeMap p) = YicesType (app "finitefield" [fromString (show p)])
 
 ------------------------------------------------------------------------
 -- Command
@@ -573,6 +580,7 @@ instance SMTReadWriter Connection where
                      , smtEvalFloat   = \_ _ -> fail "Yices does not support floats."
                      , smtEvalBvArray = Nothing
                      , smtEvalString  = \_ -> fail "Yices does not support strings."
+                     , smtEvalFF      = \p -> yicesEvalFF p conn resp
                      }
 
   smtSatResult _ = getSatResponse
@@ -905,6 +913,10 @@ yicesEvalBV w conn resp tm =
              ]
        Right b -> pure (BV.mkBV w b)
 
+-- | Send eval command and get result back.
+yicesEvalFF :: NatRepr p -> Eval s (Fin p)
+yicesEvalFF = error "TODO RGS"
+
 readBit :: MonadFail m => Int -> String -> m Integer
 readBit w0 = go 0 0
   where go n v "" = do
@@ -918,6 +930,8 @@ readBit w0 = go 0 0
 
 ------------------------------------------------------------------
 -- SolverAdapter interface
+
+-- TODO: useFiniteFields should be added to one or both of these lists of features
 
 yicesSMT2Features :: ProblemFeatures
 yicesSMT2Features

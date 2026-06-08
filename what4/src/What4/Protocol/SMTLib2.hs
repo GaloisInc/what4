@@ -118,6 +118,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Monoid
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin)
 import           Data.Parameterized.Map (MapF)
 import qualified Data.Parameterized.Map as MapF
 import           Data.Parameterized.NatRepr
@@ -460,6 +461,7 @@ asSMT2Type (FnArrayTypeMap _ _) =
   error "SMTLIB backend does not support function types as first class."
 asSMT2Type (StructTypeMap f) =
   smtlib2StructSort @a (toListFC (asSMT2Type @a) f)
+asSMT2Type (FFTypeMap p) = SMT2.ffSort (natValue p)
 
 -- Default instance.
 instance SMTLib2Tweaks () where
@@ -637,6 +639,15 @@ instance SupportTermOps Term where
   realTanh = un_app "tanh"
   realExp = un_app "exp"
   realLog = un_app "log"
+
+  ffTerm p n = case testLeq (knownNat @2) p of
+    Just LeqProof -> SMT2.ffConst p n
+    Nothing -> error "Cannot construct finite field term with order less than 2"
+
+  ffAdd = bin_app "ff.add"
+  ffMul = bin_app "ff.mul"
+  -- TODO RGS: Make this overridable
+  ffNeg = un_app "ff.neg"
 
   smtFnApp nm args = term_app (SMT2.renderTerm nm) args
 
@@ -923,6 +934,10 @@ parseBvArraySolverValue w v (SApp ["store", arr, idx, val]) = do
       return . Just $ ArrayConcrete base (Map.insert (Ctx.empty Ctx.:> idx') val' m)
     _ -> return Nothing
 parseBvArraySolverValue _ _ _ = return Nothing
+
+-- | Parse a finite field value returned by a solver.
+parseFfSolverValue :: MonadFail m => NatRepr p -> SExp -> m (Fin p)
+parseFfSolverValue = error "TODO RGS"
 
 parseFnModel ::
   sym ~ B.ExprBuilder t st fs  =>
@@ -1432,6 +1447,7 @@ smtLibEvalFuns s = SMTEvalFunctions
                   , smtEvalFloat = evalFloat
                   , smtEvalBvArray = Just (SMTEvalBVArrayWrapper evalBvArray)
                   , smtEvalString = evalStr
+                  , smtEvalFF = evalFF
                   }
   where
   evalBool tm = parseBoolSolverValue =<< runGetValue s tm
@@ -1446,6 +1462,9 @@ smtLibEvalFuns s = SMTEvalFunctions
 
   evalBvArray :: SMTEvalBVArrayFn (Writer a) w v
   evalBvArray w v tm = parseBvArraySolverValue w v =<< runGetValue s tm
+
+  evalFF :: NatRepr p -> Term -> IO (Fin p)
+  evalFF w tm = parseFfSolverValue w =<< runGetValue s tm
 
 
 class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where

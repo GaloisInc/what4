@@ -130,6 +130,7 @@ import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Maybe
 import           Data.Parameterized.Classes (ShowF(..))
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin, finToNat, minFin, mkFin)
 import qualified Data.Parameterized.HashTable as PH
 import           Data.Parameterized.Nonce (Nonce)
 import           Data.Parameterized.Some
@@ -212,6 +213,11 @@ data TypeMap (tp::BaseType) where
   StructTypeMap :: !(Ctx.Assignment TypeMap idx)
                 -> TypeMap (BaseStructType idx)
 
+  -- | A finite field element encoded as a @(_ FiniteField p)@ value.
+  --
+  -- Invariant: @p@ must be prime.
+  FFTypeMap :: (2 <= p) => !(NatRepr p) -> TypeMap (BaseFFType p)
+
 
 instance ShowF TypeMap
 
@@ -227,6 +233,7 @@ instance Show (TypeMap a) where
   show (PrimArrayTypeMap ctx a) = "PrimArrayTypeMap " ++ showF ctx ++ " " ++ showF a
   show (FnArrayTypeMap ctx a)   = "FnArrayTypeMap " ++ showF ctx ++ " " ++ showF a
   show (StructTypeMap ctx)      = "StructTypeMap " ++ showF ctx
+  show (FFTypeMap p)            = "FFTypeMap " ++ show p
 
 
 instance Eq (TypeMap tp) where
@@ -258,12 +265,16 @@ instance TestEquality TypeMap where
   testEquality (StructTypeMap x) (StructTypeMap y) = do
     Refl <- testEquality x y
     Just Refl
+  testEquality (FFTypeMap x) (FFTypeMap y) = do
+    Refl <- testEquality x y
+    return Refl
   testEquality _ _ = Nothing
 
 semiRingTypeMap :: SR.SemiRingRepr sr -> TypeMap (SR.SemiRingBase sr)
 semiRingTypeMap SR.SemiRingIntegerRepr     = IntegerTypeMap
 semiRingTypeMap SR.SemiRingRealRepr        = RealTypeMap
 semiRingTypeMap (SR.SemiRingBVRepr _flv w) = BVTypeMap w
+semiRingTypeMap (SR.SemiRingFFRepr p)      = FFTypeMap p
 
 type ArrayConstantFn v
    = [Some TypeMap]
@@ -450,6 +461,16 @@ class Num v => SupportTermOps v where
 
   realExp  :: v -> v
   realLog  :: v -> v
+
+  ffTerm :: NatRepr p -> Fin p -> v
+  ffAdd :: v -> v -> v
+  ffMul :: v -> v -> v
+  ffNeg :: v -> v
+
+  ffSumExpr :: forall p. (2 <= p) => NatRepr p -> [v] -> v
+  ffSumExpr p [] | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+                 = ffTerm p minFin
+  ffSumExpr _ (h:r) = foldl ffAdd h r
 
   -- | Apply the arguments to the given function.
   smtFnApp :: v -> [v] -> v
@@ -1195,6 +1216,7 @@ declareTypes conn = \case
   StructTypeMap flds ->
     do traverseFC_ (declareTypes conn) flds
        declareStructDatatype conn flds
+  FFTypeMap{} -> return ()
 
 
 data DefineStyle
@@ -1323,6 +1345,7 @@ typeMapFirstClass conn tp0 = do
               <*> typeMapFirstClass conn eltTp
     BaseStructRepr flds ->
       StructTypeMap <$> traverseFC (typeMapFirstClass conn) flds
+    BaseFFRepr p -> Right $! FFTypeMap p
 
 getBaseSMT_Type :: ExprBoundVar t tp -> SMTCollector t h (TypeMap tp)
 getBaseSMT_Type v = do
@@ -1484,6 +1507,9 @@ addPartialSideCond conn t (StructTypeMap ctx) (Just abvs) =
                  (ctx Ctx.! i)
                  (Just (unwrapAV (abvs Ctx.! i))))
         (return ())
+
+-- TODO
+addPartialSideCond _ _ (FFTypeMap{}) (Just ()) = return ()
 
 addPartialSideCond _ _t (PrimArrayTypeMap _idxTp _resTp) (Just _abv) =
   fail "SMTWriter.addPartialSideCond: bounds on array values not supported"
@@ -1718,6 +1744,7 @@ checkVarTypeSupport var = do
     BaseStringRepr _ -> checkStringSupport t
     BaseFloatRepr _  -> checkFloatSupport t
     BaseBVRepr _     -> checkBitvectorSupport t
+    BaseFFRepr{}     -> checkFiniteFieldSupport t
     _ -> return ()
 
 theoryUnsupported :: MonadFail m => WriterConn t h -> String -> Expr t tp -> m a
@@ -1769,6 +1796,12 @@ checkComputableSupport t = do
   conn <- asks scConn
   unless (supportedFeatures conn `hasProblemFeature` useComputableReals) $ do
     theoryUnsupported conn "computable arithmetic" t
+
+checkFiniteFieldSupport :: Expr t tp -> SMTCollector t h ()
+checkFiniteFieldSupport t = do
+  conn <- asks scConn
+  unless (supportedFeatures conn `hasProblemFeature` useFiniteFields) $ do
+    theoryUnsupported conn "finite field" t
 
 checkQuantifierSupport :: String -> Expr t p -> SMTCollector t h ()
 checkQuantifierSupport nm t = do
@@ -1929,6 +1962,9 @@ mkExpr t@(SemiRingLiteral SR.SemiRingRealRepr r _) = do
 mkExpr t@(SemiRingLiteral (SR.SemiRingBVRepr _flv w) x _) = do
   checkBitvectorSupport t
   return $ SMTExpr (BVTypeMap w) $ bvTerm w x
+mkExpr t@(SemiRingLiteral (SR.SemiRingFFRepr p) x _) = do
+  checkFiniteFieldSupport t
+  return $ SMTExpr (FFTypeMap p) $ ffTerm p x
 mkExpr t@(FloatExpr fpp f _) = do
   checkFloatSupport t
   return $ SMTExpr (FloatTypeMap fpp) $ floatTerm fpp f
@@ -2288,6 +2324,19 @@ appSMTExpr ae = do
               xorsum xs = foldr1 bvXor xs
            in
            freshBoundTerm (BVTypeMap w) . xorsum
+             =<< WSum.evalM add smul (pure . cnst) s
+
+        SR.SemiRingFFRepr p ->
+          let smul c e
+                | c == mkFin (knownNat @1) = (:[]) <$> mkBaseExpr e
+                | finToNat c == (natValue p - 1) = (:[]) . ffNeg <$> mkBaseExpr e
+                | otherwise = (:[]) <$> (ffMul (ffTerm p c)) <$> mkBaseExpr e
+              cnst x
+                | finToNat x == 0 = []
+                | otherwise = [ffTerm p x]
+              add x y = pure (y ++ x) -- reversed for efficiency when grouped to the left
+           in
+           freshBoundTerm (FFTypeMap p) . ffSumExpr p
              =<< WSum.evalM add smul (pure . cnst) s
 
     RealDiv xe ye -> do
@@ -3145,6 +3194,10 @@ data SMTEvalFunctions h
                       , smtEvalString :: Term h -> IO Text
                         -- ^ Given a SMT term representing as sequence of bytes,
                         -- return the value as a bytestring.
+                      , smtEvalFF :: forall p . NatRepr p -> Term h -> IO (Fin p)
+                        -- ^ Given a finite field order, and a SMT term for a
+                        -- element of that field, this should return a 'Fin'
+                        -- with the value of that element.
                       }
 
 -- | Used when we need two way communication with the solver.
@@ -3231,6 +3284,7 @@ getSolverVal conn smtFns (StructTypeMap flds0) tm =
                 -> IO (GroundValueWrapper utp)
               f flds i tp = GVW <$> getSolverVal conn smtFns tp v
                 where v = structProj @h flds i tm
+getSolverVal _ smtFns (FFTypeMap p) tm = smtEvalFF smtFns p tm
 
 -- | The function creates a function for evaluating elts to concrete values
 -- given a connection to an SMT solver along with some functions for evaluating

@@ -216,6 +216,7 @@ eval _ (SemiRingLiteral SemiRingRealRepr r _) = return (GroundRat r)
 eval ntk (SemiRingLiteral (SemiRingBVRepr _ w) bv _) =
     return $ BV w $ AIG.bvFromInteger (gia ntk) (widthVal w) (BV.asUnsigned bv)
 eval _ (StringExpr s _) = return (GroundString s)
+eval _ e@(SemiRingLiteral SemiRingFFRepr{} _ _) = failTerm e "finite field expression"
 eval _ e@FloatExpr{} = failTerm e "floating-point expression"
 
 eval ntk (NonceAppExpr e) = do
@@ -289,6 +290,8 @@ bitblastExpr h ae = do
       floatFail = failTerm (AppExpr ae) "floating-point expression"
   let stringFail :: IO a
       stringFail = failTerm (AppExpr ae) "string expression"
+  let ffFail :: IO a
+      ffFail = failTerm (AppExpr ae) "finite field expression"
 
   case appExprApp ae of
 
@@ -327,6 +330,7 @@ bitblastExpr h ae = do
         BaseArrayRepr _ _ -> arrayFail
         BaseStructRepr _ -> structFail
         BaseStringRepr _ -> stringFail
+        BaseFFRepr{} -> ffFail
 
     BaseEq bt x y ->
       case bt of
@@ -339,6 +343,7 @@ bitblastExpr h ae = do
         BaseArrayRepr _ _ -> arrayFail
         BaseStructRepr _ -> structFail
         BaseStringRepr _ -> stringFail
+        BaseFFRepr{} -> ffFail
 
     BVTestBit i xe -> assert (i <= fromIntegral (maxBound :: Int)) $
        (\v -> B $ v AIG.! (fromIntegral i)) <$> eval' h xe
@@ -392,6 +397,7 @@ bitblastExpr h ae = do
 
         SemiRingIntegerRepr -> intFail
         SemiRingRealRepr -> realFail
+        SemiRingFFRepr{} -> ffFail
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -404,6 +410,7 @@ bitblastExpr h ae = do
 
         SemiRingIntegerRepr -> intFail
         SemiRingRealRepr -> realFail
+        SemiRingFFRepr{} -> ffFail
 
     BVOrBits w bs ->
       do bs' <- traverse (eval' h) (bvOrToList bs)
@@ -849,6 +856,7 @@ freshBinding ntk n l tp mbnds = do
     BaseArrayRepr _ _ -> failAt l "Array variables are not supported by ABC."
     BaseStructRepr{}  -> failAt l "Struct variables are not supported by ABC."
     BaseFloatRepr{}   -> failAt l "Floating-point variables are not supported by ABC."
+    BaseFFRepr{}  -> failAt l "Finite field variables are not supported by ABC."
 
 between :: GIA.GIA s -> (Integer, Integer) -> AIG.BV (GIA.Lit s) -> IO (GIA.Lit s)
 between g (lo, hi) bv = foldM (AIG.lAnd' g) GIA.true =<< mapM bitBetween [0 .. l-1]

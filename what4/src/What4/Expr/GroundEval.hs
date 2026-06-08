@@ -19,6 +19,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -52,11 +53,13 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe ( fromMaybe )
 import           Data.Parameterized.Ctx
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin, finToNat, minFin, mkFin)
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.TraversableFC
 import           Data.Ratio
 import           LibBF (BigFloat)
 import qualified LibBF as BF
+import           Unsafe.Coerce (unsafeCoerce)
 
 import           What4.BaseTypes
 import           What4.Interface
@@ -85,6 +88,7 @@ type family GroundValue (tp :: BaseType) where
   GroundValue (BaseStringType si)   = StringLiteral si
   GroundValue (BaseArrayType idx b) = GroundArray idx b
   GroundValue (BaseStructType ctx)  = Ctx.Assignment GroundValueWrapper ctx
+  GroundValue (BaseFFType p)        = Fin p
 
 -- | Return a ground representation of a value, if it is ground.
 --
@@ -104,6 +108,7 @@ asGround x =
       def <- asConstantArray x
       groundDef <- asGround def
       pure (ArrayConcrete groundDef Map.empty)
+    BaseFFRepr{} -> asFF x
 
 -- | Inject a 'GroundValue' back into a 'SymExpr'.
 --
@@ -139,6 +144,7 @@ groundToSym sym tpr val =
            i' <- traverseFC (indexLit sym) i
            x' <- groundToSym sym tpr' x
            arrayUpdate sym arr' i' x'
+    BaseFFRepr p -> ffLit sym p val
 
 -- | A function that calculates ground values for elements.
 --   Clients of solvers should use the @groundEval@ function for computing
@@ -222,6 +228,8 @@ defaultValueForType tp =
     BaseArrayRepr _ b -> ArrayConcrete (defaultValueForType b) Map.empty
     BaseStructRepr ctx -> fmapFC (GVW . defaultValueForType) ctx
     BaseFloatRepr _fpp -> BF.bfPosZero
+    BaseFFRepr (_ :: NatRepr p)
+      | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2) -> minFin
 
 {-# INLINABLE evalGroundExpr #-}
 -- | Helper function for evaluating @Expr@ expressions in a model.
@@ -259,6 +267,7 @@ tryEvalGroundExpr :: (forall u . Expr t u -> MaybeT IO (GroundValue u))
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingIntegerRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral SR.SemiRingRealRepr c _) = return c
 tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingBVRepr _ _ ) c _) = return c
+tryEvalGroundExpr _ (SemiRingLiteral (SR.SemiRingFFRepr _) c _) = return c
 tryEvalGroundExpr _ (StringExpr x _)  = return x
 tryEvalGroundExpr _ (BoolExpr b _)    = return b
 tryEvalGroundExpr _ (FloatExpr _ f _) = return f
@@ -321,6 +330,7 @@ groundEq bt0 x0 y0 = unMAnd (f bt0 x0 y0)
         coerceMAnd (Ctx.traverseWithIndex
           (\i tp -> f tp (unGVW (x Ctx.! i)) (unGVW (y Ctx.! i))) flds)
       BaseArrayRepr{} -> MAnd Nothing
+      BaseFFRepr{} -> mand $ x == y
 
 -- | Helper function for evaluating @App@ expressions.
 --
@@ -384,6 +394,10 @@ evalGroundApp f a0 = do
            where
            smul sm e = BV.and sm <$> f e
            sadd x y  = pure (BV.xor x y)
+        SR.SemiRingFFRepr p -> WSum.evalM sadd smul pure s
+           where
+           smul sm e = mulFin p sm <$> f e
+           sadd x y  = pure (addFin p x y)
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -393,6 +407,8 @@ evalGroundApp f a0 = do
           fromMaybe (BV.one w) <$> WSum.prodEvalM (\x y -> pure (BV.mul w x y)) f pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           fromMaybe (BV.maxUnsigned w) <$> WSum.prodEvalM (\x y -> pure (BV.and x y)) f pd
+        SR.SemiRingFFRepr p ->
+          fromMaybe (mkFin (knownNat @1)) <$> WSum.prodEvalM (\x y -> pure (addFin p x y)) f pd
 
     RealDiv x y -> do
       xv <- f x
@@ -664,3 +680,12 @@ evalGroundApp f a0 = do
     StructField s i _ -> do
       sv <- f s
       return $! unGVW (sv Ctx.! i)
+
+-- TODO RGS: Upstream these to parameterized-utils
+-- https://github.com/GaloisInc/parameterized-utils/issues/231
+
+addFin :: NatRepr n -> Fin n -> Fin n -> Fin n
+addFin n x y = unsafeCoerce ((finToNat x + finToNat y) `mod` natValue n)
+
+mulFin :: NatRepr n -> Fin n -> Fin n -> Fin n
+mulFin n x y = unsafeCoerce ((finToNat x * finToNat y) `mod` natValue n)

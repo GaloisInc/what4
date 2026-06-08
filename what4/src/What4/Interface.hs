@@ -178,6 +178,13 @@ module What4.Interface
   , isNonZero
   , isReal
 
+    -- ** Finite field operations
+  , ffZero
+  , ffOne
+  , ffOrderMinusOne
+  , ffOrderMinusTwo
+  , ffExp
+
     -- ** Indexing
   , muxRange
 
@@ -214,6 +221,7 @@ import qualified Data.Map as Map
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Ctx
+import           Data.Parameterized.Fin (Fin, minFin, mkFin)
 import           Data.Parameterized.Utils.Endian (Endian(..))
 import           Data.Parameterized.Map (MapF)
 import           Data.Parameterized.NatRepr
@@ -271,6 +279,9 @@ type SymBV sym n = SymExpr sym (BaseBVType n)
 
 -- | Symbolic strings.
 type SymString sym si = SymExpr sym (BaseStringType si)
+
+-- | Symbolic finite field elements.
+type SymFF sym n = SymExpr sym (BaseFFType n)
 
 ------------------------------------------------------------------------
 -- Type families for the interface.
@@ -375,6 +386,10 @@ class HasAbsValue e => IsExpr e where
   asStruct :: e (BaseStructType flds) -> Maybe (Ctx.Assignment e flds)
   asStruct _ = Nothing
 
+  -- | Return a finite field element if this is a concrete element.
+  asFF :: e (BaseFFType p) -> Maybe (Fin p)
+  asFF _ = Nothing
+
   -- | Get type of expression.
   exprType :: e tp -> BaseTypeRepr tp
 
@@ -389,6 +404,12 @@ class HasAbsValue e => IsExpr e where
   floatPrecision e =
     case exprType e of
       BaseFloatRepr fpp -> fpp
+
+  -- | Get the order of a finite field element.
+  ffOrder :: e (BaseFFType p) -> NatRepr p
+  ffOrder e =
+    case exprType e of
+      BaseFFRepr p -> p
 
   -- | Print a sym expression for debugging or display purposes.
   printSymExpr :: e tp -> Doc ann
@@ -654,6 +675,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       BaseStringRepr{} -> stringEq sym x y
       BaseStructRepr{} -> structEq sym x y
       BaseArrayRepr{}  -> arrayEq sym x y
+      BaseFFRepr{}     -> ffEq sym x y
 
   -- | Take the if-then-else of two expressions. The default
   -- implementation dispatches 'itePred', 'bvIte', 'natIte', 'intIte',
@@ -675,6 +697,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       BaseComplexRepr  -> cplxIte   sym c x y
       BaseStructRepr{} -> structIte sym c x y
       BaseArrayRepr{}  -> arrayIte  sym c x y
+      BaseFFRepr{}     -> ffIte     sym c x y
 
   -- | Given a symbolic expression, annotate it with a unique identifier
   --   that can be used to maintain a connection with the given term.
@@ -1698,6 +1721,63 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
     -- ^ Predicate that indicates if array should be true.
     -> SymArray sym (idx ::> itp) BaseBoolType
     -> IO (Pred sym)
+
+  -----------------------------------------------------------------------
+  -- Finite field operations
+
+  -- | Return true if finite field elements are equal.
+  ffEq :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (Pred sym)
+
+  -- | If-then-else applied to finite field elements.
+  ffIte :: (2 <= p) =>
+           sym -> Pred sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Create a finite field element with the given order and value.
+  --
+  -- Precondition: @p@ must be prime.
+  ffLit :: (2 <= p) => sym -> NatRepr p -> Fin p -> IO (SymFF sym p)
+
+  -- | Add two finite field elements.
+  ffAdd :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Multiply two finite field elements.
+  ffMul :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Given a finite field element @a@, return the additive inverse (i.e.,
+  -- the negation) @-a@ such that @a + (-a) = 0@.
+  ffNeg :: (2 <= p) => sym -> SymFF sym p -> IO (SymFF sym p)
+  ffNeg sym a = do
+    -- See the Haddocks for 'ffOrderMinusOne' for an explanation of why this
+    -- works.
+    pMinus1 <- ffOrderMinusOne sym (ffOrder a)
+    ffMul sym a pMinus1
+
+  -- | Given a non-zero finite field element @a@, return the multiplicative
+  -- inverse (i.e., the reciprocal) @a^-1@ such that @a * a^-1 = 1@. The
+  -- returned value is undefined when the argument is zero.
+  ffRecip :: (2 <= p) => sym -> SymFF sym p -> IO (SymFF sym p)
+  ffRecip sym a = do
+    -- See the Haddocks for 'ffOrderMinusTwo' for an explanation of why this
+    -- works.
+    pMinus2 <- ffOrderMinusTwo sym (ffOrder a)
+    ffExp sym a (natValue (ffOrder pMinus2))
+
+  -- | Subtract one finite field element from another.
+  ffSub :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+  ffSub sym a b = do
+    -- Finite field subtraction is equivalent to adding a negated element.
+    negB <- ffNeg sym b
+    ffAdd sym a negB
+
+  -- | Divide one finite field element by another. The returned value is
+  -- undefined when the second argument is zero.
+  ffDiv :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+  ffDiv sym a b = do
+    -- Finite field division is equivalent to multiplying by a reciprocal.
+    invB <- ffRecip sym b
+    ffMul sym a invB
+
+  -- TODO RGS: ffBitsum?
 
   ----------------------------------------------------------------------
   -- Lossless (injective) conversions
@@ -3146,6 +3226,7 @@ baseIsConcrete x =
       case asConstantArray x of
         Just x' -> baseIsConcrete x'
         Nothing -> False
+    BaseFFRepr{} -> isJust $ asFF x
 
 -- | Return some default value for each base type.
 --   For numeric types, this is 0; for booleans, false;
@@ -3173,6 +3254,7 @@ baseDefaultValue sym bt =
     BaseArrayRepr idx bt' -> do
       elt <- baseDefaultValue sym bt'
       constantArray sym idx elt
+    BaseFFRepr p -> ffZero sym p
 
 -- | Return predicate equivalent to a Boolean.
 backendPred :: IsExprBuilder sym => sym -> Bool -> Pred sym
@@ -3348,6 +3430,7 @@ asConcrete x =
       -- TODO: what about cases where there are updates to the array?
       -- Passing Map.empty is probably wrong.
       pure (ConcreteArray idx c_def Map.empty)
+    BaseFFRepr p -> ConcreteFF p <$> asFF x
 
 -- | Create a literal symbolic value from a concrete value.
 --
@@ -3371,6 +3454,7 @@ concreteToSym sym = \case
            i' <- traverseFC (concreteToSym sym) i
            x' <- concreteToSym sym x
            arrayUpdate sym arr' i' x'
+   ConcreteFF p x       -> ffLit sym p x
 
 ------------------------------------------------------------------------
 -- muxNatRange
@@ -3446,3 +3530,80 @@ bvZero = minUnsignedBV
 -- | A bitvector that is all zeroes except the LSB, which is one.
 bvOne :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
 bvOne sym w = bvLit sym w (BV.one w)
+
+----------------------------------------------------------------------
+-- Finite field utilities
+
+-- | The element @0@ of a finite field that acts as the additive identity,
+-- i.e., for any element in the field @a@, @a + 0 = a@.
+--
+-- Precondition: @p@ must be prime.
+ffZero ::
+  forall sym p. (2 <= p, IsExprBuilder sym) =>
+  sym -> NatRepr p -> IO (SymFF sym p)
+ffZero sym p
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  = ffLit sym p minFin
+
+-- | The element @1@ of a finite field that acts as the multiplicative
+-- identity, i.e., for any element in the field @a@, @a * 1 = a@.
+--
+-- Precondition: @p@ must be prime.
+ffOne :: (2 <= p, IsExprBuilder sym) => sym -> NatRepr p -> IO (SymFF sym p)
+ffOne sym p = ffLit sym p $ mkFin $ knownNat @1
+
+-- | Given a finite field of order @p@, this returns the element whose value is
+-- @p - 1@. Some properties of this element:
+--
+-- * For any element in the field @a@, @a * (p - 1) = -a@, where @-a@ is the
+--   additive inverse of @a@ (i.e., @'ffNeg' a@).
+--
+-- * For any non-zero element in the field @b@, @b@ to the power of @p - 1@ is
+--   equal to @1@, where @1@ is the multiplicative identity (i.e., 'ffOne').
+--
+-- Precondition: @p@ must be prime.
+ffOrderMinusOne ::
+  forall sym p. (2 <= p, IsExprBuilder sym) =>
+  sym -> NatRepr p -> IO (SymFF sym p)
+ffOrderMinusOne sym p
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  , Refl <- minusPlusCancel p (knownNat @1)
+  = ffLit sym p $ mkFin $ decNat p
+
+-- | Given a finite field of order @p@, this returns the element whose value is
+-- @p - 2@. For any non-zero element in the field @a@, @a@ to the power of
+-- @p - 2@ is equal to @a^-1@, where @a^-1@ is the multiplicative inverse
+-- (i.e., 'ffRecip').
+--
+-- Precondition: @p@ must be prime.
+ffOrderMinusTwo ::
+  forall sym p. (2 <= p, IsExprBuilder sym) =>
+  sym -> NatRepr p -> IO (SymFF sym p)
+ffOrderMinusTwo sym p
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  , LeqProof <- leqSub2 (LeqProof @2 @p) (leqRefl (knownNat @1))
+  , LeqProof <- leqSub (leqRefl p) (LeqProof @1 @p)
+  , Refl <- minusPlusCancel (decNat p) (knownNat @1)
+  = ffLit sym p $ mkFin $ decNat $ decNat p
+
+-- | Finite field exponentiation. @'ffExp' a b@ takes the finite field element
+-- @a@ to the power of @b@ using 'ffMul'. The returned value is undefined when
+-- @a@ is zero and @b@ is negative.
+ffExp ::
+  forall sym p b. (2 <= p, IsExprBuilder sym, Integral b) =>
+  sym -> SymFF sym p -> b -> IO (SymFF sym p)
+ffExp sym a b
+  | b >= 0
+  = do let b' = fromIntegral @b @Natural b
+       ffExpNonNeg b'
+  | otherwise
+  = do let b' = fromIntegral @b @Natural (negate b)
+       pow <- ffExpNonNeg b'
+       ffRecip sym pow
+  where
+    ffExpNonNeg :: Natural -> IO (SymFF sym p)
+    ffExpNonNeg 0 = ffOne sym (ffOrder a)
+    ffExpNonNeg 1 = pure a
+    ffExpNonNeg n = do
+      pow <- ffExpNonNeg (n - 1)
+      ffMul sym pow a

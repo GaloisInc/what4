@@ -3988,6 +3988,19 @@ instance IsExprBuilder (ExprBuilder t st fs) where
     (:+) <$> sbMakeExpr sym (RealPart x)
          <*> sbMakeExpr sym (ImagPart x)
 
+  ----------------------------------------------------------------------
+  -- Finite field operations
+
+  ffEq = error "TODO RGS"
+
+  ffIte = error "TODO RGS"
+
+  ffLit = error "TODO RGS"
+
+  ffAdd = error "TODO RGS"
+
+  ffMul = error "TODO RGS"
+
 
 
 inSameBVSemiRing :: Expr t (BaseBVType w) -> Expr t (BaseBVType w) -> Maybe (Some SR.BVFlavorRepr)
