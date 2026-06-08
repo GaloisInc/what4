@@ -13,6 +13,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- for TestShow instance
 
 import           ProbeSolvers
@@ -30,10 +31,12 @@ import           Data.Foldable
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
 import           Data.Parameterized.Context ( pattern Empty, pattern (:>) )
+import           Data.Parameterized.Fin (mkFin)
 import qualified Data.Text as Text
 import qualified Hedgehog as H
 import qualified Hedgehog.Gen as HGen
 import qualified Hedgehog.Range as HRange
+import           Numeric.Natural (Natural)
 import qualified Prettyprinter as PP
 import           System.Environment ( lookupEnv )
 
@@ -986,6 +989,151 @@ stringTest7 sym solver = withChecklist "string6" $
   do chars <- getChars sym solver 200
      TC.check "correct number of characters" (length chars ==) 200
 
+testFF :: TestTree
+testFF = testCase "finite field test" $ withCVC5 $ \sym s -> do
+  let p13 = knownNat @13
+  let p13Nat = natValue p13
+  x <- freshConstant sym (safeSymbol "x") (BaseFFRepr p13)
+  y <- freshConstant sym (safeSymbol "y") (BaseFFRepr p13)
+  z <- freshConstant sym (safeSymbol "z") (BaseFFRepr p13)
+  zero <- ffZero sym p13
+  one <- ffOne sym p13
+
+  xAddY <- ffAdd sym x y
+  yAddX <- ffAdd sym y x
+  yAddZ <- ffAdd sym y z
+
+  xMulY <- ffMul sym x y
+  yMulX <- ffMul sym y x
+  xMulZ <- ffMul sym x z
+  yMulZ <- ffMul sym y z
+
+  let ffPow ::
+        forall sym p.
+        (IsExprBuilder sym, 2 <= p) =>
+        sym ->
+        NatRepr p ->
+        SymFF sym p ->
+        Natural ->
+        IO (SymFF sym p)
+      ffPow sym' p e = go
+        where
+          go :: Natural -> IO (SymFF sym p)
+          go n | n == 0
+               = ffOne sym' p
+               | otherwise
+               = do acc <- go (n - 1)
+                    ffMul sym' e acc
+
+  ----- Addition laws
+
+  -- (x + y) = (y + x)
+  addComm <- ffEq sym xAddY yAddX
+  addCommRes <- checkSatisfiable s "addComm" =<< notPred sym addComm
+  isUnsat addCommRes @? "addComm unsat"
+
+  -- (x + y) + z = x + (y + z)
+  xyz1 <- ffAdd sym xAddY z
+  xyz2 <- ffAdd sym x yAddZ
+  addAssoc <- ffEq sym xyz1 xyz2
+  addAssocRes <- checkSatisfiable s "addAssoc" =<< notPred sym addAssoc
+  isUnsat addAssocRes @? "addAssoc unsat"
+
+  -- (x + 0) = x
+  xAdd0 <- ffAdd sym x zero
+  addIdent <- ffEq sym xAdd0 x
+  addIdentRes <- checkSatisfiable s "addIdent" =<< notPred sym addIdent
+  isUnsat addIdentRes @? "addIdent unsat"
+
+  -- (x + -x) = 0
+  xNeg <- ffNeg sym x
+  xAddXNeg <- ffAdd sym x xNeg
+  addInv <- ffEq sym xAddXNeg zero
+  addInvRes <- checkSatisfiable s "addInv" =<< notPred sym addInv
+  isUnsat addInvRes @? "addInv unsat"
+
+  ----- Multiplication laws
+
+  -- (x * y) = (y * x)
+  mulComm' <- ffEq sym xMulY yMulX
+  mulCommRes <- checkSatisfiable s "mulComm" =<< notPred sym mulComm'
+  isUnsat mulCommRes @? "mulComm unsat"
+
+  -- (x * y) * z = x * (y * z)
+  xyz1' <- ffMul sym xMulY z
+  xyz2' <- ffMul sym x yMulZ
+  mulAssoc <- ffEq sym xyz1' xyz2'
+  mulAssocRes <- checkSatisfiable s "mulAssoc" =<< notPred sym mulAssoc
+  isUnsat mulAssocRes @? "mulAssoc unsat"
+
+  -- (x * 1) = x
+  xMul1 <- ffMul sym x one
+  mulIdent <- ffEq sym xMul1 x
+  mulIdentRes <- checkSatisfiable s "mulIdent" =<< notPred sym mulIdent
+  isUnsat mulIdentRes @? "mulIdent unsat"
+
+  -- (x = 0) \/ (x * x^-1) = 1
+  xRecip <- ffRecip sym x
+  xMulXRecip <- ffMul sym x xRecip
+  mulInv1 <- ffEq sym x zero
+  mulInv2 <- ffEq sym xMulXRecip one
+  mulInv <- orPred sym mulInv1 mulInv2
+  mulInvRes <- checkSatisfiable s "mulInv" =<< notPred sym mulInv
+  isUnsat mulInvRes @? "mulInv unsat"
+
+  ----- Distributive law
+
+  -- x * (y + z) = (x * y) + (x * z)
+  xMulYAddZ <- ffMul sym x yAddZ
+  xMulYAddXMulZ <- ffAdd sym xMulY xMulZ
+  distrib <- ffEq sym xMulYAddZ xMulYAddXMulZ
+  distribRes <- checkSatisfiable s "distrib" =<< notPred sym distrib
+  isUnsat distribRes @? "distrib unsat"
+
+  ----- Negation laws
+
+  -- (x - y) = (x + -y)
+  xSubY <- ffSub sym x y
+  yNeg <- ffNeg sym y
+  xAddYNeg <- ffAdd sym x yNeg
+  negSub <- ffEq sym xSubY xAddYNeg
+  negSubRes <- checkSatisfiable s "negSub" =<< notPred sym negSub
+  isUnsat negSubRes @? "negSub unsat"
+
+  -- (x * (p - 1)) = -x
+  pMinus1 <- ffLit sym p13 $ mkFin $ decNat p13
+  xMulPMinus1 <- ffMul sym x pMinus1
+  negMul <- ffEq sym xMulPMinus1 xNeg
+  negMulRes <- checkSatisfiable s "negMul" =<< notPred sym negMul
+  isUnsat negMulRes @? "negMul unsat"
+
+  ----- Reciprocal laws
+
+  -- (x / y) = (x * y^-1)
+  xDivY <- ffDiv sym x y
+  yRecip <- ffRecip sym y
+  xMulYRecip <- ffMul sym x yRecip
+  recipDiv <- ffEq sym xDivY xMulYRecip
+  recipDivRes <- checkSatisfiable s "recipDiv" =<< notPred sym recipDiv
+  isUnsat recipDivRes @? "recipDiv unsat"
+
+  -- x^(p - 2) = x^-1 (Fermat's Little Theorem)
+  xPowPMinus2 <- ffPow sym p13 x (p13Nat - 2)
+  recipPow <- ffEq sym xPowPMinus2 xRecip
+  recipPowRes <- checkSatisfiable s "recipPow" =<< notPred sym recipPow
+  isUnsat recipPowRes @? "recipPow unsat"
+
+  ----- Freshman's dream (Frobenius Automorphism)
+
+  -- (x + y)^p = x^p + y+^p
+  xAddYPowP <- ffPow sym p13 xAddY p13Nat
+  xPowP <- ffPow sym p13 x p13Nat
+  yPowP <- ffPow sym p13 y p13Nat
+  xPowPAddYPowP <- ffAdd sym xPowP yPowP
+  freshman'sDream <- ffEq sym xAddYPowP xPowPAddYPowP
+  freshman'sDreamRes <- checkSatisfiable s "freshman'sDream" =<< notPred sym freshman'sDream
+  isUnsat freshman'sDreamRes @? "freshman'sDream unsat"
+
 getChars ::
   OnlineSolver solver =>
   SimpleExprBuilder t fs ->
@@ -1466,7 +1614,7 @@ main = do
         , cvcTestCase "#391 test case" $ withCVC issue391Test
         ]
   let cvc4Tests = cvcTests CVC4
-  let cvc5Tests = cvcTests CVC5
+  let cvc5Tests = testFF : cvcTests CVC5
   let yicesTests =
         [
           testResolveSymBV WURB.ExponentialSearch

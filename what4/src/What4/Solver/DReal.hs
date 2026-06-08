@@ -150,12 +150,14 @@ getAvgBindings c m = do
           Just (Left _) -> fail "Expected Real variable"
           Nothing -> return 0
       evalFloat _ _ = fail "dReal does not support floats."
+      evalFF _ _ = fail "dReal does not support finite fields."
   let evalFns = SMTWriter.SMTEvalFunctions { SMTWriter.smtEvalBool = evalBool
                                            , SMTWriter.smtEvalBV = evalBV
                                            , SMTWriter.smtEvalReal = evalReal
                                            , SMTWriter.smtEvalFloat = evalFloat
                                            , SMTWriter.smtEvalBvArray = Nothing
                                            , SMTWriter.smtEvalString = evalStr
+                                           , SMTWriter.smtEvalFF = evalFF
                                            }
   SMTWriter.smtExprGroundEvalFn c evalFns
 
@@ -180,12 +182,14 @@ getMaybeEval proj c m = do
           Just (Left _) -> fail "expected real variable"
           Nothing -> throwIO (userError "unbound")
       evalFloat _ _ = fail "dReal does not support floats."
+      evalFF _ _ = fail "dReal does not support finite fields."
   let evalFns = SMTWriter.SMTEvalFunctions { SMTWriter.smtEvalBool = evalBool
                                            , SMTWriter.smtEvalBV = evalBV
                                            , SMTWriter.smtEvalReal = evalReal
                                            , SMTWriter.smtEvalFloat = evalFloat
                                            , SMTWriter.smtEvalBvArray = Nothing
                                            , SMTWriter.smtEvalString = evalStr
+                                           , SMTWriter.smtEvalFF = evalFF
                                            }
   GroundEvalFn evalFn <- SMTWriter.smtExprGroundEvalFn c evalFns
   let handler e | isUserError e

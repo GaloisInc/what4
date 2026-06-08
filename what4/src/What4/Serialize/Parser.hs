@@ -49,6 +49,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Text.Printf ( printf )
 
+import           Data.Parameterized.Fin ( mkFin )
 import qualified Data.Parameterized.NatRepr as PN
 import qualified Data.Parameterized.Ctx as Ctx
 import qualified Data.Parameterized.Context as Ctx
@@ -930,6 +931,19 @@ readExpr (S.WFSAtom (ABV len val)) = do
   -- Just (Some lenRepr) <- return $ someNat (toInteger len)
   -- let Just pf = isPosNat lenRepr
   -- liftIO $ withLeqProof pf (Some <$> W4.bvLit sym lenRepr val)
+readExpr (S.WFSAtom (AFF p val)) = do
+  -- This is a finite field literal.
+  sym <- R.reader procSym
+  case (someNat p, someNat val) of
+    (Just (Some lenRepr), Just (Some valRepr)) -> do
+      pf1 <- case testLeq (knownNat @2) lenRepr of
+              Just pf -> return pf
+              Nothing -> E.throwError "What4.Serialize.Parser.readExpr testLeq failure"
+      pf2 <- case testLeq (incNat valRepr) lenRepr of
+              Just pf -> return pf
+              Nothing -> E.throwError "What4.Serialize.Parser.readExpr testLeq failure"
+      liftIO $ withLeqProof pf1 $ withLeqProof pf2 (Some <$> W4.ffLit sym lenRepr (mkFin valRepr))
+    _ -> E.throwError "What4.Serialize.Parser.readExpr someNat failure"
 -- Let-bound variable
 readExpr (S.WFSAtom (AId name)) = do
   maybeBinding <- lookupExpr name

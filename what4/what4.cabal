@@ -160,6 +160,7 @@ library
     What4.SpecialFunctions
     What4.Symbol
     What4.SFloat
+    What4.SFF
     What4.SWord
     What4.WordMap
 

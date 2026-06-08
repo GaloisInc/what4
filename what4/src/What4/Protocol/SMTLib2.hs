@@ -118,6 +118,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Monoid
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin, finFromNatModN, mkFin)
 import           Data.Parameterized.Map (MapF)
 import qualified Data.Parameterized.Map as MapF
 import           Data.Parameterized.NatRepr
@@ -441,6 +442,16 @@ class Show a => SMTLib2Tweaks a where
                ]
      in SMT2.Cmd $ app "declare-datatype" [ tp, app "par" [ builder_list tp_names, builder_list [app cnstr flds]]]
 
+  -- | Compute the negation (i.e., the additive inverse) of an element @x@ in a
+  -- finite field of order @p@. By default, this computes @x * (p - 1)@, which
+  -- is equivalent and reasonably fast. On CVC5, we override this to instead
+  -- use the dedicated @ff.neg@ construct.
+  smtlib2FFNeg :: forall p. (2 <= p) => NatRepr p -> Term -> Term
+  smtlib2FFNeg p x
+    | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+    , Refl <- minusPlusCancel p (knownNat @1)
+    = SMT2.ffMul x (SMT2.ffConst p (mkFin (subNat p (knownNat @1))))
+
 
 
 asSMT2Type :: forall a tp . SMTLib2Tweaks a => TypeMap tp -> SMT2.Sort
@@ -460,6 +471,7 @@ asSMT2Type (FnArrayTypeMap _ _) =
   error "SMTLIB backend does not support function types as first class."
 asSMT2Type (StructTypeMap f) =
   smtlib2StructSort @a (toListFC (asSMT2Type @a) f)
+asSMT2Type (FFTypeMap p) = SMT2.ffSort (natValue p)
 
 -- Default instance.
 instance SMTLib2Tweaks () where
@@ -638,6 +650,13 @@ instance SupportTermOps Term where
   realExp = un_app "exp"
   realLog = un_app "log"
 
+  ffTerm p n = case testLeq (knownNat @2) p of
+    Just LeqProof -> SMT2.ffConst p n
+    Nothing -> error "Cannot construct finite field term with order less than 2"
+
+  ffAdd = SMT2.ffAdd
+  ffMul = SMT2.ffMul
+
   smtFnApp nm args = term_app (SMT2.renderTerm nm) args
 
   fromText t = SMT2.T (Builder.fromText t)
@@ -742,6 +761,8 @@ instance SMTLib2Tweaks a => SMTWriter (Writer a) where
     let n = Ctx.sizeInt (Ctx.size tps)
         i = Ctx.indexVal idx
      in smtlib2StructProj @a n i v
+
+  ffNeg = smtlib2FFNeg @a
 
   resetDeclaredStructs conn = do
     let r = declaredTuples (connState conn)
@@ -923,6 +944,36 @@ parseBvArraySolverValue w v (SApp ["store", arr, idx, val]) = do
       return . Just $ ArrayConcrete base (Map.insert (Ctx.empty Ctx.:> idx') val' m)
     _ -> return Nothing
 parseBvArraySolverValue _ _ _ = return Nothing
+
+-- | Parse a finite field value returned by a solver.
+parseFfSolverValue :: MonadFail m => NatRepr p -> SExp -> m (Fin p)
+parseFfSolverValue p s = do
+  Pair p' e <-
+    case parseFFLitHelper s of
+      Just pair -> pure pair
+      Nothing -> fail $ "Could not parse finite field element solver value: " ++ show s
+  case testEquality p p' of
+    Just Refl -> pure e
+    Nothing -> fail $ "Unexpected finite field order: " ++ show p'
+
+natFF :: Natural
+      -- ^ Finite field order
+      -> Natural
+      -- ^ Finite field element value
+      -> Maybe (Pair NatRepr Fin)
+natFF pNatural x
+  | Some p <- mkNatRepr pNatural
+  = fmap
+      (\LeqProof -> Pair p (finFromNatModN p x))
+      (testLeq (knownNat @1) p)
+
+-- | Parse an s-expression, and return a finite field element and its order.
+parseFFLitHelper :: SExp -> Maybe (Pair NatRepr Fin)
+parseFFLitHelper (SAtom (Text.unpack -> ('#' : 'f' : f_str)))
+  | [(f, 'm' : m_str)] <- readDec f_str
+  , [(m, "")] <- readDec m_str
+  = natFF m f
+parseFFLitHelper _ = Nothing
 
 parseFnModel ::
   sym ~ B.ExprBuilder t st fs  =>
@@ -1432,6 +1483,7 @@ smtLibEvalFuns s = SMTEvalFunctions
                   , smtEvalFloat = evalFloat
                   , smtEvalBvArray = Just (SMTEvalBVArrayWrapper evalBvArray)
                   , smtEvalString = evalStr
+                  , smtEvalFF = evalFF
                   }
   where
   evalBool tm = parseBoolSolverValue =<< runGetValue s tm
@@ -1446,6 +1498,9 @@ smtLibEvalFuns s = SMTEvalFunctions
 
   evalBvArray :: SMTEvalBVArrayFn (Writer a) w v
   evalBvArray w v tm = parseBvArraySolverValue w v =<< runGetValue s tm
+
+  evalFF :: NatRepr p -> Term -> IO (Fin p)
+  evalFF w tm = parseFfSolverValue w =<< runGetValue s tm
 
 
 class (SMTLib2Tweaks a, Show a) => SMTLib2GenericSolver a where

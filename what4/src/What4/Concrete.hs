@@ -44,6 +44,7 @@ module What4.Concrete
   , fromConcreteString
   , fromConcreteBV
   , fromConcreteComplex
+  , fromConcreteFF
   ) where
 
 import qualified Data.List as List
@@ -57,6 +58,7 @@ import qualified Data.BitVector.Sized as BV
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Ctx
 import qualified Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (Fin, finToNat)
 import           Data.Parameterized.TH.GADT
 import           Data.Parameterized.TraversableFC
 
@@ -83,6 +85,11 @@ data ConcreteVal tp where
     ConcreteVal b {- A default value -} ->
     Map (Ctx.Assignment ConcreteVal (idx ::> i)) (ConcreteVal b) {- A collection of point-updates -} ->
     ConcreteVal (BaseArrayType (idx ::> i) b)
+  ConcreteFF      ::
+    (2 <= p) =>
+    NatRepr p {- Order of the finite field -} ->
+    Fin p     {- Value of the finite field element -} ->
+    ConcreteVal (BaseFFType p)
 
 deriving instance ShowF ConcreteVal
 deriving instance Show (ConcreteVal tp)
@@ -105,6 +112,9 @@ fromConcreteString (ConcreteString x) = x
 fromConcreteBV :: ConcreteVal (BaseBVType w) -> BV.BV w
 fromConcreteBV (ConcreteBV _w x) = x
 
+fromConcreteFF :: ConcreteVal (BaseFFType w) -> Fin w
+fromConcreteFF (ConcreteFF _p x) = x
+
 -- | Compute the type representative for a concrete value.
 concreteType :: ConcreteVal tp -> BaseTypeRepr tp
 concreteType = \case
@@ -117,6 +127,7 @@ concreteType = \case
   ConcreteBV w _            -> BaseBVRepr w
   ConcreteStruct xs         -> BaseStructRepr (fmapFC concreteType xs)
   ConcreteArray idxTy def _ -> BaseArrayRepr idxTy (concreteType def)
+  ConcreteFF p _            -> BaseFFRepr p
 
 $(return [])
 
@@ -173,3 +184,4 @@ ppConcrete = \case
                          PP.<> PP.comma
                          PP.<> doc
                          PP.<> PP.pretty ")"
+  ConcreteFF p x -> PP.pretty (finToNat x) PP.<> PP.pretty ":FF" PP.<+> PP.viaShow p

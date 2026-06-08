@@ -36,6 +36,8 @@ data AppTheory
      -- ^ Theory attributed to structs (equivalent to records in CVC4/CVC5/Z3, tuples in Yices)
    | FnTheory
      -- ^ Theory attributed application functions.
+   | FiniteFieldTheory
+     -- ^ Theory atrributed to finite fields
    deriving (Eq, Ord)
 
 quantTheory :: NonceApp t (Expr t) tp -> AppTheory
@@ -60,6 +62,7 @@ typeTheory tp = case tp of
   BaseComplexRepr   -> LinearArithTheory
   BaseStructRepr _  -> StructTheory
   BaseArrayRepr _ _ -> ArrayTheory
+  BaseFFRepr{}      -> FiniteFieldTheory
 
 appTheory :: App (Expr t) tp -> AppTheory
 appTheory a0 =
@@ -87,12 +90,14 @@ appTheory a0 =
         SR.SemiRingBVRepr _ _ -> BitvectorTheory
         SR.SemiRingIntegerRepr -> NonlinearArithTheory
         SR.SemiRingRealRepr -> NonlinearArithTheory
+        SR.SemiRingFFRepr{} -> FiniteFieldTheory
 
     SemiRingSum sm ->
       case WSum.sumRepr sm of
         SR.SemiRingBVRepr _ _ -> BitvectorTheory
         SR.SemiRingIntegerRepr -> LinearArithTheory
         SR.SemiRingRealRepr -> LinearArithTheory
+        SR.SemiRingFFRepr{} -> FiniteFieldTheory
 
     SemiRingLe{} -> LinearArithTheory
 
@@ -173,6 +178,12 @@ appTheory a0 =
     FloatToReal{}     -> FloatingPointTheory
 
     FloatSpecialFunction{} -> ComputableArithTheory -- TODO? is this right?
+
+    ----------------------------
+    -- Finite field operations
+
+    FFNeg{} -> FiniteFieldTheory
+    FFRecip{} -> FiniteFieldTheory
 
     --------------------------------
     -- Conversions.

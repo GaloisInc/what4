@@ -11,7 +11,7 @@
 
 module What4.Serialize.SETokens
     ( Atom(..)
-    , string, ident, int, nat, bitvec, bool, real, float
+    , string, ident, int, nat, bitvec, bool, real, float, finitefield
     , string', ident'
     , printAtom
     , printSExpr
@@ -59,6 +59,8 @@ data Atom =
   -- ^ Bitvector, width and then value.
   | ABool Bool
   -- ^ Boolean literal.
+  | AFF Int Integer
+  -- ^ Finite field element, field order and then value.
   deriving (Show, Eq, Ord)
 
 type SExpr = SC.WellFormedSExpr Atom
@@ -96,6 +98,10 @@ float rep bf = SC.A (AFloat (Some rep) bf)
 bitvec :: Natural -> Integer -> SExpr
 bitvec w v = SC.A $ ABV (fromEnum w) v
 
+-- | Lift a finite field element.
+finitefield :: Natural -> Integer -> SExpr
+finitefield p v = SC.A $ AFF (fromEnum p) v
+
 -- | Lift a boolean.
 bool :: Bool -> SExpr
 bool = SC.A . ABool
@@ -131,6 +137,7 @@ printAtom a =
     ABV w val -> formatBV w val
     ABool b -> if b then "#true" else "#false"
     AFloat (Some rep) bf -> formatFloat rep bf
+    AFF p val -> formatFF p val
 
 -- | Format a floating point value with no rounding in base 16
 formatFloat :: W4.FloatPrecisionRepr fpp -> BF.BigFloat -> T.Text
@@ -143,6 +150,9 @@ formatBV w val = T.pack (prefix ++ printf fmt val)
     (prefix, fmt)
       | w `rem` 4 == 0 = ("#x", "%0" ++ show (w `div` 4) ++ "x")
       | otherwise = ("#b", "%0" ++ show w ++ "b")
+
+formatFF :: Int -> Integer -> T.Text
+formatFF p val = T.pack (printf "#ff#%s#%s" (show p) (show val))
 
 
 -- * Input and parse of the S-Expression Formula language
@@ -198,10 +208,10 @@ parseNat = do
   return $ read n
 
 parseBool :: Parser Bool
-parseBool = do 
+parseBool = do
   (P.try (P.string "#false" *> return False))
   P.<|> (P.string "#true" *> return True)
-  
+
 parseBV :: Parser (Int, Integer)
 parseBV = P.char '#' >> ((P.char 'b' >> parseBin) P.<|> (P.char 'x' >> parseHex))
   where parseBin = P.oneOf "10" >>= \d -> parseBin' (1, if d == '1' then 1 else 0)

@@ -238,6 +238,7 @@ import           Data.Maybe
 import           Data.Monoid (Any(..))
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (minFin, recipFinModN)
 import qualified Data.Parameterized.HashTable as PH
 import qualified Data.Parameterized.Map as PM
 import           Data.Parameterized.NatRepr
@@ -3987,6 +3988,38 @@ instance IsExprBuilder (ExprBuilder t st fs) where
   cplxGetParts sym x =
     (:+) <$> sbMakeExpr sym (RealPart x)
          <*> sbMakeExpr sym (ImagPart x)
+
+  ----------------------------------------------------------------------
+  -- Finite field operations
+
+  ffEq = mkEq
+
+  ffIte = mkIte
+
+  ffLit sym p = semiRingLit sym (SR.SemiRingFFRepr p)
+
+  ffAdd sym x y = semiRingAdd sym sr x y
+     where sr = SR.SemiRingFFRepr (ffOrder x)
+
+  ffMul sym x y = semiRingMul sym sr x y
+     where sr = SR.SemiRingFFRepr (ffOrder x)
+
+  ffNeg sym x
+    | Just x' <- asFF x = ffLit sym p x'
+    | otherwise = sbMakeExpr sym (FFNeg p x)
+    where p = ffOrder x
+
+  ffRecip sym (x :: Expr t (BaseFFType p))
+    | Just x' <- asFF x
+    , LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+    = if x' == minFin
+        then ffLit sym p x'
+        else case recipFinModN p x' of
+               Just r -> ffLit sym p r
+               Nothing -> fail $ "Non-prime finite field order: " ++ show p
+    | otherwise
+    = sbMakeExpr sym (FFRecip p x)
+    where p = ffOrder x
 
 
 

@@ -45,6 +45,7 @@ module What4.BaseTypes
   , BaseComplexType
   , BaseStructType
   , BaseArrayType
+  , BaseFFType
     -- * StringInfo data kind
   , StringInfo
     -- ** Constructors for StringInfo
@@ -141,6 +142,12 @@ data BaseType
      -- operations for doing pointwise updates.
    | BaseArrayType  (Ctx.Ctx BaseType) BaseType
 
+     -- | @BaseFFType@ denotes an element of a finite field of prime order @p@,
+     -- which can be thought of as an integer modulo @p@.
+     --
+     -- Invariant: the 'TypeNats.Nat' field is prime.
+   | BaseFFType TypeNats.Nat
+
 type BaseBoolType    = 'BaseBoolType    -- ^ @:: 'BaseType'@.
 type BaseIntegerType = 'BaseIntegerType -- ^ @:: 'BaseType'@.
 type BaseRealType    = 'BaseRealType    -- ^ @:: 'BaseType'@.
@@ -150,6 +157,7 @@ type BaseStringType  = 'BaseStringType  -- ^ @:: 'BaseType'@.
 type BaseComplexType = 'BaseComplexType -- ^ @:: 'BaseType'@.
 type BaseStructType  = 'BaseStructType  -- ^ @:: 'Ctx.Ctx' 'BaseType' -> 'BaseType'@.
 type BaseArrayType   = 'BaseArrayType   -- ^ @:: 'Ctx.Ctx' 'BaseType' -> 'BaseType' -> 'BaseType'@.
+type BaseFFType      = 'BaseFFType      -- ^ @:: 'TypeNats.Nat' -> 'BaseType'@.
 
 -- | This data kind describes the types of floating-point formats.
 -- This consist of the standard IEEE 754-2008 binary floating point formats.
@@ -191,6 +199,9 @@ data BaseTypeRepr (bt::BaseType) :: Type where
    BaseArrayRepr :: !(Ctx.Assignment BaseTypeRepr (idx Ctx.::> tp))
                  -> !(BaseTypeRepr xs)
                  -> BaseTypeRepr (BaseArrayType (idx Ctx.::> tp) xs)
+
+   -- | Invariant: @p@ is prime.
+   BaseFFRepr :: (2 <= p) => !(NatRepr p) -> BaseTypeRepr (BaseFFType p)
 
 data FloatPrecisionRepr (fpp :: FloatPrecision) where
   FloatingPointPrecisionRepr
@@ -243,6 +254,8 @@ instance (KnownRepr FloatPrecisionRepr fpp) => KnownRepr BaseTypeRepr (BaseFloat
   knownRepr = BaseFloatRepr knownRepr
 instance KnownRepr BaseTypeRepr BaseComplexType where
   knownRepr = BaseComplexRepr
+instance (2 <= p, KnownNat p) => KnownRepr BaseTypeRepr (BaseFFType p) where
+  knownRepr = BaseFFRepr knownRepr
 
 instance KnownRepr (Ctx.Assignment BaseTypeRepr) ctx
       => KnownRepr BaseTypeRepr (BaseStructType ctx) where
@@ -291,7 +304,7 @@ instance Show (BaseTypeRepr bt) where
 instance ShowF BaseTypeRepr
 
 instance Pretty (FloatPrecisionRepr fpp) where
-  pretty (FloatingPointPrecisionRepr exp' sig) = 
+  pretty (FloatingPointPrecisionRepr exp' sig) =
     parens ("FloatingPrecision" <+> (pretty $ natValue exp') <+> (pretty $ natValue sig))
 
 instance Show (FloatPrecisionRepr fpp) where
