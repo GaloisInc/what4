@@ -178,6 +178,10 @@ module What4.Interface
   , isNonZero
   , isReal
 
+    -- ** Finite field operations
+  , ffZero
+  , ffOne
+
     -- ** Indexing
   , muxRange
 
@@ -214,6 +218,7 @@ import qualified Data.Map as Map
 import           Data.Parameterized.Classes
 import qualified Data.Parameterized.Context as Ctx
 import           Data.Parameterized.Ctx
+import           Data.Parameterized.Fin (Fin, minFin, mkFin)
 import           Data.Parameterized.Utils.Endian (Endian(..))
 import           Data.Parameterized.Map (MapF)
 import           Data.Parameterized.NatRepr
@@ -271,6 +276,9 @@ type SymBV sym n = SymExpr sym (BaseBVType n)
 
 -- | Symbolic strings.
 type SymString sym si = SymExpr sym (BaseStringType si)
+
+-- | Symbolic finite field elements.
+type SymFF sym n = SymExpr sym (BaseFFType n)
 
 ------------------------------------------------------------------------
 -- Type families for the interface.
@@ -375,6 +383,10 @@ class HasAbsValue e => IsExpr e where
   asStruct :: e (BaseStructType flds) -> Maybe (Ctx.Assignment e flds)
   asStruct _ = Nothing
 
+  -- | Return a finite field element if this is a concrete element.
+  asFF :: e (BaseFFType p) -> Maybe (Fin p)
+  asFF _ = Nothing
+
   -- | Get type of expression.
   exprType :: e tp -> BaseTypeRepr tp
 
@@ -389,6 +401,12 @@ class HasAbsValue e => IsExpr e where
   floatPrecision e =
     case exprType e of
       BaseFloatRepr fpp -> fpp
+
+  -- | Get the order of a finite field element.
+  ffOrder :: e (BaseFFType p) -> NatRepr p
+  ffOrder e =
+    case exprType e of
+      BaseFFRepr p -> p
 
   -- | Print a sym expression for debugging or display purposes.
   printSymExpr :: e tp -> Doc ann
@@ -654,6 +672,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       BaseStringRepr{} -> stringEq sym x y
       BaseStructRepr{} -> structEq sym x y
       BaseArrayRepr{}  -> arrayEq sym x y
+      BaseFFRepr{}     -> ffEq sym x y
 
   -- | Take the if-then-else of two expressions. The default
   -- implementation dispatches 'itePred', 'bvIte', 'natIte', 'intIte',
@@ -675,6 +694,7 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       BaseComplexRepr  -> cplxIte   sym c x y
       BaseStructRepr{} -> structIte sym c x y
       BaseArrayRepr{}  -> arrayIte  sym c x y
+      BaseFFRepr{}     -> ffIte     sym c x y
 
   -- | Given a symbolic expression, annotate it with a unique identifier
   --   that can be used to maintain a connection with the given term.
@@ -1698,6 +1718,52 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
     -- ^ Predicate that indicates if array should be true.
     -> SymArray sym (idx ::> itp) BaseBoolType
     -> IO (Pred sym)
+
+  -----------------------------------------------------------------------
+  -- Finite field operations
+
+  -- | Return true if finite field elements are equal.
+  ffEq :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (Pred sym)
+
+  -- | If-then-else applied to finite field elements.
+  ffIte :: (2 <= p) =>
+           sym -> Pred sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Create a finite field element with the given order and value.
+  --
+  -- Precondition: @p@ must be prime.
+  ffLit :: (2 <= p) => sym -> NatRepr p -> Fin p -> IO (SymFF sym p)
+
+  -- | Add two finite field elements.
+  ffAdd :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Subtract one finite field element from another.
+  ffSub :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+  ffSub sym a b = do
+    -- Finite field subtraction is equivalent to adding a negated element.
+    negB <- ffNeg sym b
+    ffAdd sym a negB
+
+  -- | Multiply two finite field elements.
+  ffMul :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Divide one finite field element by another. When the second argument is
+  -- zero, the return value is defined to also be zero.
+  ffDiv :: (2 <= p) => sym -> SymFF sym p -> SymFF sym p -> IO (SymFF sym p)
+  ffDiv sym a b = do
+    -- Finite field division is equivalent to multiplying by a reciprocal.
+    invB <- ffRecip sym b
+    ffMul sym a invB
+
+  -- | Given a finite field element @a@, return the additive inverse (i.e., the
+  -- negation) @-a@ such that @a + (-a) = 0@.
+  ffNeg :: (2 <= p) => sym -> SymFF sym p -> IO (SymFF sym p)
+
+  -- | Given a finite field element @a@, return the multiplicative inverse
+  -- (i.e., the reciprocal). When the argument is non-zero, the return value is
+  -- @a^-1@ such that @a * a^-1 = 1@. When the argument is zero, the return
+  -- value is defined to also be zero.
+  ffRecip :: (2 <= p) => sym -> SymFF sym p -> IO (SymFF sym p)
 
   ----------------------------------------------------------------------
   -- Lossless (injective) conversions
@@ -3146,6 +3212,7 @@ baseIsConcrete x =
       case asConstantArray x of
         Just x' -> baseIsConcrete x'
         Nothing -> False
+    BaseFFRepr{} -> isJust $ asFF x
 
 -- | Return some default value for each base type.
 --   For numeric types, this is 0; for booleans, false;
@@ -3173,6 +3240,7 @@ baseDefaultValue sym bt =
     BaseArrayRepr idx bt' -> do
       elt <- baseDefaultValue sym bt'
       constantArray sym idx elt
+    BaseFFRepr p -> ffZero sym p
 
 -- | Return predicate equivalent to a Boolean.
 backendPred :: IsExprBuilder sym => sym -> Bool -> Pred sym
@@ -3348,6 +3416,7 @@ asConcrete x =
       -- TODO: what about cases where there are updates to the array?
       -- Passing Map.empty is probably wrong.
       pure (ConcreteArray idx c_def Map.empty)
+    BaseFFRepr p -> ConcreteFF p <$> asFF x
 
 -- | Create a literal symbolic value from a concrete value.
 --
@@ -3371,6 +3440,7 @@ concreteToSym sym = \case
            i' <- traverseFC (concreteToSym sym) i
            x' <- concreteToSym sym x
            arrayUpdate sym arr' i' x'
+   ConcreteFF p x       -> ffLit sym p x
 
 ------------------------------------------------------------------------
 -- muxNatRange
@@ -3446,3 +3516,24 @@ bvZero = minUnsignedBV
 -- | A bitvector that is all zeroes except the LSB, which is one.
 bvOne :: (1 <= w, IsExprBuilder sym) => sym -> NatRepr w -> IO (SymBV sym w)
 bvOne sym w = bvLit sym w (BV.one w)
+
+----------------------------------------------------------------------
+-- Finite field utilities
+
+-- | The element @0@ of a finite field that acts as the additive identity,
+-- i.e., for any element in the field @a@, @a + 0 = a@.
+--
+-- Precondition: @p@ must be prime.
+ffZero ::
+  forall sym p. (2 <= p, IsExprBuilder sym) =>
+  sym -> NatRepr p -> IO (SymFF sym p)
+ffZero sym p
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  = ffLit sym p minFin
+
+-- | The element @1@ of a finite field that acts as the multiplicative
+-- identity, i.e., for any element in the field @a@, @a * 1 = a@.
+--
+-- Precondition: @p@ must be prime.
+ffOne :: (2 <= p, IsExprBuilder sym) => sym -> NatRepr p -> IO (SymFF sym p)
+ffOne sym p = ffLit sym p $ mkFin $ knownNat @1

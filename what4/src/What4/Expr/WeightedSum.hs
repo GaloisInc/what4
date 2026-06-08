@@ -100,12 +100,14 @@ data SRAbsValue :: SR.SemiRing -> Type where
   SRAbsRealAdd :: !AD.RealAbstractValue     -> SRAbsValue SR.SemiRingReal
   SRAbsBVAdd   :: (1 <= w) => !(A.Domain w) -> SRAbsValue (SR.SemiRingBV SR.BVArith w)
   SRAbsBVXor   :: (1 <= w) => !(X.Domain w) -> SRAbsValue (SR.SemiRingBV SR.BVBits w)
+  SRAbsFF      :: () -> SRAbsValue (SR.SemiRingFF p) -- TODO
 
 instance Semigroup (SRAbsValue sr) where
   SRAbsIntAdd  x <> SRAbsIntAdd  y = SRAbsIntAdd  (AD.addRange x y)
   SRAbsRealAdd x <> SRAbsRealAdd y = SRAbsRealAdd (AD.ravAdd x y)
   SRAbsBVAdd   x <> SRAbsBVAdd   y = SRAbsBVAdd   (A.add x y)
   SRAbsBVXor   x <> SRAbsBVXor   y = SRAbsBVXor   (X.xor x y)
+  SRAbsFF      x <> SRAbsFF      y = SRAbsFF      (x <> y)
 
 
 (.**) :: SRAbsValue sr -> SRAbsValue sr -> SRAbsValue sr
@@ -113,6 +115,7 @@ SRAbsIntAdd  x .** SRAbsIntAdd  y = SRAbsIntAdd  (AD.mulRange x y)
 SRAbsRealAdd x .** SRAbsRealAdd y = SRAbsRealAdd (AD.ravMul x y)
 SRAbsBVAdd   x .** SRAbsBVAdd   y = SRAbsBVAdd   (A.mul x y)
 SRAbsBVXor   x .** SRAbsBVXor   y = SRAbsBVXor   (X.and x y)
+SRAbsFF      x .** SRAbsFF      y = SRAbsFF      (x <> y)
 
 abstractTerm ::
   AD.HasAbsValue f =>
@@ -127,6 +130,7 @@ abstractTerm sr c e =
           -- A.scale expects a signed integer coefficient
           SRAbsBVAdd (A.scale (BV.asSigned w c) (BVD.asArithDomain (AD.getAbsValue e)))
         SR.BVBitsRepr  -> SRAbsBVXor (X.and_scalar (BV.asUnsigned c) (BVD.asXorDomain (AD.getAbsValue e)))
+    SR.SemiRingFFRepr _ -> SRAbsFF (AD.getAbsValue e)
 
 abstractVal :: AD.HasAbsValue f => SR.SemiRingRepr sr -> f (SR.SemiRingBase sr) -> SRAbsValue sr
 abstractVal sr e =
@@ -137,6 +141,7 @@ abstractVal sr e =
       case fv of
         SR.BVArithRepr -> SRAbsBVAdd (BVD.asArithDomain (AD.getAbsValue e))
         SR.BVBitsRepr  -> SRAbsBVXor (BVD.asXorDomain (AD.getAbsValue e))
+    SR.SemiRingFFRepr _ -> SRAbsFF (AD.getAbsValue e)
 
 abstractScalar ::
   SR.SemiRingRepr sr -> SR.Coefficient sr -> SRAbsValue sr
@@ -148,6 +153,7 @@ abstractScalar sr c =
       case fv of
         SR.BVArithRepr -> SRAbsBVAdd (A.singleton w (BV.asUnsigned c))
         SR.BVBitsRepr  -> SRAbsBVXor (X.singleton w (BV.asUnsigned c))
+    SR.SemiRingFFRepr _ -> SRAbsFF ()
 
 fromSRAbsValue ::
   SRAbsValue sr -> AD.AbstractValue (SR.SemiRingBase sr)
@@ -157,6 +163,7 @@ fromSRAbsValue v =
     SRAbsRealAdd x -> x
     SRAbsBVAdd   x -> BVD.BVDArith x
     SRAbsBVXor   x -> BVD.fromXorDomain x
+    SRAbsFF      x -> x
 
 -- | Returns 'Just' when the abstract value is a singleton.
 asCoeff ::
@@ -169,6 +176,7 @@ asCoeff =
     SR.SemiRingIntegerRepr -> AD.asSingleRange . AD.getAbsValue
     SR.SemiRingRealRepr -> AD.asSingleRange . AD.ravRange . AD.getAbsValue
     SR.SemiRingBVRepr _ w -> fmap (BV.mkBV w) . BVD.asSingleton . AD.getAbsValue
+    SR.SemiRingFFRepr _ -> const Nothing
 
 varIsConst ::
   AD.HasAbsValue f =>

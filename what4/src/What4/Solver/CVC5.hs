@@ -124,6 +124,8 @@ instance SMT2.SMTLib2Tweaks CVC5 where
   smtlib2arraySelect a i = SMT2.arraySelect a (indexCtor i)
   smtlib2arrayUpdate a i = SMT2.arrayStore a (indexCtor i)
 
+  smtlib2FFNeg _ = Syntax.ffNeg
+
 cvc5Features :: ProblemFeatures
 cvc5Features = useComputableReals
            .|. useIntegerArithmetic
@@ -138,6 +140,7 @@ cvc5Features = useComputableReals
            .|. useBitvectors
            .|. useQuantifiers
            .|. useProduceAbducts
+           .|. useFiniteFields
 
 writeMultiAsmpCVC5SMT2File
    :: ExprBuilder t st fs
@@ -262,6 +265,8 @@ instance SMT2.SMTLib2Tweaks CVC5_SyGuS where
   smtlib2StructSort = SMT2.smtlib2StructSort @CVC5
   smtlib2StructCtor = SMT2.smtlib2StructCtor @CVC5
   smtlib2StructProj = SMT2.smtlib2StructProj @CVC5
+
+  smtlib2FFNeg = SMT2.smtlib2FFNeg @CVC5
 
 instance SMT2.SMTLib2GenericSolver CVC5_SyGuS where
   defaultSolverPath _ = SMT2.defaultSolverPath CVC5

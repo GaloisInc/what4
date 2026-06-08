@@ -46,6 +46,7 @@ module What4.ProblemFeatures
   , useUninterpFunctions
   , useDefinedFunctions
   , useProduceAbducts
+  , useFiniteFields
   , hasProblemFeature
   ) where
 
@@ -131,10 +132,14 @@ useUninterpFunctions = ProblemFeatures 0x2000
 useDefinedFunctions :: ProblemFeatures
 useDefinedFunctions = ProblemFeatures 0x4000
 
--- | Indicates if the solver is able and configured to 
+-- | Indicates if the solver is able and configured to
 --   produce abducts.
 useProduceAbducts :: ProblemFeatures
 useProduceAbducts = ProblemFeatures 0x8000
+
+-- | Indicates whether the problem uses finite fields.
+useFiniteFields :: ProblemFeatures
+useFiniteFields = ProblemFeatures 0x10000
 
 -- | Tests if one set of problem features subsumes another.
 --   In particular, @hasProblemFeature x y@ is true iff

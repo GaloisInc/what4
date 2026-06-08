@@ -66,6 +66,7 @@ module What4.Protocol.SMTLib2.Syntax
   , Sort(..)
   , boolSort
   , bvSort
+  , ffSort
   , intSort
   , realSort
   , varSort
@@ -148,10 +149,16 @@ module What4.Protocol.SMTLib2.Syntax
   , arrayConst
   , select
   , store
+    -- * Finite field theory
+  , ffConst
+  , ffAdd
+  , ffMul
+  , ffNeg
   ) where
 
 import qualified Data.BitVector.Sized as BV
 import           Data.Char (intToDigit)
+import           Data.Parameterized.Fin (Fin, finToNat)
 import           Data.Parameterized.NatRepr
 import           Data.String
 import           Data.Text (Text, cons)
@@ -237,6 +244,14 @@ realSort = Sort "Real"
 -- | @arraySort a b@ denotes the set of functions from @a@ to be @b@.
 arraySort :: Sort -> Sort -> Sort
 arraySort (Sort i) (Sort v) = Sort $ "(Array " <> i <> " " <> v <> ")"
+
+-- | Finite fields with the given order.
+ffSort :: Natural -> Sort
+ffSort = Sort . ffSortBuilder
+
+-- | Finite fields with the given order.
+ffSortBuilder :: Natural -> Builder
+ffSortBuilder p = "(_ FiniteField " <> Builder.decimal (toInteger p) <> ")"
 
 ------------------------------------------------------------------------
 -- Term
@@ -513,6 +528,32 @@ select = bin_app "select"
 -- @select a j@ at every other index @j@.
 store :: Term -> Term -> Term -> Term
 store a i v = term_app "store" [a,i,v]
+
+------------------------------------------------------------------------
+-- Finite field theory
+
+-- | @ffConst p n@ generates a finite field element @n@ mod @p@, where @p@ must
+-- be prime.
+ffConst :: (2 <= p) => NatRepr p -> Fin p -> Term
+ffConst p n = T $ mconcat [ "(as ff"
+                          , Builder.decimal (toInteger (finToNat n))
+                          , " "
+                          , ffSortBuilder (natValue p)
+                          , ")"
+                          ]
+
+-- | @ffAdd x y@ adds two finite field elements.
+ffAdd :: Term -> Term -> Term
+ffAdd = bin_app "ff.add"
+
+-- | @ffMul x y@ multiplies two finite field elements.
+ffMul :: Term -> Term -> Term
+ffMul = bin_app "ff.mul"
+
+-- | @ffNeg x@ negates a finite field element by computing its additive
+-- inverse.
+ffNeg :: Term -> Term
+ffNeg = un_app "ff.neg"
 
 ------------------------------------------------------------------------
 -- Bitvector theory

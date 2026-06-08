@@ -16,3 +16,9 @@ optional-packages:
   dependencies/abcBridge/
   dependencies/aig/
   dependencies/blt/
+
+-- TODO RGS: Remove this
+source-repository-package
+  type: git
+  location: https://github.com/GaloisInc/parameterized-utils
+  tag: ff99d88ea854802521c358e0a497cfcf09810244

@@ -121,6 +121,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Parameterized.Classes
 import           Data.Parameterized.Context as Ctx
+import           Data.Parameterized.Fin (finToNat, mkFin)
 import qualified Data.Parameterized.HashTable as PH
 import           Data.Parameterized.NatRepr
 import           Data.Parameterized.Nonce
@@ -636,6 +637,21 @@ data App (e :: BaseType -> Type) (tp :: BaseType) where
     !(e (BaseBVType w)) {- @lhs_idx + len@ -} ->
     !(e (BaseBVType w)) {- @rhs_idx + len@ -} ->
     App e BaseBoolType
+
+  ------------------------------------------------------------------------
+  -- Finite field operations
+
+  FFNeg ::
+    (2 <= p) =>
+    !(NatRepr p) ->
+    !(e (BaseFFType p)) ->
+    App e (BaseFFType p)
+
+  FFRecip ::
+    (2 <= p) =>
+    !(NatRepr p) ->
+    !(e (BaseFFType p)) ->
+    App e (BaseFFType p)
 
   ------------------------------------------------------------------------
   -- Conversions.
@@ -1268,6 +1284,7 @@ exprAbsValue (SemiRingLiteral sr x _) =
     SR.SemiRingIntegerRepr  -> singleRange x
     SR.SemiRingRealRepr -> ravSingle x
     SR.SemiRingBVRepr _ w -> BVD.singleton w (BV.asUnsigned x)
+    SR.SemiRingFFRepr{} -> () -- TODO
 
 exprAbsValue (StringExpr l _) = stringAbsSingle l
 exprAbsValue (FloatExpr _ _ _) = ()
@@ -1382,6 +1399,10 @@ instance Hashable (Expr t tp) where
       SR.SemiRingIntegerRepr -> hashWithSalt (hashWithSalt s (2::Int)) x
       SR.SemiRingRealRepr    -> hashWithSalt (hashWithSalt s (3::Int)) x
       SR.SemiRingBVRepr _ w  -> hashWithSalt (hashWithSaltF (hashWithSalt s (4::Int)) w) x
+      SR.SemiRingFFRepr p    -> hashWithSalt (hashWithSaltF (hashWithSalt s (10::Int)) p) x
+        -- Note that we use the value `10` above, which is out of order. This
+        -- is because `SemiRingFFRepr` was added after `BoundVarExpr` below,
+        -- which uses the value `9`.
 
   hashWithSalt s (FloatExpr fr x _) = hashWithSalt (hashWithSaltF (hashWithSalt s (5::Int)) fr) x
   hashWithSalt s (StringExpr x _) = hashWithSalt (hashWithSalt s (6::Int)) x
@@ -1714,6 +1735,8 @@ ppExpr' e0 o = do
                        | otherwise   = prettyApp "divReal"  [ showPrettyArg n, showPrettyArg d ]
           SR.SemiRingBVRepr _ w ->
             return $ stringPPExpr $ BV.ppHex w x
+          SR.SemiRingFFRepr _ ->
+            return $ stringPPExpr $ show $ finToNat x
 
       getBindings (StringExpr x _) =
         return $ stringPPExpr $ (show x)
@@ -1957,6 +1980,9 @@ appType a =
     SetArray w a_repr _ _ _ _ _ -> BaseArrayRepr (singleton (BaseBVRepr w)) a_repr
     EqualArrayRange _ _ _ _ _ _ _ _ _ -> knownRepr
 
+    FFNeg p _ -> BaseFFRepr p
+    FFRecip p _ -> BaseFFRepr p
+
     IntegerToReal{} -> knownRepr
     BVToInteger{} -> knownRepr
     SBVToInteger{} -> knownRepr
@@ -2112,6 +2138,9 @@ abstractEval f a0 = do
         Just a -> avJoin bRepr (f d) a
     ConstantArray _idxRepr _bRepr v -> f v
 
+    FFNeg{} -> () -- TODO
+    FFRecip{} -> () -- TODO
+
     SelectArray _bRepr a _i -> f a  -- FIXME?
     UpdateArray bRepr _ a _i v -> withAbstractable bRepr $ avJoin bRepr (f a) (f v)
     CopyArray _ a_repr dest_arr _dest_idx src_arr _src_idx _len _dest_end_idx _src_end_idx ->
@@ -2189,6 +2218,8 @@ reduceApp sym unary a0 = do
           WSum.evalM (bvAdd sym) (\c x -> bvMul sym x =<< bvLit sym w c) (bvLit sym w) s
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           WSum.evalM (bvXorBits sym) (\c x -> bvAndBits sym x =<< bvLit sym w c) (bvLit sym w) s
+        SR.SemiRingFFRepr p ->
+          WSum.evalM (ffAdd sym) (\c x -> ffMul sym x =<< ffLit sym p c) (ffLit sym p) s
 
     SemiRingProd pd ->
       case WSum.prodRepr pd of
@@ -2200,6 +2231,8 @@ reduceApp sym unary a0 = do
           maybe (bvOne sym w) return =<< WSum.prodEvalM (bvMul sym) return pd
         SR.SemiRingBVRepr SR.BVBitsRepr w ->
           maybe (bvLit sym w (BV.maxUnsigned w)) return =<< WSum.prodEvalM (bvAndBits sym) return pd
+        SR.SemiRingFFRepr p ->
+          maybe (ffOne sym p) return =<< WSum.prodEvalM (ffMul sym) return pd
 
     SemiRingLe SR.OrderedSemiRingRealRepr x y -> realLe sym x y
     SemiRingLe SR.OrderedSemiRingIntegerRepr x y -> intLe sym x y
@@ -2287,6 +2320,9 @@ reduceApp sym unary a0 = do
     EqualArrayRange _ _ x_arr x_idx y_arr y_idx len _ _ ->
       arrayRangeEq sym x_arr x_idx y_arr y_idx len
 
+    FFNeg _ x -> ffNeg sym x
+    FFRecip _ x -> ffRecip sym x
+
     IntegerToReal x -> integerToReal sym x
     RealToInteger x -> realToInteger sym x
 
@@ -2353,6 +2389,7 @@ ppVarTypeCode tp =
     BaseComplexRepr -> "c"
     BaseArrayRepr _ _ -> "a"
     BaseStructRepr _ -> "struct"
+    BaseFFRepr{} -> "ff"
 
 -- | Either a argument or text or text
 data PrettyArg (e :: BaseType -> Type) where
@@ -2478,6 +2515,15 @@ ppApp' a0 = do
                   | otherwise = [ PrettyFunc "bvAnd" [ stringPrettyArg (ppBV sm), exprPrettyArg e ] ]
                 ppBV = BV.ppHex w
 
+        SR.SemiRingFFRepr _p -> prettyApp "ffSum" (WSum.eval (++) ppEntry ppConstant s)
+          where ppConstant c
+                  | finToNat c == 0 = []
+                  | otherwise = [ stringPrettyArg (ppFF c) ]
+                ppEntry sm e
+                  | sm == mkFin (knownNat @1) = [ exprPrettyArg e ]
+                  | otherwise = [ PrettyFunc "ffMul" [ stringPrettyArg (ppFF sm), exprPrettyArg e ] ]
+                ppFF = show . finToNat
+
     SemiRingProd pd ->
       case WSum.prodRepr pd of
         SR.SemiRingRealRepr ->
@@ -2488,6 +2534,8 @@ ppApp' a0 = do
           prettyApp "bvProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
         SR.SemiRingBVRepr SR.BVBitsRepr _w ->
           prettyApp "bvAnd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
+        SR.SemiRingFFRepr _p ->
+          prettyApp "ffProd" $ fromMaybe [] (WSum.prodEval (++) ((:[]) . exprPrettyArg) pd)
 
 
     RealDiv x y -> ppSExpr "divReal" [x, y]
@@ -2594,6 +2642,12 @@ ppApp' a0 = do
         , exprPrettyArg y_idx
         , exprPrettyArg len
         ]
+
+    --------------------------------
+    -- Finite field operations
+
+    FFNeg _ x -> ppSExpr "ffNeg" [x]
+    FFRecip _ x -> ppSExpr "ffRecip" [x]
 
     ------------------------------------------------------------------------
     -- Conversions.

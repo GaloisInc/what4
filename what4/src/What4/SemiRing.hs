@@ -28,7 +28,9 @@ Moreover ordered semirings satisfy: @0 <= x@ and @0 <= y@ implies @0 <= x*y@.
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 module What4.SemiRing
@@ -37,6 +39,7 @@ module What4.SemiRing
   , type SemiRingInteger
   , type SemiRingReal
   , type SemiRingBV
+  , type SemiRingFF
   , type BVFlavor
   , type BVBits
   , type BVArith
@@ -76,6 +79,7 @@ import qualified Data.BitVector.Sized as BV
 import Data.Kind
 import Data.Hashable
 import Data.Parameterized.Classes
+import Data.Parameterized.Fin (Fin, addFinModN, minFin, mkFin, mulFinModN)
 import Data.Parameterized.TH.GADT
 import Numeric.Natural (Natural)
 
@@ -91,6 +95,7 @@ data SemiRing
   = SemiRingInteger
   | SemiRingReal
   | SemiRingBV BVFlavor Nat
+  | SemiRingFF Nat
 
 type BVArith = 'BVArith    -- ^ @:: 'BVFlavor'@
 type BVBits  = 'BVBits     -- ^ @:: 'BVFlavor'@
@@ -98,6 +103,7 @@ type BVBits  = 'BVBits     -- ^ @:: 'BVFlavor'@
 type SemiRingInteger = 'SemiRingInteger   -- ^ @:: 'SemiRing'@
 type SemiRingReal = 'SemiRingReal         -- ^ @:: 'SemiRing'@
 type SemiRingBV = 'SemiRingBV             -- ^ @:: 'BVFlavor' -> 'Nat' -> 'SemiRing'@
+type SemiRingFF = 'SemiRingFF             -- ^ @:: 'Nat' -> 'SemiRing'@
 
 data BVFlavorRepr (fv :: BVFlavor) where
   BVArithRepr :: BVFlavorRepr BVArith
@@ -107,6 +113,8 @@ data SemiRingRepr (sr :: SemiRing) where
   SemiRingIntegerRepr :: SemiRingRepr SemiRingInteger
   SemiRingRealRepr    :: SemiRingRepr SemiRingReal
   SemiRingBVRepr      :: (1 <= w) => !(BVFlavorRepr fv) -> !(NatRepr w) -> SemiRingRepr (SemiRingBV fv w)
+  -- | Invariant: @p@ is prime.
+  SemiRingFFRepr      :: (2 <= p) => !(NatRepr p) -> SemiRingRepr (SemiRingFF p)
 
 -- | The subset of semirings that are equipped with an appropriate (order-respecting) total order.
 data OrderedSemiRingRepr (sr :: SemiRing) where
@@ -118,6 +126,7 @@ semiRingBase :: SemiRingRepr sr -> BaseTypeRepr (SemiRingBase sr)
 semiRingBase SemiRingIntegerRepr = BaseIntegerRepr
 semiRingBase SemiRingRealRepr    = BaseRealRepr
 semiRingBase (SemiRingBVRepr _fv w)  = BaseBVRepr w
+semiRingBase (SemiRingFFRepr p)  = BaseFFRepr p
 
 -- | Compute the semiring corresponding to the given ordered semiring.
 orderedSemiRing :: OrderedSemiRingRepr sr -> SemiRingRepr sr
@@ -128,12 +137,14 @@ type family SemiRingBase (sr :: SemiRing) :: BaseType where
   SemiRingBase SemiRingInteger   = BaseIntegerType
   SemiRingBase SemiRingReal      = BaseRealType
   SemiRingBase (SemiRingBV fv w) = BaseBVType w
+  SemiRingBase (SemiRingFF p)    = BaseFFType p
 
 -- | The constant values in the semiring.
 type family Coefficient (sr :: SemiRing) :: Type where
   Coefficient SemiRingInteger    = Integer
   Coefficient SemiRingReal       = Rational
   Coefficient (SemiRingBV fv w)  = BV.BV w
+  Coefficient (SemiRingFF p)     = Fin p
 
 -- | The 'Occurrence' family counts how many times a term occurs in a
 --   product. For most semirings, this is just a natural number
@@ -145,81 +156,101 @@ type family Occurrence (sr :: SemiRing) :: Type where
   Occurrence SemiRingReal           = Natural
   Occurrence (SemiRingBV BVArith w) = Natural
   Occurrence (SemiRingBV BVBits w)  = ()
+  Occurrence (SemiRingFF p)         = Natural
 
 sr_compare :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Ordering
 sr_compare SemiRingIntegerRepr  = compare
 sr_compare SemiRingRealRepr     = compare
 sr_compare (SemiRingBVRepr _ _) = compare
+sr_compare SemiRingFFRepr{}     = compare
 
 sr_hashWithSalt :: SemiRingRepr sr -> Int -> Coefficient sr -> Int
 sr_hashWithSalt SemiRingIntegerRepr  = hashWithSalt
 sr_hashWithSalt SemiRingRealRepr     = hashWithSalt
 sr_hashWithSalt (SemiRingBVRepr _ _) = hashWithSalt
+sr_hashWithSalt SemiRingFFRepr{}     = hashWithSalt
 
 occ_one :: SemiRingRepr sr -> Occurrence sr
 occ_one SemiRingIntegerRepr = 1
 occ_one SemiRingRealRepr    = 1
 occ_one (SemiRingBVRepr BVArithRepr _) = 1
 occ_one (SemiRingBVRepr BVBitsRepr _)  = ()
+occ_one SemiRingFFRepr{} = 1
 
 occ_add :: SemiRingRepr sr -> Occurrence sr -> Occurrence sr -> Occurrence sr
 occ_add SemiRingIntegerRepr = (+)
 occ_add SemiRingRealRepr    = (+)
 occ_add (SemiRingBVRepr BVArithRepr _) = (+)
 occ_add (SemiRingBVRepr BVBitsRepr _)  = \_ _ -> ()
+occ_add SemiRingFFRepr{} = (+)
 
 occ_count :: SemiRingRepr sr -> Occurrence sr -> Natural
 occ_count SemiRingIntegerRepr = id
 occ_count SemiRingRealRepr    = id
 occ_count (SemiRingBVRepr BVArithRepr _) = id
 occ_count (SemiRingBVRepr BVBitsRepr _)  = \_ -> 1
+occ_count SemiRingFFRepr{} = id
 
 occ_eq :: SemiRingRepr sr -> Occurrence sr -> Occurrence sr -> Bool
 occ_eq SemiRingIntegerRepr = (==)
 occ_eq SemiRingRealRepr    = (==)
 occ_eq (SemiRingBVRepr BVArithRepr _) = (==)
 occ_eq (SemiRingBVRepr BVBitsRepr _)  = \_ _ -> True
+occ_eq SemiRingFFRepr{} = (==)
 
 occ_hashWithSalt :: SemiRingRepr sr -> Int -> Occurrence sr -> Int
 occ_hashWithSalt SemiRingIntegerRepr  = hashWithSalt
 occ_hashWithSalt SemiRingRealRepr     = hashWithSalt
 occ_hashWithSalt (SemiRingBVRepr BVArithRepr _) = hashWithSalt
 occ_hashWithSalt (SemiRingBVRepr BVBitsRepr _) = hashWithSalt
+occ_hashWithSalt (SemiRingFFRepr _) = hashWithSalt
 
 occ_compare :: SemiRingRepr sr -> Occurrence sr -> Occurrence sr -> Ordering
 occ_compare SemiRingIntegerRepr  = compare
 occ_compare SemiRingRealRepr     = compare
 occ_compare (SemiRingBVRepr BVArithRepr _) = compare
 occ_compare (SemiRingBVRepr BVBitsRepr _)  = compare
+occ_compare SemiRingFFRepr{} = compare
 
 zero :: SemiRingRepr sr -> Coefficient sr
 zero SemiRingIntegerRepr      = 0 :: Integer
 zero SemiRingRealRepr         = 0 :: Rational
 zero (SemiRingBVRepr BVArithRepr w) = BV.zero w
 zero (SemiRingBVRepr BVBitsRepr w)  = BV.zero w
+zero (SemiRingFFRepr (_ :: NatRepr p))
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  = minFin
 
 one :: SemiRingRepr sr -> Coefficient sr
 one SemiRingIntegerRepr          = 1 :: Integer
 one SemiRingRealRepr             = 1 :: Rational
 one (SemiRingBVRepr BVArithRepr w) = BV.mkBV w 1
 one (SemiRingBVRepr BVBitsRepr w)  = BV.maxUnsigned w
+one (SemiRingFFRepr _) = mkFin (knownNat @1)
 
 add :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Coefficient sr
 add SemiRingIntegerRepr      = (+)
 add SemiRingRealRepr         = (+)
 add (SemiRingBVRepr BVArithRepr w) = BV.add w
 add (SemiRingBVRepr BVBitsRepr _)  = BV.xor
+add (SemiRingFFRepr (p :: NatRepr p))
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  = addFinModN p
 
 mul :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Coefficient sr
 mul SemiRingIntegerRepr      = (*)
 mul SemiRingRealRepr         = (*)
 mul (SemiRingBVRepr BVArithRepr w) = BV.mul w
 mul (SemiRingBVRepr BVBitsRepr _)  = BV.and
+mul (SemiRingFFRepr (p :: NatRepr p))
+  | LeqProof <- leqSub (LeqProof @2 @p) (LeqProof @1 @2)
+  = mulFinModN p
 
 eq :: SemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Bool
 eq SemiRingIntegerRepr      = (==)
 eq SemiRingRealRepr         = (==)
 eq (SemiRingBVRepr _ _)     = (==)
+eq SemiRingFFRepr{}         = (==)
 
 le :: OrderedSemiRingRepr sr -> Coefficient sr -> Coefficient sr -> Bool
 le OrderedSemiRingIntegerRepr = (<=)

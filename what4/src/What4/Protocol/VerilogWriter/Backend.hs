@@ -338,6 +338,10 @@ appVerilogExpr app =
     SetArray _ _ _ _ _ _ _ -> doNotSupportError "arrays"
     EqualArrayRange _ _ _ _ _ _ _ _ _ -> doNotSupportError "arrays"
 
+    -- Bitvector operations
+    FFNeg{} -> doNotSupportError "finite fields"
+    FFRecip{} -> doNotSupportError "finite fields"
+
     -- Conversions
     IntegerToReal _ -> doNotSupportError "integers"
     RealToInteger _ -> doNotSupportError "integers"

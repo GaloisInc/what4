@@ -660,6 +660,7 @@ type family AbstractValue (tp::BaseType) :: Type where
   AbstractValue BaseComplexType = Complex RealAbstractValue
   AbstractValue (BaseArrayType idx b) = AbstractValue b
   AbstractValue (BaseStructType ctx) = Ctx.Assignment AbstractValueWrapper ctx
+  AbstractValue (BaseFFType _) = () -- TODO
 
 
 -- | A utility class for values that contain abstract values
@@ -679,6 +680,7 @@ type family ConcreteValue (tp::BaseType) :: Type where
   ConcreteValue BaseComplexType = Complex Rational
   ConcreteValue (BaseArrayType idx b) = ()
   ConcreteValue (BaseStructType ctx) = Ctx.Assignment ConcreteValueWrapper ctx
+  ConcreteValue (BaseFFType _) = () -- TODO
 
 newtype ConcreteValueWrapper tp
       = ConcreteValueWrapper { unwrapCV :: ConcreteValue tp }
@@ -696,6 +698,7 @@ avTop tp =
     BaseFloatRepr{} -> ()
     BaseArrayRepr _a b -> avTop b
     BaseStructRepr flds -> fmapFC (\etp -> AbstractValueWrapper (avTop etp)) flds
+    BaseFFRepr{} -> ()
 
 -- | Create an abstract value that contains the given concrete value.
 avSingle :: BaseTypeRepr tp -> ConcreteValue tp -> AbstractValue tp
@@ -714,6 +717,7 @@ avSingle tp =
         (\ftp v -> AbstractValueWrapper (avSingle ftp (unwrapCV v)))
         flds
         vals
+    BaseFFRepr{} -> \_ -> ()
 
 ------------------------------------------------------------------------
 -- Abstractable
@@ -814,6 +818,11 @@ instance Abstractable (BaseStructType ctx) where
                   u  = x Ctx.! i
                   v  = y Ctx.! i
 
+instance Abstractable (BaseFFType p) where
+  avJoin _ _ _ = ()
+  avOverlap _ _ _ = True
+  avCheckEq _ _ _ = Nothing
+
 withAbstractable
    :: BaseTypeRepr bt
    -> (Abstractable bt => a)
@@ -829,6 +838,7 @@ withAbstractable bt k =
     BaseArrayRepr _a _b -> k
     BaseStructRepr _flds -> k
     BaseFloatRepr _fpp -> k
+    BaseFFRepr{} -> k
 
 -- | Returns true if the concrete value is a member of the set represented
 -- by the abstract value.

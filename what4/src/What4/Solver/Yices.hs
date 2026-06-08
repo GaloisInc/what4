@@ -329,6 +329,10 @@ instance SupportTermOps YicesTerm where
   floatToSBV      _ _ _ = floatFail
   floatToReal     _ = floatFail
 
+  ffTerm _ _ = ffFail
+  ffAdd _ _ = ffFail
+  ffMul _ _ = ffFail
+
   fromText t = T (Builder.fromText t)
 
 unsupportedFeature :: String -> a
@@ -339,6 +343,9 @@ floatFail = error "Yices does not support IEEE-754 floating-point numbers"
 
 stringFail :: HasCallStack => a
 stringFail = error "Yices does not support strings"
+
+ffFail :: HasCallStack => a
+ffFail = error "Yices does not support finite fields."
 
 errorComputableUnsupported :: a
 errorComputableUnsupported = error "computable functions are not supported."
@@ -378,6 +385,7 @@ yicesType ComplexToArrayTypeMap  = fnType [boolType] realType
 yicesType (PrimArrayTypeMap i r) = fnType (toListFC yicesType i) (yicesType r)
 yicesType (FnArrayTypeMap i r)   = fnType (toListFC yicesType i) (yicesType r)
 yicesType (StructTypeMap f)      = tupleType (toListFC yicesType f)
+yicesType (FFTypeMap p) = YicesType (app "finitefield" [fromString (show p)])
 
 ------------------------------------------------------------------------
 -- Command
@@ -548,6 +556,8 @@ instance SMTWriter Connection where
   stringIsSuffixOf _ _ = stringFail
   stringSubstring _ _ _ = stringFail
 
+  ffNeg _ _ = ffFail
+
   -- yices has built-in syntax for n-tuples where n > 0,
   -- so we only need to delcare the unit type for 0-tuples
   declareStructDatatype conn Ctx.Empty = declareUnitType conn
@@ -573,6 +583,7 @@ instance SMTReadWriter Connection where
                      , smtEvalFloat   = \_ _ -> fail "Yices does not support floats."
                      , smtEvalBvArray = Nothing
                      , smtEvalString  = \_ -> fail "Yices does not support strings."
+                     , smtEvalFF      = \_ _ -> fail "Yices does not support finite fields."
                      }
 
   smtSatResult _ = getSatResponse
@@ -925,6 +936,9 @@ yicesSMT2Features
   .|. useIntegerArithmetic
   .|. useBitvectors
   .|. useQuantifiers
+  .|. useFiniteFields -- yices-smt supports finite fields, but Yices's native
+                      -- .ys syntax does not (see
+                      -- https://github.com/SRI-CSL/yices2/issues/642)
 
 yicesDefaultFeatures :: ProblemFeatures
 yicesDefaultFeatures

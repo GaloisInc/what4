@@ -171,6 +171,7 @@ addFeaturesForVarType tp =
     BaseArrayRepr{}  -> addFeatures useSymbolicArrays
     BaseStructRepr{} -> addFeatures useStructs
     BaseFloatRepr _  -> addFeatures useFloatingPoint
+    BaseFFRepr{}     -> addFeatures useFiniteFields
 
 
 -- | Information about bound variables outside this context.
@@ -408,6 +409,7 @@ addTheoryFeatures th =
     StructTheory          -> addFeatures useStructs
     StringTheory          -> addFeatures useStrings
     FloatingPointTheory   -> addFeatures useFloatingPoint
+    FiniteFieldTheory     -> addFeatures useFiniteFields
     QuantifierTheory -> return ()
     FnTheory         -> return ()
 
