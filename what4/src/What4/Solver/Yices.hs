@@ -1001,6 +1001,10 @@ yicesOptions =
       t = mkTmout yicesGoalTimeout
   in [ p, m, i, t
      , copyOpt (const $ configOptionText yicesStrictParsing) strictSMTParseOpt
+       -- Make sure to also include the original 'strictSMTParseOpt'. Since
+       -- Yices doesn't inherit the 'smtlib2Options' like other solvers do, we
+       -- have to include this option explicitly.
+     , strictSMTParseOpt
      , deprecatedOpt [p] $ mkPath yicesPathOLD
      , deprecatedOpt [m] $ mkMCSat yicesEnableMCSatOLD
      , deprecatedOpt [i] $ mkIntr yicesEnableInteractiveOLD

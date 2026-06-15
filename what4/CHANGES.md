@@ -31,6 +31,8 @@
   `fpToSBV` to `What4.SFloat`.
 * Fix a bug in which `fpToRational` could return an invalid rational number
   with a zero denominator.
+* Fix a bug in which calling `solver_adapter_write_smt2 yicesAdapter` would
+  always fail.
 
 # 1.7.3 -- 2026-01-26
 
