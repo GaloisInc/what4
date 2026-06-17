@@ -223,12 +223,24 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_add" $
       do SW n <- genWidth
          A.correct_add n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_sub" $
+      do SW n <- genWidth
+         A.correct_sub n <$> A.genPair n <*> A.genPair n
   , genTest "correct_neg" $
       do SW n <- genWidth
          A.correct_neg n <$> A.genPair n
   , genTest "correct_not" $
       do SW n <- genWidth
          A.correct_not n <$> A.genPair n
+  , genTest "correct_and" $
+      do SW n <- genWidth
+         A.correct_and n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_or" $
+      do SW n <- genWidth
+         A.correct_or n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_xor" $
+      do SW n <- genWidth
+         A.correct_xor n <$> A.genPair n <*> A.genPair n
   , genTest "correct_mul" $
       do SW n <- genWidth
          A.correct_mul n <$> A.genPair n <*> A.genPair n
@@ -278,6 +290,12 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_ashr" $
       do SW n <- genWidth
          A.correct_ashr n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_rol" $
+      do SW n <- genWidth
+         A.correct_rol n <$> A.genPair n <*> A.genPair n
+  , genTest "correct_ror" $
+      do SW n <- genWidth
+         A.correct_ror n <$> A.genPair n <*> A.genPair n
   , genTest "correct_eq" $
       do SW n <- genWidth
          A.correct_eq n <$> A.genPair n <*> A.genPair n
@@ -299,6 +317,12 @@ arithDomainTests = testGroup "Arith Domain"
   , genTest "correct_bitbounds" $
       do SW n <- genWidth
          A.correct_bitbounds n <$> A.genPair n
+  , genTest "correct_toBitwise" $
+      do SW n <- genWidth
+         A.correct_toBitwise n <$> A.genPair n
+  , genTest "correct_fromBitwise" $
+      do SW n <- genWidth
+         A.correct_fromBitwise n <$> B.genPair n
   ]
 
 xorDomainTests :: TestTree

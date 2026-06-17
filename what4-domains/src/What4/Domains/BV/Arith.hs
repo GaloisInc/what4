@@ -60,6 +60,7 @@ module What4.Domains.BV.Arith
   , ashr
     -- ** Arithmetic
   , add
+  , sub
   , negate
   , scale
   , mul
@@ -74,6 +75,15 @@ module What4.Domains.BV.Arith
   , sremSmtlib
     -- ** Bitwise
   , What4.Domains.BV.Arith.not
+  , What4.Domains.BV.Arith.and
+  , What4.Domains.BV.Arith.or
+  , What4.Domains.BV.Arith.xor
+    -- ** Rotates
+  , rol
+  , ror
+    -- ** Conversion to\/from "What4.Domains.BV.Bitwise"
+  , toBitwise
+  , fromBitwise
 
   -- * Correctness properties
   , genDomain
@@ -112,6 +122,7 @@ module What4.Domains.BV.Arith
   , correct_trunc
   , correct_select
   , correct_add
+  , correct_sub
   , correct_neg
   , correct_mul
   , correct_scale
@@ -126,15 +137,22 @@ module What4.Domains.BV.Arith
   , correct_sdivSmtlib
   , correct_sremSmtlib
   , correct_not
+  , correct_and
+  , correct_or
+  , correct_xor
   , correct_shl
   , correct_lshr
   , correct_ashr
+  , correct_rol
+  , correct_ror
   , correct_eq
   , correct_ult
   , correct_slt
   , correct_isUltSumCommonEquiv
   , correct_unknowns
   , correct_bitbounds
+  , correct_toBitwise
+  , correct_fromBitwise
   ) where
 
 import qualified Data.Bits as Bits
@@ -147,6 +165,7 @@ import qualified Prelude
 import           Prelude hiding (any, concat, negate, and, or, not)
 
 import qualified What4.Domains.Arithmetic as Arith
+import qualified What4.Domains.BV.Bitwise as B
 import           What4.Domains.Verification ( Property, property, (==>), Gen, chooseInteger )
 
 --------------------------------------------------------------------------------
@@ -639,6 +658,11 @@ add a b =
         BVDInterval mask bl bw ->
           interval mask (al + bl) (aw + bw)
 
+-- | /O(w)/. Subtraction.
+sub :: (1 <= w) => Domain w -> Domain w -> Domain w
+sub a b = add a (negate b)
+{-# INLINE sub #-}
+
 negate :: (1 <= w) => Domain w -> Domain w
 negate a =
   case a of
@@ -867,6 +891,69 @@ not a =
       BVDInterval mask (complement ah .&. mask) aw
       where ah = al + aw
 
+-- | /O(w)/. Bitwise AND. Converts both operands to the
+-- 'What4.Domains.BV.Bitwise' domain, applies 'B.and', and converts
+-- back.
+and :: Domain w -> Domain w -> Domain w
+and a b
+  | isBottom a || isBottom b = a
+  | otherwise = fromBitwise mask (B.and (toBitwise mask a) (toBitwise mask b))
+  where mask = bvdMask a
+{-# INLINE and #-}
+
+-- | /O(w)/. Bitwise OR. Converts both operands to the
+-- 'What4.Domains.BV.Bitwise' domain, applies 'B.or', and converts
+-- back.
+or :: Domain w -> Domain w -> Domain w
+or a b
+  | isBottom a || isBottom b = if isBottom a then b else a
+  | otherwise = fromBitwise mask (B.or (toBitwise mask a) (toBitwise mask b))
+  where mask = bvdMask a
+{-# INLINE or #-}
+
+-- | /O(w)/. Bitwise XOR. Converts both operands to the
+-- 'What4.Domains.BV.Bitwise' domain, applies 'B.xor', and converts
+-- back.
+xor :: Domain w -> Domain w -> Domain w
+xor a b
+  | isBottom a || isBottom b = if isBottom a then b else a
+  | otherwise = fromBitwise mask (B.xor (toBitwise mask a) (toBitwise mask b))
+  where mask = bvdMask a
+{-# INLINE xor #-}
+
+-- | Convert an Arith domain to a Bitwise domain.
+toBitwise :: Integer -> Domain w -> B.Domain w
+toBitwise mask a =
+  let (lo, hi) = bitbounds a
+  in B.interval mask lo hi
+{-# INLINE toBitwise #-}
+
+-- | Convert a Bitwise domain back to an Arith domain.
+fromBitwise :: Integer -> B.Domain w -> Domain w
+fromBitwise mask bw =
+  let (lo, hi) = B.ubounds bw
+  in if hi - lo >= mask then BVDAny mask
+     else interval mask lo (hi - lo)
+{-# INLINE fromBitwise #-}
+
+-- | /O(w²)/. Rotate left. Converts to the 'What4.Domains.BV.Bitwise'
+-- domain, applies 'B.rolAbstract', and converts back.
+rol :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+rol w a b
+  | isBottom a || isBottom b = a
+  | otherwise = fromBitwise mask (B.rolAbstract w (toBitwise mask a) (toBitwise mask b))
+  where mask = bvdMask a
+{-# INLINE rol #-}
+
+-- | /O(w²)/. Rotate right. Converts to the 'What4.Domains.BV.Bitwise'
+-- domain, applies 'B.rorAbstract', and converts back.
+ror :: (1 <= w) => NatRepr w -> Domain w -> Domain w -> Domain w
+ror w a b
+  | isBottom a || isBottom b = a
+  | otherwise = fromBitwise mask (B.rorAbstract w (toBitwise mask a) (toBitwise mask b))
+  where mask = bvdMask a
+{-# INLINE ror #-}
+
 -- | Return bitwise bounds for domain (i.e. logical AND of all
 -- possible values, paired with logical OR of all possible values).
 bitbounds :: Domain w -> (Integer, Integer)
@@ -1063,11 +1150,23 @@ correct_select i n (a, x) = member a x ==> pmember n (select i n a) y
 correct_add :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_add n (a,x) (b,y) = member a x ==> member b y ==> pmember n (add a b) (x + y)
 
+correct_sub :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_sub n (a,x) (b,y) = member a x ==> member b y ==> pmember n (sub a b) (x - y)
+
 correct_neg :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
 correct_neg n (a,x) = member a x ==> pmember n (negate a) (Prelude.negate x)
 
 correct_not :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
 correct_not n (a,x) = member a x ==> pmember n (not a) (complement x)
+
+correct_and :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_and n (a,x) (b,y) = member a x ==> member b y ==> pmember n (and a b) (x .&. y)
+
+correct_or :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_or n (a,x) (b,y) = member a x ==> member b y ==> pmember n (or a b) (x .|. y)
+
+correct_xor :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_xor n (a,x) (b,y) = member a x ==> member b y ==> pmember n (xor a b) (x `Bits.xor` y)
 
 correct_mul :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_mul n (a,x) (b,y) = member a x ==> member b y ==> pmember n (mul a b) (x * y)
@@ -1175,6 +1274,16 @@ correct_ashr n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ashr n a b
   where
   z = (toSigned n x) `shiftR` fromInteger (min (intValue n) y)
 
+correct_rol :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_rol n (a,x) (b,y) = member a x ==> member b y ==> pmember n (rol n a b) z
+  where
+  z = Arith.rotateLeft n x y
+
+correct_ror :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
+correct_ror n (a,x) (b,y) = member a x ==> member b y ==> pmember n (ror n a b) z
+  where
+  z = Arith.rotateRight n x y
+
 correct_eq :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property
 correct_eq n (a,x) (b,y) =
   member a x ==> member b y ==>
@@ -1223,3 +1332,11 @@ correct_bitbounds n (a,x) =
   where
   x' = toUnsigned n x
   (lo, hi) = bitbounds a
+
+correct_toBitwise :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> Property
+correct_toBitwise _n (a, x) =
+  member a x ==> B.member (toBitwise (bvdMask a) a) x
+
+correct_fromBitwise :: (1 <= n) => NatRepr n -> (B.Domain n, Integer) -> Property
+correct_fromBitwise _n (bw, x) =
+  B.member bw x ==> member (fromBitwise (B.bvdMask bw) bw) x
