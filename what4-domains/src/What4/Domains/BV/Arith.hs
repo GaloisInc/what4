@@ -317,7 +317,7 @@ ult a b
     (b_min, b_max) = ubounds b
 
 -- | Check if @(bvult (bvadd a c) (bvadd b c))@ is equivalent to @(bvult a b)@.
--- 
+--
 -- This is true if and only if for all natural values @i_a@, @i_b@, @i_c@ in
 -- @a@, @b@, @c@, either both @i_a + i_c@ and @i_b + i_c@ are less than @2^w@,
 -- or both are not. We prove this by contradiction. If @i_a = i_b@, then the
