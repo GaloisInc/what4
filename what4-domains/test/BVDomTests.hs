@@ -127,6 +127,12 @@ arithDomainTests = testGroup "Arith Domain"
          x <- genBV n
          y <- genBV n
          pure $ A.correct_mulRange a b x y
+  , genTest "correct_shrinkRange" $
+      do SW n <- genWidth
+         a <- (,) <$> genBV n <*> genBV n
+         x <- genBV n
+         y <- genBV n
+         pure $ A.correct_shrinkRange a x y
   , genTest "correct_union" $
       do SW n <- genWidth
          A.correct_union n <$> A.genDomain n <*> A.genDomain n <*> genBV n
