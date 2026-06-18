@@ -119,6 +119,7 @@ module What4.Domains.BV.Arith
   , correct_udiv
   , correct_urem
   , correct_sdivRange
+  , correct_shrinkRange
   , correct_sdiv
   , correct_srem
   , correct_udivSmtlib
@@ -317,7 +318,7 @@ ult a b
     (b_min, b_max) = ubounds b
 
 -- | Check if @(bvult (bvadd a c) (bvadd b c))@ is equivalent to @(bvult a b)@.
--- 
+--
 -- This is true if and only if for all natural values @i_a@, @i_b@, @i_c@ in
 -- @a@, @b@, @c@, either both @i_a + i_c@ and @i_b + i_c@ are less than @2^w@,
 -- or both are not. We prove this by contradiction. If @i_a = i_b@, then the
@@ -745,6 +746,11 @@ sdivRange (al, ah) (ReciprocalRange bl bh) = (ql, qh)
     ql = min ql1 ql2
     qh = max qh1 qh2
 
+shrinkRange :: (Integer, Integer) -> Integer -> (Integer, Integer)
+shrinkRange (lo, hi) k =
+  if k > 0 then (lo `quot` k, hi `quot` k) else
+  if k < 0 then (hi `quot` k, lo `quot` k) else (lo, hi)
+
 -- | @scaleDownRange (lo, hi) k@ returns an interval @(ql, qh)@ such that for any
 -- @x@ in @[lo..hi]@, @x `quot` k@ is in @[ql..qh]@.
 scaleDownRange :: (Integer, Integer) -> Integer -> (Integer, Integer)
@@ -1099,6 +1105,12 @@ correct_sdivRange a b x y =
    mem a x ==> mem b y ==> y /= 0 ==> mem (sdivRange a b') (x `quot` y)
  where
  b' = ReciprocalRange (snd b) (fst b)
+ mem (lo,hi) v = lo <= v && v <= hi
+
+correct_shrinkRange :: (Integer, Integer) -> Integer -> Integer -> Property
+correct_shrinkRange a x y =
+   mem a x ==> y /= 0 ==> mem (shrinkRange a y) (x `quot` y)
+ where
  mem (lo,hi) v = lo <= v && v <= hi
 
 correct_sdiv :: (1 <= n) => NatRepr n -> (Domain n, Integer) -> (Domain n, Integer) -> Property

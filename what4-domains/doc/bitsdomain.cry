@@ -947,6 +947,9 @@ property lat18 = join_associative`{8}
 property lat19 = meet_associative`{8}
 property lat20 = join_absorb`{8}
 property lat21 = meet_absorb`{8}
+property lat22 = precise_meet`{8}
+property lat23 = join_proper`{8}
+property lat24 = meet_proper`{8}
 
 
 ////////////////////////////////////////////////////////////

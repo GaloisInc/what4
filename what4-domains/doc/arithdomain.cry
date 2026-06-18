@@ -639,6 +639,8 @@ property a6 = correct_sdiv`{6}
 property a7 = correct_srem`{6}
 property a8 = correct_not`{16}
 property a9 = correct_sdivRange`{6}
+property a10 = correct_mulRange`{4}
+property a11 = correct_shrinkRange`{8}
 
 property s1 = correct_shl`{8}
 property s2 = correct_lshr`{8}
@@ -664,6 +666,8 @@ property lat11 = meet_bottom`{8}
 property lat12 = leq_reflexive`{8}
 property lat13 = join_upper_bound`{8}
 property lat14 = leq_transitive`{8}
+property lat15 = join_proper`{8}
+property lat16 = meet_proper`{8}
 
 ////////////////////////////////////////////////////////////
 // Operations preserve singletons
@@ -772,6 +776,7 @@ property i17 = singleton_slt`{16}
 property i18 = singleton_sle`{16}
 property i19 = singleton_ult`{16}
 property i20 = singleton_ule`{16}
+property i21 = singleton_mulRange`{4}
 
 ////////////////////////////////////////////////////////////
 // Associativity/commutativity properties
