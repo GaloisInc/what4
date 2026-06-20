@@ -18,6 +18,7 @@ Extra-doc-files:
   doc/arithdomain.cry
   doc/bitsdomain.cry
   doc/xordomain.cry
+  doc/ffdomain.cry
   doc/README.md
 
 source-repository head
@@ -167,6 +168,7 @@ library
     What4.Domains.BV.Arith
     What4.Domains.BV.Bitwise
     What4.Domains.BV.XOR
+    What4.Domains.FF
     What4.Domains.Internal
     What4.Domains.Verification
     What4.Domains.Arithmetic.Internal
