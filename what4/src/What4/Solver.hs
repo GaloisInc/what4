@@ -103,6 +103,15 @@ module What4.Solver
   , yicesOptions
   , yicesDefaultFeatures
 
+  , YicesSMT2(..)
+  , yicesSMT2Adapter
+  , yicesSMT2Path
+  , runYicesSMT2InOverride
+  , withYicesSMT2
+  , writeYicesSMT2File
+  , yicesSMT2Options
+  , yicesSMT2Features
+
     -- * Z3
   , Z3(..)
   , z3Path

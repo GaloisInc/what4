@@ -61,6 +61,16 @@ module What4.Solver.Yices
   , yicesEnableMCSat
   , yicesEnableInteractive
   , yicesGoalTimeout
+
+    -- * TODO RGS: Docs
+  , YicesSMT2(..)
+  , yicesSMT2Path
+  , yicesSMT2Options
+  , yicesSMT2Adapter
+  , runYicesSMT2InOverride
+  , withYicesSMT2
+  , writeYicesSMT2File
+  , yicesSMT2Features
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -114,8 +124,10 @@ import           What4.ProblemFeatures
 import           What4.Protocol.Online
 import qualified What4.Protocol.PolyRoot as Root
 import           What4.Protocol.SExp
+import qualified What4.Protocol.SMTLib2 as SMT2
 import           What4.Protocol.SMTLib2 (writeDefaultSMT2)
 import           What4.Protocol.SMTLib2.Response ( strictSMTParseOpt )
+import qualified What4.Protocol.SMTLib2.Syntax as Syntax
 import           What4.Protocol.SMTWriter as SMTWriter
 import           What4.SatResult
 import           What4.Solver.Adapter
@@ -925,6 +937,7 @@ yicesSMT2Features
   .|. useIntegerArithmetic
   .|. useBitvectors
   .|. useQuantifiers
+  .|. useSymbolicArrays
 
 yicesDefaultFeatures :: ProblemFeatures
 yicesDefaultFeatures
@@ -940,8 +953,16 @@ yicesAdapter =
    , solver_adapter_check_sat = \sym logData ps cont ->
        runYicesInOverride sym logData ps
           (cont . runIdentity . traverseSatResult (\x -> pure (x,Nothing)) pure)
-   , solver_adapter_write_smt2 =
-       writeDefaultSMT2 () "YICES" yicesSMT2Features (Just yicesStrictParsing)
+   , solver_adapter_write_smt2 = writeYicesSMT2File
+   }
+
+yicesSMT2Adapter :: SolverAdapter t
+yicesSMT2Adapter =
+   SolverAdapter
+   { solver_adapter_name = "yices-smt2"
+   , solver_adapter_config_options = yicesSMT2Options
+   , solver_adapter_check_sat = runYicesSMT2InOverride
+   , solver_adapter_write_smt2 = writeYicesSMT2File
    }
 
 -- | Path to yices
@@ -950,6 +971,10 @@ yicesPath = configOption knownRepr "solver.yices.path"
 
 yicesPathOLD :: ConfigOption (BaseStringType Unicode)
 yicesPathOLD = configOption knownRepr "yices_path"
+
+-- | Path to @yices-smt2@
+yicesSMT2Path :: ConfigOption (BaseStringType Unicode)
+yicesSMT2Path = configOption knownRepr "solver.yices-smt2.path"
 
 -- | Enable the MC-SAT solver
 yicesEnableMCSat :: ConfigOption BaseBoolType
@@ -983,7 +1008,28 @@ yicesOptions =
                   executablePathOptSty
                   (Just "Yices executable path")
                   (Just (ConcreteString "yices"))
-      mkMCSat co = mkOpt co
+      p = mkPath yicesPath
+  in yicesOptionsCommon
+       [ p
+       , deprecatedOpt [p] $ mkPath yicesPathOLD
+         -- Make sure to also include the original 'strictSMTParseOpt'. Since
+         -- 'yicesOptions' don't inherit the 'smtlib2Options' like other solver
+         -- options do, we have to include this option explicitly.
+       , strictSMTParseOpt
+       ]
+
+yicesSMT2Options :: [ConfigDesc]
+yicesSMT2Options =
+  let mkPath co = mkOpt co
+                  executablePathOptSty
+                  (Just "yices-smt2 executable path")
+                  (Just (ConcreteString "yices-smt2"))
+  in yicesOptionsCommon $
+      [mkPath yicesSMT2Path] ++ SMT2.smtlib2Options
+
+yicesOptionsCommon :: [ConfigDesc] -> [ConfigDesc]
+yicesOptionsCommon extras =
+  let mkMCSat co = mkOpt co
                    boolOptSty
                    (Just "Enable the Yices MCSAT solving engine")
                    (Just (ConcreteBool False))
@@ -995,22 +1041,16 @@ yicesOptions =
                    integerOptSty
                    (Just "Set a per-goal timeout")
                    (Just (ConcreteInteger 0))
-      p = mkPath yicesPath
       m = mkMCSat yicesEnableMCSat
       i = mkIntr yicesEnableInteractive
       t = mkTmout yicesGoalTimeout
-  in [ p, m, i, t
+  in [ m, i, t
      , copyOpt (const $ configOptionText yicesStrictParsing) strictSMTParseOpt
-       -- Make sure to also include the original 'strictSMTParseOpt'. Since
-       -- Yices doesn't inherit the 'smtlib2Options' like other solvers do, we
-       -- have to include this option explicitly.
-     , strictSMTParseOpt
-     , deprecatedOpt [p] $ mkPath yicesPathOLD
      , deprecatedOpt [m] $ mkMCSat yicesEnableMCSatOLD
      , deprecatedOpt [i] $ mkIntr yicesEnableInteractiveOLD
      , deprecatedOpt [t] $ mkTmout yicesGoalTimeoutOLD
      ]
-     ++ yicesInternalOptions
+     ++ extras ++ yicesInternalOptions
 
 yicesBranchingChoices :: Set Text
 yicesBranchingChoices = Set.fromList
@@ -1261,3 +1301,91 @@ runYicesInOverride sym logData conditions resultFn = do
 
       _ <- yicesShutdownSolver yp
       return r
+
+-- | TODO RGS: Docs
+data YicesSMT2 = YicesSMT2 deriving Show
+
+-- | TODO RGS: Docs
+writeYicesSMT2File
+   :: B.ExprBuilder t st fs
+   -> Handle
+   -> [B.BoolExpr t]
+   -> IO ()
+writeYicesSMT2File =
+  writeDefaultSMT2 YicesSMT2 "YICES" yicesSMT2Features (Just yicesStrictParsing)
+
+-- | TODO RGS: Docs
+runYicesSMT2InOverride
+  :: B.ExprBuilder t st fs
+  -> LogData
+  -> [B.BoolExpr t]
+  -> (SatResult (GroundEvalFn t, Maybe (ExprRangeBindings t)) () -> IO a)
+  -> IO a
+runYicesSMT2InOverride =
+  SMT2.runSolverInOverride YicesSMT2 SMT2.nullAcknowledgementAction
+  yicesSMT2Features (Just yicesStrictParsing)
+
+instance SMT2.SMTLib2Tweaks YicesSMT2 where
+  smtlib2tweaks = YicesSMT2
+
+-- | Run @yices-smt2@ in a session.
+withYicesSMT2
+  :: B.ExprBuilder t st fs
+  -> FilePath
+    -- ^ Path to Bitwuzla executable
+  -> LogData
+  -> (SMT2.Session t YicesSMT2 -> IO a)
+    -- ^ Action to run
+  -> IO a
+withYicesSMT2 = SMT2.withSolver YicesSMT2 SMT2.nullAcknowledgementAction
+                yicesSMT2Features (Just yicesStrictParsing)
+
+instance SMT2.SMTLib2GenericSolver YicesSMT2 where
+  defaultSolverPath _ = findSolverPath yicesSMT2Path . getConfiguration
+  defaultSolverArgs _ sym = do
+    let cfg = getConfiguration sym
+    enableMCSat <- getOpt =<< getOptionSetting yicesEnableMCSat cfg
+    enableInteractive <- getOpt =<< getOptionSetting yicesEnableInteractive cfg
+    -- TODO RGS: Factor out the (1000*) part
+    goalTimeout <- SolverGoalTimeout . (1000*) <$> (getOpt =<< getOptionSetting yicesGoalTimeout cfg)
+    let goalTimeoutSecs = getGoalTimeoutInSeconds goalTimeout
+        modeOpt | enableInteractive || goalTimeoutSecs /= 0 = ["--interactive"]
+                | otherwise = []
+        mcSatOpt = if enableMCSat then ["--mcsat"] else []
+        extraOpts | goalTimeoutSecs /= 0 = ["--timeout", show goalTimeoutSecs]
+                  | otherwise = []
+    return $ "--incremental" : modeOpt ++ mcSatOpt ++ extraOpts
+  defaultFeatures _ = yicesSMT2Features
+  -- TODO RGS: Is this right?
+  setDefaultLogicAndOptions writer = do
+    SMT2.setOption writer "print-success"  "true"
+    SMT2.setOption writer "produce-models" "true"
+    SMT2.setOption writer "global-declarations" "true"
+    when (SMT2.supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
+      SMT2.setOption writer "produce-unsat-cores" "true"
+    SMT2.setLogic writer Syntax.allLogic
+
+setInteractiveLogicAndOptions ::
+  SMT2.SMTLib2Tweaks a =>
+  SMT2.WriterConn t (SMT2.Writer a) ->
+  IO ()
+-- TODO RGS: Is this right?
+setInteractiveLogicAndOptions writer = do
+  SMT2.setOption writer "print-success"  "true"
+  SMT2.setOption writer "produce-models" "true"
+  SMT2.setOption writer "global-declarations" "true"
+  when (SMT2.supportedFeatures writer `hasProblemFeature` useUnsatCores) $ do
+    SMT2.setOption writer "produce-unsat-cores" "true"
+  SMT2.setLogic writer Syntax.allLogic
+
+instance OnlineSolver (SMT2.Writer YicesSMT2) where
+  startSolverProcess feat mbIOh sym = do
+    -- TODO RGS: Factor out the (1000*) part
+    timeout <- SolverGoalTimeout . (1000*) <$>
+               (getOpt =<< getOptionSetting yicesGoalTimeout (getConfiguration sym))
+    SMT2.startSolver YicesSMT2 SMT2.smtAckResult
+                               setInteractiveLogicAndOptions
+                               timeout
+                               feat
+                               (Just yicesStrictParsing) mbIOh sym
+  shutdownSolverProcess = SMT2.shutdownSolver YicesSMT2
