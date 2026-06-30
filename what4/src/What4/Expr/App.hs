@@ -2096,12 +2096,12 @@ abstractEval f a0 = do
     FloatRound{} -> ()
     FloatFromBinary{} -> ()
     FloatToBinary fpp _ -> case floatPrecisionToBVType fpp of
-      BaseBVRepr w -> BVD.any w
+      BaseBVRepr w -> BVD.top w
     BVToFloat{} -> ()
     SBVToFloat{} -> ()
     RealToFloat{} -> ()
-    FloatToBV w _ _ -> BVD.any w
-    FloatToSBV w _ _ -> BVD.any w
+    FloatToBV w _ _ -> BVD.top w
+    FloatToSBV w _ _ -> BVD.top w
     FloatToReal{} -> ravUnbounded
     FloatSpecialFunction{} -> ()
 
