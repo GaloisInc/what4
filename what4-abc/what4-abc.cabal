@@ -32,9 +32,10 @@ library
     transformers,
     unordered-containers,
     utf8-string,
-    -- what4 lives in the same repo and this package isn't released
-    -- separately; no version bound is needed.
-    what4
+    -- what4 and what4-domains live in the same repo and this package isn't
+    -- released separately; no version bound is needed.
+    what4,
+    what4-domains
 
   hs-source-dirs: src
 

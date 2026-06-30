@@ -79,6 +79,9 @@ import           System.Process
 import           What4.BaseTypes
 import           What4.Concrete
 import           What4.Config
+import qualified What4.Domains.BV as BVD
+import qualified What4.Domains.BV.Arith as A
+import qualified What4.Domains.BV.Bitwise as B
 import           What4.Interface
                    ( getConfiguration, IsExprBuilder, logSolverEvent
                    , SolverEvent(..), SolverStartSATQuery(..), SolverEndSATQuery(..), andAllOf )
@@ -94,9 +97,6 @@ import           What4.ProgramLoc
 import           What4.Solver.Adapter
 import           What4.SatResult
 import           What4.Utils.AbstractDomains
-import qualified What4.Utils.BVDomain as BVD
-import qualified What4.Utils.BVDomain.Arith as A
-import qualified What4.Utils.BVDomain.Bitwise as B
 import           What4.Utils.Complex
 import qualified What4.Utils.Environment as Env
 import           What4.Utils.MonadST
