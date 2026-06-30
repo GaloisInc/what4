@@ -692,7 +692,7 @@ avTop tp =
     BaseRealRepr    -> ravUnbounded
     BaseComplexRepr -> ravUnbounded :+ ravUnbounded
     BaseStringRepr _ -> stringAbsTop
-    BaseBVRepr w    -> BVD.any w
+    BaseBVRepr w    -> BVD.top w
     BaseFloatRepr{} -> ()
     BaseArrayRepr _a b -> avTop b
     BaseStructRepr flds -> fmapFC (\etp -> AbstractValueWrapper (avTop etp)) flds
@@ -768,7 +768,7 @@ instance Abstractable BaseRealType where
 
 -- Bitvectors always have a lower and upper bound (represented as unsigned numbers)
 instance (1 <= w) => Abstractable (BaseBVType w) where
-  avJoin (BaseBVRepr _) = BVD.union
+  avJoin (BaseBVRepr _) = BVD.join
   avOverlap _ = BVD.domainsOverlap
   avCheckEq _ = BVD.eq
 
