@@ -1,0 +1,3 @@
+\sym_0 -> do {e_1 <- intLit sym_0 2;
+              e_2 <- intLit sym_0 3;
+              sortAdd sym_0 e_1 e_2}

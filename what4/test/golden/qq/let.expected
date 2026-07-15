@@ -1,0 +1,6 @@
+\sym_0 -> do {v_1 <- do {e_2 <- intLit sym_0 1;
+                         e_3 <- intLit sym_0 2;
+                         sortAdd sym_0 e_2 e_3};
+              do {e_4 <- pure v_1;
+                  e_5 <- pure v_1;
+                  sortAdd sym_0 e_4 e_5}}

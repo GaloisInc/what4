@@ -1,0 +1,3 @@
+\sym_0 -> do {e_1 <- bvLit sym_0 (knownNat @4) (mkBV (knownNat @4) 3);
+              e_2 <- bvLit sym_0 (knownNat @4) (mkBV (knownNat @4) 1);
+              sortAdd sym_0 e_1 e_2}

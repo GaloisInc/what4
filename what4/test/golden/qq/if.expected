@@ -1,0 +1,6 @@
+\sym_0 -> do {e_1 <- do {e_2 <- intLit sym_0 1;
+                         e_3 <- intLit sym_0 2;
+                         sortLt sym_0 e_2 e_3};
+              e_4 <- intLit sym_0 3;
+              e_5 <- intLit sym_0 4;
+              baseTypeIte sym_0 e_1 e_4 e_5}

@@ -1,0 +1,2 @@
+\sym_0 -> do {e_1 <- pure x;
+              bvSelect sym_0 (knownNat @0) (knownNat @4) e_1}

@@ -1,0 +1,2 @@
+\sym_0 -> do {e_1 <- pure x;
+              qqZext sym_0 (knownNat @8) e_1}

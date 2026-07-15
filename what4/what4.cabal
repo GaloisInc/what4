@@ -26,6 +26,7 @@ data-files: solverBounds.config
 Extra-source-files:
   test/responses/*.exp
   test/responses/*.rsp
+  test/golden/qq/*.expected
 
 Extra-doc-files:
   README.md
@@ -153,6 +154,8 @@ library
     What4.LabeledPred
     What4.Panic
     What4.Partial
+    What4.QQ
+    What4.QQ.Class
     What4.ProblemFeatures
     What4.ProgramLoc
     What4.SatResult
@@ -360,6 +363,7 @@ test-suite expr-builder-smtlib2
     tasty-expected-failure >= 0.12 && < 0.13,
     tasty-checklist >= 1.0.3 && < 1.1,
     text,
+    template-haskell,
     versions,
     what4-domains
 
@@ -373,12 +377,16 @@ test-suite exprs_tests
   other-modules:
     Bool
     GenWhat4Expr
+    QQTests
     WeightedSum
 
   build-depends: bv-sized
+               , bytestring
                , containers
                , hashable
                , mtl
+               , tasty-golden
+               , template-haskell
 
 executable bool-normalization
   import: bldflags, testdefs-hedgehog, testdefs-hunit
@@ -457,4 +465,3 @@ test-suite invariant-synthesis
     bv-sized,
     process,
     tasty-expected-failure >= 0.12 && < 0.13
-
