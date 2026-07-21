@@ -407,7 +407,7 @@ class HasAbsValue e => IsExpr e where
   -- Note that composing expressions together can sometimes widen the abstract
   -- domains involved, so if you use this function to change an abstract value,
   -- be careful than subsequent operations do not widen away the value. As a
-  -- potential safeguard, one can use 'annotateTerm' on the new expression to
+  -- potential safeguard, one can use 'opacify' on the new expression to
   -- inhibit transformations that could change the abstract value.
   unsafeSetAbstractValue :: AbstractValue tp -> e tp -> e tp
 
@@ -638,6 +638,9 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
   -- | Set current location of program for term creation purposes.
   setCurrentProgramLoc :: sym -> ProgramLoc -> IO ()
 
+  ----------------------------------------------------------------------
+  -- Basic operations
+
   -- | Return true if two expressions are equal. The default
   -- implementation dispatches 'eqPred', 'bvEq', 'natEq', 'intEq',
   -- 'realEq', 'cplxEq', 'structEq', or 'arrayEq', depending on the
@@ -676,6 +679,9 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
       BaseStructRepr{} -> structIte sym c x y
       BaseArrayRepr{}  -> arrayIte  sym c x y
 
+  ----------------------------------------------------------------------
+  -- Annotations and opaque expressions
+
   -- | Given a symbolic expression, annotate it with a unique identifier
   --   that can be used to maintain a connection with the given term.
   --   The 'SymAnnotation' is intended to be used as the key in a hash
@@ -699,6 +705,14 @@ class ( IsExpr (SymExpr sym), HashableF (SymExpr sym), HashableF (BoundVar sym)
   --   This returns 'Nothing' for terms that do not have annotations,
   --   or for terms that cannot be separated from their annotations.
   getUnannotatedTerm :: sym -> SymExpr sym tp -> Maybe (SymExpr sym tp)
+
+  -- | Make an expression /opaque/, inhibiting rewrites that, in many cases,
+  -- coarsen abstract domain information. See #248 for discussion and #249 for
+  -- progress towards obviating opaque expressions.
+  opacify :: sym -> SymExpr sym tp -> IO (SymExpr sym tp)
+
+  -- | Inverse operation of 'opacify'.
+  clarify :: sym -> SymExpr sym tp -> SymExpr sym tp
 
   ----------------------------------------------------------------------
   -- Boolean operations.

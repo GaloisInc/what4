@@ -747,9 +747,19 @@ data ExprBoundVar t (tp :: BaseType) =
 -- go. Uses of the 'NonceApp' type will tie the knot through this
 -- parameter. Parameter @tp@ indicates the type of the expression.
 data NonceApp t (e :: BaseType -> Type) (tp :: BaseType) where
+  -- | See 'What4.Interface.annotateTerm'.
   Annotation ::
     !(BaseTypeRepr tp) ->
     !(Nonce t tp) ->
+    !(e tp) ->
+    NonceApp t e tp
+
+  -- | See 'What4.Interface.opacify'.
+  --
+  -- No rewrite rules in 'IsExprBuilder' should examine the subterms of
+  -- 'Opaque', this is the contract of 'What4.Interface.opacify'.
+  Opaque ::
+    !(BaseTypeRepr tp) ->
     !(e tp) ->
     NonceApp t e tp
 
@@ -1858,6 +1868,7 @@ nonceAppType :: IsExpr e => NonceApp t e tp -> BaseTypeRepr tp
 nonceAppType a =
   case a of
     Annotation tpr _ _ -> tpr
+    Opaque tpr _ -> tpr
     Forall{} -> knownRepr
     Exists{} -> knownRepr
     ArrayFromFn   fn       -> BaseArrayRepr (symFnArgTypes fn) (symFnReturnType fn)
@@ -1997,6 +2008,7 @@ quantAbsEval :: IsExpr e =>
 quantAbsEval f q =
   case q of
     Annotation _ _ v -> f v
+    Opaque _ v -> f v
     Forall _ v -> f v
     Exists _ v -> f v
     ArrayFromFn _       -> unconstrainedAbsValue (nonceAppType q)
@@ -2385,6 +2397,7 @@ ppNonceApp :: forall m t e tp
 ppNonceApp ppFn a0 = do
   case a0 of
     Annotation _ n x -> pure $ prettyApp "annotation" [ showPrettyArg n, exprPrettyArg x ]
+    Opaque _ x -> pure $ prettyApp "opaque" [ exprPrettyArg x ]
     Forall v x -> pure $ prettyApp "forall" [ stringPrettyArg (ppBoundVar v), exprPrettyArg x ]
     Exists v x -> pure $ prettyApp "exists" [ stringPrettyArg (ppBoundVar v), exprPrettyArg x ]
     ArrayFromFn f -> resolve <$> ppFn f
