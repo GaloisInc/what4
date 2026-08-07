@@ -33,6 +33,8 @@
   with a zero denominator.
 * Fix a bug in which calling `solver_adapter_write_smt2 yicesAdapter` would
   always fail.
+* Fix a bug in which `baseIsConcrete` would incorrectly claim that concrete
+  `SymFloat`s are not concrete.
 
 # 1.7.3 -- 2026-01-26
 

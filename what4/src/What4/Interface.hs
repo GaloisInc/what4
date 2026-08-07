@@ -3136,7 +3136,7 @@ baseIsConcrete x =
     BaseIntegerRepr -> isJust $ asInteger x
     BaseBVRepr _    -> isJust $ asBV x
     BaseRealRepr    -> isJust $ asRational x
-    BaseFloatRepr _ -> False
+    BaseFloatRepr _ -> isJust $ asFloat x
     BaseStringRepr{} -> isJust $ asString x
     BaseComplexRepr -> isJust $ asComplex x
     BaseStructRepr _ -> case asStruct x of
