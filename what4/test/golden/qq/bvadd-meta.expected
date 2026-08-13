@@ -1,0 +1,3 @@
+\sym_0 -> do {e_1 <- pure x;
+              e_2 <- bvLit sym_0 (knownNat @8) (mkBV (knownNat @8) 1);
+              sortAdd sym_0 e_1 e_2}

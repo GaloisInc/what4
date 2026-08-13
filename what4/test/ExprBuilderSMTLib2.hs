@@ -7,6 +7,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -50,6 +51,7 @@ import           What4.Interface
 import           What4.InterpretedFloatingPoint
 import           What4.Protocol.Online
 import           What4.Protocol.SMTLib2
+import           What4.QQ (w4)
 import           What4.SatResult
 import           What4.Solver.Adapter
 import qualified What4.Solver.Bitwuzla as Bitwuzla
@@ -516,19 +518,18 @@ testRotate1 :: TestTree
 testRotate1 = testCase "rotate test1" $ withOnlineZ3 $ \sym s -> do
   bv <- freshConstant sym (userSymbol' "bv") (BaseBVRepr (knownNat @32))
 
-  bv1 <- bvRol sym bv =<< bvLit sym knownNat (BV.mkBV knownNat 8)
-  bv2 <- bvRol sym bv1 =<< bvLit sym knownNat (BV.mkBV knownNat 16)
-  bv3 <- bvRol sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 8)
-  bv4 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 24)
-  bv5 <- bvRor sym bv2 =<< bvLit sym knownNat (BV.mkBV knownNat 28)
+  bv2 <- [w4| rol (rol $bv (bv 32 8)) (bv 32 16) |] sym
+  bv3 <- [w4| rol $bv2 (bv 32 8) |] sym
+  bv4 <- [w4| ror $bv2 (bv 32 24) |] sym
+  bv5 <- [w4| ror $bv2 (bv 32 28) |] sym
 
-  res <- checkSatisfiable s "test" =<< notPred sym =<< bvEq sym bv bv3
+  res <- checkSatisfiable s "test" =<< [w4| ne $bv $bv3 |] sym
   isUnsat res @? "unsat1"
 
-  res1 <- checkSatisfiable s "test" =<< notPred sym =<< bvEq sym bv bv4
+  res1 <- checkSatisfiable s "test" =<< [w4| ne $bv $bv4 |] sym
   isUnsat res1 @? "unsat2"
 
-  res2 <- checkSatisfiable s "test" =<< notPred sym =<< bvEq sym bv bv5
+  res2 <- checkSatisfiable s "test" =<< [w4| ne $bv $bv5 |] sym
   isSat res2 @? "sat"
 
 testRotate2 :: TestTree
