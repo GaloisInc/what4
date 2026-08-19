@@ -35,6 +35,9 @@
   always fail.
 * Fix a bug in which `baseIsConcrete` would incorrectly claim that concrete
   `SymFloat`s are not concrete.
+* Calling `iFloatRound` with the `RNE` rounding mode when using the `FloatReal`
+  interpretation now dispatches to `realRoundEven` instead of throwing an
+  error.
 
 # 1.7.3 -- 2026-01-26
 

@@ -358,6 +358,38 @@ testRealFloatBinarySimplification =
       e1 <- iFloatFromBinary sym SingleFloatRepr e0
       e1 @?= x
 
+testRealFloatRounding :: TestTree
+testRealFloatRounding =
+  testCase "real float rounding" $
+    withSym FloatRealRepr $ \sym -> do
+      x <- iFloatLitSingle sym 1.5
+      xUp <- iFloatLitSingle sym 2.0
+      xDown <- iFloatLitSingle sym 1.0
+      xRNA <- iFloatRound sym RNA x
+      xRTP <- iFloatRound sym RTP x
+      xRTN <- iFloatRound sym RTN x
+      xRTZ <- iFloatRound sym RTZ x
+      xRNE <- iFloatRound sym RNE x
+      xRNA @?= xUp
+      xRTP @?= xUp
+      xRTN @?= xDown
+      xRTZ @?= xDown
+      xRNE @?= xUp
+
+      y <- iFloatLitSingle sym (-1.5)
+      yUp <- iFloatLitSingle sym (-1.0)
+      yDown <- iFloatLitSingle sym (-2.0)
+      yRNA <- iFloatRound sym RNA y
+      yRTP <- iFloatRound sym RTP y
+      yRTN <- iFloatRound sym RTN y
+      yRTZ <- iFloatRound sym RTZ y
+      yRNE <- iFloatRound sym RNE y
+      yRNA @?= yDown
+      yRTP @?= yUp
+      yRTN @?= yDown
+      yRTZ @?= yUp
+      yRNE @?= yDown
+
 testFloatCastSimplification :: TestTree
 testFloatCastSimplification = testCase "float cast simplification" $
   withSym FloatIEEERepr $ \sym -> do
@@ -1492,6 +1524,7 @@ main = do
     , testInterpretedFloatIEEE
     , testFloatBinarySimplification
     , testRealFloatBinarySimplification
+    , testRealFloatRounding
     , testFloatCastSimplification
     , testFloatCastNoSimplification
     , testBVSelectShl

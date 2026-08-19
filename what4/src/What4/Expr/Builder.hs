@@ -4132,7 +4132,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
       RTP -> realCeil sym x
       RTN -> realFloor sym x
       RTZ -> realTrunc sym x
-      RNE -> fail "Unsupported rond to nearest even for real values."
+      RNE -> realRoundEven sym x
   iFloatFromBinary sym _ x
     | Just (FnApp fn args) <- asNonceApp x
     , "uninterpreted_real_to_float_binary" == solverSymbolAsText (symFnName fn)
