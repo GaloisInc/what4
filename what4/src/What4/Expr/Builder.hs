@@ -4131,9 +4131,7 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
       RNA -> realRound sym x
       RTP -> realCeil sym x
       RTN -> realFloor sym x
-      RTZ -> do
-        is_pos <- realLt sym (realZero sym) x
-        iteM intIte sym is_pos (realFloor sym x) (realCeil sym x)
+      RTZ -> realTrunc sym x
       RNE -> fail "Unsupported rond to nearest even for real values."
   iFloatFromBinary sym _ x
     | Just (FnApp fn args) <- asNonceApp x
