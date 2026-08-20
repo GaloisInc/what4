@@ -4086,8 +4086,14 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatPInf _ _ = fail "+Infinity cannot be represented as a real value."
   iFloatNInf _ _ = fail "-Infinity cannot be represented as a real value."
   iFloatLitRational sym _ = realLit sym
-  iFloatLitSingle sym = realLit sym . toRational
-  iFloatLitDouble sym = realLit sym . toRational
+  iFloatLitSingle sym x =
+     case realFloatToRational x of
+       Nothing -> fail ("single-precision floating point value does not represent a rational number: " ++ show x)
+       Just r  -> realLit sym r
+  iFloatLitDouble sym x =
+     case realFloatToRational x of
+       Nothing -> fail ("double-precision floating point value does not represent a rational number: " ++ show x)
+       Just r  -> realLit sym r
   iFloatLitLongDouble sym x =
      case fp80ToRational x of
        Nothing -> fail ("80-bit floating point value does not represent a rational number: " ++ show x)
@@ -4157,6 +4163,19 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatToReal _ = return
   iFloatSpecialFunction sym _ fn args = realSpecialFunction sym fn args
   iFloatBaseTypeRepr _ _ = knownRepr
+
+-- | Convert a floating-point value to a 'Rational' value, returning 'Nothing'
+-- if the given value is not representable as a 'Rational'. We use this over
+-- the 'toRational' function because on pre-10.0 versions of GHC, 'toRational'
+-- returns unpredictable values when given NaN or infinite floating-point
+-- values (see https://gitlab.haskell.org/ghc/ghc/-/work_items/10387), so this
+-- function checks for NaN or infinite values as special cases.
+realFloatToRational :: RealFloat a => a -> Maybe Rational
+realFloatToRational x
+  | isNaN x || isInfinite x
+  = Nothing
+  | otherwise
+  = Just $ toRational x
 
 type instance SymInterpretedFloatType (ExprBuilder t st (Flags FloatUninterpreted)) fi =
   BaseBVType (FloatInfoToBitWidth fi)

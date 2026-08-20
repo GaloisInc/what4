@@ -38,6 +38,11 @@
 * Calling `iFloatRound` with the `RNE` rounding mode when using the `FloatReal`
   interpretation now dispatches to `realRoundEven` instead of throwing an
   error.
+* Calling `iFloatLit{Single,Double}` when using the `FloatReal` interpretation
+  will now throw an error when given NaN or infinite inputs instead of
+  returning unspecified `Rational` values. This brings the behavior of
+  `iFloatLit{Single,Double}` in line with that of `iFloatLitLongDouble`, which
+  also errors when given NaN/infinite inputs.
 
 # 1.7.3 -- 2026-01-26
 
