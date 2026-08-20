@@ -22,7 +22,7 @@ import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.Hedgehog.Alt
 import           Test.Tasty.HUnit
 
-import           Control.Exception (bracket, try, finally, SomeException)
+import           Control.Exception (bracket, try, finally, IOException, SomeException)
 import           Control.Monad (void)
 import           Control.Monad.IO.Class (MonadIO(..))
 import qualified Data.BitVector.Sized as BV
@@ -389,6 +389,29 @@ testRealFloatRounding =
       yRTN @?= yDown
       yRTZ @?= yUp
       yRNE @?= yDown
+
+testRealFloatUnrepresentableValues :: TestTree
+testRealFloatUnrepresentableValues =
+  testCase "real float rounding" $
+    withSym FloatRealRepr $ \sym -> do
+      shouldFail $ iFloatLitSingle sym nan
+      shouldFail $ iFloatLitSingle sym pInf
+      shouldFail $ iFloatLitSingle sym nInf
+      shouldFail $ iFloatLitDouble sym nan
+      shouldFail $ iFloatLitDouble sym pInf
+      shouldFail $ iFloatLitDouble sym nInf
+  where
+    shouldFail :: IO a -> Assertion
+    shouldFail action = do
+      r <- try action
+      case r of
+        Left (_ :: IOException) -> pure ()
+        Right _ -> assertFailure "did not throw IOException"
+
+    nan, pInf, nInf :: forall a. Fractional a => a
+    nan = 0/0
+    pInf = 1/0
+    nInf = -1/0
 
 testFloatCastSimplification :: TestTree
 testFloatCastSimplification = testCase "float cast simplification" $
@@ -1525,6 +1548,7 @@ main = do
     , testFloatBinarySimplification
     , testRealFloatBinarySimplification
     , testRealFloatRounding
+    , testRealFloatUnrepresentableValues
     , testFloatCastSimplification
     , testFloatCastNoSimplification
     , testBVSelectShl
