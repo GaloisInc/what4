@@ -19,6 +19,7 @@ Extra-doc-files:
   doc/bitsdomain.cry
   doc/xordomain.cry
   doc/README.md
+  CHANGES.md
 
 source-repository head
   type: git
