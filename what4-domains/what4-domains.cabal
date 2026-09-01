@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          what4-domains
-Version:       0.0.0.0.99
+Version:       0.1.0.0.99
 Author:        Galois Inc.
 Maintainer:    rscott@galois.com, kquick@galois.com, langston@galois.com
 Copyright:     (c) Galois, Inc 2014-2026
@@ -19,6 +19,7 @@ Extra-doc-files:
   doc/bitsdomain.cry
   doc/xordomain.cry
   doc/README.md
+  CHANGES.md
 
 source-repository head
   type: git

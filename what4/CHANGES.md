@@ -1,5 +1,7 @@
 # next
 
+# 1.8 -- 2026-09-01
+
 * The `What4.Utils.BVDomain`, `What4.Utils.BVDomain.Arith`,
   `What4.Utils.BVDomain.Bitwise`, and `What4.Utils.BVDomain.XOR` modules have
   moved to the new `what4-domains` package as `What4.Domains.BV`,
