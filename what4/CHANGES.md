@@ -1,3 +1,5 @@
+# next
+
 # 1.8 -- 2026-09-01
 
 * The `What4.Utils.BVDomain`, `What4.Utils.BVDomain.Arith`,
