@@ -1,5 +1,11 @@
 # next
 
+* Calling `iFloatLit{Single,Double}` when using the `FloatReal` interpretation
+  will now throw an error when given NaN or infinite inputs instead of
+  returning unspecified `Rational` values. This brings the behavior of
+  `iFloatLit{Single,Double}` in line with that of `iFloatLitLongDouble`, which
+  also errors when given NaN/infinite inputs.
+
 # 1.8 -- 2026-09-01
 
 * The `What4.Utils.BVDomain`, `What4.Utils.BVDomain.Arith`,
