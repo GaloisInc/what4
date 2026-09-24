@@ -68,6 +68,7 @@ main =
 
      sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState globalNonceGenerator
 
+     -- As of 20260924 Z3 performs noticeably better than CVC5 on this
      extendConfig Z3.z3Options (getConfiguration sym)
      proc <- Online.startSolverProcess @(SMT2.Writer Z3.Z3) Z3.z3Features Nothing sym
 
