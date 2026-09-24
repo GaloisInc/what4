@@ -497,7 +497,7 @@ isInt = un_app "is_int"
 -- value type `t2` that always returns `c`.
 --
 -- This uses the non-standard SMTLIB2 syntax
--- @((as const (Array t1 t2)) c)@ which is supported by CVC4, CVC5, and Z3
+-- @((as const (Array t1 t2)) c)@ which is supported by CVC5 and Z3
 -- (and perhaps others).
 arrayConst :: Sort -> Sort -> Term -> Term
 arrayConst itp rtp c =

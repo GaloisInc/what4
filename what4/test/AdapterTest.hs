@@ -43,8 +43,7 @@ import           What4.Solver
 
 allAdapters :: [SolverAdapter EmptyExprBuilderState]
 allAdapters =
-  [ cvc4Adapter
-  , cvc5Adapter
+  [ cvc5Adapter
   , yicesAdapter
   , z3Adapter
   , bitwuzlaAdapter
@@ -352,52 +351,6 @@ mkConfigTests adapters =
               ]
             Left (SomeException e) -> assertFailure $ show e
           cmpUnderSome settera setterb
-
-      , testCase "deprecated cvc4_path is equivalent to solver.cvc4.path" $
-        withAdapters adaptrs $ \sym -> do
-          settera <- getOptionSettingFromText "cvc4_path"
-                     (getConfiguration sym)
-          setterb <- getOptionSetting cvc4Path
-                     (getConfiguration sym)
-          cmpUnderSome settera setterb
-          res1 <- try $ setUnicodeOpt settera "/foo/bar"
-          case res1 of
-            Right warns -> fmap show warns @?=
-              [ "Could not find: /foo/bar"
-              , "DEPRECATED CONFIG OPTION USED: cvc4_path (renamed to: solver.cvc4.path)"
-              ]
-            Left (SomeException e) -> assertFailure $ show e
-          cmpUnderSome settera setterb
-
-      , testCase "deprecated cvc4_timeout is equivalent to solver.cvc4.timeout" $
-        withAdapters adaptrs $ \sym -> do
-          settera <- getOptionSettingFromText "cvc4_timeout"
-                     (getConfiguration sym)
-          setterb <- getOptionSetting cvc4Timeout
-                     (getConfiguration sym)
-          cmpUnderSomeI settera setterb
-          res1 <- try $ setIntegerOpt settera 42
-          case res1 of
-            Right warns -> fmap show warns @?=
-              [ "DEPRECATED CONFIG OPTION USED: cvc4_timeout (renamed to: solver.cvc4.timeout)"
-              ]
-            Left (SomeException e) -> assertFailure $ show e
-          cmpUnderSomeI settera setterb
-
-      , testCase "deprecated stp.random-seed is equivalent to solver.stp.random-seed" $
-        withAdapters adaptrs $ \sym -> do
-          settera <- getOptionSettingFromText "cvc4.random-seed"
-                     (getConfiguration sym)
-          setterb <- getOptionSettingFromText "solver.cvc4.random-seed"
-                     (getConfiguration sym)
-          cmpUnderSomesI settera setterb
-          res1 <- try $ setIntegerOpt settera 99
-          case res1 of
-            Right warns -> fmap show warns @?=
-              [ "DEPRECATED CONFIG OPTION USED: cvc4.random-seed (renamed to: solver.cvc4.random-seed)"
-              ]
-            Left (SomeException e) -> assertFailure $ show e
-          cmpUnderSomesI settera setterb
 
       , (if "dreal" `elem` (solver_adapter_name <$> adapters)
          then id else ignoreTestBecause "dreal not available") $

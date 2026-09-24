@@ -52,17 +52,6 @@ module What4.Solver
   , boolectorOptions
   , boolectorFeatures
 
-    -- * CVC4
-  , CVC4(..)
-  , cvc4Adapter
-  , cvc4Path
-  , cvc4Timeout
-  , runCVC4InOverride
-  , writeCVC4SMT2File
-  , withCVC4
-  , cvc4Options
-  , cvc4Features
-
     -- * CVC5
   , CVC5(..)
   , cvc5Adapter
@@ -119,7 +108,6 @@ module What4.Solver
 import           What4.Solver.Adapter
 import           What4.Solver.Bitwuzla
 import           What4.Solver.Boolector
-import           What4.Solver.CVC4
 import           What4.Solver.CVC5
 import           What4.Solver.DReal
 import           What4.Solver.ExternalABC
