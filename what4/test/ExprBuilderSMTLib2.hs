@@ -115,9 +115,6 @@ withOnlineZ3 action = withSym FloatIEEERepr $ \sym -> do
     (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
     (\(_,s) -> action sym s)
 
--- We removed CVC4 support, but keep this hook for when/if CVC6 happens
-data CVC = CVC5 deriving (Eq, Show)
-
 withCVC5
   :: (forall t . SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t (Writer CVC5.CVC5) -> IO a)
   -> IO a
@@ -1458,46 +1455,34 @@ main = do
         , arraySetTest
         , arrayCopySetTest
         ]
-  let cvcTests cvc =
-        let cvcTestCase name assertion = testCase (show cvc ++ " " ++ name) assertion
-            withCVC ::
-                 (forall t solver. OnlineSolver solver
-                   => SimpleExprBuilder t (Flags FloatReal)
-                   -> SolverProcess t solver
-                   -> IO a)
-              -> IO a
-            withCVC k =
-              case cvc of
-                CVC5 -> withCVC5 k
-        in
+  let cvc5Tests =
         [
-          cvcTestCase "0-tuple" $ withCVC zeroTupleTest
-        , cvcTestCase "1-tuple" $ withCVC oneTupleTest
-        , cvcTestCase "pair"    $ withCVC pairTest
-        , cvcTestCase "forall binder" $ withCVC forallTest
+          testCase "CVC5 0-tuple" $ withCVC5 zeroTupleTest
+        , testCase "CVC5 1-tuple" $ withCVC5 oneTupleTest
+        , testCase "CVC5 pair"    $ withCVC5 pairTest
+        , testCase "CVC5 forall binder" $ withCVC5 forallTest
 
-        , cvcTestCase "string1" $ withCVC stringTest1
-        , cvcTestCase "string2" $ withCVC stringTest2
-        , cvcTestCase "string3" $ withCVC stringTest3
-        , cvcTestCase "string4" $ withCVC stringTest4
-        , cvcTestCase "string5" $ withCVC stringTest5
-        , cvcTestCase "string6" $ withCVC stringTest6
-        , cvcTestCase "string7" $ withCVC stringTest7
+        , testCase "CVC5 string1" $ withCVC5 stringTest1
+        , testCase "CVC5 string2" $ withCVC5 stringTest2
+        , testCase "CVC5 string3" $ withCVC5 stringTest3
+        , testCase "CVC5 string4" $ withCVC5 stringTest4
+        , testCase "CVC5 string5" $ withCVC5 stringTest5
+        , testCase "CVC5 string6" $ withCVC5 stringTest6
+        , testCase "CVC5 string7" $ withCVC5 stringTest7
 
-        , cvcTestCase "binder tuple1" $ withCVC binderTupleTest1
-        , cvcTestCase "binder tuple2" $ withCVC binderTupleTest2
+        , testCase "CVC5 binder tuple1" $ withCVC5 binderTupleTest1
+        , testCase "CVC5 binder tuple2" $ withCVC5 binderTupleTest2
 
-        , cvcTestCase "rounding" $ withCVC roundingTest
+        , testCase "CVC5 rounding" $ withCVC5 roundingTest
 
-        , cvcTestCase "multidim array"$ withCVC multidimArrayTest
+        , testCase "CVC5 multidim array" $ withCVC5 multidimArrayTest
 
-        , cvcTestCase "#182 test case" $ withCVC issue182Test
-        , cvcTestCase "#315 test case" $ withCVC issue315Test
-        , cvcTestCase "#329 test case" $ withCVC issue329Test
-        , cvcTestCase "#377 test case" $ withCVC issue377Test
-        , cvcTestCase "#391 test case" $ withCVC issue391Test
+        , testCase "CVC5 #182 test case" $ withCVC5 issue182Test
+        , testCase "CVC5 #315 test case" $ withCVC5 issue315Test
+        , testCase "CVC5 #329 test case" $ withCVC5 issue329Test
+        , testCase "CVC5 #377 test case" $ withCVC5 issue377Test
+        , testCase "CVC5 #391 test case" $ withCVC5 issue391Test
         ]
-  let cvc5Tests = cvcTests CVC5
   let yicesTests =
         [
           testResolveSymBV WURB.ExponentialSearch
