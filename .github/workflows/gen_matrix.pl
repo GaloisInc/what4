@@ -56,7 +56,6 @@ compiler(ghc).
 solver(z3).
 solver(yices).
 solver(stp).
-solver(cvc4).
 solver(cvc5).
 solver(bitwuzla).
 solver(boolector).
@@ -77,7 +76,6 @@ main_version(ghc, "9.12.2").
 main_version(z3, "4_8_14").
 main_version(yices, "2_6_4").
 main_version(stp, "2_3_3").
-main_version(cvc4, "1_8").
 main_version(cvc5, "1_1_2").
 main_version(bitwuzla, "0_3_0").
 main_version(boolector, "3_2_2").
@@ -119,7 +117,6 @@ version(stp, "2_3_3").
 version(stp, "2_3_2").
 % n.b. stp 2_2_0 fails, no reason to test it
 
-version(cvc4, "1_8").
 version(cvc5, "1_1_2").
 
 version(bitwuzla, "0_3_0").

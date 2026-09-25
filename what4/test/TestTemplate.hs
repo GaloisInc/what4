@@ -37,7 +37,7 @@ import qualified What4.Protocol.SMTWriter as SMT
 import qualified What4.Protocol.SMTLib2 as SMT2
 import qualified What4.Protocol.Online as Online
 import           What4.Protocol.Online (SolverProcess(..), OnlineSolver(..))
-import qualified What4.Solver.CVC4 as CVC4
+import qualified What4.Solver.Z3 as Z3
 
 import What4.Expr
 import What4.Expr.App (reduceApp)
@@ -68,8 +68,9 @@ main =
 
      sym <- newExprBuilder FloatIEEERepr EmptyExprBuilderState globalNonceGenerator
 
-     extendConfig CVC4.cvc4Options (getConfiguration sym)
-     proc <- Online.startSolverProcess @(SMT2.Writer CVC4.CVC4) CVC4.cvc4Features Nothing sym
+     -- As of 20260924 Z3 performs noticeably better than CVC5 on this
+     extendConfig Z3.z3Options (getConfiguration sym)
+     proc <- Online.startSolverProcess @(SMT2.Writer Z3.Z3) Z3.z3Features Nothing sym
 
      let testnum = 500
 

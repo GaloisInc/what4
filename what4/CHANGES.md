@@ -1,5 +1,8 @@
 # next
 
+* CVC4 support has been removed.
+  CVC4 is extremely old; use CVC5 instead.
+
 * Calling `iFloatLit{Single,Double}` when using the `FloatReal` interpretation
   will now throw an error when given NaN or infinite inputs instead of
   returning unspecified `Rational` values. This brings the behavior of

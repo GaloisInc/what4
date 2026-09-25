@@ -53,7 +53,6 @@ import           What4.Protocol.SMTLib2
 import           What4.SatResult
 import           What4.Solver.Adapter
 import qualified What4.Solver.Bitwuzla as Bitwuzla
-import qualified What4.Solver.CVC4 as CVC4
 import qualified What4.Solver.CVC5 as CVC5
 import qualified What4.Solver.Z3 as Z3
 import qualified What4.Solver.Yices as Yices
@@ -112,20 +111,6 @@ withOnlineZ3 action = withSym FloatIEEERepr $ \sym -> do
   bracket
     (do h <- if debugOutputFiles then Just <$> openFile "z3.out" WriteMode else return Nothing
         s <- startSolverProcess (defaultFeatures Z3.Z3) h sym
-        return (h,s))
-    (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
-    (\(_,s) -> action sym s)
-
-data CVC = CVC4 | CVC5 deriving (Eq, Show)
-
-withCVC4
-  :: (forall t . SimpleExprBuilder t (Flags FloatReal) -> SolverProcess t (Writer CVC4.CVC4) -> IO a)
-  -> IO a
-withCVC4 action = withSym FloatRealRepr $ \sym -> do
-  extendConfig CVC4.cvc4Options (getConfiguration sym)
-  bracket
-    (do h <- if debugOutputFiles then Just <$> openFile "cvc4.out" WriteMode else return Nothing
-        s <- startSolverProcess (defaultFeatures CVC4.CVC4) h sym
         return (h,s))
     (\(h,s) -> void $ try @SomeException (shutdownSolverProcess s `finally` maybeClose h))
     (\(_,s) -> action sym s)
@@ -1411,7 +1396,7 @@ testResolveSymBV searchStrat =
 main :: IO ()
 main = do
   testLevel <- TestLevel . fromMaybe "0" <$> lookupEnv "CI_TEST_LEVEL"
-  let solverNames = SolverName <$> [ "bitwuzla", "cvc4", "cvc5", "yices", "z3" ]
+  let solverNames = SolverName <$> [ "bitwuzla", "cvc5", "yices", "z3" ]
   solvers <- reportSolverVersions testLevel id
              =<< (zip solverNames <$> mapM getSolverVersion solverNames)
   let z3Tests =
@@ -1470,58 +1455,34 @@ main = do
         , arraySetTest
         , arrayCopySetTest
         ]
-  let cvcTests cvc =
-        let cvcTestCase name assertion = testCase (show cvc ++ " " ++ name) assertion
-            skipPre1_8CVC4 why =
-              let shouldSkip = cvc == CVC4 && case lookup (SolverName "cvc4") solvers of
-                    Just (SolverVersion v) -> any (`elem` [ "1.7" ]) $ words v
-                    Nothing -> True
-              in if shouldSkip then expectFailBecause why else id
-            unsuppStrings = "unicode and string escaping not supported for older CVC4 versions; upgrade to at least 1.8"
-            ignoreCVC4TestBecause reason =
-              if cvc == CVC4 then ignoreTestBecause reason else id
-
-            withCVC ::
-                 (forall t solver. OnlineSolver solver
-                   => SimpleExprBuilder t (Flags FloatReal)
-                   -> SolverProcess t solver
-                   -> IO a)
-              -> IO a
-            withCVC k =
-              case cvc of
-                CVC4 -> withCVC4 k
-                CVC5 -> withCVC5 k
-        in
+  let cvc5Tests =
         [
-          ignoreCVC4TestBecause "This test stalls the solver for some reason; line-buffering issue?" $
-          cvcTestCase "0-tuple" $ withCVC zeroTupleTest
-        , cvcTestCase "1-tuple" $ withCVC oneTupleTest
-        , cvcTestCase "pair"    $ withCVC pairTest
-        , cvcTestCase "forall binder" $ withCVC forallTest
+          testCase "CVC5 0-tuple" $ withCVC5 zeroTupleTest
+        , testCase "CVC5 1-tuple" $ withCVC5 oneTupleTest
+        , testCase "CVC5 pair"    $ withCVC5 pairTest
+        , testCase "CVC5 forall binder" $ withCVC5 forallTest
 
-        , cvcTestCase "string1" $ withCVC stringTest1
-        , cvcTestCase "string2" $ withCVC stringTest2
-        , skipPre1_8CVC4 unsuppStrings $ cvcTestCase "string3" $ withCVC stringTest3
-        , cvcTestCase "string4" $ withCVC stringTest4
-        , cvcTestCase "string5" $ withCVC stringTest5
-        , skipPre1_8CVC4 unsuppStrings $ cvcTestCase "string6" $ withCVC stringTest6
-        , cvcTestCase "string7" $ withCVC stringTest7
+        , testCase "CVC5 string1" $ withCVC5 stringTest1
+        , testCase "CVC5 string2" $ withCVC5 stringTest2
+        , testCase "CVC5 string3" $ withCVC5 stringTest3
+        , testCase "CVC5 string4" $ withCVC5 stringTest4
+        , testCase "CVC5 string5" $ withCVC5 stringTest5
+        , testCase "CVC5 string6" $ withCVC5 stringTest6
+        , testCase "CVC5 string7" $ withCVC5 stringTest7
 
-        , cvcTestCase "binder tuple1" $ withCVC binderTupleTest1
-        , cvcTestCase "binder tuple2" $ withCVC binderTupleTest2
+        , testCase "CVC5 binder tuple1" $ withCVC5 binderTupleTest1
+        , testCase "CVC5 binder tuple2" $ withCVC5 binderTupleTest2
 
-        , cvcTestCase "rounding" $ withCVC roundingTest
+        , testCase "CVC5 rounding" $ withCVC5 roundingTest
 
-        , cvcTestCase "multidim array"$ withCVC multidimArrayTest
+        , testCase "CVC5 multidim array" $ withCVC5 multidimArrayTest
 
-        , cvcTestCase "#182 test case" $ withCVC issue182Test
-        , cvcTestCase "#315 test case" $ withCVC issue315Test
-        , cvcTestCase "#329 test case" $ withCVC issue329Test
-        , cvcTestCase "#377 test case" $ withCVC issue377Test
-        , cvcTestCase "#391 test case" $ withCVC issue391Test
+        , testCase "CVC5 #182 test case" $ withCVC5 issue182Test
+        , testCase "CVC5 #315 test case" $ withCVC5 issue315Test
+        , testCase "CVC5 #329 test case" $ withCVC5 issue329Test
+        , testCase "CVC5 #377 test case" $ withCVC5 issue377Test
+        , testCase "CVC5 #391 test case" $ withCVC5 issue391Test
         ]
-  let cvc4Tests = cvcTests CVC4
-  let cvc5Tests = cvcTests CVC5
   let yicesTests =
         [
           testResolveSymBV WURB.ExponentialSearch
@@ -1561,7 +1522,6 @@ main = do
     , testUnsafeSetAbstractValue2
     ]
     <> (skipIfNotPresent "bitwuzla" bitwuzlaTests)
-    <> (skipIfNotPresent "cvc4" cvc4Tests)
     <> (skipIfNotPresent "cvc5" cvc5Tests)
     <> (skipIfNotPresent "yices" yicesTests)
     <> (skipIfNotPresent "z3" z3Tests)

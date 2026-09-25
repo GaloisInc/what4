@@ -57,8 +57,6 @@ allOnlineSolvers :: [SolverTestData]
 allOnlineSolvers =
   [ (SolverName "Z3"
     , AnOnlineSolver @(SMT2.Writer Z3) Proxy, z3Features, z3Options, Just z3Timeout)
-  , (SolverName "CVC4"
-    ,  AnOnlineSolver @(SMT2.Writer CVC4) Proxy, cvc4Features, cvc4Options, Just cvc4Timeout)
   , (SolverName "CVC5"
     ,  AnOnlineSolver @(SMT2.Writer CVC5) Proxy, cvc5Features, cvc5Options, Just cvc5Timeout)
   , (SolverName "Yices"
@@ -167,9 +165,7 @@ quickstartTest :: Bool -> (SolverTestData,SolverVersion) -> TestTree
 quickstartTest useFrames ((SolverName nm, AnOnlineSolver (Proxy :: Proxy s), features, opts, _timeoutOpt), SolverVersion sver) =
   let wrap = if nm == "STP"
              then ignoreTestBecause "STP cannot generate the model"
-             else if nm == "CVC4" && any ("1.7" ==) (words sver)
-                  then ignoreTestBecause "CVC4 1.7 non-framed mode fails"
-                  else id
+             else id
   in wrap $
   testCaseSteps nm $ \step ->
   withIONonceGenerator $ \gen ->
@@ -524,7 +520,6 @@ timeoutTests testLevel solvers =
       -- evolve.
       approxTestTimes :: [ (SolverName, Time) ]
       approxTestTimes = [ (SolverName "Z3",         2.27 % Second)    -- Z3 4.8.10.  Z3 is good at self timeout.
-                        , (SolverName "CVC4",       7.5  % Second)    -- CVC4 1.8
                         , (SolverName "CVC5",       0.40  % Second)   -- CVC5 1.0.0
                         , (SolverName "Yices",      2.9  % Second)    -- Yices 2.6.1
                         , (SolverName "Bitwuzla",   0.51 % Second)    -- Bitwuzla 0.3.0
@@ -565,15 +560,8 @@ timeoutTests testLevel solvers =
             snamestr (SolverName sname) = sname
             maybeSkipTest =
               case (testSolverName sti, sv) of
-                -- CVC4 v1.7 generates a response _much_ too
-                -- quickly (~0.25s).  This doesn't allow timeout
-                -- testing, and the speed suggests an improper
-                -- result as well.
-                (SolverName "CVC4", SolverVersion v) | "1.7" `elem` words v ->
-                  ignoreTestBecause "solver completes too quickly"
-                -- TODO(#278): Maybe the same problem as above?
-                (SolverName "CVC4", SolverVersion v) | "1.8" `elem` words v ->
-                  ignoreTestBecause "solver completes too quickly"
+                -- We currently have nothing to skip, but it doesn't
+                -- seem like a good idea to remove this hook entirely
                 _ -> id
         in maybeSkipTest $ testGroup (snamestr $ testSolverName sti)
            [

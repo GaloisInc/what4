@@ -278,8 +278,7 @@ on as wide a collection of solvers as is reasonable.
 
 - Z3 versions 4.8.7 through 4.8.12
 - Yices 2.6.1 and 2.6.2
-- CVC4 1.7 and 1.8
-- CVC5 1.0.2
+- CVC5 1.3.1
 - Bitwuzla 0.3.0
 - Boolector 3.2.1 and 3.2.2
 - STP 2.3.3
@@ -287,6 +286,6 @@ on as wide a collection of solvers as is reasonable.
     effective retrieval of model values.  This should be resolved by the next release)
 - dReal v4.20.04.1
 
-Note that the integration with Z3, Yices and CVC4 has undergone significantly
+Note that the integration with Z3, Yices and CVC5 has undergone significantly
 more testing than the other solvers.
 
