@@ -353,6 +353,7 @@ test-suite expr-builder-smtlib2
     bv-sized,
     bytestring,
     containers,
+    lens,
     libBF,
     prettyprinter,
     process,

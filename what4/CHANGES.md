@@ -10,6 +10,11 @@
   also errors when given NaN/infinite inputs.
 * Attempting to use universal quantifiers with Yices now throws an error
   message instead of causing `what4` to crash.
+* Fix a bug where calling `iFloatRem` when using the `FloatReal` interpretation
+  will now compute `x - y * roundToEven (x / y)` instead of (incorrectly)
+  computing `x - y * trunc (x / y)`. Note that this silently changes the
+  behavior of `iFloatRem`, so make sure that you were not implicitly relying on
+  the old, incorrect behavior in your applications.
 
 # 1.8 -- 2026-09-01
 

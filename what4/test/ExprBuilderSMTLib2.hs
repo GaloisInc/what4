@@ -23,6 +23,7 @@ import           Test.Tasty.Hedgehog.Alt
 import           Test.Tasty.HUnit
 
 import           Control.Exception (bracket, try, finally, IOException, SomeException)
+import           Control.Lens (folded)
 import           Control.Monad (void)
 import           Control.Monad.IO.Class (MonadIO(..))
 import qualified Data.BitVector.Sized as BV
@@ -1311,6 +1312,36 @@ issue443Test sym solver = do
     -- arraySet and arrayRangeEq.
     shouldFail $ checkSatisfiableWithModel solver "test" p $ \_ -> pure ()
 
+-- | A regression test for #444. This ensures that calling 'iFloatRem' using
+-- the 'FloatReal' floating-point interpretation will produce sensible results.
+issue444Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t (Flags FloatReal) ->
+  SolverProcess t solver ->
+  IO ()
+issue444Test sym solver = do
+    x <- freshFloatConstant sym (safeSymbol "x") DoubleFloatRepr
+    y <- freshFloatConstant sym (safeSymbol "y") DoubleFloatRepr
+    z <- freshFloatConstant sym (safeSymbol "z") DoubleFloatRepr
+    xRemY <- iFloatRem @_ @DoubleFloat sym x y
+    five <- iFloatLitDouble sym 5.0
+    three <- iFloatLitDouble sym 3.0
+    xEqFive <- iFloatEq @_ @DoubleFloat sym x five
+    yEqThree <- iFloatEq @_ @DoubleFloat sym y three
+    zEqRem <- iFloatEq @_ @DoubleFloat sym xRemY z
+    p <- andAllOf sym folded [xEqFive, yEqThree, zEqRem]
+    checkSatisfiableWithModel solver "test" p $ \case
+      Sat fn ->
+        do x' <- groundEval fn x
+           y' <- groundEval fn y
+           z' <- groundEval fn z
+
+           (x' == 5.0) @? "x is not 5.0"
+           (y' == 3.0) @? "y is not 3.0"
+           (z' == -1.0) @? "z is not -1.0"
+
+      _ -> fail "expected satisfable model"
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1509,6 +1540,7 @@ main = do
         , testCase "CVC5 #329 test case" $ withCVC5 issue329Test
         , testCase "CVC5 #377 test case" $ withCVC5 issue377Test
         , testCase "CVC5 #391 test case" $ withCVC5 issue391Test
+        , testCase "CVC5 #444 test case" $ withCVC5 issue444Test
         ]
   let yicesTests =
         [

@@ -4105,7 +4105,24 @@ instance IsInterpretedFloatExprBuilder (ExprBuilder t st (Flags FloatReal)) wher
   iFloatSub sym _ = realSub sym
   iFloatMul sym _ = realMul sym
   iFloatDiv sym _ = realDiv sym
-  iFloatRem = realMod
+  -- NB: Do not use `realMod` to implement `iFloatRem`, as the two operations'
+  -- semantics differ: the former uses `x - y * trunc (x / y)` (i.e.,
+  -- truncating remainder) while the latter uses `x - y * roundToEven (x / y)`
+  -- (i.e., rounding remainder). As such, we inline the definition of `realMod`
+  -- below, but we change `realTrunc` to `realRoundEven`.
+  --
+  -- As with all other floating-point operations in the FloatReal
+  -- interpretation, this implementation has some imprecision when it comes to
+  -- special values. For example, `iFloatRem a 0` normally returns NaN in the
+  -- FloatIEEE interpretation, but since there is no FloatReal counterpart to
+  -- NaN, this returns 0 instead.
+  iFloatRem sym x y = do
+    isZero <- realEq sym y (realZero sym)
+    iteM realIte sym isZero (return x) $ do
+      realSub sym x =<< realMul sym y
+                    =<< integerToReal sym
+                    =<< realRoundEven sym
+                    =<< realDiv sym x y
   iFloatMin sym x y = do
     c <- realLe sym x y
     realIte sym c x y
