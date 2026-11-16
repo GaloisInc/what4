@@ -77,6 +77,13 @@ maybeClose :: Maybe Handle -> IO ()
 maybeClose Nothing = return ()
 maybeClose (Just h) = hClose h
 
+shouldFail :: IO a -> Assertion
+shouldFail action = do
+  r <- try action
+  case r of
+    Left (_ :: IOException) -> pure ()
+    Right _ -> assertFailure "did not throw IOException"
+
 
 userSymbol' :: String -> SolverSymbol
 userSymbol' s = case userSymbol s of
@@ -386,13 +393,6 @@ testRealFloatUnrepresentableValues =
       shouldFail $ iFloatLitDouble sym pInf
       shouldFail $ iFloatLitDouble sym nInf
   where
-    shouldFail :: IO a -> Assertion
-    shouldFail action = do
-      r <- try action
-      case r of
-        Left (_ :: IOException) -> pure ()
-        Right _ -> assertFailure "did not throw IOException"
-
     nan, pInf, nInf :: forall a. Fractional a => a
     nan = 0/0
     pInf = 1/0
@@ -1284,6 +1284,33 @@ issue391Test sym solver = do
 
       _ -> fail "expected satisfible model"
 
+-- | A regression test for #443. This ensures that attempting to make use of an
+-- operation which requires universal quantifiers (e.g., 'arraySet' or
+-- 'arrayRangeEq') will throw an exception with the Yices backend.
+issue443Test ::
+  OnlineSolver solver =>
+  SimpleExprBuilder t fs ->
+  SolverProcess t solver ->
+  IO ()
+issue443Test sym solver = do
+    let w64 = knownNat @64
+    let bvTpr = BaseBVRepr w64
+    let arrayTpr = BaseArrayRepr (Ctx.singleton bvTpr) bvTpr
+    one <- bvOne sym w64
+    two <- bvLit sym w64 $ BV.mkBV w64 2
+    three <- bvLit sym w64 $ BV.mkBV w64 3
+    fortyTwo <- bvLit sym w64 $ BV.mkBV w64 42
+    a1 <- freshConstant sym (safeSymbol "a1") arrayTpr
+    a2 <- freshConstant sym (safeSymbol "a2") arrayTpr
+    a1' <- arraySet sym a1 two fortyTwo one
+    a2' <- arraySet sym a2 three fortyTwo one
+    p <- arrayRangeEq sym a1' two a2' three one
+
+    -- This should fail once we try to translate the what4 terms to Yices, as
+    -- Yices doesn't support the universal quantifiers needed to represent
+    -- arraySet and arrayRangeEq.
+    shouldFail $ checkSatisfiableWithModel solver "test" p $ \_ -> pure ()
+
 -- | These tests simply ensure that no exceptions are raised.
 testSolverInfo :: TestTree
 testSolverInfo = testGroup "solver info queries" $
@@ -1496,6 +1523,7 @@ main = do
         , testCase "Yices #315 test case" $ withYices issue315Test
         , testCase "Yices #329 test case" $ withYices issue329Test
         , testCase "Yices #391 test case" $ withYices issue391Test
+        , testCase "Yices #443 test case" $ withYices issue443Test
         ]
   let bitwuzlaTests =
         [ testCase "Bitwuzla multidim array" $ withBitwuzla multidimArrayTest

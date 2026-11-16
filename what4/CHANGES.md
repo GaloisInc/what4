@@ -8,6 +8,8 @@
   returning unspecified `Rational` values. This brings the behavior of
   `iFloatLit{Single,Double}` in line with that of `iFloatLitLongDouble`, which
   also errors when given NaN/infinite inputs.
+* Attempting to use universal quantifiers with Yices now throws an error
+  message instead of causing `what4` to crash.
 
 # 1.8 -- 2026-09-01
 
