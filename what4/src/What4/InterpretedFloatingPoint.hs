@@ -296,7 +296,8 @@ class IsExprBuilder sym => IsInterpretedFloatExprBuilder sym where
     -> SymInterpretedFloat sym fi
     -> IO (SymInterpretedFloat sym fi)
 
-  -- | Compute the reminder: @x - y * n@, where @n@ in Z is nearest to @x / y@.
+  -- | Compute the reminder: @x - y * n@, where @n@ in Z is nearest to @x / y@
+  --   (breaking ties to even values of @n@).
   iFloatRem
     :: sym
     -> SymInterpretedFloat sym fi
